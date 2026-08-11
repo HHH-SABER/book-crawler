@@ -9,9 +9,9 @@
                  用户的 TXT 输出、自定义配置、Chrome 用户数据目录
                  等持久化内容必须落在这里。
 
-开发模式（python 爬虫源码/*.py）：
-  - RESOURCE_DIR = 爬虫源码/ 目录
-  - BASE_DIR     = 项目根（爬虫源码/ 的上级，即 k:\程序文件\小说爬虫）
+开发模式（python src/*.py）：
+  - RESOURCE_DIR = src/ 目录
+  - BASE_DIR     = 项目根（src/ 的上级，即 k:\程序文件\小说爬虫）
 """
 import os
 import sys
@@ -26,7 +26,7 @@ def is_frozen() -> bool:
 def get_resource_dir() -> str:
     """内置只读资源目录（RESOURCE_DIR）。
     - PyInstaller : sys._MEIPASS
-    - 源码模式    : 本文件所在目录（即 爬虫源码/）
+    - 源码模式    : 本文件所在目录（即 src/）
     """
     if is_frozen():
         return getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -36,7 +36,7 @@ def get_resource_dir() -> str:
 def get_app_base_dir() -> str:
     """用户可写运行基目录（BASE_DIR）。
     - PyInstaller : sys.executable 所在目录（EXE 旁边）
-    - 源码模式    : 项目根（爬虫源码/ 的上级）
+    - 源码模式    : 项目根（src/ 的上级）
     """
     if is_frozen():
         return os.path.dirname(os.path.abspath(sys.executable))
@@ -76,10 +76,12 @@ def resolve_data_file(filename: str, copy_default_from_resource_if_missing: bool
         return base_path
 
     if copy_default_from_resource_if_missing:
-        # --add-data 可能把配置文件放到 RESOURCE_DIR 或 RESOURCE_DIR/爬虫源码/ 下，两处都查
+        # --add-data 可能把配置文件放到 RESOURCE_DIR 或 RESOURCE_DIR/src/ 下，两处都查
+        # 同时也检查 BASE_DIR/config/ 目录（项目源码中的配置模板位置）
         candidates = [
             os.path.join(get_resource_dir(), filename),
-            os.path.join(get_resource_dir(), "爬虫源码", filename),
+            os.path.join(get_resource_dir(), "src", filename),
+            os.path.join(get_app_base_dir(), "config", filename),
         ]
         for src in candidates:
             if os.path.isfile(src):

@@ -1,6 +1,6 @@
 # Novel Crawler EXE Build (PowerShell 5 compatible)
 $ErrorActionPreference = "Stop"
-Push-Location $PSScriptRoot
+Push-Location (Split-Path $PSScriptRoot -Parent)
 
 Write-Host "==================== Novel Crawler EXE Build ====================" -ForegroundColor Cyan
 
@@ -38,7 +38,7 @@ if (Test-Path "dist") {
 # 5) Args (each element = one argv token)
 $packArgs = @(
     "pack",
-    "爬虫源码\gui_app.py",
+    "src\gui_app.py",
     "-n", "小说爬虫",
     "--product-name", "NovelCrawlerGUI",
     "--file-description", "Novel Crawler GUI",

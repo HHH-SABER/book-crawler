@@ -19,7 +19,7 @@ MIRRORS = [
     ORIG_URL,
 ]
 
-CACHE_DIR = (Path(__file__).parent / "_flet_client").resolve()
+CACHE_DIR = (Path(__file__).parent.parent / "_flet_client").resolve()  # scripts/ 的上级 = 项目根
 
 def log(msg=""):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
