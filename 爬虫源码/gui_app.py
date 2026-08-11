@@ -16,6 +16,9 @@ from gui_components.crawl_tab import CrawlTab
 from gui_components.preview_tab import PreviewTab
 from gui_components.config_tab import ConfigTab
 
+# 打包后路径约定（源码/EXE 双模式）
+from _path_utils import get_default_output_dir  # noqa: E402
+
 # ---------------------------------------------------- PyInstaller 打包友好
 # 显式 import 核心爬虫模块，让 PyInstaller 静态分析能发现依赖树，
 # 避免通过 --hidden-import 传递中文模块名时的编码问题。
@@ -82,8 +85,9 @@ def main(page: ft.Page):
     )
 
     # 底部状态栏
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.normpath(os.path.join(script_dir, "..", "抓取结果"))
+    # - 开发模式 (python gui_app.py)         : 项目根/抓取结果
+    # - PyInstaller onefile (小说爬虫.exe)   : EXE 所在目录/抓取结果
+    output_dir = get_default_output_dir()
 
     status_bar = ft.Container(
         content=ft.Row([

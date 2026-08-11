@@ -1109,15 +1109,21 @@ class CaptchaManager:
 def build_manager(config_path=None, ua_provider=None):
     """构建完整 CaptchaManager (配置加载 + 监控 + 规避策略)。
 
-    Args:
-        config_path: 配置文件路径 (None 使用默认, 首次运行生成模板)
-        ua_provider: UA 提供方 (如 fake_useragent.UserAgent)
-
-    Returns:
-        (manager, avoidance): 验证码门面与规避策略实例
+    配置路径约定（PyInstaller 打包友好，经验 1341648）：
+      - 始终写入 BASE_DIR/captcha_config.json（EXE 旁边或项目根）
+      - 若 BASE_DIR 下不存在，会先从 RESOURCE_DIR 尝试复制一份内置默认值
+      - 如果都不存在，调用 config.save() 生成默认模板
     """
-    config = Config(config_path or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), 'captcha_config.json'))
+    if config_path is None:
+        try:
+            import _path_utils  # noqa: F401
+            config_path = _path_utils.resolve_data_file("captcha_config.json",
+                                                         copy_default_from_resource_if_missing=True)
+        except Exception:
+            # 回退：放在脚本所在目录（开发模式）
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       'captcha_config.json')
+    config = Config(config_path)
     config.load()
     if not os.path.exists(config.path):
         config.save()  # 生成默认配置模板

@@ -4691,20 +4691,22 @@ def interactive_menu():
     return catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay
 
 
-# 计算默认输出目录: 基于脚本所在目录 (爬虫源码/ 目录) 上溯到项目根, 统一为 项目根/抓取结果/
-# 无论从哪个工作目录启动, 都会落到同一个输出目录, 避免生成多套重复结果
+# 计算默认输出目录:
+# - 开发模式 (python 爬虫.py)                     : 项目根/抓取结果/
+# - PyInstaller onefile (小说爬虫.exe)           : EXE 所在目录/抓取结果/
+# 无论从哪个工作目录启动, 都会落到同一个可写输出目录, 避免生成多套重复结果
+from _path_utils import (  # noqa: E402
+    get_default_output_dir as _get_default_output_dir,
+    resolve_output_dir as _resolve_output_dir_via_utils,
+)
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_OUTPUT_DIR = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "抓取结果"))
+_DEFAULT_OUTPUT_DIR = _get_default_output_dir()
 
 
 def _resolve_output_dir(output_dir: str) -> str:
-    """将输出目录解析为绝对路径；相对路径统一相对于脚本所在目录的上一级（项目根）"""
-    if os.path.isabs(output_dir):
-        resolved = output_dir
-    else:
-        resolved = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", output_dir))
-    os.makedirs(resolved, exist_ok=True)
-    return resolved
+    """将输出目录解析为绝对路径；相对路径统一相对于 BASE_DIR
+    (源码模式 = 项目根, EXE 模式 = EXE 所在目录)"""
+    return _resolve_output_dir_via_utils(output_dir)
 
 
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
