@@ -19,13 +19,34 @@ MIRRORS = [
     ORIG_URL,
 ]
 
-CACHE_DIR = (Path(__file__).parent.parent / "_flet_client").resolve()  # scripts/ 的上级 = 项目根
+CACHE_DIR = (Path(__file__).parent.parent / "_flet_client").resolve()  # 脚本/ 的上级 = 项目根
+
+# 允许的下载源域名白名单 (仅官方 GitHub 与已知镜像, 防 SSRF)
+_ALLOWED_DL_HOSTS = {
+    'github.com',
+    'gh.api.99988866.xyz',
+    'ghproxy.net',
+    'mirror.ghproxy.com',
+}
+
+
+def _validate_download_url(url):
+    """校验下载 URL: 仅 http/https + 域名白名单 (防 SSRF 访问内网/元数据)"""
+    p = urllib.parse.urlparse(url)
+    if p.scheme not in ('http', 'https'):
+        raise ValueError(f"仅允许 http/https 协议: {url}")
+    host = (p.hostname or '').lower()
+    if not host or host not in _ALLOWED_DL_HOSTS:
+        raise ValueError(f"下载域名不在白名单: {host}")
+    return url
+
 
 def log(msg=""):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 def benchmark_sample(url, sample=1024*1024, timeout=20):
     """GET first `sample` bytes via Range; return (speed_MBps or None, info)."""
+    _validate_download_url(url)  # 安全校验 (防 SSRF)
     ctx = ssl.create_default_context()
     req = urllib.request.Request(url, headers={"Range": f"bytes=0-{sample-1}"})
     t0 = time.time()
@@ -49,6 +70,19 @@ def benchmark_sample(url, sample=1024*1024, timeout=20):
 
 def download(url, dest, stall_s=10):
     """Full download with per-chunk stall detection. Returns bytes received."""
+    # 安全校验 (防 SSRF): 协议 + 域名白名单 + 公网地址
+    _p = urllib.parse.urlparse(url)
+    if _p.scheme not in ('http', 'https') or (_p.hostname or '').lower() not in _ALLOWED_DL_HOSTS:
+        raise ValueError(f"非法下载地址: {url}")
+    import ipaddress as _ipa
+    try:
+        _ip = _ipa.ip_address(_p.hostname)
+        if _ip.is_private or _ip.is_loopback or _ip.is_link_local \
+                or _ip.is_reserved or _ip.is_multicast or _ip.is_unspecified:
+            raise ValueError(f"内网地址: {url}")
+    except ValueError as _ve:
+        if '内网' in str(_ve):
+            raise
     ctx = ssl.create_default_context()
     with urllib.request.urlopen(url, timeout=30, context=ctx) as resp:
         total = resp.headers.get("Content-Length")
@@ -91,11 +125,17 @@ def extract(archive_path: str, target: Path):
     try:
         if archive_path.endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
+                # 安全: zip-slip 防护 — 拒绝绝对路径与 ../ 穿越成员
+                for member in zf.infolist():
+                    name = member.filename.replace('\\', '/')
+                    if name.startswith('/') or '..' in name.split('/'):
+                        raise ValueError(f"压缩包含非法路径: {member.filename}")
                 zf.extractall(str(tmp))
         else:
             import tarfile
             with tarfile.open(archive_path, "r:gz") as tf:
-                tf.extractall(str(tmp))
+                # filter='data' 拒绝绝对路径与 .. 穿越 (Python 3.12+)
+                tf.extractall(str(tmp), filter='data')
         # FLET_VIEW_PATH expected layout: flet.exe DIRECTLY under view path
         # But default zips use root dir "flet/", so flatten one level if needed
         contents = list(tmp.iterdir())

@@ -232,3 +232,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# ============ 打包产物 / 日志 / 工作区 ============
+/小说爬虫.exe
+/日志/
+.zcode/
+
+# 私人提示词
+/提示词.txt

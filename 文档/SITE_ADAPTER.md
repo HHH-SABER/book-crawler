@@ -2,7 +2,7 @@
 
 ## 文件位置
 
-`src/sites_config.py` — 集中管理所有小说网站的适配配置。
+`源码/sites_config.py` — 集中管理所有小说网站的适配配置。
 
 ## 已支持的模式
 
@@ -98,7 +98,7 @@ if detect_ajax_pattern(html):
 
 ### 步骤 2: 在 SITE_PATTERNS 中添加配置
 
-编辑 `src/sites_config.py`，在 `SITE_PATTERNS` 列表中添加条目:
+编辑 `源码/sites_config.py`，在 `SITE_PATTERNS` 列表中添加条目:
 
 ```python
 {

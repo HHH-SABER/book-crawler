@@ -222,6 +222,22 @@ class PlaywrightDriver:
         self._ensure_started()
         return self._page.url
 
+    def get_cookies(self):
+        """获取当前上下文所有 cookie, 返回 [{name, value, domain, path, ...}]"""
+        self._ensure_started()
+        try:
+            return self._context.cookies()
+        except Exception:
+            return []
+
+    def add_cookies(self, cookies: list):
+        """向浏览器上下文写入 cookie (格式同 get_cookies 返回项)"""
+        self._ensure_started()
+        try:
+            self._context.add_cookies(cookies)
+        except Exception:
+            pass
+
     # ---- 元素查找 (兼容 Selenium By) ----
     def find_element(self, by, value):
         """by: 'css selector' / 'id' / 'tag name' / 'name' (Selenium By 常量字符串)"""

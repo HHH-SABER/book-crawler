@@ -1,11 +1,17 @@
 @echo off
+rem =======================================================================
+rem  Novel Crawler Launcher (CLI)
+rem  IMPORTANT: pure ASCII only + CRLF. No Chinese characters allowed -
+rem  cmd corrupts batch parsing with mixed encodings after "chcp 65001".
+rem  Chinese filenames are handled by æºç \å¯åŠ¨å™¨.py (Python, UTF-8 safe).
+rem  =======================================================================
 chcp 65001 >nul
 setlocal
 
 cd /d "%~dp0"
-title Ğ¡ËµÅÀ³æ
+title Novel Crawler
 
-rem ========== ¼ì²é Python ==========
+rem ---------- 1. Locate Python ----------
 set "PYTHON_EXE="
 if exist ".venv\Scripts\python.exe" set "PYTHON_EXE=.venv\Scripts\python.exe"
 if not defined PYTHON_EXE (
@@ -15,45 +21,40 @@ if not defined PYTHON_EXE (
     where py >nul 2>&1 && set "PYTHON_EXE=py"
 )
 if not defined PYTHON_EXE (
-    echo [´íÎó] Î´¼ì²âµ½ Python£¬ÇëÏÈ°²×°»ò´´½¨ .venv ĞéÄâ»·¾³
+    echo [ERROR] Python not found. Create .venv first:
+    echo         python -m venv .venv
     pause
     endlocal & exit /b 1
 )
 
-rem ========== È·±£Êä³öÄ¿Â¼´æÔÚ ==========
-if not exist "×¥È¡½á¹û" mkdir "×¥È¡½á¹û"
-
-rem ========== ÅĞ¶ÏÔËĞĞÄ£Ê½ ==========
+rem ---------- 2. Mode dispatch (output dir is auto-created by Python) ----------
 if "%~1"=="" goto INTERACTIVE
 
-rem ========== ÃüÁîĞĞÄ£Ê½£ºÖ±½ÓÍ¸´«²ÎÊı ==========
-rem   ÓÃ·¨: Æô¶¯ÅÀ³æ.bat <URL> [--list] [--test] [--output-dir <Ä¿Â¼>]
-echo [Ö´ĞĞ] ÃüÁîĞĞÄ£Ê½
+echo [EXEC] Command line mode
 set "PYTHONIOENCODING=utf-8"
-"%PYTHON_EXE%" "src\ÅÀ³æ.py" %*
+"%PYTHON_EXE%" "æºç \å¯åŠ¨å™¨.py" %*
 goto DONE
 
 :INTERACTIVE
 echo.
-echo   ============ Ğ¡ËµÅÀ³æ ============
+echo   ============ Novel Crawler ============
 echo   Python: %PYTHON_EXE%
-echo   Êä³ö:   ×¥È¡½á¹ûecho   ================================
+echo   Output: auto (project folder)
+echo   =======================================
 echo.
 set "PYTHONIOENCODING=utf-8"
-"%PYTHON_EXE%" "src\ÅÀ³æ.py"
+"%PYTHON_EXE%" "æºç \å¯åŠ¨å™¨.py"
 goto DONE
 
 :DONE
 set "RC=%ERRORLEVEL%"
 echo.
 if "%RC%"=="0" (
-    echo   [³É¹¦] ×¥È¡Íê³É£¡
-    echo   [´ò¿ª] ÕıÔÚ´ò¿ª×¥È¡½á¹ûÎÄ¼ş¼Ğ...
-    explorer "×¥È¡½á¹û"
+    echo   [OK] Done. Output saved in project folder.
 ) else (
-    echo   [¾¯¸æ] ³ÌĞòÒì³£ÍË³ö£¬ÍË³öÂë %RC%
+    echo   [WARN] Program exited with code %RC%
 )
 echo.
-echo   °´ÈÎÒâ¼ü¼ÌĞøÅÀÈ¡ÏÂÒ»±¾Ğ¡Ëµ£¬»ò¹Ø±Õ´°¿ÚÍË³ö...
+echo   Press any key to crawl the next book, or close this window to exit...
 pause >nul
 goto INTERACTIVE
