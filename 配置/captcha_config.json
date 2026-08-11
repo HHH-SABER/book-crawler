@@ -1,5 +1,6 @@
 {
   "enabled": true,
+  "request_proxy": "",
   "avoid_first": true,
   "strategies": {
     "manual": {

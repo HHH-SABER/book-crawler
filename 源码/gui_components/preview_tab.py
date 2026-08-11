@@ -9,6 +9,9 @@ _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys; sys.path.insert(0, _HERE)  # noqa: E402  (保证 import _path_utils)
 from _path_utils import get_default_output_dir  # noqa: E402
 
+# UI 主题系统
+from .ui_theme import make_card, tonal_btn, danger_btn
+
 
 class PreviewTab:
     """结果预览页签组件"""
@@ -28,40 +31,27 @@ class PreviewTab:
         # 左侧文件列表
         self.file_list_view = ft.ListView(
             expand=True,
-            spacing=2,
+            spacing=4,
             auto_scroll=True,
         )
 
-        refresh_btn = ft.ElevatedButton(
-            "刷新",
-            icon=ft.Icons.REFRESH,
-            on_click=self.on_refresh_click,
-            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12)),
-        )
-        open_btn = ft.ElevatedButton(
-            "打开",
-            icon=ft.Icons.OPEN_IN_NEW,
-            on_click=self.on_open_click,
-            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12)),
-        )
-        delete_btn = ft.ElevatedButton(
-            "删除",
-            icon=ft.Icons.DELETE,
-            on_click=self.on_delete_click,
-            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12), bgcolor=ft.Colors.RED_100),
-        )
+        refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
+                                on_click=self.on_refresh_click)
+        open_btn = tonal_btn("打开", icon=ft.Icons.OPEN_IN_NEW,
+                             on_click=self.on_open_click)
+        delete_btn = danger_btn("删除", icon=ft.Icons.DELETE,
+                                on_click=self.on_delete_click)
 
-        file_panel = ft.Container(
-            content=ft.Column([
-                ft.Row([ft.Text("文件列表", size=14, weight=ft.FontWeight.BOLD),
-                        refresh_btn, open_btn, delete_btn], wrap=True),
+        file_panel = make_card(
+            ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.FOLDER_OPEN, size=18, color=ft.Colors.PRIMARY),
+                    ft.Text("文件列表", size=14, weight=ft.FontWeight.BOLD),
+                ]),
+                ft.Row([refresh_btn, open_btn, delete_btn], wrap=True, spacing=6),
                 ft.Container(content=self.file_list_view, expand=True),
-            ]),
-            width=300,
-            padding=10,
-            bgcolor=ft.Colors.GREY_50,
-            border=ft.Border.all(1, ft.Colors.GREY_300),
-            border_radius=5,
+            ], spacing=8),
+            width=320,
             expand=True,
         )
 
@@ -71,27 +61,24 @@ class PreviewTab:
             expand=True,
             read_only=True,
             text_style=ft.TextStyle(size=12),
-            border_color=ft.Colors.GREY_300,
+            border_color=ft.Colors.OUTLINE_VARIANT,
         )
 
-        self.file_info_text = ft.Text("请选择文件", size=12, color=ft.Colors.GREY_600)
+        self.file_info_text = ft.Text("请选择文件", size=12,
+                                      color=ft.Colors.ON_SURFACE_VARIANT)
 
-        content_panel = ft.Container(
-            content=ft.Column([
+        content_panel = make_card(
+            ft.Column([
                 self.file_info_text,
                 ft.Container(content=self.content_view, expand=True),
-            ]),
+            ], spacing=6),
             expand=True,
-            padding=10,
-            bgcolor=ft.Colors.GREY_50,
-            border=ft.Border.all(1, ft.Colors.GREY_300),
-            border_radius=5,
         )
 
         # 初始加载文件列表
         self.__scan_and_update_list()
 
-        return ft.Row([file_panel, content_panel], expand=True)
+        return ft.Row([file_panel, content_panel], expand=True, spacing=10)
 
     def __scan_and_update_list(self):
         """扫描输出目录并刷新左侧文件列表（真正的实现，内部用）
@@ -104,7 +91,7 @@ class PreviewTab:
 
         if not os.path.exists(self.output_dir):
             self.file_list_view.controls.append(
-                ft.Text("输出目录不存在", size=12, color=ft.Colors.GREY_500, italic=True)
+                ft.Text("输出目录不存在", size=12, color=ft.Colors.ON_SURFACE_VARIANT, italic=True)
             )
             return
 
@@ -114,7 +101,7 @@ class PreviewTab:
 
         if not txt_files:
             self.file_list_view.controls.append(
-                ft.Text("暂无抓取结果", size=12, color=ft.Colors.GREY_500, italic=True)
+                ft.Text("暂无抓取结果", size=12, color=ft.Colors.ON_SURFACE_VARIANT, italic=True)
             )
             return
 
@@ -126,10 +113,12 @@ class PreviewTab:
                 content=ft.Column([
                     ft.Text(filename, size=11, weight=ft.FontWeight.BOLD,
                             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(f"{size_kb:.1f} KB", size=10, color=ft.Colors.GREY_600),
+                    ft.Text(f"{size_kb:.1f} KB", size=10,
+                            color=ft.Colors.ON_SURFACE_VARIANT),
                 ]),
-                padding=5,
-                border_radius=3,
+                padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+                border_radius=8,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
                 ink=True,
                 on_click=lambda e, idx=i: self._on_file_selected(idx),
             )
@@ -142,9 +131,9 @@ class PreviewTab:
             if not isinstance(ctrl, ft.Container):
                 continue
             if i == self._selected_idx:
-                ctrl.border = ft.Border.all(2, ft.Colors.BLUE)
+                ctrl.bgcolor = ft.Colors.PRIMARY_CONTAINER
             else:
-                ctrl.border = None
+                ctrl.bgcolor = ft.Colors.SURFACE_CONTAINER_LOW
 
     def _on_file_selected(self, idx: int):
         """选中文件后加载内容到预览区"""

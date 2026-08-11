@@ -5,8 +5,11 @@ UTF-8 encoded; no encoding ambiguity, runs flet pack via subprocess.
 Double-click 打包EXE.bat  (or:  .venv\\Scripts\\python.exe build_exe.py)
 """
 import os, sys, subprocess, shutil, time
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # scripts/ 的上级 = 项目根
+# 安全: 使用 Path.resolve() 规范化脚本所在目录, 再上溯到项目根,
+# 保证 ROOT/LOG 均为规范化绝对路径, 不含 ../ 穿越
+ROOT = str(Path(__file__).resolve().parent.parent)  # 脚本/ 的上级 = 项目根
 os.chdir(ROOT)
 
 LOG = os.path.join(ROOT, "build_log.txt")
@@ -83,13 +86,13 @@ if os.path.isdir(dist):
     shutil.rmtree(dist, ignore_errors=True)
 
 # --- 5) arguments (one list element = one argv token)
-script_path = os.path.join(ROOT, "src", "gui_app.py")
+script_path = os.path.join(ROOT, "源码", "gui_app.py")
 exe_name    = "小说爬虫"
 # 关键：把 Flet client 打进 EXE（flet pack 不会自动做这件事）
 # 同时把站点配置和验证码配置的默认模板打进去（首次运行时拷到 BASE_DIR）
 flet_client_dir = os.path.join(ROOT, "_flet_client")
-sites_config_src = os.path.join(ROOT, "src", "站点配置.json")
-captcha_config_src = os.path.join(ROOT, "config", "captcha_config.json")
+sites_config_src = os.path.join(ROOT, "源码", "站点配置.json")
+captcha_config_src = os.path.join(ROOT, "配置", "captcha_config.json")
 
 add_data_list = []
 # Flet client（必须）
@@ -120,6 +123,11 @@ cmd = [
     "--product-version", "1.0.0",
     "--file-version", "1.0.0.0",
 ]
+# 应用图标 (存在时使用)
+icon_path = os.path.join(ROOT, "脚本", "图标.ico")
+if os.path.isfile(icon_path):
+    cmd.extend(["-i", icon_path])
+    log(f"[INFO] icon   = {icon_path}")
 for ad in add_data_list:
     cmd.extend(["--add-data", ad])
 cmd.extend(["-y", "-v"])

@@ -84,6 +84,21 @@ except ImportError:
     print("Selenium 未安装，将使用传统方法")
 
 
+def _is_waf_js_challenge(response) -> bool:
+    """判断响应是否为 WAF JS 动态令牌挑战页 (banlvzw 等)
+
+    特征: 401 + Loading 转圈动画 + /@wafjs? 混淆脚本
+    """
+    try:
+        if response.status_code not in (401, 403, 429):
+            return False
+        text = response.text or ''
+        return ('@wafjs' in text) or ('Loading...' in text and '__WV' in text) \
+            or ('Loading...' in text and 'wafjs' in text)
+    except Exception:
+        return False
+
+
 def _chapter_sort_key(chap):
     """统一的章节排序键：按章节号 → 楔子 → URL数字 → 番外排序"""
     title = chap.get('title', '')
@@ -238,9 +253,25 @@ class NovelSpider:
                       用于相对 URL 拼接与 AJAX 请求的 Referer/同源设置。
         """
         self.base_url = base_url
-        self.session = requests.Session()
+        self.session = requests.Session()        # 默认直连: 忽略系统/环境代理。Windows 系统代理若指向已关闭的代理软件
+        # (如 127.0.0.1:12334) 会导致所有请求 ProxyError; 小说站国内直连即可。
+        # 确需代理时, 在 captcha_config.json 的 request_proxy 字段显式配置
+        # (如 "http://127.0.0.1:7890"), 仅对该字段指定的代理生效。
+        self.session.trust_env = False
+        try:
+            import _path_utils
+            _cfg_path = _path_utils.resolve_data_file("captcha_config.json")
+            if os.path.isfile(_cfg_path):
+                _rp = json.loads(Path(_cfg_path).read_text(encoding='utf-8')).get('request_proxy') or ''
+                if _rp:
+                    self.session.proxies.update({'http': _rp, 'https': _rp})
+        except Exception:
+            pass  # 配置读取失败时保持直连
         self.session.verify = False
         self.ua = UserAgent()
+        # 固定 UA (会话内不变): ① WAF 验证码放行 cookie 与 UA 绑定, 每次随机 UA
+        # 会导致验证码白过; ② 固定 UA 更接近真实浏览器, 降低反爬触发率
+        self._fixed_ua = self.ua.random
         # 添加完整的请求头，模拟真实浏览器
         self.session.headers.update({
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -472,8 +503,55 @@ class NovelSpider:
         这里提取document.cookie并重试，直到拿到真实内容。返回最终的response对象。
         注意: 调用方headers中不要硬编码Cookie头，否则会覆盖session.cookies导致校验cookie发不出去。"""
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
+        _t0 = time.time()
         challenge_markers = ['ge_js_validator', 'window.location.reload']
         response = self.session.get(url, headers=headers, timeout=timeout)
+        # ---- WAF 图片验证码 (banlvzw 等: 401 + __wafcaptcha 特征) ----
+        # 放行 cookie 会按请求数/时间过期, 因此每次命中 401 都尝试重新解决;
+        # 失败后 60 秒冷却, 避免 IP 被拉黑时无限重试刷屏。
+        # 识别需要 captcha_config.json 显式开启 ddddocr (默认关闭)
+        try:
+            from waf_captcha import is_waf_captcha_page, solve_waf_captcha
+        except Exception:
+            is_waf_captcha_page = None
+            solve_waf_captcha = None
+        if is_waf_captcha_page is not None:
+            if not hasattr(self, '_waf_last_try'):
+                self._waf_last_try = 0.0
+            _now_t = time.time()
+            # 冷却只针对"解决失败" (IP 可能被拉黑); 解决成功后立即重置,
+            # 因为该 WAF 按请求数限频, 放行 cookie 会周期性过期, 需随时可重试
+            if is_waf_captcha_page(response.status_code, response.text) and \
+                    _now_t - self._waf_last_try > 60:
+                try:
+                    print(f"[反爬检测] 命中 WAF 图片验证码页 ({len(response.text)}字节)，尝试自动解决...")
+                    if solve_waf_captcha(self.session, url, headers=headers, log=print):
+                        self._waf_last_try = 0.0  # 成功: 允许后续立即重试
+                        response = self.session.get(url, headers=headers, timeout=timeout)
+                    else:
+                        self._waf_last_try = time.time()  # 失败: 60 秒冷却
+                except Exception as e:
+                    print(f"[反爬检测] WAF 验证码处理异常: {e}")
+
+        # ---- WAF JS 动态令牌挑战 (banlvzw 等: 401 + @wafjs 混淆脚本) ----
+        # 页面含 Loading 转圈 + /@wafjs? 脚本, 需浏览器执行 JS 生成令牌 cookie。
+        # 用 Playwright 渲染一次, 把浏览器 cookie 回灌 requests session。
+        if is_waf_captcha_page is not None and _is_waf_js_challenge(response):
+            if not hasattr(self, '_waf_js_last_try'):
+                self._waf_js_last_try = 0.0
+            _now_t = time.time()
+            if _now_t - self._waf_js_last_try > 30:
+                self._waf_js_last_try = _now_t
+                try:
+                    print("[反爬检测] 命中 WAF JS 挑战页, 用浏览器渲染获取令牌 cookie...")
+                    if self._solve_waf_js_challenge(url):
+                        self._waf_js_last_try = 0.0
+                        # 令牌 cookie 绑定浏览器 UA, 重试时用同步后的 UA
+                        hdrs2 = dict(headers or {})
+                        hdrs2['User-Agent'] = self._fixed_ua
+                        response = self.session.get(url, headers=hdrs2, timeout=timeout)
+                except Exception as e:
+                    print(f"[反爬检测] WAF JS 挑战处理异常: {e}")
         for retry in range(4):
             raw = response.content
             if not any(m.encode() in raw for m in challenge_markers):
@@ -489,7 +567,78 @@ class NovelSpider:
                     print(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
             time.sleep(2)
             response = self.session.get(url, headers=headers, timeout=timeout)
+        # 调试日志: 请求 URL + 状态码 + 耗时 (供事后排查网络/反爬问题)
+        print(f"[调试] GET {url} -> 状态 {response.status_code}, 耗时 {time.time()-_t0:.2f}s")
         return response
+
+    def _solve_waf_js_challenge(self, url, max_wait: int = 12) -> bool:
+        """用 Playwright 渲染解决 WAF JS 动态令牌挑战, 并把浏览器 cookie 回灌 requests session。
+
+        Args:
+            url: 被挑战拦截的 URL
+            max_wait: 等待 JS 挑战完成的最长秒数
+
+        Returns:
+            True=已获得令牌 cookie
+        """
+        try:
+            from browser_driver import create_driver
+        except Exception as e:
+            print(f"[反爬检测] Playwright 不可用: {e}")
+            return False
+        driver = None
+        try:
+            driver = create_driver(engine='playwright', visible=False)
+            driver.get(url)
+            # 等待 JS 挑战执行 (spinner → 跳转真实页), 最长 max_wait 秒
+            deadline = time.time() + max_wait
+            while time.time() < deadline:
+                time.sleep(2)
+                try:
+                    src = driver.page_source
+                    if src and '@wafjs' not in src and 'Loading...' not in src \
+                            and '<title>' in src and 'loading banlvzw' not in src:
+                        break
+                except Exception:
+                    pass
+            cookies = driver.get_cookies()
+            if not cookies:
+                print("[反爬检测] 浏览器未获得令牌 cookie")
+                return False
+            # 令牌 cookie 绑定浏览器 UA: 把浏览器 UA 同步到 session,
+            # 否则 requests 用自己的 UA 请求仍会被挑战拦截
+            try:
+                ua = driver.execute_script('return navigator.userAgent;')
+                if ua:
+                    self._fixed_ua = ua
+                    self.session.headers['User-Agent'] = ua
+            except Exception:
+                pass
+            # 把浏览器 cookie 回灌 requests session (cookie 有效期一般 24 小时)
+            for c in cookies:
+                if c.get('name') and c.get('value') is not None:
+                    try:
+                        self.session.cookies.set(
+                            c['name'], c['value'],
+                            domain=c.get('domain', ''),
+                            path=c.get('path', '/'),
+                        )
+                    except Exception:
+                        try:
+                            self.session.cookies.set(c['name'], c['value'])
+                        except Exception:
+                            pass
+            print(f"[反爬检测] ✅ 已获取 {len(cookies)} 个令牌 cookie, 回灌 session")
+            return True
+        except Exception as e:
+            print(f"[反爬检测] JS 挑战渲染失败: {e}")
+            return False
+        finally:
+            if driver is not None:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
 
     def _selenium_get_soup(self, url, headers):
         """统一 Selenium 抓取: 创建无头 Chrome → 访问页面 → 处理 JS cookie 反爬 → 返回 BeautifulSoup。
@@ -542,7 +691,7 @@ class NovelSpider:
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
         # 尝试使用不同的User-Agent和请求头
         headers = {
-            'User-Agent': self.ua.random,  # 使用随机User-Agent
+            'User-Agent': self._fixed_ua,  # 会话固定UA (验证码cookie绑定UA)
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate',
@@ -1085,6 +1234,13 @@ class NovelSpider:
                         if id_match:
                             novel_path = id_match.group(1)
                             print(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
+                        else:
+                            # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
+                            # 字母数字书ID + index_分页目录)
+                            alt_match = re.search(r'/([a-z0-9]{2,12})/index(?:_\d+)?\.html?', catalog_url)
+                            if alt_match:
+                                novel_path = f"/{alt_match.group(1)}/"
+                                print(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
 
             novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
         
@@ -1308,8 +1464,8 @@ class NovelSpider:
         else:
             page_urls = [catalog_url]
 
-            # 查找分页链接
-            next_page_texts = ['下一页', '下一頁', '下章', '下一章节', '下一页>>', '>>']
+            # 查找分页链接 (仅识别明确的"下一页"文本; "下章/下一章节"指向下一章, 会误判分页)
+            next_page_texts = ['下一页', '下一頁', '下一页>>', '>>']
             next_page_link = None
             for text in next_page_texts:
                 next_page_link = soup.find('a', string=lambda s: s and text in s)
@@ -1322,8 +1478,8 @@ class NovelSpider:
                     next_page_url = self.base_url + next_page_url
                 page_urls.append(next_page_url)
 
-                # 继续查找下一页，最多查找5页
-                for _ in range(3):
+                # 继续查找下一页，最多查找30页 (长篇小说目录可能分页较多)
+                for _ in range(29):
                     try:
                         next_soup = self.inspect_page(next_page_url)
                         next_page_link = None
@@ -1432,7 +1588,9 @@ class NovelSpider:
                             print(f"ahxsw.com: 找到章节列表，使用选择器: {selector}")
                             for link in relevant_links:
                                 title = link.get_text().strip()
-                                url = link['href']
+                                url = link.get('href')
+                                if not url:  # 无 href 的 <a> 标签, 跳过
+                                    continue
                                 if not url.startswith('http'):
                                     url = self.base_url + url
                                 if len(title) > 1:
@@ -1461,7 +1619,9 @@ class NovelSpider:
                             if '/read/' in href and href.endswith('.html') and link.get_text().strip():
                                 relevant_links.append(link)
                         else:
-                            if novel_path in href:
+                            # novel_path 为空时 (路径提取失败) 不启用路径过滤,
+                            # 避免 '' in href 恒为 True 导致全页链接都被当章节
+                            if novel_path and novel_path in href:
                                 relevant_links.append(link)
                     
                     if relevant_links:
@@ -1469,7 +1629,9 @@ class NovelSpider:
                         # 抓取所有章节
                         for link in relevant_links:
                             title = link.get_text().strip()
-                            url = link['href']
+                            url = link.get('href')
+                            if not url:  # 无 href 的 <a> 标签, 跳过
+                                continue
                             # 如果是相对路径，添加基础URL
                             if not url.startswith('http'):
                                 url = self.base_url + url
@@ -1504,7 +1666,9 @@ class NovelSpider:
                             # 抓取所有章节
                             for link in relevant_links:
                                 title = link.get_text().strip()
-                                url = link['href']
+                                url = link.get('href')
+                                if not url:  # 无 href 的 <a> 标签 (锚点/脚本), 跳过
+                                    continue
                                 # 如果是相对路径，添加基础URL
                                 if not url.startswith('http'):
                                     url = self.base_url + url
@@ -1533,7 +1697,7 @@ class NovelSpider:
                         # 对于pjxdd.com网站，使用更宽松的条件
                         if 'pjxdd.com' in catalog_url:
                             # 检查是否包含小说路径、章节路径或小说ID
-                            if novel_path in href and href.endswith('.html') and text:
+                            if novel_path and novel_path in href and href.endswith('.html') and text:
                                 # 过滤掉JavaScript代码
                                 if 'javascript:' in href:
                                     continue
@@ -1550,10 +1714,11 @@ class NovelSpider:
                             # 对于其他网站，使用原来的条件
                             path_match = False
                             if 'hatxt.cc' in catalog_url:
-                                if novel_path in href or novel_path_alt in href:
+                                if (novel_path and novel_path in href) or \
+                                   (novel_path_alt and novel_path_alt in href):
                                     path_match = True
                             else:
-                                if novel_path in href:
+                                if novel_path and novel_path in href:
                                     path_match = True
                             
                             if path_match:
@@ -1808,6 +1973,18 @@ class NovelSpider:
         # 部分网站会在正文中插入这些不可见字符用于反爬/水印, 通用清理适用于所有站点
         content = re.sub(r'[\u200b\u200c\u200d\ufeff\u2060\u00ad]', '', content)
 
+        # 移除反爬干扰串: 部分站点 (如 oldtimeswx.net) 会在正文中随机插入
+        # "字母+数字"混合短串作为水印 (如"给体0N肏烂了"中的"0N")。
+        # 规则: 直接夹在两个汉字之间的 2-4 位"含数字且含字母"的混合串 → 删除。
+        # 白名单保护正常词汇 (如 "5G时代"/"3D眼镜"); 纯字母串 (SPA/NBA/RBQ) 与
+        # 纯数字串 (1999年) 天然不被匹配, 无需担心误删。
+        _JUNK_WHITELIST = {'3d', '5g', '4g', '2g', '2k', '4k', '8k', '3s', 't恤'}
+        content = re.sub(
+            r'(?<=[\u4e00-\u9fff])([A-Za-z0-9]{2,4})(?=[\u4e00-\u9fff])',
+            lambda m: m.group(0) if m.group(1).lower() in _JUNK_WHITELIST
+            or m.group(1).isdigit() or m.group(1).isalpha() else '',
+            content)
+
         # 修复HTML实体（Base64解码后可能残留的实体名称）
         html_entities = {
             'ldquo': '"', 'rdquo': '"', 'lsquo': "'", 'rsquo': "'",
@@ -1826,6 +2003,7 @@ class NovelSpider:
             '口禽': '噙', '昏滚': '混蛋', '昏蛋': '混蛋',
             '王八旦': '王八蛋', '玉辟': '玉臂',
             '插人': '插入', '律劲': '律动',
+            '巳经': '已经', '佷多': '很多',  # 形近字乱码 (爬虫常见)
         }
         for wrong, correct in encoding_fixes.items():
             content = content.replace(wrong, correct)
@@ -1892,6 +2070,18 @@ class NovelSpider:
 
         # 移除行首行尾的空白
         cleaned_content = '\n'.join([line.strip() for line in cleaned_content.split('\n') if line.strip()])
+
+        # ===== 排版规范化 (对整章最终文本, 均不影响语义) =====
+        # 1. 全角空格 → 空 (部分站点用全角空格做对齐水印)
+        cleaned_content = cleaned_content.replace('\u3000', '')
+        # 2. 行内连续空格压缩为单空格
+        cleaned_content = re.sub(r' {2,}', ' ', cleaned_content)
+        # 3. 逗号句号连排 ",。" / "，。" → "。" (站点拼接残渣)
+        cleaned_content = re.sub(r'[，,]+[。.]', '。', cleaned_content)
+        # 4. 重复标点压缩: 4 个以上连续感叹/问号/句号 → 保留 2 个 (保留强调语气, 去掉刷屏冗余)
+        cleaned_content = re.sub(r'([！？。])\1{3,}', r'\1\1', cleaned_content)
+        # 5. 段内行尾残留的章节号/页码 (如行尾 "第3页" 残留) 清理
+        cleaned_content = re.sub(r'(?<=[\u4e00-\u9fff])第\d+页\s*$', '', cleaned_content, flags=re.M)
 
         return cleaned_content.strip()
 
@@ -2293,7 +2483,7 @@ class NovelSpider:
 
         # 使用更真实的User-Agent，针对hatxt.cc网站添加特殊处理
         headers = {
-            'User-Agent': self.ua.random,  # 使用随机User-Agent
+            'User-Agent': self._fixed_ua,  # 会话固定UA (验证码cookie绑定UA)
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate',
@@ -2325,7 +2515,7 @@ class NovelSpider:
         elif 'baoshuism.com' in chapter_url or 'zhiruo.org' in chapter_url or 'biquwx.cc' in chapter_url or '11bzw.org' in chapter_url:
             site_max_pages = 30
         else:
-            site_max_pages = 5
+            site_max_pages = 20  # 未知站点默认 20 页 (原 5 页导致多页章节抓不全)
         # 如果调用方显式指定了 max_pages(例如测试模式只取前2页)，取较小值
         if max_pages is not None:
             max_pages = min(max_pages, site_max_pages)
@@ -2357,6 +2547,75 @@ class NovelSpider:
             
             # 标记是否成功抓取
             success = False
+
+            # ===== 通用数据文件解码 (content_decoder): 所有站点自动生效, 优先于通用检测 =====
+            # 部分站点把正文放在独立数据文件中 (tanmixs .xs / banlvzw .book 码点流等),
+            # 且正文页本身只是"加载中"占位 — 通用检测会把占位内容误判为正文,
+            # 因此数据文件探测必须先于通用检测执行。
+            if page_index == 0:
+                self._datafile_mode = False
+            if not self._datafile_mode and page_index == 0:
+                try:
+                    from content_decoder import decode_chapter_data
+                    # 用本会话 (含 WAF 放行 cookie 等) 获取页面 HTML 后传入,
+                    # 避免 decode_chapter_data 内部独立请求被反爬拦截 (如 banlvzw WAF 验证码)
+                    self._datafile_page_html = None
+                    try:
+                        soup = self.inspect_page(current_url)
+                        if soup is not None and hasattr(soup, 'prettify'):
+                            self._datafile_page_html = str(soup)
+                    except Exception:
+                        self._datafile_page_html = None
+                    data_text, data_method = decode_chapter_data(
+                        current_url, page=1, page_html=self._datafile_page_html,
+                        headers=headers)
+                    if data_text and len(data_text) > 50:
+                        self._datafile_mode = True
+                        print(f"[数据文件] 探测命中 ({data_method}), 本卷章走数据文件模式")
+                except ImportError:
+                    pass  # content_decoder 模块未部署时走常规流程
+                except Exception as e:
+                    print(f"[数据文件] 探测失败, 走常规流程: {e}")
+            if self._datafile_mode:
+                try:
+                    from content_decoder import decode_chapter_data
+                    # 复用探测时的页面 HTML (数据文件引用每页相同), 避免独立请求被 WAF 拦截
+                    data_text, data_method = decode_chapter_data(
+                        current_url, page=page_index + 1,
+                        page_html=getattr(self, '_datafile_page_html', None),
+                        headers=headers)
+                    if data_text and len(data_text) > 50:
+                        # 去掉首行标题/元信息 (作者/字数/日期), 保留正文
+                        data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
+                        if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
+                                           or '☆' in data_lines[0] or '第' in data_lines[0]):
+                            data_lines = data_lines[1:]
+                        data_lines = [l for l in data_lines
+                                      if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
+                        data_content = '\n'.join(data_lines)
+                        if len(data_content) > 50:
+                            print(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
+                            page_text = self.clean_content(data_content)
+                            if len(page_text) < 50:
+                                print(f"[数据文件] 内容过短, 可能已到末页")
+                                break
+                            import hashlib
+                            # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
+                            fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                            if fingerprint == self._last_page_fingerprint:
+                                print(f"[数据文件] 与上一页指纹相同, 停止抓取")
+                                break
+                            self._last_page_fingerprint = fingerprint
+                            total_content += page_text + '\n\n'
+                            print(f"[数据文件] ✅ 合并, 累计 {len(total_content)} 字符")
+                            success = True
+                            page_index += 1
+                            continue
+                except ImportError:
+                    self._datafile_mode = False
+                except Exception as e:
+                    print(f"[数据文件] 解码失败, 走常规流程: {e}")
+                    self._datafile_mode = False
 
             # ===== 通用自动检测分发层 (基于内容特征, 不依赖域名) =====
             # 对未知站点自动识别内容模式 (qsbs_bb / html_selector), 优先尝试通用提取;
@@ -2394,7 +2653,8 @@ class NovelSpider:
                 if len(page_text) < 50:
                     print(f"[通用提取] 正文过短, 可能已到末页, 结束分页")
                     break
-                fingerprint = hashlib.sha256(page_text[:500].encode('utf-8')).hexdigest()[:16]
+                # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
+                fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                 if fingerprint == self._last_page_fingerprint:
                     print(f"[通用提取] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                     break
@@ -2405,67 +2665,7 @@ class NovelSpider:
                 page_index += 1
                 continue
 
-            # 通用层未命中或返回空内容, 尝试其他提取方式 (数据文件解码 / Selenium)
-            if page_index == 0:
-                if self._detected_pattern:
-                    print(f"[通用回退] 通用层检测到模式 '{self._detected_pattern}' 但提取结果为空, 尝试其他提取方式")
-                else:
-                    print(f"[通用回退] 通用层未识别到内容模式, 尝试其他提取方式")
-
-            # ===== 通用数据文件解码 (content_decoder): 所有站点自动生效 =====
-            # 部分站点把正文放在独立数据文件中 (tanmixs 的 .xs 码点流+高频字压缩映射等)。
-            # 每章第1页探测一次数据文件引用, 命中后整章走数据文件分页; 未命中走常规提取。
-            # 自动下载 → 按格式解码, 还原完整正文 (不丢字, 无需浏览器)。
-            if page_index == 0:
-                self._datafile_mode = False
-            if not self._datafile_mode and page_index == 0:
-                try:
-                    from content_decoder import decode_chapter_data
-                    data_text, data_method = decode_chapter_data(
-                        current_url, page=1)
-                    if data_text and len(data_text) > 50:
-                        self._datafile_mode = True
-                        print(f"[数据文件] 探测命中 ({data_method}), 本卷章走数据文件模式")
-                except ImportError:
-                    pass  # content_decoder 模块未部署时走常规流程
-                except Exception as e:
-                    print(f"[数据文件] 探测失败, 走常规流程: {e}")
-            if self._datafile_mode:
-                try:
-                    from content_decoder import decode_chapter_data
-                    data_text, data_method = decode_chapter_data(
-                        current_url, page=page_index + 1)
-                    if data_text and len(data_text) > 50:
-                        # 去掉首行标题/元信息 (作者/字数/日期), 保留正文
-                        data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
-                        if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
-                                           or '☆' in data_lines[0] or '第' in data_lines[0]):
-                            data_lines = data_lines[1:]
-                        data_lines = [l for l in data_lines
-                                      if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
-                        data_content = '\n'.join(data_lines)
-                        if len(data_content) > 50:
-                            print(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
-                            page_text = self.clean_content(data_content)
-                            if len(page_text) < 50:
-                                print(f"[数据文件] 内容过短, 可能已到末页")
-                                break
-                            import hashlib
-                            fingerprint = hashlib.sha256(page_text[:500].encode('utf-8')).hexdigest()[:16]
-                            if fingerprint == self._last_page_fingerprint:
-                                print(f"[数据文件] 与上一页指纹相同, 停止抓取")
-                                break
-                            self._last_page_fingerprint = fingerprint
-                            total_content += page_text + '\n\n'
-                            print(f"[数据文件] ✅ 合并, 累计 {len(total_content)} 字符")
-                            success = True
-                            page_index += 1
-                            continue
-                except ImportError:
-                    self._datafile_mode = False
-                except Exception as e:
-                    print(f"[数据文件] 解码失败, 走常规流程: {e}")
-                    self._datafile_mode = False
+            # 通用层未命中或返回空内容, 尝试其他提取方式 (Selenium 等)
 
             # 对于tanmixs.com (探秘小说网移动版), 使用持久化Selenium driver
             # 正文容器为 div#chapter-content, 内含 <p class="chapter-line"> 段落
@@ -2514,7 +2714,8 @@ class NovelSpider:
                         success = False
                     else:
                         import hashlib
-                        fingerprint = hashlib.sha256(page_text[:500].encode('utf-8')).hexdigest()[:16]
+                        # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
+                        fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                         if fingerprint == self._last_page_fingerprint:
                             print(f"[tanmixs] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                             success = False
@@ -2613,11 +2814,15 @@ class NovelSpider:
                     response = self.session.get(current_url, headers=headers, timeout=30)
                     
                     # 检查状态码
+                    if response.status_code == 404:
+                        # 404 = 该页不存在 = 已到末页 (分页探测的 _N.html 常见此情况)
+                        print(f"第{page_index+1}页不存在(404), 视为末页, 结束分页")
+                        break
                     if response.status_code != 200:
                         print(f"请求失败，状态码: {response.status_code}")
                         if i < max_retries - 1:
                             # 更新User-Agent
-                            headers['User-Agent'] = self.ua.random
+                            headers['User-Agent'] = self._fixed_ua
                             continue
                         else:
                             print("所有重试机会已用尽")
@@ -3377,7 +3582,8 @@ class NovelSpider:
 
                         # 使用指纹检测重复内容（防止分页循环）
                         import hashlib
-                        content_fingerprint = hashlib.sha256(content[:200].encode('utf-8')).hexdigest()
+                        content_fingerprint = hashlib.sha256(
+                            (content[:200] + f"|{len(content)}").encode('utf-8')).hexdigest()
                         print(f"[多页合并] 第{page_index+1}页: 内容指纹 {content_fingerprint[:16]}...")
 
                         if self._last_page_fingerprint:
@@ -3442,8 +3648,10 @@ class NovelSpider:
                     # 检查是否有下一页
                     # 查找分页链接
                     has_next_page = False
-                    # 查找包含"下一页"或类似文本的链接（注意：部分网站用"下一章"表示"下一页"）
-                    next_page_texts = ['下一页', '下章', '下一章', '下一章节', '下一页>>', '>>', '下页']
+                    # 注意: 不用 '下一章'/'下一章节' 作为分页标记——
+                    # 它们指向的是"下一章"而非"当前章的下一页", 误判会把
+                    # 下一章正文混入当前章。仅识别明确的"下一页"文本。
+                    next_page_texts = ['下一页', '下一頁', '下一页>>', '>>', '下页']
                     for text in next_page_texts:
                         next_link = soup.find('a', string=lambda s: s and text in s)
                         if next_link:
@@ -3488,7 +3696,7 @@ class NovelSpider:
     def get_novel_title(self, catalog_url):
         """从目录页面提取小说名称"""
         headers = {
-            'User-Agent': self.ua.random,  # 使用随机User-Agent
+            'User-Agent': self._fixed_ua,  # 会话固定UA (验证码cookie绑定UA)
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate',
@@ -3654,7 +3862,27 @@ class NovelSpider:
             # 对于特定网站，使用默认名称
             if 'pjxdd.com' in catalog_url or 'qingheks.com' in catalog_url:
                 return "小说"
-            
+
+            # 首次请求可能命中反爬挑战页 (标题为 loading/验证码占位), 等待后重试一次
+            try:
+                print("[书名] 未提取到有效标题 (可能命中反爬页), 3 秒后重试...")
+                time.sleep(3)
+                response = self._get_with_js_challenge(catalog_url, headers)
+                response.encoding = response.apparent_encoding or 'utf-8'
+                soup = BeautifulSoup(response.text, 'html.parser')
+                t = (soup.title.get_text(strip=True) if soup.title else '') or ''
+                if t and 'loading' not in t.lower() and '验证码' not in t \
+                        and '访问频率' not in t and len(t) > 2:
+                    # 清理常见站点后缀
+                    title = re.sub(r'[\x00-\x1f\x7f-\xff]', '', t)
+                    title = re.sub(r'[_\-|].*$', '', title)
+                    title = re.sub(r'(最新章节|全文阅读|免费阅读|最新章节列表).*$', '', title)
+                    title = title.strip()
+                    if title:
+                        print(f"重试后提取到小说名称: {title}")
+                        return title
+            except Exception:
+                pass
             return "novel"
         except Exception as e:
             print(f"提取小说名称失败: {e}")
@@ -3722,6 +3950,9 @@ class NovelSpider:
         new_session = requests.Session()
         new_session.headers.update(old_session.headers)
         new_session.keep_alive = True
+        # 与主 Session 一致: 直连忽略系统代理, 保留显式配置的代理
+        new_session.trust_env = False
+        new_session.proxies.update(old_session.proxies)
         self.session = new_session
         try:
             return self.get_chapter_content(chap['url'])
@@ -4064,6 +4295,9 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         output_dir = _DEFAULT_OUTPUT_DIR
     output_dir = _resolve_output_dir(output_dir)
     print(f"[输出目录] {output_dir}")
+    # 调试日志: 抓取入口 (供事后排查)
+    print(f"[调试] 抓取开始: {catalog_url} 模式={mode} 区间={chapter_range} "
+          f"线程={threads} 延迟={delay} 续传={resume} 输出={output_dir}")
 
     # 安全校验: 仅允许公网 http/https URL
     try:
@@ -4157,7 +4391,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
 
 
 def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
-              show_progress=True, output_dir=None, delay=1.0):
+              show_progress=True, output_dir=None, delay=1.0, stop_event=None):
     """批量抓取多本书 (书级并行)。
 
     方案说明:
@@ -4165,15 +4399,20 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
       - 书级并发: 多本书并行抓取 (默认2本), 速度随书数线性提升
       - 同域限流保护: 同一站点的书最多 1 本并行, 避免触发站点验证码/限流
       - 结束输出汇总报告: 每本书 状态/章节数/耗时
+      - stop_event: threading.Event, 置位时不再提交新任务 (已运行任务自然结束)
 
     Args:
         url_list: 目录页 URL 列表
         threads: 同时抓取的书数 (1=串行)
         output_dir: 输出目录 (None=默认 抓取结果/)
+        stop_event: 停止事件 (GUI 停止按钮使用)
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from collections import defaultdict
     from urllib.parse import urlparse
+
+    # 调试日志: 批量入口
+    print(f"[调试] 批量抓取开始: {len(url_list)} 本书, 并发 {threads}, 延迟 {delay}")
 
     # 同域分组 (限流保护: 同域最多1本并行)
     domain_map = defaultdict(list)
@@ -4188,7 +4427,8 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
             # 输出到独立文件: 书级并发各自写文件, 无冲突
             run_crawl(url, mode="full", sort_chapters=sort_chapters,
                       output_dir=output_dir, resume=resume,
-                      show_progress=show_progress, threads=1, delay=delay)
+                      show_progress=show_progress, threads=1, delay=delay,
+                      stop_event=stop_event)
             return url, '✅ 完成', time.time() - t0, None
         except Exception as e:
             return url, f'❌ 失败: {str(e)[:80]}', time.time() - t0, None
@@ -4200,6 +4440,9 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
         futures = {}
         for host, urls in domain_map.items():
             for u in urls:
+                if stop_event is not None and stop_event.is_set():
+                    print("[批量] ⚠️ 已收到停止信号, 不再提交新任务")
+                    break
                 # 包装: 同域信号量保护 (同一站点串行)
                 def _guarded(u=u, host=host):
                     with semaphores[host]:
@@ -4270,6 +4513,43 @@ def _parse_batch_opts(argv, start_idx):
 if __name__ == "__main__":
     import sys
 
+    # ===== CLI 模式日志落盘: 所有 print 同时写入 日志/YYYY-MM-DD.log =====
+    # GUI 模式由 task_manager.TaskLogRedirector 统一落盘, 此处仅 CLI 生效
+    try:
+        import 日志 as _app_log
+
+        class _CliLogStdout:
+            """CLI stdout 包装: 原样输出 + 逐行写日志文件"""
+
+            def __init__(self):
+                self._orig = sys.stdout
+
+            def write(self, text):
+                try:
+                    self._orig.write(text)
+                except Exception:
+                    pass
+                for line in text.split('\n'):
+                    if line.strip():
+                        try:
+                            _app_log.info("CLI", line.strip())
+                        except Exception:
+                            pass
+
+            def flush(self):
+                try:
+                    self._orig.flush()
+                except Exception:
+                    pass
+
+            def isatty(self):
+                return False
+
+        if not isinstance(sys.stdout, _CliLogStdout):
+            sys.stdout = _CliLogStdout()
+    except Exception:
+        pass
+
     # 命令行用法:
     #   python 爬虫.py                              # 交互式菜单
     #   python 爬虫.py <URL>                        # 完整抓取(默认排序+断点续传+进度条)
@@ -4307,7 +4587,11 @@ if __name__ == "__main__":
             exit(0)
 
         # 收集所有非选项参数作为 URL (支持一次抓多本)
-        url_args = [a for a in sys.argv[1:] if not a.startswith('--')]
+        # 排除裸数字参数 (如 --start 1 --end 3 中的 1/3, --threads 5 中的 5),
+        # 避免被误当成附加 URL 而进入批量模式
+        _is_numeric_arg = lambda a: bool(re.fullmatch(r'\d+(\.\d+)?', a))
+        url_args = [a for a in sys.argv[1:]
+                    if not a.startswith('--') and not _is_numeric_arg(a)]
         if len(url_args) > 1:
             opts = _parse_batch_opts(sys.argv, 1)
             run_batch(url_args, threads=opts['threads'], resume=opts['resume'],

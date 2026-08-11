@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['K:/程序文件/小说爬虫/src/gui_app.py'],
+    ['K:/程序文件/小说爬虫/源码/gui_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('K:/程序文件/小说爬虫/_flet_client', 'flet_client'), ('K:/程序文件/小说爬虫/config/captcha_config.json', '.')],
+    datas=[('K:/程序文件/小说爬虫/_flet_client', 'flet_client'), ('K:/程序文件/小说爬虫/配置/captcha_config.json', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['K:/程序文件/小说爬虫/脚本/图标.ico'],
 )

@@ -52,6 +52,7 @@ except ImportError:
 
 DEFAULT_CONFIG = {
     "enabled": True,               # 模块总开关
+    "request_proxy": "",           # 爬虫请求代理 (如 "http://127.0.0.1:7890"), 空=直连(忽略系统代理)
     "avoid_first": True,           # 规避优先(仅规避无效时才识别)
     "strategies": {
         "manual":   {"enabled": True},        # 人工辅助 (始终兜底)

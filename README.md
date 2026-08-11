@@ -6,14 +6,13 @@
 
 ```
 小说爬虫/
-├── src/                        # 源代码目录
+├── 源码/                        # 源代码目录
 │   ├── 爬虫.py                  # 主爬虫模块（NovelSpider 核心，~4400行）
 │   ├── _path_utils.py          # 路径解析工具（源码/打包双模式兼容）
 │   ├── browser_driver.py       # Selenium 浏览器驱动封装
 │   ├── captcha_module.py       # 验证码识别模块（可插拔）
 │   ├── content_decoder.py      # 内容解码器（Base64/码点流/高频字压缩）
 │   ├── decrypt_utils.py        # 解密工具集
-│   ├── tanmixs_xs.py           # tanmixs .xs 数据文件解析
 │   ├── sites_config.py         # 站点适配配置（URL模式 + 解析规则）
 │   ├── gui_app.py              # Flet GUI 主程序入口
 │   └── gui_components/         # GUI 组件包
@@ -22,19 +21,19 @@
 │       ├── crawl_tab.py        # 抓取页签
 │       ├── preview_tab.py      # 结果预览页签
 │       └── task_manager.py     # 异步任务管理器
-├── config/                      # 配置文件目录
+├── 配置/                      # 配置文件目录
 │   └── captcha_config.json     # 验证码模块配置（策略开关、API密钥等）
-├── docs/                        # 项目文档目录
+├── 文档/                        # 项目文档目录
 │   ├── SITE_ADAPTER.md         # 站点适配器开发指南
 │   ├── 优化检查报告.md          # 代码优化与测试报告
 │   ├── 验证码模块使用说明.md    # 验证码功能使用说明
 │   └── 验证码模块合规评估.md    # 验证码模块法律合规评估
-├── scripts/                     # 构建与工具脚本目录
+├── 脚本/                     # 构建与工具脚本目录
 │   ├── build_exe.py            # EXE 打包脚本（flet pack）
 │   ├── ensure_flet_cache.py    # Flet 客户端缓存预下载
 │   ├── 打包EXE.bat             # 打包启动脚本（BAT）
 │   └── 打包EXE.ps1             # 打包启动脚本（PowerShell）
-├── tests/                       # 测试文件目录
+├── 测试/                       # 测试文件目录
 │   └── __init__.py
 ├── 抓取结果/                     # 抓取结果输出目录（运行时生成）
 ├── .gitignore                   # Git 忽略规则
@@ -92,12 +91,12 @@ pip install -r requirements.txt
 ### 打包 EXE
 
 ```
-双击 scripts\打包EXE.bat
+双击 脚本\打包EXE.bat
 ```
 
 或使用 PowerShell：
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\打包EXE.ps1
+powershell -ExecutionPolicy Bypass -File 脚本\打包EXE.ps1
 ```
 
 ## 支持的站点
@@ -109,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File scripts\打包EXE.ps1
 - 11bzw.org（AJAX 两步加载）
 - 言情一品书、我去读小说等
 
-添加新站点请参考 [docs/SITE_ADAPTER.md](docs/SITE_ADAPTER.md)。
+添加新站点请参考 [文档/SITE_ADAPTER.md](文档/SITE_ADAPTER.md)。
 
 ## 技术栈
 
