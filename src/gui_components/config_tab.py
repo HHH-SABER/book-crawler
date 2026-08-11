@@ -87,22 +87,21 @@ class ConfigTab:
 
         add_btn = ft.ElevatedButton(
             "新增",
-            icon=ft.icons.ADD,
+            icon=ft.Icons.ADD,
             on_click=self.on_add_click,
-            text_size=12,
+            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12)),
         )
         reload_btn = ft.ElevatedButton(
             "重载",
-            icon=ft.icons.REFRESH,
+            icon=ft.Icons.REFRESH,
             on_click=self.on_reload_click,
-            text_size=12,
+            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12)),
         )
         save_btn = ft.ElevatedButton(
             "保存",
-            icon=ft.icons.SAVE,
+            icon=ft.Icons.SAVE,
             on_click=self.on_save_click,
-            text_size=12,
-            style=ft.ButtonStyle(bgcolor=ft.colors.GREEN_100),
+            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12), bgcolor=ft.Colors.GREEN_100),
         )
 
         site_panel = ft.Container(
@@ -113,18 +112,18 @@ class ConfigTab:
             ]),
             width=280,
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
             expand=True,
         )
 
         # 右侧配置详情
-        self.domain_field = ft.TextField(label="域名", text_size=12, width=300)
+        self.domain_field = ft.TextField(label="域名", text_style=ft.TextStyle(size=12), width=300)
         self.pattern_field = ft.Dropdown(
             label="模式",
             width=150,
-            text_size=12,
+            text_style=ft.TextStyle(size=12),
             options=[
                 ft.dropdown.Option("qsbs_bb", "qsbs_bb (Base64加密)"),
                 ft.dropdown.Option("ajax_two_step", "ajax_two_step (动态加载)"),
@@ -133,17 +132,17 @@ class ConfigTab:
                 ft.dropdown.Option("str_decode_bb", "str_decode_bb (Base64解码)"),
             ],
         )
-        self.catalog_parser_field = ft.TextField(label="目录解析器", text_size=12, width=200)
-        self.chapter_regex_field = ft.TextField(label="章节URL正则", text_size=12, width=400)
-        self.pagination_suffix_field = ft.TextField(label="分页后缀", text_size=12, width=200)
-        self.pagination_start_field = ft.TextField(label="分页起始页", text_size=12, width=100,
+        self.catalog_parser_field = ft.TextField(label="目录解析器", text_style=ft.TextStyle(size=12), width=200)
+        self.chapter_regex_field = ft.TextField(label="章节URL正则", text_style=ft.TextStyle(size=12), width=400)
+        self.pagination_suffix_field = ft.TextField(label="分页后缀", text_style=ft.TextStyle(size=12), width=200)
+        self.pagination_start_field = ft.TextField(label="分页起始页", text_style=ft.TextStyle(size=12), width=100,
                                                      input_filter=ft.NumbersOnlyInputFilter())
-        self.pagination_max_field = ft.TextField(label="最大页数", text_size=12, width=100,
+        self.pagination_max_field = ft.TextField(label="最大页数", text_style=ft.TextStyle(size=12), width=100,
                                                    input_filter=ft.NumbersOnlyInputFilter())
-        self.content_selectors_field = ft.TextField(label="正文选择器 (逗号分隔)", text_size=12,
+        self.content_selectors_field = ft.TextField(label="正文选择器 (逗号分隔)", text_style=ft.TextStyle(size=12),
                                                       width=400)
-        self.anti_spider_field = ft.TextField(label="反爬类型", text_size=12, width=200)
-        self.info_text = ft.Text("", size=11, color=ft.colors.GREY_600)
+        self.anti_spider_field = ft.TextField(label="反爬类型", text_style=ft.TextStyle(size=12), width=200)
+        self.info_text = ft.Text("", size=11, color=ft.Colors.GREY_600)
 
         self.detail_panel = ft.Container(
             content=ft.Column([
@@ -158,8 +157,8 @@ class ConfigTab:
             ], scroll=ft.ScrollMode.AUTO),
             expand=True,
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
         )
 
@@ -175,7 +174,7 @@ class ConfigTab:
         self.site_list_view.controls.clear()
         if not self.configs:
             self.site_list_view.controls.append(
-                ft.Text("暂无配置", size=12, color=ft.colors.GREY_500, italic=True)
+                ft.Text("暂无配置", size=12, color=ft.Colors.GREY_500, italic=True)
             )
             return
 
@@ -188,10 +187,10 @@ class ConfigTab:
                 content=ft.Column([
                     ft.Text(domain, size=11, weight=ft.FontWeight.BOLD,
                             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(pattern, size=10, color=ft.colors.GREY_600),
+                    ft.Text(pattern, size=10, color=ft.Colors.GREY_600),
                 ]),
                 padding=5,
-                border=ft.border.all(2, ft.colors.BLUE) if is_selected else ft.border.all(1, ft.colors.GREY_300),
+                border=ft.Border.all(2, ft.Colors.BLUE) if is_selected else ft.Border.all(1, ft.Colors.GREY_300),
                 border_radius=3,
                 ink=True,
                 on_click=lambda e, idx=i: self._on_site_selected(idx),

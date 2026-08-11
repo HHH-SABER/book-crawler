@@ -34,22 +34,21 @@ class PreviewTab:
 
         refresh_btn = ft.ElevatedButton(
             "刷新",
-            icon=ft.icons.REFRESH,
+            icon=ft.Icons.REFRESH,
             on_click=self.on_refresh_click,
-            text_size=12,
+            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12)),
         )
         open_btn = ft.ElevatedButton(
             "打开",
-            icon=ft.icons.OPEN_IN_NEW,
+            icon=ft.Icons.OPEN_IN_NEW,
             on_click=self.on_open_click,
-            text_size=12,
+            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12)),
         )
         delete_btn = ft.ElevatedButton(
             "删除",
-            icon=ft.icons.DELETE,
+            icon=ft.Icons.DELETE,
             on_click=self.on_delete_click,
-            text_size=12,
-            style=ft.ButtonStyle(bgcolor=ft.colors.RED_100),
+            style=ft.ButtonStyle(text_style=ft.TextStyle(size=12), bgcolor=ft.Colors.RED_100),
         )
 
         file_panel = ft.Container(
@@ -60,8 +59,8 @@ class PreviewTab:
             ]),
             width=300,
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
             expand=True,
         )
@@ -71,11 +70,11 @@ class PreviewTab:
             multiline=True,
             expand=True,
             read_only=True,
-            text_size=12,
-            border_color=ft.colors.GREY_300,
+            text_style=ft.TextStyle(size=12),
+            border_color=ft.Colors.GREY_300,
         )
 
-        self.file_info_text = ft.Text("请选择文件", size=12, color=ft.colors.GREY_600)
+        self.file_info_text = ft.Text("请选择文件", size=12, color=ft.Colors.GREY_600)
 
         content_panel = ft.Container(
             content=ft.Column([
@@ -84,8 +83,8 @@ class PreviewTab:
             ]),
             expand=True,
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
         )
 
@@ -105,7 +104,7 @@ class PreviewTab:
 
         if not os.path.exists(self.output_dir):
             self.file_list_view.controls.append(
-                ft.Text("输出目录不存在", size=12, color=ft.colors.GREY_500, italic=True)
+                ft.Text("输出目录不存在", size=12, color=ft.Colors.GREY_500, italic=True)
             )
             return
 
@@ -115,7 +114,7 @@ class PreviewTab:
 
         if not txt_files:
             self.file_list_view.controls.append(
-                ft.Text("暂无抓取结果", size=12, color=ft.colors.GREY_500, italic=True)
+                ft.Text("暂无抓取结果", size=12, color=ft.Colors.GREY_500, italic=True)
             )
             return
 
@@ -127,7 +126,7 @@ class PreviewTab:
                 content=ft.Column([
                     ft.Text(filename, size=11, weight=ft.FontWeight.BOLD,
                             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(f"{size_kb:.1f} KB", size=10, color=ft.colors.GREY_600),
+                    ft.Text(f"{size_kb:.1f} KB", size=10, color=ft.Colors.GREY_600),
                 ]),
                 padding=5,
                 border_radius=3,
@@ -143,7 +142,7 @@ class PreviewTab:
             if not isinstance(ctrl, ft.Container):
                 continue
             if i == self._selected_idx:
-                ctrl.border = ft.border.all(2, ft.colors.BLUE)
+                ctrl.border = ft.Border.all(2, ft.Colors.BLUE)
             else:
                 ctrl.border = None
 

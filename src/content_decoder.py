@@ -178,9 +178,11 @@ def parse_codepoint_stream(content, replace_map=None):
 
 
 def _looks_like_content(text):
-    """验证解码结果是否为有效正文 (含中文或足够长度)"""
+    """验证解码结果是否为有效正文 (含 HTML 标签或足够中文)"""
     if not text:
         return False
+    if '<p' in text or '<br' in text:
+        return True
     chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
     return chinese > 20 or (chinese > 5 and len(text) > 100)
 

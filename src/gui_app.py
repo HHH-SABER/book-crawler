@@ -70,27 +70,46 @@ def main(page: ft.Page):
 
     # 页签切换时刷新对应内容
     def on_tab_change(e):
-        if e.data == "1":  # 结果预览
+        if int(e.data) == 1:  # 结果预览
             preview_tab._refresh_file_list()
             try:
                 page.update()
             except Exception:
                 pass
-        elif e.data == "2":  # 站点配置
+        elif int(e.data) == 2:  # 站点配置
             try:
                 page.update()
             except Exception:
                 pass
 
+    # Flet 0.86+ API: Tabs 包含 TabBar(标签栏) + TabBarView(内容区)
     tabs = ft.Tabs(
+        length=3,
         selected_index=0,
         on_change=on_tab_change,
-        tabs=[
-            ft.Tab(text="抓取", content=crawl_tab.build()),
-            ft.Tab(text="结果预览", content=preview_tab.build()),
-            ft.Tab(text="站点配置", content=config_tab.build()),
-        ],
         expand=True,
+        content=ft.Column(
+            expand=True,
+            controls=[
+                ft.TabBar(
+                    tabs=[
+                        ft.Tab(label="抓取"),
+                        ft.Tab(label="结果预览"),
+                        ft.Tab(label="站点配置"),
+                    ],
+                    scrollable=False,
+                    tab_alignment=ft.TabAlignment.FILL,
+                ),
+                ft.TabBarView(
+                    expand=True,
+                    controls=[
+                        crawl_tab.build(),
+                        preview_tab.build(),
+                        config_tab.build(),
+                    ],
+                ),
+            ],
+        ),
     )
 
     # 底部状态栏
@@ -100,13 +119,13 @@ def main(page: ft.Page):
 
     status_bar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.icons.CIRCLE, color=ft.colors.GREEN, size=8),
+            ft.Icon(ft.Icons.CIRCLE, color=ft.Colors.GREEN, size=8),
             ft.Text("就绪", size=11),
             ft.VerticalDivider(width=1),
-            ft.Text(f"输出: {output_dir}", size=11, color=ft.colors.GREY_600),
+            ft.Text(f"输出: {output_dir}", size=11, color=ft.Colors.GREY_600),
         ]),
-        padding=ft.padding.symmetric(horizontal=10, vertical=4),
-        bgcolor=ft.colors.GREY_100,
+        padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+        bgcolor=ft.Colors.GREY_100,
     )
 
     page.add(tabs, status_bar)
@@ -116,4 +135,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)
