@@ -140,12 +140,31 @@ if code != 0:
     sys.exit(code)
 
 log("[SUCCESS] Build finished OK!")
-final_exe_dir = os.path.join(dist, exe_name)
-final_exe     = os.path.join(final_exe_dir, f"{exe_name}.exe")
-log(f"  Output folder : {dist}")
+# flet pack 可能传 --onefile (旧默认 in 0.86) 或 onedir。
+# 两处都查一下，把真实产物挑出来给用户看
+onedir_exe = os.path.join(dist, exe_name, f"{exe_name}.exe")
+onefile_exe = os.path.join(dist, f"{exe_name}.exe")
+final_exe, final_exe_dir, mode = "", "", ""
+if os.path.isfile(onefile_exe):
+    final_exe, final_exe_dir, mode = onefile_exe, dist, "ONEFILE"
+elif os.path.isfile(onedir_exe):
+    final_exe, final_exe_dir, mode = onedir_exe, os.path.join(dist, exe_name), "ONEDIR"
+else:
+    final_exe, final_exe_dir, mode = onedir_exe, os.path.join(dist, exe_name), "UNKNOWN"
+size_mb = (os.path.getsize(final_exe) / 1024 / 1024) if os.path.isfile(final_exe) else 0
+log(f"  Mode          : {mode}")
+log(f"  Output folder : {final_exe_dir}")
 log(f"  Executable    : {final_exe}")
+if size_mb:
+    log(f"  Size          : {size_mb:.2f} MB")
 log("")
 log("Notes:")
 log("  - Chrome must be installed on target machine (Selenium anti-bot bypass)")
-log(f"  - Distribute the ENTIRE folder: {final_exe_dir}   (not only the .exe)")
+if mode == "ONEFILE":
+    log(f"  - SINGLE FILE distribution: copy {final_exe} directly")
+    log("    First launch extracts ~200MB to %TEMP%\\_MEIxxxxxx (deleted on exit);")
+    log("    抓取结果/ / 站点配置.json / captcha_config.json are placed NEXT TO the .exe.")
+elif mode == "ONEDIR":
+    log(f"  - Distribute the ENTIRE folder: {final_exe_dir}   (not only the .exe)")
 log("  - Missing chromedriver? Place it next to .exe or on PATH")
+log("  - Customize site configs: run the EXE once, edit 站点配置.json beside it")

@@ -4,14 +4,19 @@ import flet as ft
 import os
 import glob
 
+# PyInstaller 打包后路径契约
+_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys; sys.path.insert(0, _HERE)  # noqa: E402  (保证 import _path_utils)
+from _path_utils import get_default_output_dir  # noqa: E402
+
 
 class PreviewTab:
     """结果预览页签组件"""
 
     def __init__(self):
-        # 输出目录：项目根/抓取结果/
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.output_dir = os.path.normpath(os.path.join(script_dir, "..", "抓取结果"))
+        # - 开发模式 (python gui_app.py)         : 项目根/抓取结果
+        # - PyInstaller onefile (小说爬虫.exe)   : EXE 所在目录/抓取结果
+        self.output_dir = get_default_output_dir()
         self.file_list_view = None
         self.content_view = None
         self.file_info_text = None

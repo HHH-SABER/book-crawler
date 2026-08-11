@@ -12,6 +12,11 @@ import threading
 import asyncio
 from .task_manager import TaskManager
 
+# PyInstaller 打包后路径契约
+_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
+from _path_utils import resolve_output_dir  # noqa: E402
+
 
 class CrawlTab:
     """抓取页签组件"""
@@ -283,11 +288,13 @@ class CrawlTab:
             self._show_snackbar_impl("任务已停止")
 
     def on_open_folder_click(self, e):
-        """打开结果文件夹"""
-        output_dir = self.output_dir_input.value.strip() or "抓取结果"
-        abs_dir = os.path.abspath(output_dir)
-        if not os.path.exists(abs_dir):
-            os.makedirs(abs_dir, exist_ok=True)
+        """打开结果文件夹
+
+        PyInstaller onefile 模式下必须相对于 EXE 所在目录解析，
+        否则会落到 _MEIPASS 临时目录或用户的 cwd。
+        """
+        output_dir = self.output_dir_input.value.strip() or None
+        abs_dir = resolve_output_dir(output_dir)
         try:
             if os.name == 'nt':
                 os.startfile(abs_dir)

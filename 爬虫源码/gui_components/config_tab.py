@@ -14,8 +14,20 @@ class ConfigTab:
     """站点配置页签组件"""
 
     def __init__(self):
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.config_file = os.path.join(script_dir, "站点配置.json")
+        # 配置文件位置（PyInstaller 打包友好，经验 1341648）：
+        #   - 始终写入 BASE_DIR/站点配置.json（EXE 旁边 / 项目根）
+        #   - 若 BASE_DIR 没有，先尝试把 RESOURCE_DIR 下打包的同名默认文件拷出来
+        #   - 还不存在则在加载时回退到 sites_config.py 里内置的 SITE_PATTERNS
+        try:
+            _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            sys.path.insert(0, _HERE)
+            from _path_utils import resolve_data_file
+            self.config_file = resolve_data_file("站点配置.json",
+                                                  copy_default_from_resource_if_missing=True)
+        except Exception:
+            # 回退：脚本所在目录下（开发模式）
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.config_file = os.path.join(script_dir, "站点配置.json")
         self.configs = self._load_configs()
         self.selected_index = 0
         # UI 元素
