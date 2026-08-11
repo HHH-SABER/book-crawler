@@ -16,6 +16,27 @@ from gui_components.crawl_tab import CrawlTab
 from gui_components.preview_tab import PreviewTab
 from gui_components.config_tab import ConfigTab
 
+# ---------------------------------------------------- PyInstaller 打包友好
+# 显式 import 核心爬虫模块，让 PyInstaller 静态分析能发现依赖树，
+# 避免通过 --hidden-import 传递中文模块名时的编码问题。
+# 真实的抓取执行在 task_manager._run_task 的子线程中再次 import，
+# 这里只用于打包时的依赖收集；缺依赖时 GUI 仍可正常启动（只是抓取会失败）。
+try:
+    import 爬虫  # noqa: F401  (PyInstaller 打包时会追踪此 import)
+    import sites_config  # noqa: F401
+    import browser_driver  # noqa: F401
+    import captcha_module  # noqa: F401
+    import content_decoder  # noqa: F401
+    import decrypt_utils  # noqa: F401
+    import tanmixs_xs  # noqa: F401
+    import gui_components.task_manager  # noqa: F401
+    import gui_components.crawl_tab  # noqa: F401
+    import gui_components.preview_tab  # noqa: F401
+    import gui_components.config_tab  # noqa: F401
+except Exception:
+    # 允许在未装所有爬虫依赖时 GUI 仍可启动（可预览/配置，抓取按钮点时报错）
+    pass
+
 
 def main(page: ft.Page):
     """Flet 应用入口"""
