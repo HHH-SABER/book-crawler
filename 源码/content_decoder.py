@@ -31,12 +31,14 @@ import requests
 # ============================================================
 
 # 常见的数据文件引用模式: (正则, 说明)
+# 数据文件常见后缀: .xs (tanmixs) / .book (banlvzw 伴侣中文网) / .data / .txt / .json
+_DATA_EXT = r'(?:xs|book|data|txt|json)'
 DATA_REF_PATTERNS = [
-    (r'initTxt\s*\(\s*["\']([^"\']+?\.xs)["\']', 'initTxt(.xs)'),
+    (r'initTxt\s*\(\s*["\']([^"\']+?\.' + _DATA_EXT + r')["\']', 'initTxt()'),
     (r'loadChapter\s*\(\s*["\']([^"\']+)["\']', 'loadChapter()'),
     (r'getChapter\s*\(\s*["\']([^"\']+)["\']', 'getChapter()'),
-    (r'data-src\s*=\s*["\']([^"\']+\.(?:xs|data|txt|json|js))["\']', 'data-src'),
-    (r'["\']([^"\']*?/(?:data|chapter|content)/[^"\']+\.(?:xs|data|txt|json))["\']', 'data路径'),
+    (r'data-src\s*=\s*["\']([^"\']+\.(?:' + _DATA_EXT + r'|js))["\']', 'data-src'),
+    (r'["\']([^"\']*?/(?:data|chapter|content)/[^"\']+\.(?:' + _DATA_EXT + r'))["\']', 'data路径'),
     (r'\.load\s*\(\s*["\']([^"\']+\.(?:txt|html|data))["\']', '.load()'),
 ]
 
@@ -285,7 +287,7 @@ def decode_chapter_data(chapter_url, page_html=None, page=1, headers=None):
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 '
                               '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
                 'Referer': chapter_url,
-            })
+            }, proxies={'http': None, 'https': None})  # 直连, 忽略系统代理
             if r.status_code != 200:
                 return None, None
             page_html = r.text
@@ -309,7 +311,8 @@ def decode_chapter_data(chapter_url, page_html=None, page=1, headers=None):
         if page > 1:
             url = re.sub(r'/(\d+)\.(xs|data|txt|json)$', f'/{page}.\\2', url)
         try:
-            r = requests.get(url, timeout=30, headers=hdrs)
+            r = requests.get(url, timeout=30, headers=hdrs,
+                             proxies={'http': None, 'https': None})  # 直连, 忽略系统代理
             if r.status_code != 200 or not r.text.strip():
                 continue
             text, method = decode_data(r.text)
