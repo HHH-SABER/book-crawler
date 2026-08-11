@@ -1,5 +1,5 @@
 @echo off
-chcp 936 >nul
+chcp 65001 >nul
 setlocal
 
 cd /d "%~dp0"
@@ -30,7 +30,7 @@ rem ========== 命令行模式：直接透传参数 ==========
 rem   用法: 启动爬虫.bat <URL> [--list] [--test] [--output-dir <目录>]
 echo [执行] 命令行模式
 set "PYTHONIOENCODING=utf-8"
-"%PYTHON_EXE%" "爬虫源码\爬虫.py" %*
+"%PYTHON_EXE%" "src\爬虫.py" %*
 goto DONE
 
 :INTERACTIVE
@@ -40,7 +40,7 @@ echo   Python: %PYTHON_EXE%
 echo   输出:   抓取结果echo   ================================
 echo.
 set "PYTHONIOENCODING=utf-8"
-"%PYTHON_EXE%" "爬虫源码\爬虫.py"
+"%PYTHON_EXE%" "src\爬虫.py"
 goto DONE
 
 :DONE

@@ -149,6 +149,38 @@ _AD_PHRASE_FRAGMENTS = (
     'Copyright', '版权所有', 'All Rights Reserved',
 )
 
+# 通用正文过滤关键词 (跨站点共用, 在 clean_content 和 get_chapter_content 中复用)
+_CONTENT_FILTER_KEYWORDS = [
+    # 导航元素
+    '上一章', '下一章', '上一页', '下一页', '章节目录', '保存书签',
+    '加入书架', '返回顶部', '首页', '末页', '目录', '书页',
+    '本章未完', '本章未完，点击下一页继续阅读', '开始阅读',
+    '没有了', '返回书页', '返回目录',
+    # 站点宣传语/占位提示 (通用, 跨站点)
+    '一秒记住新域名', '三秒记住本站', '请收藏本站', '请记住本站域名',
+    '请记住域名', '手机用户请访问', '手机阅读', '电脑阅读',
+    '手机版阅读', '本站网址', '网址：www', '网址:www',
+    '内容正在更新', '请稍后查看', '免费提供', '在线阅读',
+    '希望大家收藏', '无防盗', '转载作品', '网友上传',
+    '转载至本站只是为了宣传本书让更多读者欣赏',
+    '基于搜索引擎技术为您提供免费阅读无弹窗',
+    # 版权/法律声明
+    'Copyright', '版权所有', '本站所有内容', '本站所有小说',
+    '本站爬虫遵循robots协议', '本站仅对抓取到的内容',
+    # 阅读器提示
+    '请勿开启浏览器阅读模式',
+    # 元信息标记 (云趣阁等站点在正文前插入的元数据)
+    '创作者：', '创作完成日：', '最新章节txt——',
+    '最新章节列表', '刚刚更新',
+    # JS 残留 (Base64 解码或渲染失败时的脚本碎片)
+    'myJs.', 'bookJs', 'novelspider', 'Add to Chat',
+    'document.writeln', 'document.write',
+    # 通用阅读引导/广告短语
+    '相邻推荐', '相关推荐', '番外+大结局',
+    '全文阅读', '免费阅读', 'VIP会员', '退出浏览器',
+    '后续内容已被隐藏',
+]
+
 
 def _is_ad_line(line):
     """通用广告行/无意义字符检测 (基于内容特征, 不依赖具体书名或站点名)
@@ -459,6 +491,52 @@ class NovelSpider:
             response = self.session.get(url, headers=headers, timeout=timeout)
         return response
 
+    def _selenium_get_soup(self, url, headers):
+        """统一 Selenium 抓取: 创建无头 Chrome → 访问页面 → 处理 JS cookie 反爬 → 返回 BeautifulSoup。
+        失败时返回 None。driver 在 finally 中自动关闭。
+        """
+        if not selenium_available:
+            return None
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-popup-blocking')
+            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument(f'user-agent={headers["User-Agent"]}')
+            chrome_options.add_argument('--disable-notifications')
+
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.set_page_load_timeout(30)
+            driver.set_script_timeout(30)
+            try:
+                driver.get(url)
+                _wait_driver_body(driver)
+                time.sleep(2)
+                page_source = driver.page_source
+                # 处理 JS cookie 校验反爬 (如 zhiruo.org)
+                challenge_markers = ['ge_js_validator', 'window.location.reload', 'document.cookie']
+                for _ in range(5):
+                    if not any(m in page_source for m in challenge_markers):
+                        break
+                    print(f"[反爬检测] 检测到JS cookie校验页面({len(page_source)}字符)，等待reload后重试...")
+                    time.sleep(3)
+                    page_source = driver.page_source
+                print(f"[Selenium] 获取到页面内容，长度: {len(page_source)} 字符")
+                return BeautifulSoup(page_source, 'lxml')
+            finally:
+                try:
+                    driver.quit()
+                except Exception as e:
+                    print(f"[Selenium] 关闭浏览器失败: {e}")
+        except Exception as e:
+            print(f"[Selenium] 抓取失败: {e}")
+            return None
+
     def inspect_page(self, url):
         """获取网页结构"""
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
@@ -510,68 +588,9 @@ class NovelSpider:
         #  无需Selenium，因此zhiruo.org走下方requests路径；仅当requests失败时才回退到末尾的Selenium)
         if ('qingheks.com' in url or '27xsw.cc' in url) and selenium_available:
             print(f"直接使用Selenium抓取{url.split('/')[2]}网站")
-            try:
-                # 配置Chrome选项
-                chrome_options = Options()
-                chrome_options.add_argument('--headless')  # 无头模式
-                chrome_options.add_argument('--disable-gpu')
-                chrome_options.add_argument('--no-sandbox')
-                chrome_options.add_argument('--disable-dev-shm-usage')
-                chrome_options.add_argument('--disable-extensions')
-                chrome_options.add_argument('--disable-popup-blocking')
-                chrome_options.add_argument('--ignore-certificate-errors')
-                chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-                chrome_options.add_argument(f'user-agent={headers["User-Agent"]}')
-
-                driver = None
-                # 尝试使用Selenium Manager自动管理（新版本Selenium）
-                try:
-                    driver = webdriver.Chrome(options=chrome_options)
-                    driver.set_page_load_timeout(30)
-                    driver.set_script_timeout(30)
-                    print("成功使用Selenium Manager自动管理ChromeDriver")
-                except Exception as e:
-                    print(f"Selenium Manager失败: {e}")
-                
-                if driver:
-                    try:
-                        # 访问页面
-                        driver.get(url)
-
-                        # 等待页面加载完成
-                        _wait_driver_body(driver)
-
-                        # 等待JavaScript执行完成
-                        time.sleep(3)
-
-                        # 获取页面内容
-                        page_source = driver.page_source
-                        # 处理JS cookie校验反爬(如zhiruo.org):
-                        # 首次返回的页面通过JS设置cookie后reload，需要等待真实内容加载
-                        challenge_markers = ['ge_js_validator', 'window.location.reload', 'document.cookie']
-                        for _ in range(5):
-                            if not any(m in page_source for m in challenge_markers):
-                                break
-                            print(f"[反爬检测] 检测到JS cookie校验页面({len(page_source)}字符)，等待reload后重试...")
-                            time.sleep(3)
-                            page_source = driver.page_source
-                        print(f"使用Selenium获取到页面内容，长度: {len(page_source)} 字符")
-
-                        # 检查是否获取到了HTML内容
-                        if '<html' in page_source.lower() or '<body' in page_source.lower():
-                            print("使用Selenium成功获取到HTML内容")
-                            soup = BeautifulSoup(page_source, 'lxml')
-                            return soup
-                        else:
-                            print("Selenium未能获取到HTML内容")
-                    finally:
-                        # 关闭浏览器
-                        if driver:
-                            driver.quit()
-                else:
-                    print("无法找到ChromeDriver")
-            except Exception as e:
-                print(f"Selenium抓取失败: {e}")
+            soup = self._selenium_get_soup(url, headers)
+            if soup:
+                return soup
         
         time.sleep(3)  # 增加延迟，避免被反爬虫
         
@@ -601,71 +620,11 @@ class NovelSpider:
         except Exception as e:
             print(f"请求失败: {e}")
         
-        # 对于qingheks.com、27xsw.cc、tanmixs.com和zhiruo.org网站，尝试使用Selenium
+        # requests 失败后的 Selenium 兜底 (复用 _selenium_get_soup 方法)
         if ('qingheks.com' in url or '27xsw.cc' in url or 'zhiruo.org' in url or 'tanmixs.com' in url) and selenium_available:
-            print(f"尝试使用Selenium抓取{url.split('/')[2]}网站")
-            try:
-                # 配置Chrome选项
-                chrome_options = Options()
-                chrome_options.add_argument('--headless')  # 无头模式
-                chrome_options.add_argument('--disable-gpu')
-                chrome_options.add_argument('--no-sandbox')
-                chrome_options.add_argument('--disable-dev-shm-usage')
-                chrome_options.add_argument('--disable-extensions')
-                chrome_options.add_argument('--disable-popup-blocking')
-                chrome_options.add_argument('--ignore-certificate-errors')
-                chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-                chrome_options.add_argument(f'user-agent={headers["User-Agent"]}')
-                
-                driver = None
-                # 尝试使用Selenium Manager自动管理（新版本Selenium）
-                try:
-                    driver = webdriver.Chrome(options=chrome_options)
-                    driver.set_page_load_timeout(30)
-                    driver.set_script_timeout(30)
-                    print("成功使用Selenium Manager自动管理ChromeDriver")
-                except Exception as e:
-                    print(f"Selenium Manager失败: {e}")
-                
-                if driver:
-                    try:
-                        # 访问页面
-                        driver.get(url)
-
-                        # 等待页面加载完成
-                        _wait_driver_body(driver)
-
-                        # 等待JavaScript执行完成
-                        time.sleep(3)
-
-                        # 获取页面内容
-                        page_source = driver.page_source
-                        # 处理JS cookie校验反爬(如zhiruo.org):
-                        # 首次返回的页面通过JS设置cookie后reload，需要等待真实内容加载
-                        challenge_markers = ['ge_js_validator', 'window.location.reload', 'document.cookie']
-                        for _ in range(5):
-                            if not any(m in page_source for m in challenge_markers):
-                                break
-                            print(f"[反爬检测] 检测到JS cookie校验页面({len(page_source)}字符)，等待reload后重试...")
-                            time.sleep(3)
-                            page_source = driver.page_source
-                        print(f"使用Selenium获取到页面内容，长度: {len(page_source)} 字符")
-
-                        # 检查是否获取到了HTML内容
-                        if '<html' in page_source.lower() or '<body' in page_source.lower():
-                            print("使用Selenium成功获取到HTML内容")
-                            soup = BeautifulSoup(page_source, 'lxml')
-                            return soup
-                        else:
-                            print("Selenium未能获取到HTML内容")
-                    finally:
-                        # 关闭浏览器
-                        if driver:
-                            driver.quit()
-                else:
-                    print("无法找到ChromeDriver")
-            except Exception as e:
-                print(f"Selenium抓取失败: {e}")
+            soup = self._selenium_get_soup(url, headers)
+            if soup:
+                return soup
         
         # 如果所有尝试都失败，返回空的BeautifulSoup对象
         return BeautifulSoup('', 'lxml')
@@ -826,7 +785,7 @@ class NovelSpider:
         # 正文通过两步AJAX加载(签名+内容接口)，见get_chapter_content。
         if '11bzw.org' in catalog_url:
             print("检测到11bzw.org网站，使用专门的处理逻辑")
-            aid_match = re.search(r'/index/(\d+)', catalog_url)
+            aid_match = re.search(r'/(?:index|book)/(\d+)', catalog_url)
             if not aid_match:
                 print("[11bzw] 无法从URL提取小说ID")
                 return chapters
@@ -1859,38 +1818,8 @@ class NovelSpider:
             content = content.replace(f'&{entity};', char)
             content = content.replace(entity, char) if len(entity) > 3 else content
 
-        # 定义需要过滤的无意义字符和广告
-        # 通用特征词 (不针对具体书名/站点名, 适用于所有小说网站)
-        filter_keywords = [
-            # 导航元素
-            '上一章', '下一章', '上一页', '下一页', '章节目录', '保存书签',
-            '加入书架', '返回顶部', '首页', '末页', '目录', '书页',
-            '本章未完', '本章未完，点击下一页继续阅读', '开始阅读',
-            '没有了', '返回书页', '返回目录',
-            # 站点宣传语/占位提示 (通用, 跨站点)
-            '一秒记住新域名', '三秒记住本站', '请收藏本站', '请记住本站域名',
-            '请记住域名', '手机用户请访问', '手机阅读', '电脑阅读',
-            '手机版阅读', '本站网址', '网址：www', '网址:www',
-            '内容正在更新', '请稍后查看', '免费提供', '在线阅读',
-            '希望大家收藏', '无防盗', '转载作品', '网友上传',
-            '转载至本站只是为了宣传本书让更多读者欣赏',
-            '基于搜索引擎技术为您提供免费阅读无弹窗',
-            # 版权/法律声明
-            'Copyright', '版权所有', '本站所有内容', '本站所有小说',
-            '本站爬虫遵循robots协议', '本站仅对抓取到的内容',
-            # 阅读器提示
-            '请勿开启浏览器阅读模式',
-            # 元信息标记 (云趣阁等站点在正文前插入的元数据)
-            '创作者：', '创作完成日：', '最新章节txt——',
-            '最新章节列表', '刚刚更新',
-            # JS 残留 (Base64 解码或渲染失败时的脚本碎片)
-            'myJs.', 'bookJs', 'novelspider', 'Add to Chat',
-            'document.writeln', 'document.write',
-            # 通用阅读引导/广告短语
-            '相邻推荐', '相关推荐', '番外+大结局',
-            '全文阅读', '免费阅读', 'VIP会员', '退出浏览器',
-            '后续内容已被隐藏',
-        ]
+        # 使用模块级常量 (避免重复定义)
+        filter_keywords = _CONTENT_FILTER_KEYWORDS
         
         # 修复常见编码错误字符（Base64解码后可能出现的乱码）
         encoding_fixes = {
@@ -2029,33 +1958,40 @@ class NovelSpider:
             traceback.print_exc()
             return None
 
-    def _extract_qsbs_bb_generic(self, url, headers):
-        """通用 qsbs.bb Base64 解码提取 (不依赖域名)
+    def _extract_base64_blocks(self, url, headers, pattern, tag='base64'):
+        """通用 Base64 加密块解码提取 (不依赖域名)
 
-        适用于所有使用 qsbs.bb() 加密的站点 (zhiruo/biquwx/ahxsw/28zw/spscl 等)。
+        适用于所有使用 Base64 加密正文的站点。
         解码每个 Base64 块为 <p> 段落, 用 _is_ad_line() 通用过滤广告行。
+
+        Args:
+            url: 章节页 URL
+            headers: 请求头
+            pattern: Base64 块的正则表达式 (含一个捕获组)
+            tag: 日志标签 (如 'qsbs' / 'str_decode')
         """
         try:
             response = self._get_with_js_challenge(url, headers)
             response.encoding = response.apparent_encoding
             html = response.text
-            # 提取所有加密块: qsbs.bb('...') 或 document.writeln(obj.func('...')) (如 3gxs 的 racgr.tggjzdv)
-            blocks = re.findall(r"qsbs\.bb\('([A-Za-z0-9+/=]+)'\)", html)
-            if not blocks:
-                blocks = re.findall(r"document\.writeln\(\s*[A-Za-z_]\w*\.[A-Za-z_]\w*\s*\(\s*'([A-Za-z0-9+/=]{20,})'\s*\)\s*\)", html)
+            blocks = re.findall(pattern, html)
+            # qsbs.bb 额外尝试 writeln 变体
+            if not blocks and tag == 'qsbs':
+                blocks = re.findall(
+                    r"document\.writeln\(\s*[A-Za-z_]\w*\.[A-Za-z_]\w*\s*\(\s*'([A-Za-z0-9+/=]{20,})'\s*\)\s*\)",
+                    html)
                 if blocks:
-                    print(f"[通用提取-qsbs] 使用通用 writeln 加密模式, 找到 {len(blocks)} 个加密块")
+                    print(f"[通用提取-{tag}] 使用通用 writeln 加密模式, 找到 {len(blocks)} 个加密块")
             if not blocks:
-                print(f"[通用提取-qsbs] ⚠️ 未找到加密块")
+                print(f"[通用提取-{tag}] ⚠️ 未找到加密块")
                 return ''
-            print(f"[通用提取-qsbs] 找到 {len(blocks)} 个 Base64 块, 开始解码...")
+            print(f"[通用提取-{tag}] 找到 {len(blocks)} 个 Base64 块, 开始解码...")
             parts = []
             decoded_count = 0
             filtered_count = 0
             for i, b in enumerate(blocks):
                 try:
                     decoded_bytes = base64.b64decode(b)
-                    # 尝试多种编码
                     decoded_text = None
                     for enc in ['utf-8', 'gbk', 'gb2312', 'gb18030']:
                         try:
@@ -2065,79 +2001,44 @@ class NovelSpider:
                         except Exception:
                             continue
                     if not decoded_text or '<p>' not in decoded_text:
-                        print(f"[通用提取-qsbs] 块{i+1}: 解码后无<p>标签, 跳过")
+                        print(f"[通用提取-{tag}] 块{i+1}: 解码后无<p>标签, 跳过")
                         continue
-                    # 提取 <p> 文本
                     p_soup = BeautifulSoup(decoded_text, 'lxml')
                     text = p_soup.get_text(separator='\n', strip=True)
                     if not text:
                         continue
-                    # 通用广告行过滤 (基于内容特征, 不依赖域名)
                     if _is_ad_line(text):
                         filtered_count += 1
-                        print(f"[通用提取-qsbs] 块{i+1}: 广告行过滤 ({len(text)} 字符: {text[:30]}...)")
+                        print(f"[通用提取-{tag}] 块{i+1}: 广告行过滤 ({len(text)} 字符)")
                         continue
                     decoded_count += 1
                     parts.append(text)
                 except Exception as e:
-                    print(f"[通用提取-qsbs] 块{i+1}: 解码失败 - {e}")
+                    print(f"[通用提取-{tag}] 块{i+1}: 解码失败 - {e}")
             result = '\n\n'.join(parts)
-            print(f"[通用提取-qsbs] 解码完成: {decoded_count} 有效块, 过滤 {filtered_count} 广告行, 提取 {len(result)} 字符")
+            print(f"[通用提取-{tag}] 解码完成: {decoded_count} 有效块, 过滤 {filtered_count} 广告行, 提取 {len(result)} 字符")
             return result
         except Exception as e:
-            print(f"[通用提取-qsbs] ❌ 解码失败: {e}")
+            print(f"[通用提取-{tag}] ❌ 解码失败: {e}")
             return ''
+
+    def _extract_qsbs_bb_generic(self, url, headers):
+        """通用 qsbs.bb Base64 解码提取 (不依赖域名)
+
+        适用于所有使用 qsbs.bb() 加密的站点 (zhiruo/biquwx/ahxsw/28zw/spscl 等)。
+        复用 _extract_base64_blocks 通用解码逻辑。
+        """
+        return self._extract_base64_blocks(url, headers,
+            pattern=r"qsbs\.bb\('([A-Za-z0-9+/=]+)'\)", tag='qsbs')
 
     def _extract_str_decode_generic(self, url, headers):
         """通用 str_decode Base64 解码提取 (不依赖域名)
 
         适用于所有使用 str_decode("...") 加密的站点 (5hbook.net 等)。
-        解码 Base64 块为 <p> 段落, 用 _is_ad_line() 通用过滤广告行。
+        复用 _extract_base64_blocks 通用解码逻辑。
         """
-        try:
-            response = self._get_with_js_challenge(url, headers)
-            response.encoding = response.apparent_encoding
-            html = response.text
-            blocks = re.findall(r'str_decode\("([^"]+)"\)', html)
-            if not blocks:
-                print(f"[通用提取-str_decode] ⚠️ 未找到 str_decode 加密块")
-                return ''
-            print(f"[通用提取-str_decode] 找到 {len(blocks)} 个 Base64 块, 开始解码...")
-            parts = []
-            decoded_count = 0
-            filtered_count = 0
-            for i, b in enumerate(blocks):
-                try:
-                    decoded_bytes = base64.b64decode(b)
-                    decoded_text = None
-                    for enc in ['utf-8', 'gbk', 'gb2312', 'gb18030']:
-                        try:
-                            decoded_text = decoded_bytes.decode(enc)
-                            if '<p>' in decoded_text or len(decoded_text) > 20:
-                                break
-                        except Exception:
-                            continue
-                    if not decoded_text or '<p>' not in decoded_text:
-                        print(f"[通用提取-str_decode] 块{i+1}: 解码后无<p>标签, 跳过")
-                        continue
-                    p_soup = BeautifulSoup(decoded_text, 'lxml')
-                    text = p_soup.get_text(separator='\n', strip=True)
-                    if not text:
-                        continue
-                    if _is_ad_line(text):
-                        filtered_count += 1
-                        print(f"[通用提取-str_decode] 块{i+1}: 广告行过滤 ({len(text)} 字符)")
-                        continue
-                    decoded_count += 1
-                    parts.append(text)
-                except Exception as e:
-                    print(f"[通用提取-str_decode] 块{i+1}: 解码失败 - {e}")
-            result = '\n\n'.join(parts)
-            print(f"[通用提取-str_decode] 解码完成: {decoded_count} 有效块, 过滤 {filtered_count} 广告行, 提取 {len(result)} 字符")
-            return result
-        except Exception as e:
-            print(f"[通用提取-str_decode] ❌ 解码失败: {e}")
-            return ''
+        return self._extract_base64_blocks(url, headers,
+            pattern=r'str_decode\("([^"]+)"\)', tag='str_decode')
 
     def _extract_html_selector_generic(self, url, headers):
         """通用 HTML 选择器提取 (不依赖域名)
@@ -2504,307 +2405,12 @@ class NovelSpider:
                 page_index += 1
                 continue
 
-            # 通用层未命中或返回空内容, 回退到域名专用分支 (向后兼容)
+            # 通用层未命中或返回空内容, 尝试其他提取方式 (数据文件解码 / Selenium)
             if page_index == 0:
                 if self._detected_pattern:
-                    print(f"[通用回退] 通用层检测到模式 '{self._detected_pattern}' 但提取结果为空, 回退到域名分支")
+                    print(f"[通用回退] 通用层检测到模式 '{self._detected_pattern}' 但提取结果为空, 尝试其他提取方式")
                 else:
-                    print(f"[通用回退] 通用层未识别到内容模式, 回退到域名分支")
-
-            # ===== 向后兼容备用分支 =====
-            # 通用层 _extract_qsbs_bb_generic() 已覆盖此站点 (qsbs.bb Base64 解码)
-            # 仅当通用层检测/提取失败时才会执行此分支, 可在确认通用层稳定后删除
-            # 对于ahxsw.com、zhiruo.org、biquwx.cc、28zw.org、spscl.com(云趣阁)网站，
-            # 使用qsbs.bb Base64解码逻辑 (云趣阁与zhiruo/biquwx同属一套加密机制)
-            if ('ahxsw.com' in current_url or 'zhiruo.org' in current_url
-                    or 'biquwx.cc' in current_url or '28zw.org' in current_url
-                    or 'spscl.com' in current_url):
-                print(f"[多页合并] 检测到{current_url.split('/')[2]}网站，使用Base64解码逻辑")
-                try:
-                    response = self._get_with_js_challenge(current_url, headers)
-                    response.encoding = response.apparent_encoding
-                    html = response.text
-                    print(f"[多页合并] 获取页面成功，HTML长度: {len(html)} 字符")
-
-                    soup = BeautifulSoup(html, 'lxml')
-
-                    # 查找所有包含qsbs.bb的script标签
-                    scripts = soup.find_all('script')
-                    page_content = []
-                    script_count = 0
-
-                    for script in scripts:
-                        script_text = script.get_text(strip=True)
-                        if 'qsbs.bb' in script_text:
-                            script_count += 1
-                            # 提取base64编码
-                            import base64
-                            pattern = r"qsbs\.bb\('([A-Za-z0-9+/=]+)'\)"
-                            matches = re.findall(pattern, script_text)
-                            print(f"[多页合并] 脚本{script_count}: 找到 {len(matches)} 个Base64编码块")
-
-                            for j, match in enumerate(matches):
-                                try:
-                                    # 解码base64
-                                    decoded_bytes = base64.b64decode(match)
-                                    print(f"[多页合并] 块{j+1}: Base64解码成功，{len(decoded_bytes)} 字节")
-
-                                    # 尝试多种编码
-                                    decoded_text = None
-                                    used_encoding = None
-                                    for enc in ['utf-8', 'gbk', 'gb2312', 'gb18030']:
-                                        try:
-                                            decoded_text = decoded_bytes.decode(enc)
-                                            if '<p>' in decoded_text or len(decoded_text) > 20:
-                                                used_encoding = enc
-                                                break
-                                        except:
-                                            continue
-
-                                    if decoded_text and '<p>' in decoded_text:
-                                        print(f"[多页合并] 块{j+1}: 使用 {used_encoding} 解码成功，包含<p>标签")
-                                        # 提取p标签内的文本
-                                        p_soup = BeautifulSoup(decoded_text, 'lxml')
-                                        text = p_soup.get_text(separator='\n', strip=True)
-                                        if text:
-                                            # 云趣阁 (28zw.org / spscl.com) 解码出的 <p> 中混有广告行,
-                                            # 在此先做一次行级过滤, 避免广告段落进入正文
-                                            is_yunquge = '28zw.org' in current_url or 'spscl.com' in current_url
-                                            if is_yunquge:
-                                                yq_ad_markers = (
-                                                    '一秒记住新域名', '请勿开启浏览器阅读模式', '相邻推荐',
-                                                    '最新章节txt——', '创作者：', '创作完成日：',
-                                                    'myJs.', 'bookJs', '本章未完，点击下一页',
-                                                    '请收藏本站', '手机用户请访问',
-                                                )
-                                                if 'http://' in text or 'https://' in text:
-                                                    print(f"[多页合并] 块{j+1}: 跳过含URL的广告行 ({len(text)} 字符)")
-                                                    continue
-                                                if any(m in text for m in yq_ad_markers):
-                                                    print(f"[多页合并] 块{j+1}: 跳过广告/导航行 ({len(text)} 字符)")
-                                                    continue
-                                                # 纯相邻推荐列表 (多书名以连续空格分隔, 无中文标点)
-                                                if '   ' in text and '。' not in text and '，' not in text and len(text) > 30:
-                                                    print(f"[多页合并] 块{j+1}: 跳过相邻推荐列表 ({len(text)} 字符)")
-                                                    continue
-                                            page_content.append(text)
-                                            print(f"[多页合并] 块{j+1}: 提取文本 {len(text)} 字符")
-                                    else:
-                                        print(f"[多页合并] 块{j+1}: 解码后无<p>标签或内容为空")
-                                except Exception as e:
-                                    print(f"[多页合并] 块{j+1}: 解码失败 - {e}")
-
-                    if page_content:
-                        content = '\n\n'.join(page_content)
-                        print(f"[多页合并] 第{page_index+1}页: 合并后内容长度 {len(content)} 字符")
-                        # 清理无意义字符
-                        content_before_clean = len(content)
-                        content = self.clean_content(content)
-                        print(f"[多页合并] 第{page_index+1}页: 清理后 {len(content)} 字符 (移除 {content_before_clean - len(content)} 字符)")
-
-                        if content and len(content) > 50:
-                            # 检查内容是否与前页重复（使用前100字符做指纹比较）
-                            import hashlib
-                            content_fingerprint = hashlib.sha256(content[:200].encode('utf-8')).hexdigest()
-                            print(f"[多页合并] 第{page_index+1}页: 内容指纹 {content_fingerprint[:16]}...")
-                            print(f"[多页合并] 第{page_index+1}页: 内容预览: '{content[:50]}...'")
-
-                            if hasattr(self, '_last_page_fingerprint') and self._last_page_fingerprint:
-                                print(f"[多页合并] 第{page_index+1}页: 上一页指纹 {self._last_page_fingerprint[:16]}...")
-                                if content_fingerprint == self._last_page_fingerprint:
-                                    print(f"[多页合并] 第{page_index+1}页: ⚠️ 指纹匹配！内容与前页重复，结束抓取")
-                                    break
-                                else:
-                                    print(f"[多页合并] 第{page_index+1}页: ✅ 指纹不同，内容不重复，继续抓取")
-
-                            self._last_page_fingerprint = content_fingerprint
-                            total_content += content + '\n\n'
-                            success = True
-                            print(f"[多页合并] 第{page_index+1}页: ✅ 成功合并，累计 {len(total_content)} 字符")
-                        else:
-                            print(f"[多页合并] 第{page_index+1}页: ⚠️ 内容为空或过短({len(content)}字符)，可能是最后一页")
-                            if page_index > 0:
-                                print(f"[多页合并] 第{page_index+1}页: 已是第2页+，结束抓取")
-                                break
-                    else:
-                        print(f"[多页合并] 第{page_index+1}页: ⚠️ 未提取到任何内容")
-                        if page_index > 0:
-                            print(f"[多页合并] 第{page_index+1}页: 已是第2页+，结束抓取")
-                            break
-
-                    # ahxsw.com使用URL分页格式: xxx_1.html, xxx_2.html...
-                    # 不依赖"下一页"链接，直接通过URL递增和内容重复检测来判断是否结束
-                    print(f"[多页合并] 第{page_index+1}页: 准备抓取下一页...")
-                    page_index += 1
-                    continue
-
-                except Exception as e:
-                    print(f"[多页合并] ahxsw.com内容提取失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    if page_index > 0:
-                        break
-                    page_index += 1
-                    continue
-
-            # ===== 向后兼容备用分支 =====
-            # 通用层 _extract_ajax_two_step_generic() 已覆盖此站点 (两步 AJAX 加载)
-            # 仅当通用层检测/提取失败时才会执行此分支, 可在确认通用层稳定后删除
-            # 对于11bzw.org网站，正文通过两步AJAX加载(先取签名再取内容接口)
-            elif '11bzw.org' in current_url:
-                print(f"[11bzw] 检测到11bzw.org，使用两步AJAX获取正文")
-                import hashlib
-                try:
-                    # 从URL提取aid和cid(含分页后缀, 如9218488或9218488_2)
-                    m_url = re.search(r'/read/(\d+)/(\d+)(_\d+)?\.html', current_url)
-                    if not m_url:
-                        print(f"[11bzw] 无法从URL提取aid/cid: {current_url}")
-                        page_index += 1
-                        continue
-                    aid = m_url.group(1)
-                    cid_base = m_url.group(2)
-                    cid_full = m_url.group(2) + (m_url.group(3) or '')
-                    page_path = f"/read/{aid}/{cid_full}.html"
-
-                    # 1. 访问章节页确保拿到cookie(PHPSESSID/SSRID) + 处理反爬
-                    self._get_with_js_challenge(current_url, headers)
-
-                    # 2. 取签名 (用基础cid, sign对所有分页通用)
-                    ts = int(time.time() * 1000)
-                    ajax_headers = {
-                        'Referer': f"{self.base_url}{page_path}",
-                        'X-Requested-With': 'XMLHttpRequest',
-                    }
-                    sign_url = f"{self.base_url}/api/read_sign.php?aid={aid}&cid={cid_base}&_={ts}"
-                    sign_resp = self.session.get(sign_url, headers={**headers, **ajax_headers}, timeout=20)
-                    sign_data = sign_resp.json()
-                    if sign_data.get('code') != 0:
-                        print(f"[11bzw] 签名失败: {sign_data}")
-                        page_index += 1
-                        continue
-                    bk = sign_data['bk']
-                    sign = sign_data['sign']
-
-                    # 3. 取正文
-                    ts2 = int(time.time() * 1000)
-                    content_url = f"{self.base_url}{page_path}?ajax=1&aid={aid}&cid={cid_full}&bk={bk}&sign={sign}&_={ts2}"
-                    content_resp = self.session.get(content_url, headers={**headers, **ajax_headers}, timeout=20)
-                    content_html = content_resp.text
-                    print(f"[11bzw] 获取正文成功, HTML长度: {len(content_html)}")
-
-                    if not content_html.strip():
-                        print(f"[11bzw] 第{page_index+1}页正文为空，结束分页")
-                        break
-
-                    # 解析正文HTML
-                    csoup = BeautifulSoup(content_html, 'lxml')
-                    page_text = csoup.get_text('\n', strip=True)
-                    print(f"[11bzw] 第{page_index+1}页纯文本: {len(page_text)} 字符")
-                    print(f"[11bzw] 预览: {page_text[:80]}")
-
-                    # 指纹去重(避免重复页)
-                    fingerprint = hashlib.sha256(page_text[:500].encode('utf-8')).hexdigest()[:16]
-                    if fingerprint == self._last_page_fingerprint:
-                        print(f"[11bzw] 第{page_index+1}页与上一页指纹相同，内容重复，停止抓取")
-                        break
-                    self._last_page_fingerprint = fingerprint
-
-                    total_content += page_text + '\n'
-                    print(f"[11bzw] 第{page_index+1}页: ✅ 合并，累计 {len(total_content)} 字符")
-                    success = True
-                    page_index += 1
-                    continue
-                except Exception as e:
-                    print(f"[11bzw] 获取正文失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    page_index += 1
-                    continue
-
-            # 对于yqyp.net网站，正文内嵌在 div.info_dv1.ov 的 <p> 标签中
-            # (第一个 div.read_btn 之后, 遇到VIP提示/推荐列表/第二个read_btn停止)
-            # ===== 向后兼容备用分支 =====
-            # 通用层 _extract_html_selector_generic() 已覆盖此站点 (HTML 选择器 + PC UA 重试)
-            # 仅当通用层检测/提取失败时才会执行此分支, 可在确认通用层稳定后删除
-            # 注意: 必须用PC版UA, 移动版UA返回的页面结构不同(正文在div.txt中)
-            elif 'yqyp.net' in current_url:
-                print(f"[yqyp] 检测到yqyp.net，使用导航栏截取法提取正文")
-                import hashlib
-                try:
-                    # 强制使用PC版User-Agent, 避免返回移动版页面
-                    yqyp_headers = dict(headers)
-                    yqyp_headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    response = self._get_with_js_challenge(current_url, yqyp_headers)
-                    response.encoding = response.apparent_encoding
-                    html = response.text
-                    print(f"[yqyp] 获取页面成功，HTML长度: {len(html)} 字符")
-                    ysoup = BeautifulSoup(html, 'lxml')
-                    info = ysoup.select_one('div.info_dv1.ov')
-                    if info:
-                        # PC版: 遍历直接子节点, 第一个 read_btn 后开始收集 <p>, 遇到停止标记则停
-                        collecting = False
-                        parts = []
-                        stop_markers = ['后续内容已被隐藏', 'VIP会员', '退出浏览器的阅读模式',
-                                        '请升级', '热门小说推荐', '百度搜搜', '本章内容首发']
-                        for child in info.children:
-                            if not hasattr(child, 'name') or child.name is None:
-                                continue
-                            cls = child.get('class') or []
-                            if 'read_btn' in cls:
-                                if not collecting:
-                                    collecting = True
-                                else:
-                                    break
-                                continue
-                            if collecting and child.name == 'p':
-                                txt = child.get_text(strip=True)
-                                if not txt:
-                                    continue
-                                if any(m in txt for m in stop_markers):
-                                    break
-                                parts.append(txt)
-                        page_text = '\n'.join(parts)
-                    else:
-                        # 移动版兜底: 正文在 div.txt 或 div.content 的 <p> 中, 需过滤导航
-                        print(f"[yqyp] 未找到PC版容器, 尝试移动版提取(div.txt/div.content)")
-                        nav_words = ['目录', '存书签', '上一章', '下一章', '书签', '上一页', '下一页']
-                        for sel in ['div.txt', 'div.content', '#nr1', '.content']:
-                            container = ysoup.select_one(sel)
-                            if container and len(container.get_text(strip=True)) > 100:
-                                parts = []
-                                for p in container.find_all('p'):
-                                    txt = p.get_text(strip=True)
-                                    if txt and not any(nw in txt for nw in nav_words) and len(txt) > 2:
-                                        if any(m in txt for m in ['后续内容已被隐藏', 'VIP会员', '退出浏览器']):
-                                            break
-                                        parts.append(txt)
-                                if parts:
-                                    page_text = '\n'.join(parts)
-                                    break
-                        else:
-                            page_text = ''
-                    print(f"[yqyp] 第{page_index+1}页提取正文: {len(page_text)} 字符")
-                    print(f"[yqyp] 预览: {page_text[:80]}")
-                    if len(page_text) < 50:
-                        print(f"[yqyp] 正文过短，可能提取失败，结束分页")
-                        break
-                    # 指纹去重(分页_N.html返回相同内容时自动停止)
-                    fingerprint = hashlib.sha256(page_text[:500].encode('utf-8')).hexdigest()[:16]
-                    if fingerprint == self._last_page_fingerprint:
-                        print(f"[yqyp] 第{page_index+1}页与上一页指纹相同，内容重复，停止抓取")
-                        break
-                    self._last_page_fingerprint = fingerprint
-                    total_content += page_text + '\n'
-                    print(f"[yqyp] 第{page_index+1}页: ✅ 合并，累计 {len(total_content)} 字符")
-                    success = True
-                    page_index += 1
-                    continue
-                except Exception as e:
-                    print(f"[yqyp] 获取正文失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    page_index += 1
-                    continue
+                    print(f"[通用回退] 通用层未识别到内容模式, 尝试其他提取方式")
 
             # ===== 通用数据文件解码 (content_decoder): 所有站点自动生效 =====
             # 部分站点把正文放在独立数据文件中 (tanmixs 的 .xs 码点流+高频字压缩映射等)。
@@ -2958,103 +2564,37 @@ class NovelSpider:
             # 对于pjxdd.com、qingheks.com、27xsw.cc、tanmixs.com网站，尝试使用Selenium
             # (zhiruo.org改用上方Base64解码分支，无需Selenium)
             if ('pjxdd.com' in current_url or 'qingheks.com' in current_url or '27xsw.cc' in current_url) and selenium_available:
-                print("尝试使用Selenium抓取内容")
-                try:
-                    # 配置Chrome选项(与inspect_page保持一致，避免实验性选项导致Chrome崩溃)
-                    chrome_options = Options()
-                    chrome_options.add_argument('--headless')  # 无头模式
-                    chrome_options.add_argument('--disable-gpu')
-                    chrome_options.add_argument('--no-sandbox')
-                    chrome_options.add_argument('--disable-dev-shm-usage')
-                    chrome_options.add_argument('--disable-extensions')
-                    chrome_options.add_argument('--disable-popup-blocking')
-                    chrome_options.add_argument('--ignore-certificate-errors')
-                    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-                    chrome_options.add_argument(f'user-agent={headers["User-Agent"]}')
-                    chrome_options.add_argument('--disable-notifications')
-
-                    driver = None
-                    # 尝试使用Selenium Manager自动管理（新版本Selenium）
-                    try:
-                        driver = webdriver.Chrome(options=chrome_options)
-                        # 设置页面加载超时
-                        driver.set_page_load_timeout(30)
-                        driver.set_script_timeout(30)
-                        print("成功使用Selenium Manager自动管理ChromeDriver")
-                    except Exception as e:
-                        print(f"Selenium Manager失败: {e}")
-                    
-                    if driver:
-                        try:
-                            # 访问页面
-                            driver.get(current_url)
-
-                            # 等待页面加载完成，设置更合理的超时
-                            _wait_driver_body(driver)
-
-                            # 等待JavaScript执行完成，减少等待时间
-                            time.sleep(2)
-
-                            # 获取页面内容
-                            page_source = driver.page_source
-                            # 处理JS cookie校验反爬(如zhiruo.org)
-                            challenge_markers = ['ge_js_validator', 'window.location.reload', 'document.cookie']
-                            for _ in range(5):
-                                if not any(m in page_source for m in challenge_markers):
-                                    break
-                                print(f"[反爬检测] 检测到JS cookie校验页面({len(page_source)}字符)，等待reload后重试...")
-                                time.sleep(3)
-                                page_source = driver.page_source
-                            print(f"使用Selenium获取到页面内容，长度: {len(page_source)} 字符")
-                            
-                            # 解析页面
-                            soup = BeautifulSoup(page_source, 'lxml')
-                            
-                            # 提取内容
-                            content = ""
-                            
-                            # 尝试不同的内容选择器
-                            content_selectors = ['#content', '.content', '.chapter_content', '.article_content', '.novel_content',
-                                               '.read-content', '.article-content', '.story-content', '.post-content']
-                            for selector in content_selectors:
-                                content_div = soup.select_one(selector)
-                                if content_div:
-                                    print(f"使用Selenium找到内容容器: {selector}")
-                                    text = content_div.get_text(separator='\n\n', strip=True)
-                                    if text:
-                                        content = text
-                                        print(f"从Selenium提取到内容，长度: {len(content)} 字符")
-                                        break
-                            
-                            # 如果没有找到特定容器，尝试获取整个页面内容
-                            if not content:
-                                print("使用Selenium尝试获取整个页面内容")
-                                text = soup.get_text(separator='\n\n', strip=True)
+                print("[Selenium] 尝试使用Selenium抓取内容")
+                soup = self._selenium_get_soup(current_url, headers)
+                if soup:
+                    content = ""
+                    content_selectors = ['#content', '.content', '.chapter_content', '.article_content', '.novel_content',
+                                       '.read-content', '.article-content', '.story-content', '.post-content']
+                    for selector in content_selectors:
+                        content_div = soup.select_one(selector)
+                        if content_div:
+                            print(f"[Selenium] 找到内容容器: {selector}")
+                            text = content_div.get_text(separator='\n\n', strip=True)
+                            if text:
                                 content = text
-                                print(f"从整个页面提取到内容，长度: {len(content)} 字符")
-                            
-                            if content:
-                                # 清理内容
-                                content = re.sub(r'[\x00-\x1f\x7f-\xff]', '', content)
-                                content = re.sub(r'\s+', ' ', content)
-                                content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
-                                
-                                total_content += content + '\n\n'
-                                print("使用Selenium成功提取到内容")
-                                success = True
-                            else:
-                                print("Selenium未能提取到内容")
-                        finally:
-                            # 无论如何都要关闭浏览器
-                            try:
-                                driver.quit()
-                            except Exception as e:
-                                print(f"关闭浏览器失败: {e}")
+                                print(f"[Selenium] 提取到内容，长度: {len(content)} 字符")
+                                break
+                    if not content:
+                        print("[Selenium] 尝试获取整个页面内容")
+                        text = soup.get_text(separator='\n\n', strip=True)
+                        content = text
+                        print(f"[Selenium] 从整个页面提取到内容，长度: {len(content)} 字符")
+                    if content:
+                        content = re.sub(r'[\x00-\x1f\x7f-\xff]', '', content)
+                        content = re.sub(r'\s+', ' ', content)
+                        content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
+                        total_content += content + '\n\n'
+                        print("[Selenium] 成功提取到内容")
+                        success = True
                     else:
-                        print("无法找到ChromeDriver")
-                except Exception as e:
-                    print(f"Selenium抓取失败: {e}")
-                    # 继续尝试传统方法
+                        print("[Selenium] 未能提取到内容")
+                else:
+                    print("[Selenium] 页面抓取失败, 跳过")
                     success = False
             
             # 传统方法：使用requests
@@ -3068,7 +2608,6 @@ class NovelSpider:
                 try:
                     # 随机延迟，避免被反爬虫 (0.5~1.5秒, 平衡速度与反爬)
                     delay = random.uniform(0.5, 1.5)
-                    print(f"等待 {delay:.2f} 秒后重试")
                     time.sleep(delay)
                     
                     response = self.session.get(current_url, headers=headers, timeout=30)
@@ -3077,7 +2616,6 @@ class NovelSpider:
                     if response.status_code != 200:
                         print(f"请求失败，状态码: {response.status_code}")
                         if i < max_retries - 1:
-                            print(f"第 {i+1} 次重试失败，{max_retries - i - 1} 次重试机会剩余")
                             # 更新User-Agent
                             headers['User-Agent'] = self.ua.random
                             continue
@@ -3103,87 +2641,35 @@ class NovelSpider:
                             time.sleep(2)
                         response = self.session.get(current_url, headers=headers, timeout=30)
 
-                    # 对于pjxdd.com网站，尝试不同的编码处理
-                    if 'pjxdd.com' in current_url:
-                        # 方法A: 尝试使用requests的自动编码检测
-                        try:
-                            response.encoding = response.apparent_encoding
-                            text = response.text
-                            soup = BeautifulSoup(text, 'lxml')
-                        except Exception as e:
-                            pass
-
-                        # 方法B: 尝试使用chardet检测编码
+                    # 统一编码检测 (适用于所有网站)
+                    try:
+                        response.encoding = response.apparent_encoding
+                        text = response.text
+                        soup = BeautifulSoup(text, 'lxml')
+                    except Exception:
+                        pass
+                    if not soup or not soup.find():
                         try:
                             import chardet
                             result = chardet.detect(response.content)
                             encoding = result['encoding']
-
                             if encoding:
                                 text = response.content.decode(encoding, errors='ignore')
                                 soup = BeautifulSoup(text, 'lxml')
                             else:
-                                # 方法C: 尝试使用常见编码
-                                encodings = ['utf-8', 'gbk', 'gb2312', 'iso-8859-1', 'utf-16', 'utf-16le', 'utf-16be']
-                                for encoding in encodings:
+                                for enc in ['utf-8', 'gbk', 'gb2312', 'iso-8859-1']:
                                     try:
-                                        text = response.content.decode(encoding, errors='ignore')
+                                        text = response.content.decode(enc, errors='ignore')
                                         if text and len(text) > 100:
                                             soup = BeautifulSoup(text, 'lxml')
                                             break
-                                    except Exception as e:
+                                    except Exception:
                                         pass
-                        except Exception as e:
-                            # 方法D: 尝试使用二进制模式处理
-                            try:
-                                # 直接使用二进制数据
-                                soup = BeautifulSoup(response.content, 'lxml')
-                            except Exception as e:
-                                # 最终 fallback: 使用ignore模式
-                                text = response.content.decode('utf-8', errors='ignore')
-                                soup = BeautifulSoup(text, 'lxml')
-                    else:
-                        # 对于所有其他网站，使用与pjxdd.com相同的编码处理
-                        # 方法A: 尝试使用requests的自动编码检测
-                        try:
-                            response.encoding = response.apparent_encoding
-                            text = response.text
+                        except Exception:
+                            text = response.content.decode('utf-8', errors='ignore')
                             soup = BeautifulSoup(text, 'lxml')
-                        except Exception as e:
-                            pass
-
-                        # 方法B: 尝试使用chardet检测编码
-                        try:
-                            import chardet
-                            result = chardet.detect(response.content)
-                            encoding = result['encoding']
-
-                            if encoding:
-                                text = response.content.decode(encoding, errors='ignore')
-                                soup = BeautifulSoup(text, 'lxml')
-                            else:
-                                # 方法C: 尝试使用常见编码
-                                encodings = ['utf-8', 'gbk', 'gb2312', 'iso-8859-1', 'utf-16', 'utf-16le', 'utf-16be']
-                                for encoding in encodings:
-                                    try:
-                                        text = response.content.decode(encoding, errors='ignore')
-                                        if text and len(text) > 100:
-                                            soup = BeautifulSoup(text, 'lxml')
-                                            break
-                                    except Exception as e:
-                                        pass
-                        except Exception as e:
-                            # 方法D: 尝试使用二进制模式处理
-                            try:
-                                # 直接使用二进制数据
-                                soup = BeautifulSoup(response.content, 'lxml')
-                            except Exception as e:
-                                # 最终 fallback: 使用ignore模式
-                                text = response.content.decode('utf-8', errors='ignore')
-                                soup = BeautifulSoup(text, 'lxml')
 
                     # 方法1: 尝试从script标签中提取Base64编码内容
-                    print("方法1: 尝试从script标签中提取Base64编码内容")
                     content = ""
 
                     # 查找包含Base64编码内容的script标签
@@ -3198,7 +2684,6 @@ class NovelSpider:
                     raw_content = response.content
 
                     # 方法1.1: 直接在二进制数据中查找Base64编码
-                    print("方法1.1: 尝试直接在二进制数据中查找Base64编码")
                     try:
                         # 将二进制数据转换为字符串进行搜索
                         raw_str = raw_content.decode('latin1')
@@ -3312,7 +2797,6 @@ class NovelSpider:
                     
                     # 方法1.2: 在解码后的文本中查找
                     if not content:
-                        print("方法1.2: 尝试在解码后的文本中查找Base64编码")
                         for pattern in script_patterns:
                             try:
                                 matches = re.findall(pattern, raw_str)
@@ -3347,7 +2831,6 @@ class NovelSpider:
                     
                     # 方法2: 尝试查找可能的JSON数据
                     if not content or len(content) < 500:
-                        print("方法2: 尝试从页面中提取JSON数据")
                         # 查找包含小说内容的JSON
                         json_patterns = [
                             r'var\s+content\s*=\s*(\{[^}]+\})',
@@ -3404,7 +2887,6 @@ class NovelSpider:
 
                     # 方法2: 尝试查找特定的内容容器
                     if not content or len(content) < 500:
-                        print("方法2: 尝试查找特定的内容容器")
                         # 尝试各种可能的内容容器选择器
                         # 根据网站添加不同的内容选择器
                         content_selectors = [
@@ -3789,7 +3271,6 @@ class NovelSpider:
                     
                     # 方法3: 尝试使用正则表达式提取长段落
                     if not content or len(content) < 500:
-                        print("方法3: 尝试使用正则表达式提取长段落")
                         # 移除HTML标签
                         clean_text = re.sub(r'<[^>]+>', '', response.text)
                         # 分割为段落
@@ -3811,7 +3292,6 @@ class NovelSpider:
                     
                     # 方法4: 尝试直接从页面中提取可能的小说内容特征
                     if not content or len(content) < 500:
-                        print("方法4: 尝试提取可能的小说内容特征")
                         # 查找包含引号的长文本（小说对话）
                         quote_pattern = r'\"\'[^\"\']{100,}\"\''
                         quotes = re.findall(quote_pattern, response.text)
@@ -4741,6 +4221,52 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
     return results
 
 
+def _parse_batch_opts(argv, start_idx):
+    """解析批量模式的公共参数: --threads/--no-resume/--no-progress/--output-dir/--delay
+
+    Args:
+        argv: sys.argv 列表
+        start_idx: 从哪个位置开始解析
+
+    Returns:
+        dict: {threads, resume, show_progress, output_dir, delay}
+    """
+    opts = {'threads': 2, 'resume': True, 'show_progress': True,
+            'output_dir': None, 'delay': 1.0}
+    i = start_idx
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--threads":
+            try:
+                opts['threads'] = max(1, min(int(argv[i + 1]), 8))
+            except (ValueError, IndexError):
+                print("⚠️ --threads 后需要数字")
+                exit(2)
+            i += 1
+        elif arg == "--no-resume":
+            opts['resume'] = False
+        elif arg == "--no-progress":
+            opts['show_progress'] = False
+        elif arg == "--output-dir":
+            if i + 1 < len(argv):
+                opts['output_dir'] = argv[i + 1]
+                i += 1
+        elif arg == "--delay":
+            try:
+                opts['delay'] = max(0.0, float(argv[i + 1]))
+            except (ValueError, IndexError):
+                print("⚠️ --delay 后需要数字")
+                exit(2)
+            i += 1
+        elif not arg.startswith('--'):
+            pass  # URL 参数, 跳过
+        else:
+            print(f"⚠️ 未知参数: {arg}")
+            exit(2)
+        i += 1
+    return opts
+
+
 if __name__ == "__main__":
     import sys
 
@@ -4770,86 +4296,23 @@ if __name__ == "__main__":
             if not os.path.exists(batch_file):
                 print(f"⚠️ 批量清单文件不存在: {batch_file}")
                 exit(2)
-            batch_threads = 2
-            batch_resume = True
-            batch_show_progress = True
-            batch_output_dir = None
-            batch_delay = 1.0
-            i = 3
-            while i < len(sys.argv):
-                arg = sys.argv[i]
-                if arg == "--threads":
-                    try:
-                        batch_threads = max(1, min(int(sys.argv[i + 1]), 8))
-                    except (ValueError, IndexError):
-                        print("⚠️ --threads 后需要数字")
-                        exit(2)
-                    i += 1
-                elif arg == "--no-resume":
-                    batch_resume = False
-                elif arg == "--no-progress":
-                    batch_show_progress = False
-                elif arg == "--output-dir":
-                    if i + 1 < len(sys.argv):
-                        batch_output_dir = sys.argv[i + 1]
-                        i += 1
-                elif arg == "--delay":
-                    try:
-                        batch_delay = max(0.0, float(sys.argv[i + 1]))
-                    except (ValueError, IndexError):
-                        print("⚠️ --delay 后需要数字")
-                        exit(2)
-                    i += 1
-                else:
-                    print(f"⚠️ 未知参数: {arg}")
-                    exit(2)
-                i += 1
+            opts = _parse_batch_opts(sys.argv, 3)
             urls = [ln.strip() for ln in open(batch_file, encoding='utf-8')
                     if ln.strip() and not ln.strip().startswith('#')]
             print(f"[批量] 从 {batch_file} 加载 {len(urls)} 个小说URL")
             if urls:
-                run_batch(urls, threads=batch_threads, resume=batch_resume,
-                          show_progress=batch_show_progress,
-                          output_dir=batch_output_dir, delay=batch_delay)
+                run_batch(urls, threads=opts['threads'], resume=opts['resume'],
+                          show_progress=opts['show_progress'],
+                          output_dir=opts['output_dir'], delay=opts['delay'])
             exit(0)
 
         # 收集所有非选项参数作为 URL (支持一次抓多本)
         url_args = [a for a in sys.argv[1:] if not a.startswith('--')]
         if len(url_args) > 1:
-            batch_threads = 2
-            batch_resume = True
-            batch_show_progress = True
-            batch_output_dir = None
-            batch_delay = 1.0
-            i = 1
-            while i < len(sys.argv):
-                arg = sys.argv[i]
-                if arg == "--threads":
-                    try:
-                        batch_threads = max(1, min(int(sys.argv[i + 1]), 8))
-                    except (ValueError, IndexError):
-                        print("⚠️ --threads 后需要数字")
-                        exit(2)
-                    i += 1
-                elif arg == "--no-resume":
-                    batch_resume = False
-                elif arg == "--no-progress":
-                    batch_show_progress = False
-                elif arg == "--output-dir":
-                    if i + 1 < len(sys.argv):
-                        batch_output_dir = sys.argv[i + 1]
-                        i += 1
-                elif arg == "--delay":
-                    try:
-                        batch_delay = max(0.0, float(sys.argv[i + 1]))
-                    except (ValueError, IndexError):
-                        print("⚠️ --delay 后需要数字")
-                        exit(2)
-                    i += 1
-                i += 1
-            run_batch(url_args, threads=batch_threads, resume=batch_resume,
-                      show_progress=batch_show_progress,
-                      output_dir=batch_output_dir, delay=batch_delay)
+            opts = _parse_batch_opts(sys.argv, 1)
+            run_batch(url_args, threads=opts['threads'], resume=opts['resume'],
+                      show_progress=opts['show_progress'],
+                      output_dir=opts['output_dir'], delay=opts['delay'])
             exit(0)
 
         catalog_url = sys.argv[1].strip()

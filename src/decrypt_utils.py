@@ -27,20 +27,20 @@ import re
 import base64
 
 # ============================================================
-# 解密结果验证
+# 解密结果验证 (统一引用 content_decoder, 保留本地兜底)
 # ============================================================
 
-def _looks_like_content(text):
-    """验证解密结果是否为有效的小说正文 (HTML 或纯文本)
-
-    通过条件: 含 <p> 标签, 或包含足够多的中文字符。
-    """
-    if not text:
-        return False
-    if '<p' in text or '<br' in text:
-        return True
-    chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
-    return chinese > 20
+try:
+    from content_decoder import _looks_like_content
+except ImportError:
+    def _looks_like_content(text):
+        """验证解密结果是否为有效的小说正文 (HTML 或纯文本)"""
+        if not text:
+            return False
+        if '<p' in text or '<br' in text:
+            return True
+        chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
+        return chinese > 20 or (chinese > 5 and len(text) > 100)
 
 
 # ============================================================

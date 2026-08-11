@@ -8,7 +8,9 @@ __pycache__/
 *.egg
 dist/
 build/
+# 保留项目的 PyInstaller 打包配置
 *.spec
+!小说爬虫.spec
 
 # ============ 虚拟环境 ============
 .venv/
@@ -24,10 +26,15 @@ ENV/
 *~
 
 # ============ 爬虫产物 / 用户数据 ============
-抓取结果/
+抓取结果/*
+!抓取结果/.gitkeep
 output/
 抓取结果 - 副本/
 *.txt.bak
+
+# 运行时生成的配置文件（从 config/ 模板复制到根目录）
+/captcha_config.json
+/站点配置.json
 
 # ============ 浏览器 / Selenium / Playwright 临时文件 ============
 tempdir/
@@ -43,8 +50,8 @@ user_data_dir*/
 
 # ============ 站点配置 / 临时文件（用户可能不希望上传自定义JSON，这里保留选择）==========
 # 如不想上传自己的站点配置JSON，取消下行注释：
-# 爬虫源码/站点配置.json
-# 爬虫源码/captcha_config.json
+# src/站点配置.json
+# config/captcha_config.json
 
 # ============ 缓存 / 日志 ============
 *.log
@@ -52,6 +59,7 @@ logs/
 .cache/
 .mimosa/
 .trae/
+.workbuddy/
 
 # ============ 系统 ============
 Thumbs.db

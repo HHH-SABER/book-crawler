@@ -2,10 +2,10 @@
 REM Launch build_exe.py via venv Python (ASCII-only BAT, encoding safe)
 setlocal
 chcp 936 >nul 2>&1
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Novel Crawler EXE Build
 
-set "PY=%~dp0.venv\Scripts\python.exe"
+set "PY=%~dp0..\.venv\Scripts\python.exe"
 if not exist "%PY%" (
     where python >nul 2>nul
     if errorlevel 1 (

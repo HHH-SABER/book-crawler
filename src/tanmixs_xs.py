@@ -29,6 +29,50 @@ except ImportError:
         if not parsed.hostname:
             raise ValueError("缺少 host")
 
+# 统一引用 content_decoder 的公共函数 (码点流解析 + JSON 安全转义 + 内容验证)
+try:
+    from content_decoder import parse_codepoint_stream, _json_safe
+except ImportError:
+    # content_decoder 未部署时, 保留本地兜底实现
+    def _json_safe(text):
+        """将 JSON 字符串中的字面控制字符转为 \\uXXXX 转义"""
+        return re.sub(r'[\x00-\x1f]', lambda m: '\\u%04x' % ord(m.group(0)), text)
+
+    def parse_codepoint_stream(content, replace_map=None):
+        """本地兜底: 解析压缩字符流为正文文本"""
+        mapping = {}
+        if replace_map:
+            for code, ctrl in replace_map.items():
+                if isinstance(ctrl, str) and len(ctrl) == 1 and ord(ctrl) < 32:
+                    if re.fullmatch(r'[0-9a-fA-F]{2,6}', code):
+                        mapping[ctrl] = chr(int(code, 16))
+        tokens = re.findall(r'[\x00-\x1f]|[0-9a-fA-F]{4}|[^\x00-\x1f]', content)
+        result = []
+        prev = ''
+        for t in tokens:
+            if t in mapping:
+                result.append(mapping[t])
+            elif t in ('\x01', '\x02', '\x03'):
+                prev = t
+                continue
+            elif t == '\x04':
+                result.append('\n')
+            elif t == ';':
+                prev = t
+                continue
+            elif re.fullmatch(r'[0-9a-fA-F]{4}', t):
+                if prev in ('\x01', '\x02', '\x03', '('):
+                    try:
+                        result.append(chr(int(t, 16)))
+                    except Exception:
+                        pass
+                else:
+                    result.append(t)
+            else:
+                result.append(t)
+            prev = t if t not in ('\x01', '\x02', '\x03', ';') else prev
+        return ''.join(result)
+
 
 # 允许的数据文件域名白名单 (防 SSRF: 只信任站点自身 CDN)
 _ALLOWED_XS_HOSTS = ('js.tanmixs.com',)
@@ -83,42 +127,8 @@ def parse_xs(raw):
     if not content:
         return ''
 
-    # 2. 构建 控制字符->原字 映射 (replace: {码点: 控制字符})
-    mapping = {}
-    for code, ctrl in replace.items():
-        if isinstance(ctrl, str) and len(ctrl) == 1 and ord(ctrl) < 32:
-            if re.fullmatch(r'[0-9a-fA-F]{2,6}', code):
-                mapping[ctrl] = chr(int(code, 16))
-
-    # 3. 还原字符流
-    # 码点识别规则: 4位hex仅在其前一个是实体分隔符(\x01/\x02/\x03)或 ( 时才是码点,
-    # 避免把明文数字(如 2016/6836)误判为十六进制码点
-    tokens = re.findall(r'[\x00-\x1f]|[0-9a-fA-F]{4}|[^\x00-\x1f]', content)
-    result = []
-    prev = ''
-    for t in tokens:
-        if t in mapping:
-            result.append(mapping[t])  # 高频字压缩还原 (的/我/一/了/,/。/不)
-        elif t in ('\x01', '\x02', '\x03'):
-            prev = t
-            continue  # 实体分隔符
-        elif t == '\x04':
-            result.append('\n')  # 换行
-        elif t == ';':
-            prev = t
-            continue  # 实体结构残留分号, 渲染时不显示
-        elif re.fullmatch(r'[0-9a-fA-F]{4}', t):
-            if prev in ('\x01', '\x02', '\x03', '('):
-                try:
-                    result.append(chr(int(t, 16)))
-                except Exception:
-                    pass
-            else:
-                result.append(t)  # 明文数字/字母
-        else:
-            result.append(t)  # ASCII 明文
-        prev = t if t not in ('\x01', '\x02', '\x03', ';') else prev
-    return ''.join(result)
+    # 2. 调用公共码点流解析 (与 content_decoder 共用同一实现)
+    return parse_codepoint_stream(content, replace)
 
 
 def _fetch(url, headers=None):

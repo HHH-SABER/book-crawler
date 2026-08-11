@@ -60,8 +60,8 @@ class CrawlTab:
             ]),
             width=250,
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
             expand=True,
         )
@@ -71,13 +71,13 @@ class CrawlTab:
             label="小说目录页URL",
             hint_text="如: https://m.tanmixs.com/YzN6/ml.html",
             expand=True,
-            text_size=13,
+            text_style=ft.TextStyle(size=13),
         )
 
         self.mode_dropdown = ft.Dropdown(
             label="抓取模式",
             width=150,
-            text_size=13,
+            text_style=ft.TextStyle(size=13),
             value="full",
             options=[
                 ft.dropdown.Option("full", "完整抓取"),
@@ -85,20 +85,20 @@ class CrawlTab:
                 ft.dropdown.Option("test", "测试第1章"),
                 ft.dropdown.Option("range", "章节区间"),
             ],
-            on_change=self._on_mode_change,
+            on_select=self._on_mode_change,
         )
 
         self.start_chapter = ft.TextField(
             label="起始章",
             width=80,
-            text_size=13,
+            text_style=ft.TextStyle(size=13),
             visible=False,
             input_filter=ft.NumbersOnlyInputFilter(),
         )
         self.end_chapter = ft.TextField(
             label="结束章",
             width=80,
-            text_size=13,
+            text_style=ft.TextStyle(size=13),
             visible=False,
             input_filter=ft.NumbersOnlyInputFilter(),
         )
@@ -106,8 +106,7 @@ class CrawlTab:
         self.speed_dropdown = ft.Dropdown(
             label="速度档位",
             width=130,
-            text_size=13,
-            value="standard",
+            text_style=ft.TextStyle(size=13),            value="standard",
             options=[
                 ft.dropdown.Option("standard", "标准 (1线程)"),
                 ft.dropdown.Option("fast", "快速 (3线程)"),
@@ -124,28 +123,28 @@ class CrawlTab:
         self.output_dir_input = ft.TextField(
             label="输出目录",
             width=200,
-            text_size=13,
+            text_style=ft.TextStyle(size=13),
             value="抓取结果",
         )
 
         start_btn = ft.ElevatedButton(
             "开始抓取",
-            icon=ft.icons.PLAY_ARROW,
+            icon=ft.Icons.PLAY_ARROW,
             on_click=self.on_start_click,
-            style=ft.ButtonStyle(bgcolor=ft.colors.GREEN, color=ft.colors.WHITE),
+            style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE),
         )
 
         self.stop_btn = ft.ElevatedButton(
             "停止",
-            icon=ft.icons.STOP,
+            icon=ft.Icons.STOP,
             on_click=self.on_stop_click,
             disabled=True,
-            style=ft.ButtonStyle(bgcolor=ft.colors.RED_400, color=ft.colors.WHITE),
+            style=ft.ButtonStyle(bgcolor=ft.Colors.RED_400, color=ft.Colors.WHITE),
         )
 
         self.open_folder_btn = ft.ElevatedButton(
             "打开结果文件夹",
-            icon=ft.icons.FOLDER_OPEN,
+            icon=ft.Icons.FOLDER_OPEN,
             on_click=self.on_open_folder_click,
         )
 
@@ -158,8 +157,8 @@ class CrawlTab:
                         start_btn, self.stop_btn, self.open_folder_btn], wrap=True),
             ]),
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
         )
 
@@ -179,15 +178,15 @@ class CrawlTab:
                 ft.Container(
                     content=self.log_list,
                     expand=True,
-                    bgcolor=ft.colors.BLACK87,
+                    bgcolor=ft.Colors.BLACK87,
                     border_radius=5,
                     padding=5,
                 ),
             ]),
             expand=True,
             padding=10,
-            bgcolor=ft.colors.GREY_50,
-            border=ft.border.all(1, ft.colors.GREY_300),
+            bgcolor=ft.Colors.GREY_50,
+            border=ft.Border.all(1, ft.Colors.GREY_300),
             border_radius=5,
         )
 
@@ -348,30 +347,30 @@ class CrawlTab:
         tasks = self.task_manager.get_all_tasks()
         if not tasks:
             self.task_list_view.controls.append(
-                ft.Text("暂无任务", size=12, color=ft.colors.GREY_500, italic=True)
+                ft.Text("暂无任务", size=12, color=ft.Colors.GREY_500, italic=True)
             )
             return
         for task in tasks:
             status_colors = {
-                "running": ft.colors.BLUE,
-                "completed": ft.colors.GREEN,
-                "failed": ft.colors.RED,
-                "pending": ft.colors.GREY,
+                "running": ft.Colors.BLUE,
+                "completed": ft.Colors.GREEN,
+                "failed": ft.Colors.RED,
+                "pending": ft.Colors.GREY,
             }
-            color = status_colors.get(task.status, ft.colors.GREY)
+            color = status_colors.get(task.status, ft.Colors.GREY)
             progress_str = f"{task.progress_current}/{task.progress_total}" if task.progress_total else "0"
             title_str = task.title[:15] + "…" if len(task.title) > 15 else task.title
 
             item = ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.icons.CIRCLE, color=color, size=8),
+                        ft.Icon(ft.Icons.CIRCLE, color=color, size=8),
                         ft.Text(title_str, size=11, weight=ft.FontWeight.BOLD),
                     ], tight=True),
-                    ft.Text(f"{progress_str} | {task.status}", size=10, color=ft.colors.GREY_600),
+                    ft.Text(f"{progress_str} | {task.status}", size=10, color=ft.Colors.GREY_600),
                 ]),
                 padding=5,
-                border=(ft.border.all(2, ft.colors.BLUE)
+                border=(ft.Border.all(2, ft.Colors.BLUE)
                          if task.task_id == self.selected_task_id
                          else None),
                 border_radius=3,
@@ -405,12 +404,12 @@ class CrawlTab:
         # 更新日志（只显示最近100条）
         self.log_list.controls.clear()
         for log in task.logs[-100:]:
-            text_color = ft.colors.WHITE70
+            text_color = ft.Colors.WHITE70
             msg = log['msg']
             if '[错误]' in msg or '失败' in msg:
-                text_color = ft.colors.RED_200
+                text_color = ft.Colors.RED_200
             elif '成功' in msg or '完成' in msg:
-                text_color = ft.colors.GREEN_200
+                text_color = ft.Colors.GREEN_200
             self.log_list.controls.append(
                 ft.Text(
                     f"[{log['time']}] {msg}",
