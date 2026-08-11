@@ -71,7 +71,7 @@ for k, v in basic_env.items():
     os.environ[k] = v
     log(f"[ENV] {k}={v}")
 
-# --- 3) ensure output dir exists (required because of --add-data)
+# --- 3) ensure output dir exists (required for runtime, not bundled)
 out_dir = os.path.join(ROOT, "抓取结果")
 os.makedirs(out_dir, exist_ok=True)
 log(f"[DIR] 抓取结果 dir ready")
@@ -85,7 +85,28 @@ if os.path.isdir(dist):
 # --- 5) arguments (one list element = one argv token)
 script_path = os.path.join(ROOT, "爬虫源码", "gui_app.py")
 exe_name    = "小说爬虫"
-add_data    = f"抓取结果:抓取结果"    # per flet pack --help: source:destination
+# 关键：把 Flet client 打进 EXE（flet pack 不会自动做这件事）
+# 同时把站点配置和验证码配置的默认模板打进去（首次运行时拷到 BASE_DIR）
+flet_client_dir = os.path.join(ROOT, "_flet_client")
+sites_config_src = os.path.join(ROOT, "爬虫源码", "站点配置.json")
+captcha_config_src = os.path.join(ROOT, "爬虫源码", "captcha_config.json")
+
+add_data_list = []
+# Flet client（必须）
+if os.path.isdir(flet_client_dir):
+    add_data_list.append(f"{flet_client_dir}:flet_client")
+    log(f"[OK] Bundling Flet client from {flet_client_dir}")
+else:
+    log("[ERROR] _flet_client/ not found! Run ensure_flet_cache.py first.")
+    sys.exit(3)
+# 站点配置默认模板（可选）
+if os.path.isfile(sites_config_src):
+    add_data_list.append(f"{sites_config_src}:.")
+    log(f"[OK] Bundling 站点配置.json")
+# 验证码配置默认模板（可选）
+if os.path.isfile(captcha_config_src):
+    add_data_list.append(f"{captcha_config_src}:.")
+    log(f"[OK] Bundling captcha_config.json")
 
 cmd = [
     flet_exe,
@@ -98,14 +119,14 @@ cmd = [
     "--copyright", "2026 NovelCrawler",
     "--product-version", "1.0.0",
     "--file-version", "1.0.0.0",
-    "--add-data", add_data,
-    "-y",
-    "-v",
 ]
+for ad in add_data_list:
+    cmd.extend(["--add-data", ad])
+cmd.extend(["-y", "-v"])
 
 log(f"[INFO] script = {script_path}")
 log(f"[INFO] exe    = {exe_name}")
-log(f"[INFO] data   = {add_data}")
+log(f"[INFO] data   = {', '.join(add_data_list)}")
 log("[BUILD] flet pack starting. First build downloads ~100MB, expect 2-8 min...")
 log("")
 

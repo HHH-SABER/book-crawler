@@ -11,6 +11,15 @@ import os
 # 添加当前目录到 path，确保能 import GUI 组件和爬虫模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# ---- PyInstaller 打包后 Flet client 路径修正 ----
+# flet pack 不会自动把 Flet client 打进 EXE，运行时会尝试在线下载（超时崩溃）
+# 这里手动把 _flet_client/ 通过 --add-data 嵌入，并在运行时指向它
+if getattr(sys, "frozen", False):
+    _meipass = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    _bundled_flet_client = os.path.join(_meipass, "flet_client")
+    if os.path.isdir(_bundled_flet_client):
+        os.environ["FLET_VIEW_PATH"] = _bundled_flet_client
+
 from gui_components.task_manager import TaskManager
 from gui_components.crawl_tab import CrawlTab
 from gui_components.preview_tab import PreviewTab
