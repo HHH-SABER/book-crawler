@@ -1,0 +1,50 @@
+{
+  "enabled": true,
+  "avoid_first": true,
+  "strategies": {
+    "manual": {
+      "enabled": true
+    },
+    "ddddocr": {
+      "enabled": false
+    },
+    "slider": {
+      "enabled": false
+    },
+    "third_party": {
+      "enabled": false
+    },
+    "point_click": {
+      "enabled": false
+    }
+  },
+  "retry_limit": 3,
+  "monitor": {
+    "alert_window": 20,
+    "max_consecutive_fail": 3,
+    "rate_alarm": 0.5,
+    "log_path": null,
+    "balance_warn": 5.0
+  },
+  "third_party_api": {
+    "provider": "",
+    "api_key": "",
+    "submit_url": "",
+    "poll_url": "",
+    "balance_url": "",
+    "timeout": 120
+  },
+  "avoidance": {
+    "base_delay": 1.0,
+    "min_delay": 0.3,
+    "max_delay": 3.0,
+    "proxies": [],
+    "cookie_dir": null
+  },
+  "point_click_model": {
+    "provider": "",
+    "endpoint": "",
+    "api_key": "",
+    "model": ""
+  }
+}

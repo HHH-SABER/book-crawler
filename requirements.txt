@@ -1,0 +1,28 @@
+# ===== 小说爬虫 核心依赖 =====
+# 基础爬虫
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+fake-useragent>=1.4.0
+urllib3>=2.0.0
+certifi>=2023.7.22
+httpx>=0.25.0
+httpcore>=1.0.0
+
+# 浏览器渲染（tanmixs.com 等强反爬站点必须）
+selenium>=4.15.0
+playwright>=1.40.0
+
+# 图片 / OCR / 验证码
+Pillow>=10.0.0
+ddddocr>=1.4.11
+opencv-python>=4.8.0
+onnxruntime>=1.16.0
+numpy>=1.24.0
+
+# ===== GUI 框架 =====
+# Flet（基于 Flutter 渲染引擎，支持桌面 EXE 与安卓 APK）
+flet>=0.22.0
+
+# ===== 打包工具（可选，仅在打 EXE 时使用）=====
+# pyinstaller>=6.0.0  # flet pack 内部会用，不手动装也可以

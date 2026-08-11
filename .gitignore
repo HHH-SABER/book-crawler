@@ -1,0 +1,67 @@
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+*.egg
+dist/
+build/
+*.spec
+
+# ============ 虚拟环境 ============
+.venv/
+venv/
+env/
+ENV/
+
+# ============ IDE ============
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ============ 爬虫产物 / 用户数据 ============
+抓取结果/
+output/
+抓取结果 - 副本/
+*.txt.bak
+
+# ============ 浏览器 / Selenium / Playwright 临时文件 ============
+tempdir/
+temp/
+.tanmixs_chrome_profile/
+chromedriver.log
+geckodriver.log
+playwright.log
+user_data_dir*/
+
+# ============ Flet 构建产物 ============
+# flet pack 输出默认目录（按需改为打包后单独仓库）
+# dist/   (若不与上面的 Python dist 混淆可留空，这里保持一致)
+
+# ============ 站点配置 / 临时文件（用户可能不希望上传自定义JSON，这里保留选择）==========
+# 如不想上传自己的站点配置JSON，取消下行注释：
+# 爬虫源码/站点配置.json
+# 爬虫源码/captcha_config.json
+
+# ============ 缓存 / 日志 ============
+*.log
+logs/
+.cache/
+.mimosa/
+.trae/
+
+# ============ 系统 ============
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+
+# ============ 打包临时产物（flet pack 下载的客户端等）==========
+flet-dist/
+*.zip.part
+*.tar.gz.part
