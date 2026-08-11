@@ -46,24 +46,6 @@ def _validate_xs_url(url):
     validate_public_url(url)
 
 
-def _extract_mapping(raw):
-    """从文件末尾提取 控制字符->字符 映射表 (格式: "码点":"\\xNN")"""
-    mapping = {}
-    m = re.search(r'\{((?:"[^"]*":"\\x[0-9a-fA-F]{2}",?)+)\}\s*$', raw)
-    if m:
-        try:
-            data = json.loads('{' + m.group(1) + '}')
-            for code, ctrl in data.items():
-                if isinstance(ctrl, str) and len(ctrl) == 1:
-                    if code.startswith('&#'):
-                        continue  # 文本型分隔符暂不处理
-                    if re.fullmatch(r'[0-9a-fA-F]{2,6}', code):
-                        mapping[ctrl] = chr(int(code, 16))
-        except Exception:
-            pass
-    return mapping
-
-
 def _json_safe(text):
     """将 JSON 字符串中的字面控制字符转为 \\uXXXX 转义 (json.loads 拒绝裸控制字符)"""
     return re.sub(

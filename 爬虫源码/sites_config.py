@@ -34,9 +34,7 @@
 """
 
 import re
-import json
 import time
-import hashlib
 import base64
 import ipaddress
 from urllib.parse import urlparse
@@ -369,7 +367,6 @@ def extract_content_ajax_two_step(session, current_url, pattern, base_url, heade
     Returns:
         (正文文本, 成功标志)
     """
-    import hashlib as hl
     
     m_url = re.search(r'/read/(\d+)/(\d+)(_\d+)?\.html', current_url)
     if not m_url:
