@@ -84,6 +84,23 @@ except ImportError:
     print("Selenium 未安装，将使用传统方法")
 
 
+def _chapter_sort_key(chap):
+    """统一的章节排序键：按章节号 → 楔子 → URL数字 → 番外排序"""
+    title = chap.get('title', '')
+    url = chap.get('url', '')
+    if '楔子' in title:
+        return 0
+    m = re.search(r'第(\d+)章', title)
+    if m:
+        return int(m.group(1))
+    m2 = re.search(r'/(\d+)\.html', url)
+    if m2:
+        return int(m2.group(1))
+    if '番外' in title:
+        return 99999
+    return 9999
+
+
 # 通用广告行/无意义字符特征 (基于内容特征, 适用于所有小说网站)
 # 这些正则模式识别广告/导航/推荐列表的通用结构特征, 不依赖具体书名或站点名
 
@@ -561,13 +578,6 @@ class NovelSpider:
         try:
             response = self._get_with_js_challenge(url, headers)
 
-            # 对于pjxdd.com网站，尝试不同的编码处理
-            if 'pjxdd.com' in url:
-                print(f"=== 调试信息: pjxdd.com 网站响应 ===")
-                print(f"状态码: {response.status_code}")
-                print(f"Content-Type: {response.headers.get('Content-Type')}")
-                print(f"响应长度: {len(response.content)} 字节")
-            
             # 尝试使用ignore模式解码
             try:
                 text = response.content.decode('utf-8', errors='ignore')
@@ -680,7 +690,6 @@ class NovelSpider:
         chapters = []
         
         # 提取当前小说的URL路径部分，用于过滤章节链接
-        import re
 
         # exotxt.net: URL规范化 (在fetch之前), /infos/5556990/1/ → /infos/5556990.html
         if 'exotxt.net' in catalog_url:
@@ -743,16 +752,7 @@ class NovelSpider:
                     break
             print(f"[zhiruo] 共提取 {len(chapters)} 个章节")
             if sort_chapters and chapters:
-                def _zhiruo_sort_key(chap):
-                    m = re.search(r'第(\d+)章', chap['title'])
-                    if m:
-                        return int(m.group(1))
-                    if '楔子' in chap['title']:
-                        return 0
-                    if '番外' in chap['title']:
-                        return 99999
-                    return 9999
-                chapters.sort(key=_zhiruo_sort_key)
+                chapters.sort(key=_chapter_sort_key)
                 print("[zhiruo] 已按章节号排序")
             for i, chap in enumerate(chapters):
                 print(f"  {i+1}. {chap['title']} -> {chap['url']}")
@@ -814,18 +814,7 @@ class NovelSpider:
                     print(f"[biquwx] 页面 {page_url} 共新增 {found_on_page} 章")
             # 按章节号排序(biquwx常倒序显示，最新在前)
             if sort_chapters and chapters:
-                def _biquwx_sort_key(chap):
-                    m = re.search(r'第(\d+)章', chap['title'])
-                    if m:
-                        return int(m.group(1))
-                    if '楔子' in chap['title']:
-                        return 0
-                    if '番外' in chap['title']:
-                        return 99999
-                    # 按URL章节ID排序兜底
-                    m2 = re.search(r'/(\d+)\.html?$', chap['url'])
-                    return int(m2.group(1)) if m2 else 9999
-                chapters.sort(key=_biquwx_sort_key)
+                chapters.sort(key=_chapter_sort_key)
                 print("[biquwx] 已按章节号排序")
             print(f"[biquwx] 共提取 {len(chapters)} 个章节")
             for i, chap in enumerate(chapters):
@@ -904,13 +893,7 @@ class NovelSpider:
                 seen_cids.add(cid)
                 chapters.append({'title': self.clean_chapter_title(text), 'url': f"{self.base_url}/book/{aid}/{cid}.html"})
             # 按章节号排序
-            def _yqyp_sort_key(chap):
-                m = re.search(r'第(\d+)章', chap['title'])
-                if m:
-                    return int(m.group(1))
-                m2 = re.search(r'/(\d+)\.html$', chap['url'])
-                return int(m2.group(1)) if m2 else 9999
-            chapters.sort(key=_yqyp_sort_key)
+            chapters.sort(key=_chapter_sort_key)
             print(f"[yqyp] 共提取 {len(chapters)} 个章节")
             for i, chap in enumerate(chapters):
                 print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
@@ -975,19 +958,7 @@ class NovelSpider:
 
             # 按章节号/章节数字排序 (云趣阁目录常倒序+正序混合)
             if sort_chapters and chapters:
-                def _yunquge_sort_key(chap):
-                    t = chap['title']
-                    if '楔子' in t:
-                        return 0
-                    if '番外' in t:
-                        return 99999
-                    m = re.search(r'第(\d+)章', t)
-                    if m:
-                        return int(m.group(1))
-                    # 兜底: 按URL中的cid数字排序
-                    m2 = re.search(r'/(\d+)\.html$', chap['url'])
-                    return int(m2.group(1)) if m2 else 9999
-                chapters.sort(key=_yunquge_sort_key)
+                chapters.sort(key=_chapter_sort_key)
                 print("[云趣阁] 已按章节号排序")
             print(f"[云趣阁] 共提取 {len(chapters)} 个章节")
             for i, chap in enumerate(chapters):
@@ -1073,10 +1044,7 @@ class NovelSpider:
 
             # 按章节号排序
             if sort_chapters and chapters:
-                def _tanmixs_sort_key(chap):
-                    m = re.search(r'/(\d+)\.html$', chap['url'])
-                    return int(m.group(1)) if m else 9999
-                chapters.sort(key=_tanmixs_sort_key)
+                chapters.sort(key=_chapter_sort_key)
                 print("[tanmixs] 已按章节号排序")
             print(f"[tanmixs] 共提取 {len(chapters)} 个章节")
             for i, chap in enumerate(chapters[:10]):
@@ -1195,16 +1163,7 @@ class NovelSpider:
                     chapters.append({'title': self.clean_chapter_title(text), 'url': url})
                 print(f"[5hbook.net] 专用提取: {len(chapters)} 个章节 (去重后)")
                 if sort_chapters and chapters:
-                    def _5hbook_sort_key(chap):
-                        m = re.search(r'第(\d+)章', chap['title'])
-                        if m:
-                            return int(m.group(1))
-                        if '楔子' in chap['title']:
-                            return 0
-                        if '番外' in chap['title']:
-                            return 99999
-                        return int(re.search(r'/(\d+)\.html', chap['url']).group(1)) if re.search(r'/(\d+)\.html', chap['url']) else 9999
-                    chapters.sort(key=_5hbook_sort_key)
+                    chapters.sort(key=_chapter_sort_key)
                     print("[5hbook.net] 已按章节号排序")
                 for i, chap in enumerate(chapters[:5]):
                     print(f"  {i+1}. {chap['title']} -> {chap['url']}")
@@ -1264,12 +1223,7 @@ class NovelSpider:
                         chapters.append({'title': self.clean_chapter_title(text), 'url': url})
                 print(f"[exotxt.net] 专用提取: {len(chapters)} 个章节 (去重后)")
                 if sort_chapters and chapters:
-                    def _exotxt_sort_key(chap):
-                        m = re.search(r'第(\d+)章', chap['title'])
-                        if m:
-                            return int(m.group(1))
-                        return int(re.search(r'/(\d+)\.html', chap['url']).group(1)) if re.search(r'/(\d+)\.html', chap['url']) else 9999
-                    chapters.sort(key=_exotxt_sort_key)
+                    chapters.sort(key=_chapter_sort_key)
                     print("[exotxt.net] 已按章节号排序")
                 for i, chap in enumerate(chapters[:5]):
                     print(f"  {i+1}. {chap['title']} -> {chap['url']}")
@@ -1436,21 +1390,7 @@ class NovelSpider:
         for page_url in page_urls:
             print(f"处理分页页面: {page_url}")
             page_soup = self.inspect_page(page_url)
-            
-            # 对于pjxdd.com网站，添加特殊的调试信息
-            if 'pjxdd.com' in page_url:
-                print("=== 调试信息: pjxdd.com 网站结构 ===")
-                # 打印页面的基本结构
-                print(f"页面标题: {page_soup.title.string if page_soup.title else '无标题'}")
-                # 打印所有的链接
-                all_links = page_soup.find_all('a', href=True)
-                print(f"找到 {len(all_links)} 个链接")
-                # 打印前10个链接
-                for i, link in enumerate(all_links[:10]):
-                    href = link['href']
-                    text = link.get_text().strip()
-                    print(f"  链接 {i+1}: {text} -> {href}")
-            
+
             # 尝试不同的常见章节列表选择器
             chapter_selectors = [
                 '.chapterlist a',  # 常见的章节列表类名
@@ -1511,8 +1451,6 @@ class NovelSpider:
                 'a[href*="/xiaoshuo/"]',  # 包含xiaoshuo的链接
                 # 新增pjxdd.com网站可能的选择器
                 'a[href*="/chapter/"]',  # 包含chapter的链接
-                'a[href*="/145662/"]',  # 包含小说ID的链接
-                'a[href*="/xiaoshuo/145662/"]',  # 包含小说路径的链接
             ]
             
             found_chapters = False
@@ -1596,7 +1534,7 @@ class NovelSpider:
                             href = link.get('href', '')
                             # 对于pjxdd.com网站，检查是否包含小说路径或章节路径
                             if 'pjxdd.com' in catalog_url:
-                                if novel_path in href or '/chapter/' in href or '/145662/' in href:
+                                if novel_path in href or '/chapter/' in href:
                                     relevant_links.append(link)
                             else:
                                 if novel_path in href:
@@ -1641,7 +1579,7 @@ class NovelSpider:
                                 if 'javascript:' in href:
                                     continue
                                 # 过滤掉可能的目录页和下载页
-                                if any(keyword in href for keyword in ['/ch1.html', '/dx1.html', '/index.html', '/index_', '/xiaoshuo/145662/']):
+                                if any(keyword in href for keyword in ['/ch1.html', '/dx1.html', '/index.html', '/index_']):
                                     continue
                                 # 过滤掉非章节链接（如排序链接）
                                 if '正序' in text or '倒序' in text or '切换' in text or text == '开始阅读':
@@ -1681,14 +1619,13 @@ class NovelSpider:
                     # 获取原始文本
                     text = str(page_soup)
                     # 使用正则表达式提取链接
-                    import re
                     # 匹配http或https链接
                     http_links = re.findall(r'http[s]?://[^"\'>\s]+', text)
                     print(f"找到 {len(http_links)} 个http链接")
                     for link in http_links:
                         print(f"HTTP链接: {link}")
                         # 检查是否包含小说路径、章节路径或小说ID
-                        if novel_path in link or '/chapter/' in link or '/145662/' in link or 'chapter' in link.lower():
+                        if novel_path in link or '/chapter/' in link or 'chapter' in link.lower():
                             # 提取标题（使用链接的最后一部分作为标题）
                             title = link.split('/')[-1].replace('.html', '').replace('_', ' ')
                             chapters.append({'title': title, 'url': link})
@@ -1700,7 +1637,7 @@ class NovelSpider:
                     for link in relative_links:
                         print(f"相对路径链接: {link}")
                         # 检查是否包含小说路径、章节路径或小说ID
-                        if novel_path in link or '/chapter/' in link or '/145662/' in link or 'chapter' in link.lower():
+                        if novel_path in link or '/chapter/' in link or 'chapter' in link.lower():
                             # 构建完整URL
                             if not link.startswith('http'):
                                 if link.startswith('/'):
@@ -1713,25 +1650,7 @@ class NovelSpider:
                             title = url.split('/')[-1].replace('.html', '').replace('_', ' ')
                             chapters.append({'title': title, 'url': url})
                             print(f"添加相对路径链接: {title} -> {url}")
-                
-                # 对于pjxdd.com网站，尝试根据URL模式生成章节链接
-                if 'pjxdd.com' in catalog_url and not chapters:
-                    print("尝试根据URL模式生成章节链接")
-                    # 生成一些可能的章节链接
-                    # 模式1: http://m.pjxdd.com/xiaoshuo/145662/{chapter_id}.html
-                    # 模式2: http://m.pjxdd.com/xiaoshuo/145662/{specific_id}.html (从测试中看到的实际格式)
-                    
-                    # 根据用户反馈，目录有两页共34卷
-                    # 尝试生成前34个章节的链接
-                    for i in range(1, 35):
-                        # 模式2: 使用从测试中看到的实际链接格式
-                        # 基础ID为103658，对应分卷阅读1
-                        base_id = 103657  # 基础ID
-                        chapter_id = base_id + i
-                        url2 = f"http://m.pjxdd.com/xiaoshuo/145662/{chapter_id}.html"
-                        chapters.append({'title': f"分卷阅读{i}", 'url': url2})
-                        print(f"添加模式2链接: 分卷阅读{i} -> {url2}")
-        
+
         # 去重章节（基于URL），保持原始顺序
         print(f"\n[章节去重] 去重前共 {len(chapters)} 个章节")
         # 非章节导航链接(如"查看更多章节...")，需过滤掉
@@ -1775,7 +1694,6 @@ class NovelSpider:
             def chapter_sort_key(chap):
                 title = chap['title']
                 # 提取章节号
-                import re
 
                 # 特殊处理楔子
                 if '楔子' in title:
@@ -1891,8 +1809,6 @@ class NovelSpider:
         if not title:
             return title
 
-        import re
-
         # 移除HTML实体和特殊字符
         title = title.replace('&ldquo;', '"').replace('&rdquo;', '"')
         title = title.replace('&hellip;', '…').replace('&mdash;', '—')
@@ -1927,8 +1843,6 @@ class NovelSpider:
         """清理无意义字符和广告内容"""
         if not content:
             return ""
-
-        import re
 
         # 移除零宽/不可见字符 (U+200B 零宽空格 / U+200C ZWNJ / U+200D ZWJ /
         # U+FEFF BOM / U+2060 Word Joiner / U+00AD 软连字符)
@@ -3191,126 +3105,80 @@ class NovelSpider:
 
                     # 对于pjxdd.com网站，尝试不同的编码处理
                     if 'pjxdd.com' in current_url:
-                        print(f"=== 调试信息: pjxdd.com 内容页面响应 ===")
-                        print(f"状态码: {response.status_code}")
-                        print(f"Content-Type: {response.headers.get('Content-Type')}")
-                        print(f"响应长度: {len(response.content)} 字节")
-
                         # 方法A: 尝试使用requests的自动编码检测
-                        print("方法A: 尝试使用requests的自动编码检测")
                         try:
                             response.encoding = response.apparent_encoding
                             text = response.text
-                            print(f"使用apparent_encoding解码，长度: {len(text)} 字符")
-                            print(f"解码后前200个字符: {text[:200]}")
                             soup = BeautifulSoup(text, 'lxml')
                         except Exception as e:
-                            print(f"方法A失败: {e}")
+                            pass
 
                         # 方法B: 尝试使用chardet检测编码
-                        print("方法B: 尝试使用chardet检测编码")
                         try:
                             import chardet
                             result = chardet.detect(response.content)
                             encoding = result['encoding']
-                            confidence = result['confidence']
-                            print(f"chardet检测到编码: {encoding} (置信度: {confidence:.2f})")
 
                             if encoding:
                                 text = response.content.decode(encoding, errors='ignore')
-                                print(f"使用chardet检测的编码解码，长度: {len(text)} 字符")
-                                print(f"解码后前200个字符: {text[:200]}")
                                 soup = BeautifulSoup(text, 'lxml')
                             else:
                                 # 方法C: 尝试使用常见编码
-                                print("方法C: 尝试使用常见编码")
                                 encodings = ['utf-8', 'gbk', 'gb2312', 'iso-8859-1', 'utf-16', 'utf-16le', 'utf-16be']
                                 for encoding in encodings:
                                     try:
                                         text = response.content.decode(encoding, errors='ignore')
                                         if text and len(text) > 100:
-                                            print(f"使用 {encoding} 解码成功，长度: {len(text)} 字符")
-                                            print(f"解码后前200个字符: {text[:200]}")
                                             soup = BeautifulSoup(text, 'lxml')
                                             break
                                     except Exception as e:
-                                        print(f"{encoding} 解码失败: {e}")
+                                        pass
                         except Exception as e:
-                            print(f"方法B失败: {e}")
-
                             # 方法D: 尝试使用二进制模式处理
-                            print("方法D: 尝试使用二进制模式处理")
                             try:
                                 # 直接使用二进制数据
                                 soup = BeautifulSoup(response.content, 'lxml')
-                                print("使用二进制数据直接解析")
                             except Exception as e:
-                                print(f"方法D失败: {e}")
-
                                 # 最终 fallback: 使用ignore模式
-                                print("最终 fallback: 使用ignore模式")
                                 text = response.content.decode('utf-8', errors='ignore')
                                 soup = BeautifulSoup(text, 'lxml')
                     else:
                         # 对于所有其他网站，使用与pjxdd.com相同的编码处理
-                        print(f"=== 调试信息: 网站内容页面响应 ===")
-                        print(f"状态码: {response.status_code}")
-                        print(f"Content-Type: {response.headers.get('Content-Type')}")
-                        print(f"响应长度: {len(response.content)} 字节")
-
                         # 方法A: 尝试使用requests的自动编码检测
-                        print("方法A: 尝试使用requests的自动编码检测")
                         try:
                             response.encoding = response.apparent_encoding
                             text = response.text
-                            print(f"使用apparent_encoding解码，长度: {len(text)} 字符")
-                            print(f"解码后前200个字符: {text[:200]}")
                             soup = BeautifulSoup(text, 'lxml')
                         except Exception as e:
-                            print(f"方法A失败: {e}")
+                            pass
 
                         # 方法B: 尝试使用chardet检测编码
-                        print("方法B: 尝试使用chardet检测编码")
                         try:
                             import chardet
                             result = chardet.detect(response.content)
                             encoding = result['encoding']
-                            confidence = result['confidence']
-                            print(f"chardet检测到编码: {encoding} (置信度: {confidence:.2f})")
 
                             if encoding:
                                 text = response.content.decode(encoding, errors='ignore')
-                                print(f"使用chardet检测的编码解码，长度: {len(text)} 字符")
-                                print(f"解码后前200个字符: {text[:200]}")
                                 soup = BeautifulSoup(text, 'lxml')
                             else:
                                 # 方法C: 尝试使用常见编码
-                                print("方法C: 尝试使用常见编码")
                                 encodings = ['utf-8', 'gbk', 'gb2312', 'iso-8859-1', 'utf-16', 'utf-16le', 'utf-16be']
                                 for encoding in encodings:
                                     try:
                                         text = response.content.decode(encoding, errors='ignore')
                                         if text and len(text) > 100:
-                                            print(f"使用 {encoding} 解码成功，长度: {len(text)} 字符")
-                                            print(f"解码后前200个字符: {text[:200]}")
                                             soup = BeautifulSoup(text, 'lxml')
                                             break
                                     except Exception as e:
-                                        print(f"{encoding} 解码失败: {e}")
+                                        pass
                         except Exception as e:
-                            print(f"方法B失败: {e}")
-
                             # 方法D: 尝试使用二进制模式处理
-                            print("方法D: 尝试使用二进制模式处理")
                             try:
                                 # 直接使用二进制数据
                                 soup = BeautifulSoup(response.content, 'lxml')
-                                print("使用二进制数据直接解析")
                             except Exception as e:
-                                print(f"方法D失败: {e}")
-
                                 # 最终 fallback: 使用ignore模式
-                                print("最终 fallback: 使用ignore模式")
                                 text = response.content.decode('utf-8', errors='ignore')
                                 soup = BeautifulSoup(text, 'lxml')
 
@@ -4158,52 +4026,34 @@ class NovelSpider:
             response = self._get_with_js_challenge(catalog_url, headers)
             
             # 使用与内容页面相同的编码处理
-            print(f"=== 调试信息: 提取小说名称 ===")
-            print(f"状态码: {response.status_code}")
-            print(f"Content-Type: {response.headers.get('Content-Type')}")
-            print(f"响应长度: {len(response.content)} 字节")
-            
             # 方法A: 尝试使用requests的自动编码检测
-            print("方法A: 尝试使用requests的自动编码检测")
             try:
                 response.encoding = response.apparent_encoding
                 text = response.text
-                print(f"使用apparent_encoding解码，长度: {len(text)} 字符")
                 soup = BeautifulSoup(text, 'html.parser')
             except Exception as e:
-                print(f"方法A失败: {e}")
-                
                 # 方法B: 尝试使用chardet检测编码
-                print("方法B: 尝试使用chardet检测编码")
                 try:
                     import chardet
                     result = chardet.detect(response.content)
                     encoding = result['encoding']
-                    confidence = result['confidence']
-                    print(f"chardet检测到编码: {encoding} (置信度: {confidence:.2f})")
-                    
+
                     if encoding:
                         text = response.content.decode(encoding, errors='ignore')
-                        print(f"使用chardet检测的编码解码，长度: {len(text)} 字符")
                         soup = BeautifulSoup(text, 'html.parser')
                     else:
                         # 方法C: 尝试使用常见编码
-                        print("方法C: 尝试使用常见编码")
                         encodings = ['utf-8', 'gbk', 'gb2312', 'iso-8859-1', 'utf-16', 'utf-16le', 'utf-16be']
                         for encoding in encodings:
                             try:
                                 text = response.content.decode(encoding, errors='ignore')
                                 if text and len(text) > 100:
-                                    print(f"使用 {encoding} 解码成功，长度: {len(text)} 字符")
                                     soup = BeautifulSoup(text, 'html.parser')
                                     break
                             except Exception as e:
-                                print(f"{encoding} 解码失败: {e}")
+                                pass
                 except Exception as e:
-                    print(f"方法B失败: {e}")
-                    
                     # 最终 fallback: 使用ignore模式
-                    print("最终 fallback: 使用ignore模式")
                     text = response.content.decode('utf-8', errors='ignore')
                     soup = BeautifulSoup(text, 'html.parser')
             
@@ -4228,7 +4078,6 @@ class NovelSpider:
                 # "书名最新章节_txt全文阅读_作者_云趣阁"
                 # 优先用 <h1> 或详情页书名容器提取; 失败则从 <title> 中正则提取纯书名
                 if '28zw.org' in catalog_url or 'spscl.com' in catalog_url:
-                    import re as _re
                     # 优先从详情页的书名容器提取 (最准确)
                     yq_selectors = [
                         'div.info h1', 'div.book-info h1', 'div.bookname h1',
@@ -4254,7 +4103,7 @@ class NovelSpider:
                     if not yq_title:
                         # 从 <title> 正则提取纯书名:
                         # "美熟妇深渊堕落最新章节列表_..." -> "美熟妇深渊堕落"
-                        m = _re.match(r'^(.+?)最新章节', title)
+                        m = re.match(r'^(.+?)最新章节', title)
                         if m and m.group(1):
                             yq_title = m.group(1).strip()
                     if yq_title:
@@ -4266,7 +4115,6 @@ class NovelSpider:
                             return yq_title
 
                 # 清理标题中的乱码和特殊字符
-                import re
                 title = re.sub(r'[\x00-\x1f\x7f-\xff]', '', title)
                 title = re.sub(r'\s+', ' ', title)
                 title = title.strip()
@@ -4304,7 +4152,6 @@ class NovelSpider:
                 if title_elem:
                     title = title_elem.get_text().strip()
                     # 清理标题中的乱码和特殊字符
-                    import re
                     title = re.sub(r'[\x00-\x1f\x7f-\xff]', '', title)
                     title = re.sub(r'\s+', ' ', title)
                     title = title.strip()
@@ -4317,7 +4164,6 @@ class NovelSpider:
             if meta_title:
                 title = meta_title.get('content', '').strip()
                 # 清理标题
-                import re
                 title = re.sub(r'[\x00-\x1f\x7f-\xff]', '', title)
                 title = re.sub(r'\s+', ' ', title)
                 title = title.strip()
@@ -4403,7 +4249,8 @@ class NovelSpider:
             self.session = old_session
 
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
-            resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0):
+            resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
+            stop_event=None):
         """完整抓取小说。
         resume=True 时自动检测检查点，从上次中断处继续（追加写入）。
         show_progress=True 时每章更新下载进度条。
@@ -4509,6 +4356,9 @@ class NovelSpider:
                         for i in range(start, total):
                             futures[i] = pool.submit(worker, chapters[i])
                         for i in range(start, total):
+                            if stop_event is not None and stop_event.is_set():
+                                print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
+                                return output_file
                             chap = chapters[i]
                             print(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                             try:
@@ -4533,6 +4383,9 @@ class NovelSpider:
                 else:
                     # ===== 串行抓取 (默认) =====
                     for i in range(start, total):
+                        if stop_event is not None and stop_event.is_set():
+                            print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
+                            return output_file
                         chap = chapters[i]
                         print(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                         try:
@@ -4710,7 +4563,8 @@ def _resolve_output_dir(output_dir: str) -> str:
 
 
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
-              resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0):
+              resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
+              stop_event=None):
     """根据模式执行抓取任务，供命令行与交互式共用
 
     Args:
@@ -4723,6 +4577,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         chapter_range: (start, end) 1-based 章节索引区间，仅 range 模式使用
         threads: 并发抓取线程数 (1=串行)
         delay: 章节间请求间隔秒数
+        stop_event: threading.Event，GUI 停止按钮设置后中断抓取
     """
     # 统一输出目录 -> 绝对路径, 避免多套结果目录
     if output_dir is None:
@@ -4794,11 +4649,12 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         if mode == "range" and chapter_range:
             src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                            resume=resume, show_progress=show_progress,
-                           chapter_range=chapter_range, threads=threads, delay=delay)
+                           chapter_range=chapter_range, threads=threads, delay=delay,
+                           stop_event=stop_event)
         else:
             src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                            resume=resume, show_progress=show_progress,
-                           threads=threads, delay=delay)
+                           threads=threads, delay=delay, stop_event=stop_event)
         # 成功判定: 失败章节占比 < 20% 且验证码触发率 < 50%
         failed = getattr(src_spider, 'last_failed', None)
         total_n = getattr(src_spider, 'last_total', 0)

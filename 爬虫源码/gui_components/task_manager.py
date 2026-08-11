@@ -157,7 +157,8 @@ class TaskManager:
                 show_progress=True,
                 chapter_range=chapter_range,
                 threads=threads,
-                delay=delay
+                delay=delay,
+                stop_event=task.stop_flag
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":
@@ -173,12 +174,12 @@ class TaskManager:
             sys.stdout = original_stdout
 
     def stop_task(self, task_id: str):
-        """停止指定任务（通过设置停止标志，实际停止依赖爬虫内部检查）"""
+        """停止指定任务（通过设置停止标志，爬虫循环检查后退出）"""
         with self._lock:
             task = self.tasks.get(task_id)
             if task:
                 task.stop_flag.set()
-                task.status = "failed"
+                task.status = "stopped"
                 task.logs.append({
                     'time': time.strftime('%H:%M:%S'),
                     'msg': "[用户停止] 任务已被用户手动停止"
