@@ -119,11 +119,71 @@ LOG_COLOR_DEBUG = '#A89FB0'          # 灰丁香 (调试)
 # ====================================================================
 
 def _build_theme(cs_kwargs: dict) -> ft.Theme:
-    """由 ColorScheme 属性字典生成 Flet Theme (统一字体族)"""
+    """由 ColorScheme 属性字典生成 Flet Theme (统一字体族 + 导航/文字按钮字体 + 质感细节)"""
     cs = ft.ColorScheme()
     for k, v in cs_kwargs.items():
         setattr(cs, k, v)
-    return ft.Theme(color_scheme=cs, use_material3=True, font_family=FONT_STACK)
+
+    # 统一正文文字样式 (按钮/对话框内容共用)
+    _body_ts = ft.TextStyle(size=SIZE_BODY, weight=WEIGHT_BODY, font_family=FONT_STACK)
+    # 统一按钮圆角
+    _btn_shape = ft.RoundedRectangleBorder(radius=10)
+
+    # 导航栏标签统一字体规范：未选中常规，选中半粗；强制深色保证浅色底可读
+    nav_rail_style = ft.NavigationRailTheme(
+        indicator_color=cs_kwargs.get('primary_container', MORANDI_PRIMARY),
+        selected_label_text_style=ft.TextStyle(
+            size=SIZE_BODY, weight=WEIGHT_SUBTITLE, font_family=FONT_STACK,
+            color=MORANDI_ON_SURFACE),
+        unselected_label_text_style=ft.TextStyle(
+            size=SIZE_BODY, weight=WEIGHT_BODY, font_family=FONT_STACK,
+            color=MORANDI_ON_SURFACE),
+    )
+
+    # 文字按钮 (如对话框取消/删除): 统一字体 + 圆角
+    text_btn_theme = ft.TextButtonTheme(style=ft.ButtonStyle(
+        text_style=_body_ts, shape=_btn_shape))
+
+    # 填充按钮 (主操作): 统一字体 + 圆角 + 舒适内边距
+    filled_btn_theme = ft.FilledButtonTheme(style=ft.ButtonStyle(
+        text_style=_body_ts, shape=_btn_shape,
+        padding=ft.Padding.symmetric(horizontal=16, vertical=10)))
+
+    # 描边按钮: 同上
+    outline_btn_theme = ft.OutlinedButtonTheme(style=ft.ButtonStyle(
+        text_style=_body_ts, shape=_btn_shape,
+        padding=ft.Padding.symmetric(horizontal=16, vertical=10)))
+
+    # 图标按钮 (小图标操作): 圆角适中
+    icon_btn_theme = ft.IconButtonTheme(style=ft.ButtonStyle(
+        shape=ft.RoundedRectangleBorder(radius=8)))
+
+    # 对话框: 大圆角 + 柔和阴影 + 统一字体
+    dialog_theme = ft.DialogTheme(
+        bgcolor=cs_kwargs.get('surface', MORANDI_SURFACE),
+        shape=ft.RoundedRectangleBorder(radius=16),
+        elevation=8,
+        title_text_style=ft.TextStyle(
+            size=SIZE_SUBTITLE, weight=WEIGHT_SUBTITLE, font_family=FONT_STACK),
+        content_text_style=_body_ts,
+    )
+
+    # 分割线: 用 outline_variant, 比默认更细腻
+    divider_theme = ft.DividerTheme(
+        color=cs_kwargs.get('outline_variant', MORANDI_OUTLINE_VARIANT))
+
+    return ft.Theme(
+        color_scheme=cs,
+        use_material3=True,
+        font_family=FONT_STACK,
+        navigation_rail_theme=nav_rail_style,
+        text_button_theme=text_btn_theme,
+        filled_button_theme=filled_btn_theme,
+        outlined_button_theme=outline_btn_theme,
+        icon_button_theme=icon_btn_theme,
+        dialog_theme=dialog_theme,
+        divider_theme=divider_theme,
+    )
 
 
 def make_morandi_theme() -> ft.Theme:

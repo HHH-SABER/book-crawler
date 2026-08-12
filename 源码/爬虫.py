@@ -37,7 +37,9 @@ import base64
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
+import hashlib
 
 # 导入站点适配模式库 (可复用的网站适配配置)
 try:
@@ -99,13 +101,85 @@ def _is_waf_js_challenge(response) -> bool:
         return False
 
 
+def _title_chapter_nums(title):
+    """从章节标题提取章节号集合: "第1-2章"→{1,2}, "1、从丢魂说起"→{1};
+    无法提取时返回 None。用于判断连读页与已抓章节是否内容重叠。"""
+    if not title:
+        return None
+    m = re.search(r'第(\d+)(?:-(\d+))?章', title)
+    if m:
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else start
+        return set(range(start, end + 1))
+    m = re.match(r'^(\d+)[、.．]', title)
+    if m:
+        return {int(m.group(1))}
+    return None
+
+
+def _split_range_digits(digits):
+    """将区间数字串切分为连续递增的章节号序列, 返回段数最多的解。
+    如 "12"→[1,2]、"1112"→[11,12]、"10"→[10]、"910"→[9,10]；
+    无法连续切分时返回 None。"""
+    n = len(digits)
+    best = None
+
+    def dfs(pos, seq):
+        nonlocal best
+        if pos == n:
+            if best is None or len(seq) > len(best):
+                best = list(seq)
+            return
+        # 尝试 1 位/2 位切割 (单章号 1-99, 区段必须与前一段连续递增)
+        for w in (1, 2):
+            if pos + w > n:
+                continue
+            val = int(digits[pos:pos + w])
+            if val < 1 or val > 99:
+                continue
+            if seq and val != seq[-1] + 1:
+                continue
+            seq.append(val)
+            dfs(pos + w, seq)
+            seq.pop()
+
+    dfs(0, [])
+    return best
+
+
+def _format_range_chapter_title(text):
+    """将站点区间式数字标题规范化为 "第N-M章"（630wang/ltbook等按2章1页发布）：
+    "12"→"第1-2章"、"9"→"第9章"、"1112"→"第11-12章"；
+    "【书名】（3-4）"→"第3-4章"、"（10）"→"第10章"；无法识别时返回原文本。"""
+    if not text:
+        return text
+    t = text.strip()
+    # 1) 纯数字: 按连续递增章节号切分
+    if t.isdigit() and len(t) <= 12:
+        parts = _split_range_digits(t)
+        if parts:
+            if len(parts) >= 2:
+                return f'第{parts[0]}-{parts[-1]}章'
+            return f'第{parts[0]}章'
+        return text
+    # 2) 形如 【书名】（1-2） / （10）: 提取括号内区间
+    m = re.search(r'[（(]\s*(\d+)(?:\s*[-~至]\s*(\d+))?\s*[）)]\s*$', t)
+    if m:
+        a = int(m.group(1))
+        b = int(m.group(2)) if m.group(2) else None
+        if b and b > a:
+            return f'第{a}-{b}章'
+        return f'第{a}章'
+    return text
+
+
 def _chapter_sort_key(chap):
     """统一的章节排序键：按章节号 → 楔子 → URL数字 → 番外排序"""
     title = chap.get('title', '')
     url = chap.get('url', '')
     if '楔子' in title:
         return 0
-    m = re.search(r'第(\d+)章', title)
+    m = re.search(r'第(\d+)', title)  # 兼容区间格式 "第1-2章" (取起始章号)
     if m:
         return int(m.group(1))
     m2 = re.search(r'/(\d+)\.html', url)
@@ -195,6 +269,13 @@ _CONTENT_FILTER_KEYWORDS = [
     '全文阅读', '免费阅读', 'VIP会员', '退出浏览器',
     '后续内容已被隐藏',
 ]
+
+# 站点内嵌水印 token (嵌入正文段落内部/段尾, 非整行, 行级过滤抓不到):
+# orion34g.com 等站点在 qsbs_bb 解码后的每段末尾嵌入 "W站点名" 字符作水印。
+# 精确匹配已知 token 并连同前后空白一起移除, 不误伤正文 (如 "W先生" 等写法)。
+_WATERMARK_TOKENS = (
+    'W阿木战恋雪',   # orion34g.com 内嵌水印
+)
 
 
 def _is_ad_line(line):
@@ -506,52 +587,58 @@ class NovelSpider:
         _t0 = time.time()
         challenge_markers = ['ge_js_validator', 'window.location.reload']
         response = self.session.get(url, headers=headers, timeout=timeout)
-        # ---- WAF 图片验证码 (banlvzw 等: 401 + __wafcaptcha 特征) ----
-        # 放行 cookie 会按请求数/时间过期, 因此每次命中 401 都尝试重新解决;
-        # 失败后 60 秒冷却, 避免 IP 被拉黑时无限重试刷屏。
-        # 识别需要 captcha_config.json 显式开启 ddddocr (默认关闭)
+        # ---- 反爬分级循环处理 (banlvzw 等站点可能"JS挑战 → 图片验证码"连续多层) ----
+        # 每轮先识别并解决一层 (图片验证码 / JS令牌挑战), 解决后重试;
+        # 若重试后仍未通过 (再次命中反爬页), 进入下一轮继续解决, 最多 _MAX_WAF_ROUNDS 轮。
         try:
             from waf_captcha import is_waf_captcha_page, solve_waf_captcha
         except Exception:
             is_waf_captcha_page = None
             solve_waf_captcha = None
-        if is_waf_captcha_page is not None:
-            if not hasattr(self, '_waf_last_try'):
-                self._waf_last_try = 0.0
-            _now_t = time.time()
-            # 冷却只针对"解决失败" (IP 可能被拉黑); 解决成功后立即重置,
-            # 因为该 WAF 按请求数限频, 放行 cookie 会周期性过期, 需随时可重试
-            if is_waf_captcha_page(response.status_code, response.text) and \
-                    _now_t - self._waf_last_try > 60:
-                try:
-                    print(f"[反爬检测] 命中 WAF 图片验证码页 ({len(response.text)}字节)，尝试自动解决...")
-                    if solve_waf_captcha(self.session, url, headers=headers, log=print):
-                        self._waf_last_try = 0.0  # 成功: 允许后续立即重试
-                        response = self.session.get(url, headers=headers, timeout=timeout)
-                    else:
-                        self._waf_last_try = time.time()  # 失败: 60 秒冷却
-                except Exception as e:
-                    print(f"[反爬检测] WAF 验证码处理异常: {e}")
 
-        # ---- WAF JS 动态令牌挑战 (banlvzw 等: 401 + @wafjs 混淆脚本) ----
-        # 页面含 Loading 转圈 + /@wafjs? 脚本, 需浏览器执行 JS 生成令牌 cookie。
-        # 用 Playwright 渲染一次, 把浏览器 cookie 回灌 requests session。
-        if is_waf_captcha_page is not None and _is_waf_js_challenge(response):
-            if not hasattr(self, '_waf_js_last_try'):
-                self._waf_js_last_try = 0.0
-            _now_t = time.time()
-            if _now_t - self._waf_js_last_try > 30:
-                self._waf_js_last_try = _now_t
-                try:
-                    print("[反爬检测] 命中 WAF JS 挑战页, 用浏览器渲染获取令牌 cookie...")
-                    if self._solve_waf_js_challenge(url):
-                        self._waf_js_last_try = 0.0
-                        # 令牌 cookie 绑定浏览器 UA, 重试时用同步后的 UA
-                        hdrs2 = dict(headers or {})
-                        hdrs2['User-Agent'] = self._fixed_ua
-                        response = self.session.get(url, headers=hdrs2, timeout=timeout)
-                except Exception as e:
-                    print(f"[反爬检测] WAF JS 挑战处理异常: {e}")
+        _MAX_WAF_ROUNDS = 4
+        for _round in range(_MAX_WAF_ROUNDS):
+            # 1. WAF 图片验证码 (401/403/429 + __wafcaptcha 特征)
+            if is_waf_captcha_page is not None and \
+                    is_waf_captcha_page(response.status_code, response.text):
+                if not hasattr(self, '_waf_last_try'):
+                    self._waf_last_try = 0.0
+                _now_t = time.time()
+                # 冷却只针对"解决失败" (IP 可能被拉黑); 解决成功后立即重置,
+                # 因为该 WAF 按请求数限频, 放行 cookie 会周期性过期, 需随时可重试
+                if _now_t - self._waf_last_try > 10:
+                    try:
+                        print(f"[反爬检测] 命中 WAF 图片验证码页 ({len(response.text)}字节)，尝试自动解决...")
+                        if solve_waf_captcha(self.session, url, headers=headers, log=print):
+                            self._waf_last_try = 0.0  # 成功: 允许后续立即重试
+                            response = self.session.get(url, headers=headers, timeout=timeout)
+                            continue  # 解决成功, 进入下一轮检查是否还有反爬层
+                        else:
+                            self._waf_last_try = time.time()  # 失败: 10 秒冷却
+                    except Exception as e:
+                        print(f"[反爬检测] WAF 验证码处理异常: {e}")
+
+            # 2. WAF JS 动态令牌挑战 (banlvzw 等: 401 + @wafjs 混淆脚本)
+            if is_waf_captcha_page is not None and _is_waf_js_challenge(response):
+                if not hasattr(self, '_waf_js_last_try'):
+                    self._waf_js_last_try = 0.0
+                _now_t = time.time()
+                if _now_t - self._waf_js_last_try > 30:
+                    self._waf_js_last_try = _now_t
+                    try:
+                        print("[反爬检测] 命中 WAF JS 挑战页, 用浏览器渲染获取令牌 cookie...")
+                        if self._solve_waf_js_challenge(url):
+                            self._waf_js_last_try = 0.0
+                            # 令牌 cookie 绑定浏览器 UA, 重试时用同步后的 UA
+                            hdrs2 = dict(headers or {})
+                            hdrs2['User-Agent'] = self._fixed_ua
+                            response = self.session.get(url, headers=hdrs2, timeout=timeout)
+                            continue  # 解决成功, 进入下一轮检查是否还有反爬层
+                    except Exception as e:
+                        print(f"[反爬检测] WAF JS 挑战处理异常: {e}")
+
+            # 3. 未命中任何反爬层 → 拿到真实页面, 退出循环
+            break
         for retry in range(4):
             raw = response.content
             if not any(m.encode() in raw for m in challenge_markers):
@@ -744,7 +831,21 @@ class NovelSpider:
         time.sleep(3)  # 增加延迟，避免被反爬虫
         
         try:
-            response = self._get_with_js_challenge(url, headers)
+            # 网络异常(如 zhiruo.org 目录页的 ConnectionResetError)时自动重试, 避免直接进入Selenium兜底
+            _conn_retries = 3
+            response = None
+            for _attempt in range(1, _conn_retries + 1):
+                try:
+                    response = self._get_with_js_challenge(url, headers)
+                    break
+                except Exception as e:
+                    print(f"请求失败({_attempt}/{_conn_retries}): {e}")
+                    if _attempt >= _conn_retries:
+                        break
+                    time.sleep(3)
+            if response is None:
+                print("请求重试耗尽, 返回空页面(交由调用方Selenium兜底)")
+                return BeautifulSoup('', 'lxml')
 
             # 尝试使用ignore模式解码
             try:
@@ -813,21 +914,43 @@ class NovelSpider:
         soup = self.inspect_page(catalog_url)
 
         # 特殊处理zhiruo.org网站：目录页章节链接用 onclick="read_tz(章节ID)" 而非 href，
-        # 正文URL格式为 /infos/{小说ID}/{章节ID}.html；目录可能分页 /infos/{id}/1/, /infos/{id}/2/ ...
+        # 正文URL格式为 /infos/{小说ID}/{章节ID}.html 或 /{cat}/{小说ID}/{章节ID}.html；
+        # 目录可能分页 /infos/{id}/1/, /infos/{id}/2/ ... 或 /{cat}/{id}/1/ ...
         if 'zhiruo.org' in catalog_url:
             print("检测到zhiruo.org网站，使用onclick解析章节列表")
-            novel_id_match = re.search(r'/infos/(\d+)', catalog_url)
-            if not novel_id_match:
-                print("[zhiruo] 无法从URL提取小说ID")
+            # 提取书路径前缀: 支持 /infos/{id} 和 /{cat}/{id} 两种格式
+            # 例: /infos/5523629.html → /infos/5523629
+            #     /163/163654/index.html → /163/163654
+            #     /163/163654/1/ (目录分页) → /163/163654
+            path_m = re.search(r'/((?:infos|[a-zA-Z0-9_]+)/\d+)', catalog_url)
+            if not path_m:
+                print("[zhiruo] 无法从URL提取小说路径")
                 return chapters
-            novel_id = novel_id_match.group(1)
+            novel_path = path_m.group(1)
+            print(f"[zhiruo] 书路径前缀: {novel_path}")
+            # 详情页 (如 index.html 或书根目录) 无章节列表, 需先跳转到 "章节目录" 链接
+            if 'index.html' in catalog_url or catalog_url.rstrip('/').endswith(novel_path):
+                catalog_link_a = None
+                for a in soup.find_all('a', href=True):
+                    txt = a.get_text(strip=True)
+                    if '章节目录' in txt or '查看全部章节' in txt or '查看更多章节' in txt:
+                        catalog_link_a = a
+                        break
+                if catalog_link_a:
+                    href = catalog_link_a.get('href', '')
+                    if not href.startswith('http'):
+                        href = self.base_url + href
+                    print(f"[zhiruo] 详情页, 跳转章节目录: {href}")
+                    page_soup_first = self.inspect_page(href)
+                    if page_soup_first:
+                        soup = page_soup_first
             seen_ids = set()
             page_no = 1
             while True:
                 if page_no == 1:
                     page_soup = soup  # 第1页已由inspect_page抓取，直接复用
                 else:
-                    catalog_page_url = f"{self.base_url}/infos/{novel_id}/{page_no}/"
+                    catalog_page_url = f"{self.base_url}/{novel_path}/{page_no}/"
                     print(f"[zhiruo] 抓取目录第{page_no}页: {catalog_page_url}")
                     page_soup = self.inspect_page(catalog_page_url)
                 if not page_soup:
@@ -849,7 +972,7 @@ class NovelSpider:
                     title = a.get_text(strip=True)
                     if not title:
                         continue
-                    chap_url = f"{self.base_url}/infos/{novel_id}/{chap_id}.html"
+                    chap_url = f"{self.base_url}/{novel_path}/{chap_id}.html"
                     chapters.append({'title': self.clean_chapter_title(title), 'url': chap_url})
                     new_count += 1
                 print(f"[zhiruo] 第{page_no}页: 新增 {new_count} 章，累计 {len(chapters)} 章")
@@ -864,6 +987,202 @@ class NovelSpider:
                 print("[zhiruo] 已按章节号排序")
             for i, chap in enumerate(chapters):
                 print(f"  {i+1}. {chap['title']} -> {chap['url']}")
+            return chapters
+
+        # 特殊处理ciyewk.com网站 (词夜书屋):
+        # 目录 /shu/{bid}.html (bid 为字母数字如 OqWe), 容器 #list dl dd a;
+        # 章节URL /shu/{bid}/{N}.html; 正文由 initTxt 加载 .book 数据文件,
+        # content_decoder 自动探测解码 (见 get_chapter_content 数据文件层)。
+        if 'ciyewk.com' in catalog_url:
+            print("检测到ciyewk.com网站，使用专门的处理逻辑")
+            book_id_match = re.search(r'/shu/([A-Za-z0-9]+)', catalog_url)
+            if not book_id_match:
+                print("[ciyewk] 无法从URL提取小说ID")
+                return chapters
+            book_id = book_id_match.group(1)
+            print(f"[ciyewk] 小说ID: {book_id}")
+            # 若用户给的是章节页 (如 ml.html / N.html), 规范化到目录页
+            if not re.search(r'/shu/' + re.escape(book_id) + r'\.html$', catalog_url):
+                catalog_page_url = f"{self.base_url}/shu/{book_id}.html"
+                print(f"[ciyewk] 规范化目录URL: {catalog_page_url}")
+                soup = self.inspect_page(catalog_page_url)
+            seen_urls = set()
+            for a in soup.select('#list dl dd a[href]'):
+                href = a.get('href', '')
+                text = a.get_text(strip=True)
+                if not text or len(text) < 2:
+                    continue
+                m = re.search(r'/shu/' + re.escape(book_id) + r'/(\d+)\.html$', href)
+                if not m:
+                    continue
+                chap_url = href if href.startswith('http') else self.base_url + href
+                if chap_url in seen_urls:
+                    continue
+                seen_urls.add(chap_url)
+                chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
+            print(f"[ciyewk] 共提取 {len(chapters)} 个章节")
+            if sort_chapters and chapters:
+                chapters.sort(key=_chapter_sort_key)
+                print("[ciyewk] 已按章节号排序")
+            for i, chap in enumerate(chapters[:10]):
+                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            if len(chapters) > 10:
+                print(f"  ... (共 {len(chapters)} 章)")
+            return chapters
+
+        # 特殊处理630wang.cc网站 (恋上看书网):
+        # 目录详情页 /kan/{id}.html; 目录分页 /kan/{id}/{n}.html (n=1,2,3..., 分页按钮JS动态加载,
+        # 页面无 "下一页" 链接, 需按规则拼接); 章节URL /kan/{id}_{chapid}.html;
+        # 正文 div.word_read 的 <p> (数字被服务端替换为o, 有损替换无法还原, 保留原样)。
+        if '630wang.cc' in catalog_url:
+            print("检测到630wang.cc网站，使用专门的处理逻辑")
+            book_id_match = re.search(r'/kan/(\d+)', catalog_url)
+            if not book_id_match:
+                print("[630wang] 无法从URL提取小说ID")
+                return chapters
+            book_id = book_id_match.group(1)
+            print(f"[630wang] 小说ID: {book_id}")
+            # 目录第1页: 用户给的若是章节页/详情页, 用 /kan/{id}/1.html
+            first_page = catalog_url
+            if not re.search(r'/kan/' + book_id + r'/(\d+)\.html$', catalog_url):
+                first_page = f"{self.base_url}/kan/{book_id}/1.html"
+                print(f"[630wang] 目录第1页: {first_page}")
+            catalog_pages = [first_page]
+            for page_no in range(2, 51):  # 最多50页
+                catalog_pages.append(f"{self.base_url}/kan/{book_id}/{page_no}.html")
+            seen_urls = set()
+            for page_url in catalog_pages:
+                print(f"[630wang] 抓取目录页: {page_url}")
+                page_soup = self.inspect_page(page_url)
+                if not page_soup:
+                    continue
+                chap_list_ul = page_soup.select_one('ul.section-list')
+                new_on_page = 0
+                for a in (chap_list_ul.find_all('a', href=True) if chap_list_ul
+                          else page_soup.find_all('a', href=True)):
+                    href = a.get('href', '')
+                    text = a.get_text(strip=True)
+                    if not text:
+                        continue
+                    # 章节URL格式: /kan/{id}_{chapid}.html
+                    m = re.search(r'/kan/' + book_id + r'_(\d+)\.html$', href)
+                    if not m:
+                        continue
+                    chap_url = href if href.startswith('http') else self.base_url + href
+                    if chap_url in seen_urls:
+                        continue
+                    if any(kw in text for kw in ['上一页', '下一页', '章节目录', '查看更多', '开始阅读',
+                                                  '目录', '首页', '返回', '上一章', '下一章']):
+                        continue
+                    seen_urls.add(chap_url)
+                    chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
+                                     'url': chap_url})
+                    new_on_page += 1
+                print(f"[630wang] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+                # 当前页没拿到任何新章节 → 后续分页已结束
+                if new_on_page == 0 and page_url != first_page:
+                    break
+            if sort_chapters and chapters:
+                chapters.sort(key=_chapter_sort_key)
+                print("[630wang] 已按章节号排序")
+            print(f"[630wang] 共提取 {len(chapters)} 个章节")
+            for i, chap in enumerate(chapters[:10]):
+                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            if len(chapters) > 10:
+                print(f"  ... (共 {len(chapters)} 章)")
+            return chapters
+
+        # 特殊处理ltbook.net网站 (龙腾小说网):
+        # 目录 /83663/ 简介页章节链接 /83663/{chapid}.html;
+        # 简介页章节少时, 从 "全文阅读" 连读页 (如 /83663/6.html) 链式追踪 "下一页" 补充完整目录。
+        if 'ltbook.net' in catalog_url:
+            print("检测到ltbook.net网站，使用专门的处理逻辑")
+            book_id_match = re.search(r'/(\d+)', catalog_url)
+            if not book_id_match:
+                print("[ltbook] 无法从URL提取小说ID")
+                return chapters
+            book_id = book_id_match.group(1)
+            print(f"[ltbook] 小说ID: {book_id}")
+            seen_urls = set()
+            # 1. 从简介页提取章节链接
+            for a in soup.find_all('a', href=True):
+                href = a.get('href', '')
+                text = a.get_text(strip=True)
+                if not text:
+                    continue
+                m = re.search(r'/' + book_id + r'/(\d+)\.html$', href)
+                if not m:
+                    continue
+                if any(kw in text for kw in ['全文阅读', '章节目录', '目录', '上一页', '下一页', '加入书架']):
+                    continue
+                chap_url = href if href.startswith('http') else self.base_url + href
+                if chap_url in seen_urls:
+                    continue
+                seen_urls.add(chap_url)
+                chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
+                                 'url': chap_url})
+            print(f"[ltbook] 简介页提取 {len(chapters)} 个章节")
+            # 2. 若章节过少 (<10), 从连读页追踪补充 (连读页 "下一页" 指向下一章)
+            if len(chapters) < 10:
+                next_url = None
+                for a in soup.find_all('a', href=True):
+                    text = a.get_text(strip=True)
+                    if '全文阅读' in text or text.strip() == '全文':
+                        href = a.get('href', '')
+                        if not href.startswith('http'):
+                            href = self.base_url + href
+                        next_url = href
+                        break
+                if not next_url and chapters:
+                    next_url = chapters[0]['url']
+                visited = set()
+                while next_url and len(chapters) < 300:
+                    if next_url in visited:
+                        break
+                    visited.add(next_url)
+                    print(f"[ltbook] 连读追踪: {next_url}")
+                    page_soup = self.inspect_page(next_url)
+                    if not page_soup:
+                        break
+                    if next_url not in seen_urls:
+                        title_el = page_soup.select_one('h1.readTitle') or page_soup.select_one('h1')
+                        chap_title = title_el.get_text(strip=True) if title_el else f'第{len(chapters)+1}章'
+                        chap_title = _format_range_chapter_title(self.clean_chapter_title(chap_title))
+                        seen_urls.add(next_url)
+                        # 标题重复或章节号重叠(如连读页与章节页内容相同)则跳过, 避免重复章节
+                        _dup = False
+                        for _c in chapters:
+                            if _c['title'] == chap_title:
+                                _dup = True
+                                break
+                            _cn = _title_chapter_nums(_c['title'])
+                            _tn = _title_chapter_nums(chap_title)
+                            if _cn and _tn and (_cn & _tn):
+                                _dup = True
+                                break
+                        if not _dup:
+                            chapters.append({'title': chap_title, 'url': next_url})
+                        else:
+                            print(f"[ltbook] 跳过重复章节: {chap_title}")
+                    next_a = None
+                    for a in page_soup.find_all('a', href=True):
+                        text = a.get_text(strip=True)
+                        if text.strip() == '下一页' or '下一章' in text:
+                            href = a.get('href', '')
+                            if not href.startswith('http'):
+                                href = self.base_url + href
+                            if re.search(r'/' + book_id + r'/(\d+)\.html$', href):
+                                next_a = href
+                                break
+                    next_url = next_a
+            if sort_chapters and chapters:
+                chapters.sort(key=_chapter_sort_key)
+                print("[ltbook] 已按章节号排序")
+            print(f"[ltbook] 共提取 {len(chapters)} 个章节")
+            for i, chap in enumerate(chapters[:10]):
+                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            if len(chapters) > 10:
+                print(f"  ... (共 {len(chapters)} 章)")
             return chapters
 
         # 特殊处理biquwx.cc网站:
@@ -1241,6 +1560,20 @@ class NovelSpider:
                             if alt_match:
                                 novel_path = f"/{alt_match.group(1)}/"
                                 print(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
+                            else:
+                                # 模式6: /shu/OqWe.html → /shu/OqWe/ (ciyewk等字母数字书ID
+                                # 目录页, 章节链接 /shu/OqWe/{N}.html)
+                                path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
+                                if path6:
+                                    novel_path = f"{path6.group(1)}/"
+                                    print(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
+                                else:
+                                    # 模式7: /163/163654/index.html → /163/163654/ (zhiruo等
+                                    # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
+                                    path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
+                                    if path7:
+                                        novel_path = f"{path7.group(1)}/"
+                                        print(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
 
             novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
         
@@ -1658,7 +1991,9 @@ class NovelSpider:
                                 if novel_path in href or '/chapter/' in href:
                                     relevant_links.append(link)
                             else:
-                                if novel_path in href:
+                                # novel_path 为空时 (路径提取失败) 不启用路径过滤,
+                                # 避免 '' in href 恒为 True 导致全页链接都被当章节
+                                if novel_path and novel_path in href:
                                     relevant_links.append(link)
                         
                         if relevant_links:
@@ -1997,6 +2332,11 @@ class NovelSpider:
         for entity, char in html_entities.items():
             content = content.replace(f'&{entity};', char)
             content = content.replace(entity, char) if len(entity) > 3 else content
+
+        # 移除站点内嵌水印 (段落内部/段尾, 非整行): 连同前后空白一起删,
+        # 保证 "句号。 W阿木战恋雪 新段落" 清洗后自然衔接为 "句号。 新段落"
+        for _wm in _WATERMARK_TOKENS:
+            content = re.sub(r'\s*' + re.escape(_wm) + r'\s*', '', content)
 
         # 使用模块级常量 (避免重复定义)
         filter_keywords = _CONTENT_FILTER_KEYWORDS
@@ -2466,14 +2806,13 @@ class NovelSpider:
             return ''
 
     def deduplicate_paragraphs(self, content):
-        """整章段落级去重
+        """两阶段去重：行级 → 段落级，消除跨页合并后的重复内容。
 
-        云趣阁 (28zw.org/spscl.com) 等站点的分页机制会在每页开头重复前页内容,
-        导致合并后的章节内出现大段重复段落。本方法按段落指纹 (前60字) 去重,
-        保留首次出现的段落, 删除后续重复, 同时保留短段落 (对话引语等) 不参与去重。
-
-        注意: clean_content 后段落间是单换行 \\n, 多页合并处是 \\n\\n,
-        所以按 \\n 分割段落, 同时保留空行分隔结构。
+        一、行级去重：按完整行内容去重（精确匹配），解决 HTML 中同一段落
+           被渲染多次、或提取器重复抽取导致的行级重复。
+        二、段落级去重：按整段 MD5 hash 去重，解决跨页合并时
+           网站在前页结尾与后页开头之间插入的衔接重复段落。
+           短段落 (<20字) 不参与去重，保留对话引语等。
 
         Args:
             content: 整章正文 (多页合并后)
@@ -2483,9 +2822,27 @@ class NovelSpider:
         """
         if not content:
             return content
-        # 按换行分割成段落 (clean_content 后每行是一个段落)
+
+        # ---- Phase 1: 行级去重 (精确行匹配) ----
+        lines = content.split('\n')
+        seen_lines = set()
+        deduped_lines = []
+        line_removed = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped and stripped in seen_lines:
+                line_removed += 1
+                continue
+            if stripped:
+                seen_lines.add(stripped)
+            deduped_lines.append(line)
+        if line_removed:
+            print(f"[行去重] 移除 {line_removed} 个重复行")
+
+        # ---- Phase 2: 段落级去重 (MD5 整段 hash) ----
+        content = '\n'.join(deduped_lines)
         paragraphs = content.split('\n')
-        seen_fingerprints = set()
+        seen_hashes = set()
         result = []
         removed = 0
         for para in paragraphs:
@@ -2495,16 +2852,16 @@ class NovelSpider:
                 if result and result[-1] != '':
                     result.append('')
                 continue
-            # 短段落 (<60字) 不参与去重, 保留对话引语、短句等
-            if len(para) < 60:
+            # 短段落 (<20字) 不参与去重, 保留对话引语、短句等
+            if len(para) < 20:
                 result.append(para)
                 continue
-            # 用前60字作为指纹 (跨页重复段落通常开头完全相同)
-            fingerprint = para[:60]
-            if fingerprint in seen_fingerprints:
+            # 用整段 MD5 hash 作为指纹 (比前N字更精确, 避免误判)
+            fingerprint = hashlib.md5(para.encode('utf-8')).hexdigest()
+            if fingerprint in seen_hashes:
                 removed += 1
                 continue
-            seen_fingerprints.add(fingerprint)
+            seen_hashes.add(fingerprint)
             result.append(para)
         # 清理尾部空行
         while result and result[-1] == '':
@@ -2563,6 +2920,8 @@ class NovelSpider:
 
         # 重置页面内容指纹（用于检测重复内容）
         self._last_page_fingerprint = None
+        # 重置内容模式检测缓存 (站点配置提取成功时第1页不会触发通用检测, 需保证已定义)
+        self._detected_pattern = None
 
         # 处理分页
         page_index = 0
@@ -2675,6 +3034,48 @@ class NovelSpider:
                 except Exception as e:
                     print(f"[数据文件] 解码失败, 走常规流程: {e}")
                     self._datafile_mode = False
+
+            # ===== sites_config 站点专属正文提取 (优先于通用检测) =====
+            # 站点配置声明了专用 content_extractor 时, 用配置的精准选择器提取,
+            # 避免通用检测选中外层容器导致正文混入广告/导航行:
+            #   - ltbook.net: #content 含书名作者行 + 尾部温馨提示, #rtext 才是纯正文
+            #   - 630wang.cc: .word_read 含 上一章/下一章 导航按钮
+            #   - yunquge: div.content 混推荐书单
+            # 仅对 html_selector 模式且显式声明 content_extractor 的站点启用,
+            # 其余站点保持原通用检测行为不变。
+            # 注意: 只启用 extract_content_html_selector 中已实现的分支,
+            # 未实现的 (如 yqyp_nav_strip) 保持原通用提取路径, 避免行为退化。
+            _IMPLEMENTED_EXTRACTORS = ('yunquge_p_filter', 'ltbook_junk_filter', 'word_read_p_filter', 'yqyp_nav_strip')
+            if (site_pattern and site_pattern.get('pattern') == PATTERN_HTML_SELECTOR
+                    and site_pattern.get('content_extractor') in _IMPLEMENTED_EXTRACTORS):
+                try:
+                    site_content, site_ok = extract_content_by_pattern(
+                        self.session, current_url, site_pattern, self.base_url, headers,
+                        lambda u, h: self._get_with_js_challenge(u, h),
+                    )
+                except Exception as e:
+                    print(f"[sites_config] 站点配置提取异常, 回退通用检测: {e}")
+                    site_content, site_ok = '', False
+                if site_ok and site_content:
+                    print(f"[sites_config] 站点配置提取成功: {len(site_content)} 字符 "
+                          f"(extractor={site_pattern['content_extractor']})")
+                    page_text = self.clean_content(site_content)
+                    print(f"[sites_config] 第{page_index+1}页清洗后: {len(page_text)} 字符")
+                    if len(page_text) < 50:
+                        print(f"[sites_config] 正文过短, 可能已到末页, 结束分页")
+                        break
+                    # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
+                    import hashlib
+                    fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                    if fingerprint == self._last_page_fingerprint:
+                        print(f"[sites_config] 第{page_index+1}页与上一页指纹相同, 停止抓取")
+                        break
+                    self._last_page_fingerprint = fingerprint
+                    total_content += page_text + '\n\n'
+                    print(f"[sites_config] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
+                    success = True
+                    page_index += 1
+                    continue
 
             # ===== 通用自动检测分发层 (基于内容特征, 不依赖域名) =====
             # 对未知站点自动识别内容模式 (qsbs_bb / html_selector), 优先尝试通用提取;
@@ -3865,6 +4266,10 @@ class NovelSpider:
                 title = re.sub(r'[\x00-\x1f\x7f-\xff]', '', title)
                 title = re.sub(r'\s+', ' ', title)
                 title = title.strip()
+                # 通用标题格式清理: 从常见分隔符截断 → 去除 SEO 关键词和站点后缀
+                title = re.sub(r'[_\-—|].*$', '', title)
+                title = re.sub(r'(最新章节|全文阅读|免费阅读|无弹窗|全本|txt|TXT|阅读).*$', '', title)
+                title = title.strip().rstrip('-_—| ')
                 if title:
                     print(f"从标题标签提取到小说名称: {title}")
                     return title
@@ -4020,21 +4425,38 @@ class NovelSpider:
 
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
-            stop_event=None):
+            stop_event=None, unique_title=False, novel_title=None):
         """完整抓取小说。
         resume=True 时自动检测检查点，从上次中断处继续（追加写入）。
         show_progress=True 时每章更新下载进度条。
         chapter_range: (start, end) 1-based 章节索引区间，None 表示抓取全部。
         threads: 并发抓取线程数 (1=串行)。并发时按章节顺序写入, 断点续传不受影响。
         delay: 章节间请求间隔秒数 (越小越快, 但可能触发站点反爬)。
+        unique_title=True 时, 若输出目录已存在同名文件/任务, 自动为小说标题和
+        输出文件名加上 (1)/(2) 等序号 (供 GUI 新任务使用; CLI 默认关闭以保留
+        断点续传行为)。
         """
-        # 提取小说名称
-        novel_title = self.get_novel_title(catalog_url)
+        # 提取小说名称 (调用方已提供时直接使用, 避免重复请求)
+        title_from_caller = novel_title is not None
+        if novel_title is None:
+            novel_title = self.get_novel_title(catalog_url)
+
+        # GUI 新任务启用重名自动加序号 (CLI 默认保持原行为)
+        # 调用方(run_crawl)已通过 _resolve_unique_title 预分配唯一标题时直接复用,
+        # 避免二次 resolve 导致序号递增 (如 书名(1) 又变成 书名(1)(1))
+        if unique_title and not output_file and not title_from_caller:
+            output_dir_abs = _resolve_output_dir(output_dir) if output_dir else _DEFAULT_OUTPUT_DIR
+            novel_title = _resolve_unique_title(novel_title, output_dir_abs)
+
         print(f"提取到小说名称: {novel_title}")
 
         # 处理输出文件名 (安全: 只使用 basename, 禁止 ../ 路径穿越)
         if not output_file:
             safe_title = re.sub(r'[<>:"/\\|?*]', '_', novel_title)
+            # 去重连续下划线并去除首尾下划线, 限制文件名长度 80 字
+            safe_title = re.sub(r'_+', '_', safe_title).strip('_')
+            if len(safe_title) > 80:
+                safe_title = safe_title[:80]
             if chapter_range:
                 sr, er = chapter_range
                 output_file = f"{safe_title}_第{sr}-{er}章.txt"
@@ -4332,9 +4754,91 @@ def _resolve_output_dir(output_dir: str) -> str:
     return _resolve_output_dir_via_utils(output_dir)
 
 
+def _safe_filename_part(title: str, max_len: int = 80) -> str:
+    """将小说标题转换为可安全用于文件名的字符串"""
+    safe = re.sub(r'[<>:"/\\|?*]', '_', title)
+    safe = re.sub(r'_+', '_', safe).strip('_')
+    if len(safe) > max_len:
+        safe = safe[:max_len]
+    return safe or "未知小说"
+
+
+# 进程级标题注册表: 记录本进程内并发任务已分配的同名标题。
+# 磁盘扫描只能看到已写盘的文件, 并发任务同时 resolve 同名小说时会拿到同一标题互相覆盖;
+# 登记后, 后续任务在 resolve 时把这些“进行中”的标题视为已占用, 从而分配到不同序号。
+_TITLE_REGISTRY_LOCK = threading.Lock()
+_TITLE_REGISTRY = set()
+
+
+def _resolve_unique_title(novel_title: str, output_dir: str,
+                          existing_titles: list = None) -> str:
+    """为同名小说生成带序号的唯一标题。
+
+    检查范围:
+      - 输出目录中已存在的 .txt 结果文件
+      - 输出目录中已存在的 .txt.checkpoint.json 检查点文件
+      - 调用方传入的现有标题列表 (如 GUI 当前任务列表)
+      - 本进程内并发任务已分配的同名标题 (进程级注册表, 防并发竞态覆盖)
+
+    返回示例:
+      - 无冲突: "书名"
+      - 有冲突: "书名(1)", "书名(2)" ...
+    """
+    base = _safe_filename_part(novel_title)
+    used = set()
+    pattern = re.compile(re.escape(base) + r'(?:\((\d+)\))?$')
+
+    # 扫描输出目录中的文件/checkpoint
+    if os.path.isdir(output_dir):
+        for name in os.listdir(output_dir):
+            if not name.lower().endswith('.txt'):
+                continue
+            stem = name[:-4]
+            if pattern.fullmatch(stem):
+                used.add(stem)
+            ck_path = os.path.join(output_dir, f"{name}.checkpoint.json")
+            if os.path.isfile(ck_path):
+                used.add(stem)
+
+    # 合并调用方传入的已有标题
+    if existing_titles:
+        for t in existing_titles:
+            if not t:
+                continue
+            stem = _safe_filename_part(t)
+            if pattern.fullmatch(stem):
+                used.add(stem)
+
+    # 合并进程级注册表: 并发任务已分配但尚未写盘的标题
+    with _TITLE_REGISTRY_LOCK:
+        for stem in _TITLE_REGISTRY:
+            if pattern.fullmatch(stem):
+                used.add(stem)
+
+    if base not in used:
+        resolved = novel_title
+    else:
+        # 找最小可用序号
+        resolved = novel_title
+        for idx in range(1, 10000):
+            candidate_stem = f"{base}({idx})"
+            if candidate_stem not in used:
+                # 尽量保留原书名；若原书名超长被截断则返回截断后的形式
+                if len(novel_title) <= 80:
+                    resolved = f"{novel_title}({idx})"
+                else:
+                    resolved = candidate_stem.replace('_', '')
+                break
+
+    # 登记到进程级注册表, 防止并发任务同时选中同一标题
+    with _TITLE_REGISTRY_LOCK:
+        _TITLE_REGISTRY.add(_safe_filename_part(resolved))
+    return resolved
+
+
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
               resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
-              stop_event=None):
+              stop_event=None, unique_title=False):
     """根据模式执行抓取任务，供命令行与交互式共用
 
     Args:
@@ -4348,6 +4852,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         threads: 并发抓取线程数 (1=串行)
         delay: 章节间请求间隔秒数
         stop_event: threading.Event，GUI 停止按钮设置后中断抓取
+        unique_title: 为 True 时, 新任务遇到同名小说自动加 (1)/(2) 序号
     """
     # 统一输出目录 -> 绝对路径, 避免多套结果目录
     if output_dir is None:
@@ -4368,6 +4873,17 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     base_url = get_base_url(catalog_url)
     print(f"提取到基础URL: {base_url}")
     spider = NovelSpider(base_url)
+
+    # 若启用去重序号, 在主源抓取前一次性确定唯一标题,
+    # 避免多源回退时备用源又产生新的序号文件。
+    unique_novel_title = None
+    if unique_title and mode in ("full", "range"):
+        try:
+            raw_title = spider.get_novel_title(catalog_url)
+            unique_novel_title = _resolve_unique_title(raw_title, output_dir)
+            print(f"[去重标题] {raw_title} -> {unique_novel_title}")
+        except Exception as e:
+            print(f"[去重标题] 标题预取失败, 降级到单源内去重: {e}")
 
     if mode == "list":
         chapters = spider.get_chapter_list(catalog_url, sort_chapters)
@@ -4423,11 +4939,13 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                            resume=resume, show_progress=show_progress,
                            chapter_range=chapter_range, threads=threads, delay=delay,
-                           stop_event=stop_event)
+                           stop_event=stop_event, unique_title=unique_title,
+                           novel_title=unique_novel_title)
         else:
             src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                            resume=resume, show_progress=show_progress,
-                           threads=threads, delay=delay, stop_event=stop_event)
+                           threads=threads, delay=delay, stop_event=stop_event,
+                           unique_title=unique_title, novel_title=unique_novel_title)
         # 成功判定: 失败章节占比 < 20% 且验证码触发率 < 50%
         failed = getattr(src_spider, 'last_failed', None)
         total_n = getattr(src_spider, 'last_total', 0)
@@ -4450,7 +4968,8 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
 
 
 def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
-              show_progress=True, output_dir=None, delay=1.0, stop_event=None):
+              show_progress=True, output_dir=None, delay=1.0, stop_event=None,
+              unique_title=False):
     """批量抓取多本书 (书级并行)。
 
     方案说明:
@@ -4465,6 +4984,7 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
         threads: 同时抓取的书数 (1=串行)
         output_dir: 输出目录 (None=默认 抓取结果/)
         stop_event: 停止事件 (GUI 停止按钮使用)
+        unique_title: 为 True 时, 同名小说自动加序号
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from collections import defaultdict
@@ -4487,7 +5007,7 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
             run_crawl(url, mode="full", sort_chapters=sort_chapters,
                       output_dir=output_dir, resume=resume,
                       show_progress=show_progress, threads=1, delay=delay,
-                      stop_event=stop_event)
+                      stop_event=stop_event, unique_title=unique_title)
             return url, '✅ 完成', time.time() - t0, None
         except Exception as e:
             return url, f'❌ 失败: {str(e)[:80]}', time.time() - t0, None

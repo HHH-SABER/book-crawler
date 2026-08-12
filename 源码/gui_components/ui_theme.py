@@ -9,20 +9,40 @@ import flet as ft
 
 # 统一字体与字重规范 (来自 ui_morandi, 本模块所有文本必须遵守)
 from .ui_morandi import (
-    FONT_STACK, FONT_TERMINAL, SIZE_TINY, WEIGHT_EMPHASIS,
-    MORANDI_TERMINAL_BG, LOG_COLOR_INFO, LOG_COLOR_ERROR,
-    LOG_COLOR_WARN, LOG_COLOR_DEBUG,
+    FONT_STACK, FONT_TERMINAL, SIZE_BODY, SIZE_TINY, WEIGHT_BODY,
+    WEIGHT_EMPHASIS, MORANDI_TERMINAL_BG, LOG_COLOR_INFO,
+    LOG_COLOR_ERROR, LOG_COLOR_WARN, LOG_COLOR_DEBUG,
 )
 
+# 统一按钮文字样式 (所有按钮工厂函数必须引用, 保证字号/字重/字体族一致)
+BTN_TEXT_STYLE = ft.TextStyle(
+    size=SIZE_BODY, weight=WEIGHT_BODY, font_family=FONT_STACK)
+
 # ---------------------------------------------------------------- 卡片
-CARD_RADIUS = 12
+CARD_RADIUS = 14
 CARD_PADDING = 12
+
+# 卡片双层阴影: 外层大模糊模拟环境光, 内层贴边模拟接触阴影 (更自然的悬浮感)
+_CARD_SHADOW = [
+    ft.BoxShadow(
+        blur_radius=18,
+        spread_radius=-2,
+        offset=ft.Offset(0, 4),
+        color=ft.Colors.with_opacity(0.06, ft.Colors.BLACK),
+    ),
+    ft.BoxShadow(
+        blur_radius=4,
+        spread_radius=0,
+        offset=ft.Offset(0, 1),
+        color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+    ),
+]
 
 
 def make_card(content, padding=CARD_PADDING, radius=CARD_RADIUS,
               expand=False, width=None, bgcolor=None, scroll=None,
-              visible=None):
-    """统一卡片：M3 语义色表面 + 柔和阴影 + 大圆角"""
+              visible=None, border=None):
+    """统一卡片：M3 语义色表面 + 双层柔和阴影 + 大圆角"""
     return ft.Container(
         content=content,
         width=width,
@@ -30,13 +50,9 @@ def make_card(content, padding=CARD_PADDING, radius=CARD_RADIUS,
         padding=padding,
         bgcolor=bgcolor or ft.Colors.SURFACE_CONTAINER_HIGHEST,
         border_radius=radius,
+        border=border,
         visible=visible,
-        shadow=ft.BoxShadow(
-            blur_radius=10,
-            spread_radius=0,
-            offset=ft.Offset(0, 2),
-            color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
-        ),
+        shadow=_CARD_SHADOW,
     )
 
 
@@ -81,7 +97,11 @@ def status_color(status: str):
 
 # ---------------------------------------------------------------- 按钮
 def _btn_style():
-    return ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10))
+    """统一按钮基础样式：圆角 + 规范字体"""
+    return ft.ButtonStyle(
+        shape=ft.RoundedRectangleBorder(radius=10),
+        text_style=BTN_TEXT_STYLE,
+    )
 
 
 def filled_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
@@ -108,6 +128,14 @@ def outline_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
                              style=_btn_style())
 
 
+def text_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
+             visible=None):
+    """文字按钮（最弱强调，如取消/辅助链接）"""
+    return ft.TextButton(text, icon=icon, on_click=on_click,
+                         disabled=disabled, tooltip=tooltip, visible=visible,
+                         style=_btn_style())
+
+
 def danger_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
                visible=None):
     """危险操作按钮（错误色背景）"""
@@ -118,6 +146,7 @@ def danger_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
             shape=ft.RoundedRectangleBorder(radius=10),
             bgcolor=ft.Colors.ERROR_CONTAINER,
             color=ft.Colors.ON_ERROR_CONTAINER,
+            text_style=BTN_TEXT_STYLE,
         ),
     )
 
