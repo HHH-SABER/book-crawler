@@ -118,6 +118,15 @@ if os.path.isfile(sites_config_src):
 if os.path.isfile(captcha_config_src):
     add_data_list.append(f"{captcha_config_src}:.")
     log(f"[OK] Bundling captcha_config.json")
+# ddddocr 模型（WAF 图片验证码识别必需；onnx 模型不会被 PyInstaller 自动收集，
+# 缺包时 EXE 内报 模型文件不存在: common_old.onnx，识别失败导致 401 0章）
+ddddocr_dir = os.path.join(ROOT, ".venv", "Lib", "site-packages", "ddddocr")
+if os.path.isdir(ddddocr_dir):
+    add_data_list.append(f"{ddddocr_dir}:ddddocr")
+    log(f"[OK] Bundling ddddocr models from {ddddocr_dir}")
+else:
+    log("[ERROR] ddddocr not installed! Run .venv\\Scripts\\pip.exe install -r requirements.txt")
+    sys.exit(4)
 
 cmd = [
     flet_exe,
@@ -138,6 +147,20 @@ if os.path.isfile(icon_path):
     log(f"[INFO] icon   = {icon_path}")
 for ad in add_data_list:
     cmd.extend(["--add-data", ad])
+# selenium 子模块为动态导入，PyInstaller 静态分析收集不全会导致 EXE 内报
+# No module named 'selenium.webdriver.chrome.webdriver'（Selenium 兜底失效）
+selenium_hidden_imports = [
+    "selenium.webdriver.chrome.webdriver",
+    "selenium.webdriver.chrome.service",
+    "selenium.webdriver.chrome.options",
+    "selenium.webdriver.common.by",
+    "selenium.webdriver.common.action_chains",
+    "selenium.webdriver.common.keys",
+    "selenium.webdriver.support.ui",
+    "selenium.webdriver.support.expected_conditions",
+]
+for hi in selenium_hidden_imports:
+    cmd.extend(["--hidden-import", hi])
 cmd.extend(["-y", "-v"])
 
 log(f"[INFO] script = {script_path}")

@@ -73,6 +73,25 @@ PATTERN_SELENIUM = 'selenium'
 
 
 # ============================================================
+# orion34g.com 子目录分页 (必须定义在 SITE_PATTERNS 之前)
+# 章节第1页: /orion/{book_id}/{chapter_id}.html
+# 第2页:     /orion/{book_id}/{chapter_id}/1.html  (去掉 .html, 追加 /N.html)
+# chapter_id 就在章节 URL 中, 无需从 HTML 提取
+# ============================================================
+_ORION34G_CHAPTER_IDS = {}  # 保留兼容 (旧版预留, 当前不用)
+
+
+def paginate_orion34g(base_url, page_index):
+    """orion34g 子目录分页: 第1页=/orion/{bid}/{cid}.html, 第N页=/orion/{bid}/{cid}/{N}.html"""
+    if page_index == 0:
+        return base_url
+    m = re.match(r'(https?://[^/]+/orion/\d+/\d+)\.html$', base_url)
+    if not m:
+        return None
+    return f"{m.group(1)}/{page_index}.html"
+
+
+# ============================================================
 # 站点配置表
 # ============================================================
 # 每个站点条目结构:
@@ -240,6 +259,96 @@ SITE_PATTERNS = [
         'content_selectors': ['div#chapter-content', 'div.chapter-content', '#content', '.content'],
         'anti_spider': {'type': 'selenium_required'},
     },
+    {
+        # oldtimeswx.net (旧时光文学): 标准 HTML 选择器 + _N.html 分页
+        # 目录URL: /book/{book_id}/
+        # 章节URL: /book/{book_id}/{chapter_id}.html (第1页) → _{N}.html (后续页)
+        # 第2页示例: 35530884_1.html (start=1)
+        'domain': 'oldtimeswx.net',
+        'pattern': 'html_selector',
+        'catalog_parser': 'generic',
+        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
+        'content_selectors': ['#content', '#BookText', '#booktxt', '.content', 'div.content'],
+        'anti_spider': {'type': 'none'},
+    },
+    {
+        # banlvzw.com (伴侣中文网): WAF JS 挑战 + ?page=N 查询参数分页
+        # 目录URL: /{book_id}/index.html
+        # 章节URL: /{book_id}/{N}.html (第1页) → ?page=N (后续页)
+        # 第2页示例: 5.html?page=2 (start=2)
+        'domain': 'banlvzw.com',
+        'pattern': 'html_selector',
+        'catalog_parser': 'banlvzw',
+        'content_pagination': {'suffix': '?page={N}', 'start': 2, 'max_pages': 30},
+        'content_selectors': ['#BookText', '#booktxt', '#content', '.content', '#articlecontent'],
+        'anti_spider': {'type': 'waf_js'},
+    },
+    {
+        # yipinzongshi.com (一品小说网): qsbs.bb Base64 加密 + _N.html 分页
+        # 章节URL: /book/{book_id}/{chapter_id}.html (第1页)
+        # 第2页: /book/{book_id}/{chapter_id}_1.html (后缀 _N.html, start=1)
+        # 实测: 57724683.html = 第03章第1页, 57724683_1.html = 第03章第2页
+        'domain': 'yipinzongshi.com',
+        'pattern': 'qsbs_bb',
+        'catalog_parser': 'generic',
+        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
+        'content_selectors': ['.word_read', '#content', '.content', 'div.content'],
+        'anti_spider': {'type': 'none'},
+    },
+    {
+        # orion34g.com (猎人小说网): qsbs.bb Base64 加密 + 子目录分页
+        # 章节第1页: /orion/{book_id}/{chapter_id}.html (chapter_id 就在 URL 中)
+        # 第2页: /orion/{book_id}/{chapter_id}/1.html (去掉 .html 加 /N.html)
+        'domain': 'orion34g.com',
+        'pattern': 'qsbs_bb',
+        'catalog_parser': 'generic',
+        'content_pagination': {'type': 'function', 'function': paginate_orion34g, 'max_pages': 30},
+        'content_selectors': ['.word_read', '#content', '.content', 'div.content'],
+        'anti_spider': {'type': 'none'},
+    },
+    {
+        # 630wang.cc (恋上看书网): 目录页 /kan/{id}.html (详情页), 目录分页 /kan/{id}/{n}.html
+        # 目录分页按钮由 JS 动态加载, 页面无 "下一页" 链接, 需按规则拼接 /kan/{id}/2.html 等
+        # 章节URL: /kan/{id}_{chapid}.html; 正文在 div.word_read 的 <p> 中
+        # 反爬: 正文中的数字被服务端替换为 o (如 "早自习o分钟"), 有损替换无法还原, 保留原样
+        'domain': '630wang.cc',
+        'pattern': 'html_selector',
+        'catalog_parser': '630wang',
+        'chapter_url_regex': r'/kan/(\d+)_(\d+)\.html',
+        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
+        'content_selectors': ['div.word_read', '.word_read', '#content', '.content'],
+        'content_extractor': 'word_read_p_filter',
+        'anti_spider': {'type': 'none'},
+    },
+    {
+        # ciyewk.com (词夜书屋): 目录 /shu/{bid}.html 的 #list dl dd a 结构
+        # 章节URL: /shu/{bid}/{N}.html (bid 为字母数字, 如 OqWe)
+        # 正文: 章节页仅有 "章节内容加载中" 占位, 通过 initTxt('//js.ciyewk.com/data/chapter/.../N.book')
+        #       加载数据文件; .book 为 _txt_call({content:...}) 码点流压缩格式,
+        #       由 content_decoder.decode_chapter_data 自动探测并解码
+        'domain': 'ciyewk.com',
+        'pattern': 'html_selector',
+        'catalog_parser': 'ciyewk',
+        'chapter_url_regex': r'/shu/[A-Za-z0-9]+/(\d+)\.html',
+        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 5},
+        'content_selectors': ['#content', '.content'],
+        'anti_spider': {'type': 'waf_js'},
+    },
+    {
+        # ltbook.net (龙腾小说网): 目录 /83663/ 简介页通常只有少量章节链接
+        # 章节URL: /83663/{chapid}.html (chapid 为长数字, 如 16026145)
+        # 正文: div#rtext / #content 的 <p> 中, 混有 &amp;ap;ap;ap;ig src...toigdata... 多层实体
+        #       混淆串 (部分汉字被替换, 有损), 用 'ltbook_junk_filter' 提取器清洗删除
+        # 完整目录: 简介页章节少时, 从 "全文阅读" 连读页 (/83663/6.html) 链式追踪 "下一页" 补充
+        'domain': 'ltbook.net',
+        'pattern': 'html_selector',
+        'catalog_parser': 'ltbook',
+        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
+        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 3},
+        'content_selectors': ['#rtext', '#content', 'div#content'],
+        'content_extractor': 'ltbook_junk_filter',
+        'anti_spider': {'type': 'none'},
+    },
 ]
 
 
@@ -262,14 +371,33 @@ def build_paged_url(base_url, page_index, pagination):
     Args:
         base_url: 当前页 URL (如 /read/46358/9218488.html)
         page_index: 页码索引 (0=第一页)
-        pagination: {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30}
-                  或  {'suffix': '?page={N}', 'start': 2, 'max_pages': 10}  (tanmixs.com 格式)
+        pagination: 三种类型:
+            - {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30}  路径替换
+            - {'suffix': '?page={N}', 'start': 2, 'max_pages': 10}  查询参数
+            - {'type': 'increment_number', 'max_pages': 10}         序号递增
 
     Returns:
         分页后的 URL, 或 None 表示没有分页
     """
     if page_index == 0:
         return base_url
+
+    # ---- 自定义函数型 (orion34g 等特殊分页模式) ----
+    if pagination.get('type') == 'function':
+        if page_index >= pagination.get('max_pages', 30):
+            return None
+        return pagination['function'](base_url, page_index)
+
+    # ---- 序号递增型 (yipinzongshi.com 等) ----
+    if pagination.get('type') == 'increment_number':
+        if page_index >= pagination.get('max_pages', 10):
+            return None
+        m = re.search(r'(\d+)\.html$', base_url)
+        if not m:
+            return None
+        num = int(m.group(1)) + page_index
+        return re.sub(r'\d+\.html$', f'{num}.html', base_url)
+
     page_num = pagination['start'] + page_index - 1
     if page_num > pagination.get('max_pages', 30):
         return None
@@ -427,6 +555,7 @@ def extract_content_html_selector(html, selectors, extractor=None):
         selectors: 选择器列表, 按优先级依次尝试
         extractor: 专用提取器标记 (可选)
             - 'yunquge_p_filter': 云趣阁按 <p> 逐行过滤广告/导航行
+            - 'yqyp_nav_strip': 言情一品书 (yqyp.net) 导航/推荐剥离
 
     Returns:
         正文文本
@@ -438,6 +567,18 @@ def extract_content_html_selector(html, selectors, extractor=None):
             continue
         if extractor == 'yunquge_p_filter':
             text = _extract_yunquge_p_filter(el)
+            if text:
+                return text
+        if extractor == 'ltbook_junk_filter':
+            text = _extract_ltbook_junk_filter(el)
+            if text:
+                return text
+        if extractor == 'word_read_p_filter':
+            text = _extract_word_read_p_filter(el)
+            if text:
+                return text
+        if extractor == 'yqyp_nav_strip':
+            text = _extract_yqyp_nav_strip(el)
             if text:
                 return text
         text = el.get_text('\n', strip=True)
@@ -492,6 +633,114 @@ def _extract_yunquge_p_filter(container):
             continue
         parts.append(txt)
     return '\n\n'.join(parts)
+
+
+def _extract_yqyp_nav_strip(container):
+    """言情一品书 (yqyp.net) 正文提取器
+
+    正文位于 div.info_dv1.ov 中, 容器内结构:
+      - 顶部面包屑/导航 div + "手机浏览器扫描二维码访问"
+      - <h2> 章节标题
+      - div.read_btn (上一章/章节目录/保存书签/下一章)
+      - 正文 <p> 段落
+      - 底部 div.read_btn
+      - 作者互动/推荐书目 (如 "阅读指南:", "谢谢宝贝们!", 多书名连缀)
+    本函数提取 h2 之后、第二个 read_btn 之前的 <p> 段落,
+    并过滤导航/广告/推荐/作者互动行。
+    """
+    if container is None:
+        return ''
+    nav_keywords = ('上一章', '下一章', '章节目录', '保存书签', '加入书架',
+                    '目录', '首页', '手机浏览器', '扫描二维码')
+    junk_markers = ('阅读指南', '收藏', '红包', '么么', '宝贝们',
+                    '本章完', '作者有话说', '谢谢', '评论')
+    parts = []
+    passed_h2 = False
+    passed_first_read_btn = False
+    for child in container.children:
+        name = getattr(child, 'name', None)
+        # 遇到 h2 标记标题后开始收集
+        if name == 'h2':
+            passed_h2 = True
+            continue
+        # 第一个 read_btn 之后才真正开始正文
+        if name == 'div' and 'read_btn' in ' '.join(child.get('class', [])):
+            if not passed_first_read_btn:
+                passed_first_read_btn = True
+                continue
+            # 第二个 read_btn: 停止收集
+            break
+        if not passed_first_read_btn:
+            continue
+        if name != 'p':
+            continue
+        txt = child.get_text(strip=True)
+        if not txt:
+            continue
+        # 跳过明显导航/广告/作者互动; 命中后直接停止, 避免把后续互动/推荐也收进来
+        if any(kw in txt for kw in nav_keywords):
+            continue
+        if any(m in txt for m in junk_markers):
+            break
+        # 跳过纯下划线/无意义占位
+        if re.fullmatch(r'[_\-]+', txt):
+            continue
+        # 跳过推荐书目串 / 作者互动: 长段中无中文句末标点, 视为非正文
+        if len(txt) > 80 and '。' not in txt and '！' not in txt and '？' not in txt:
+            break
+        parts.append(txt)
+    return '\n\n'.join(parts)
+
+
+def _extract_word_read_p_filter(container):
+    """恋上看书网 (630wang.cc) 正文提取器
+
+    正文在 div.word_read 下的 <p> 标签中; 容器内还含 <h3> 章节标题
+    与 div.read_btn 导航按钮 (上一章/章节目录/保存书签/下一章), 需排除。
+    注意: 正文中的数字被服务端替换为 o (有损替换), 无法还原, 保留原样。
+    """
+    if container is None:
+        return ''
+    nav_keywords = ('上一章', '下一章', '章节目录', '保存书签', '加入书架', '目录', '首页')
+    parts = []
+    for p in container.find_all('p'):
+        txt = p.get_text(strip=True)
+        if not txt:
+            continue
+        if any(kw in txt for kw in nav_keywords):
+            continue
+        # 跳过过短行 (导航/广告), 保留正文段落
+        if len(txt) < 5 and not re.search(r'[\u4e00-\u9fff]{2}', txt):
+            continue
+        parts.append(txt)
+    return '\n\n'.join(parts)
+
+
+def _extract_ltbook_junk_filter(container):
+    """龙腾小说网 (ltbook.net) 正文提取器
+
+    正文位于 div#rtext / #content 的 <p> 中, 混有多层实体混淆的干扰串:
+      - 形态: &amp;ap;ap;ap;ig src&amp;ap;ap;ap;“toigdata---&amp;ap;ap;ap;“ &amp;ap;ap;ap;
+      - 本质: 被多层实体编码的 <img src="..."> 反爬串, 且**原位置的汉字已被替换丢失** (有损)
+      - BeautifulSoup 解析后残留: &ap;ap;ap;ig src&ap;ap;ap;“toigdata---&ap;ap;ap;“ &ap;ap;ap;
+    另混有站点广告行:
+      - 连读页首行: "，最快更新招魂 ！" (书名/作者/最快更新 广告残留)
+    本函数删除含 toigdata 的干扰片段、孤立 ap; 残留及广告行, 保留剩余正文。
+    """
+    if container is None:
+        return ''
+    text = container.get_text('\n', strip=True)
+    # 删除含 toigdata 的混淆片段 (从 ap;ig src 到垃圾串结束, 吃掉尾部非汉字残留)
+    text = re.sub(r'(?:&|;)?(?:ap;)+ig\s+src.*?toigdata[^\u4e00-\u9fff]*',
+                  '', text, flags=re.S)
+    # 兜底: 清理残留的孤立 ap; 串 (如 "&ap;ap;ap;" 残留)
+    text = re.sub(r'[&;]?(?:ap;)+', '', text)
+    # 按行过滤站点广告/导航行 (连读页首行 "，最快更新招魂 ！" 等)
+    lines = [ln for ln in text.split('\n') if ln.strip() and '最快更新' not in ln]
+    text = '\n'.join(lines)
+    # 清理连续空行/首尾空白
+    text = re.sub(r'\n{2,}', '\n', text).strip()
+    return text
 
 
 # ============================================================

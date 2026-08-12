@@ -91,7 +91,17 @@ def validate_data_url(chapter_url, data_url):
         data_url = 'https:' + data_url
     p = urlparse(data_url)
     if p.scheme not in ('http', 'https'):
-        raise ValueError(f"数据文件协议非法: {data_url}")
+        # 站点相对路径 (/data/... 或 data/...): 拼上章节页域名
+        cp = urlparse(chapter_url)
+        if not cp.scheme or not cp.hostname:
+            raise ValueError(f"数据文件路径非法: {data_url}")
+        if data_url.startswith('/'):
+            data_url = f"{cp.scheme}://{cp.hostname}{data_url}"
+        else:
+            data_url = f"{cp.scheme}://{cp.hostname}/{data_url}"
+        p = urlparse(data_url)
+        if p.scheme not in ('http', 'https'):
+            raise ValueError(f"数据文件协议非法: {data_url}")
     host = (p.hostname or '').lower()
     if not host:
         raise ValueError(f"数据文件缺少主机: {data_url}")
@@ -307,9 +317,9 @@ def decode_chapter_data(chapter_url, page_html=None, page=1, headers=None):
         except ValueError as e:
             print(f"[数据文件] 跳过非法引用 ({kind}): {e}")
             continue
-        # 分页: 页码形式的文件名 (如 1.xs -> 2.xs)
+        # 分页: 页码形式的文件名 (如 1.xs -> 2.xs, 1.book -> 2.book)
         if page > 1:
-            url = re.sub(r'/(\d+)\.(xs|data|txt|json)$', f'/{page}.\\2', url)
+            url = re.sub(r'/(\d+)\.(xs|data|txt|json|book)$', f'/{page}.\\2', url)
         try:
             r = requests.get(url, timeout=30, headers=hdrs,
                              proxies={'http': None, 'https': None})  # 直连, 忽略系统代理
