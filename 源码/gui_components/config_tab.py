@@ -12,6 +12,11 @@ import sys
 # UI 主题系统
 from .ui_theme import make_card, filled_btn, tonal_btn
 
+# 统一字体规范
+from .ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_BODY,
+                         SIZE_SMALL, WEIGHT_TITLE, WEIGHT_SUBTITLE,
+                         WEIGHT_BODY, MORANDI_ACCENT)  # noqa: E402
+
 
 class ConfigTab:
     """站点配置页签组件"""
@@ -72,8 +77,10 @@ class ConfigTab:
     def _save_configs(self):
         """保存配置到JSON文件"""
         try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(self.configs, f, ensure_ascii=False, indent=2)
+            from pathlib import Path
+            Path(self.config_file).write_text(
+                json.dumps(self.configs, ensure_ascii=False, indent=2),
+                encoding='utf-8')
             return True
         except Exception as e:
             print(f"保存配置失败: {e}")
@@ -97,8 +104,9 @@ class ConfigTab:
         site_panel = make_card(
             ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.DNS_OUTLINED, size=18, color=ft.Colors.PRIMARY),
-                    ft.Text("站点列表", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Icon(ft.Icons.DNS_OUTLINED, size=18, color=MORANDI_ACCENT),
+                    ft.Text("站点列表", size=SIZE_TITLE, weight=WEIGHT_TITLE,
+                            font_family=FONT_STACK),
                 ]),
                 ft.Row([add_btn, reload_btn, save_btn], spacing=6),
                 self.site_list_view,
@@ -108,11 +116,11 @@ class ConfigTab:
         )
 
         # 右侧配置详情: 分组卡片
-        self.domain_field = ft.TextField(label="域名", text_style=ft.TextStyle(size=12), width=320)
+        self.domain_field = ft.TextField(label="域名", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=320)
         self.pattern_field = ft.Dropdown(
             label="模式",
             width=240,
-            text_style=ft.TextStyle(size=12),
+            text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK),
             options=[
                 ft.dropdown.Option("qsbs_bb", "qsbs_bb (Base64加密)"),
                 ft.dropdown.Option("ajax_two_step", "ajax_two_step (动态加载)"),
@@ -121,24 +129,27 @@ class ConfigTab:
                 ft.dropdown.Option("str_decode_bb", "str_decode_bb (Base64解码)"),
             ],
         )
-        self.catalog_parser_field = ft.TextField(label="目录解析器", text_style=ft.TextStyle(size=12), width=200)
-        self.anti_spider_field = ft.TextField(label="反爬类型", text_style=ft.TextStyle(size=12), width=200)
-        self.chapter_regex_field = ft.TextField(label="章节URL正则", text_style=ft.TextStyle(size=12), width=420)
-        self.pagination_suffix_field = ft.TextField(label="分页后缀", text_style=ft.TextStyle(size=12), width=140)
-        self.pagination_start_field = ft.TextField(label="分页起始页", text_style=ft.TextStyle(size=12), width=110,
+        self.catalog_parser_field = ft.TextField(label="目录解析器", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=200)
+        self.anti_spider_field = ft.TextField(label="反爬类型", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=200)
+        self.chapter_regex_field = ft.TextField(label="章节URL正则", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=420)
+        self.pagination_suffix_field = ft.TextField(label="分页后缀", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=140)
+        self.pagination_start_field = ft.TextField(label="分页起始页", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=110,
                                                      input_filter=ft.NumbersOnlyInputFilter())
-        self.pagination_max_field = ft.TextField(label="最大页数", text_style=ft.TextStyle(size=12), width=110,
+        self.pagination_max_field = ft.TextField(label="最大页数", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK), width=110,
                                                    input_filter=ft.NumbersOnlyInputFilter())
-        self.content_selectors_field = ft.TextField(label="正文选择器 (逗号分隔)", text_style=ft.TextStyle(size=12),
+        self.content_selectors_field = ft.TextField(label="正文选择器 (逗号分隔)", text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK),
                                                       width=420)
-        self.info_text = ft.Text("", size=11, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.info_text = ft.Text("", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                                 color=ft.Colors.ON_SURFACE_VARIANT,
+                                 font_family=FONT_STACK)
 
         def _group_card(title, icon, body):
             return make_card(
                 ft.Column([
                     ft.Row([
-                        ft.Icon(icon, size=16, color=ft.Colors.PRIMARY),
-                        ft.Text(title, size=12, weight=ft.FontWeight.BOLD),
+                        ft.Icon(icon, size=16, color=MORANDI_ACCENT),
+                        ft.Text(title, size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
+                                font_family=FONT_STACK),
                     ], spacing=6),
                     body,
                 ], spacing=8),
@@ -185,7 +196,9 @@ class ConfigTab:
         self.site_list_view.controls.clear()
         if not self.configs:
             self.site_list_view.controls.append(
-                ft.Text("暂无配置", size=12, color=ft.Colors.ON_SURFACE_VARIANT, italic=True)
+                ft.Text("暂无配置", size=SIZE_BODY, weight=WEIGHT_BODY,
+                        color=ft.Colors.ON_SURFACE_VARIANT, italic=True,
+                        font_family=FONT_STACK)
             )
             return
 
@@ -196,10 +209,12 @@ class ConfigTab:
 
             item = ft.Container(
                 content=ft.Column([
-                    ft.Text(domain, size=11, weight=ft.FontWeight.BOLD,
-                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(pattern, size=10,
-                            color=ft.Colors.ON_SURFACE_VARIANT),
+                    ft.Text(domain, size=SIZE_LABEL, weight=WEIGHT_SUBTITLE,
+                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                            font_family=FONT_STACK),
+                    ft.Text(pattern, size=SIZE_SMALL, weight=WEIGHT_BODY,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                            font_family=FONT_STACK),
                 ], spacing=2),
                 padding=ft.Padding.symmetric(horizontal=10, vertical=6),
                 border_radius=8,

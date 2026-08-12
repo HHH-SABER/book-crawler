@@ -30,6 +30,13 @@ from .ui_theme import (  # noqa: E402
     log_line_color,
 )
 
+# 统一字体规范
+from .ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_SUBTITLE, SIZE_LABEL,
+                         SIZE_BODY, SIZE_SMALL, SIZE_TINY,
+                         WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
+                         MORANDI_PRIMARY, MORANDI_ERROR,
+                         MORANDI_SUCCESS)  # noqa: E402
+
 
 def _log(source: str, message: str):
     """GUI 操作日志 (写盘失败不影响界面)"""
@@ -84,6 +91,7 @@ class CrawlTab:
         self._pending_invalid = []
         self._stop_event = threading.Event()
         self._refresh_thread = None
+        self._task_list_sig = None  # 任务列表特征: 无变化时跳过重建 (避免控件频繁替换导致点击丢失)
 
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
@@ -97,8 +105,9 @@ class CrawlTab:
         task_panel = make_card(
             ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.LIST_ALT, size=18, color=ft.Colors.PRIMARY),
-                    ft.Text("任务列表", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Icon(ft.Icons.LIST_ALT, size=18, color=MORANDI_PRIMARY),
+                    ft.Text("任务列表", size=SIZE_TITLE, weight=WEIGHT_TITLE,
+                            font_family=FONT_STACK),
                 ]),
                 ft.Container(content=self.task_list_view, expand=True),
             ]),
@@ -110,13 +119,13 @@ class CrawlTab:
             label="小说目录页URL",
             hint_text="如: https://m.tanmixs.com/YzN6/ml.html",
             expand=True,
-            text_style=ft.TextStyle(size=13),
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
         )
 
         self.mode_dropdown = ft.Dropdown(
             label="抓取模式",
             width=150,
-            text_style=ft.TextStyle(size=13),
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             value="full",
             options=[
                 ft.dropdown.Option("full", "完整抓取"),
@@ -130,14 +139,14 @@ class CrawlTab:
         self.start_chapter = ft.TextField(
             label="起始章",
             width=80,
-            text_style=ft.TextStyle(size=13),
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             visible=False,
             input_filter=ft.NumbersOnlyInputFilter(),
         )
         self.end_chapter = ft.TextField(
             label="结束章",
             width=80,
-            text_style=ft.TextStyle(size=13),
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             visible=False,
             input_filter=ft.NumbersOnlyInputFilter(),
         )
@@ -146,7 +155,7 @@ class CrawlTab:
             label="速度档位",
             # 加宽防止选中文字 (如"标准 (1线程)") 被截断
             width=180,
-            text_style=ft.TextStyle(size=13),
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             value="standard",
             options=[
                 ft.dropdown.Option("standard", "标准 (1线程)"),
@@ -164,7 +173,7 @@ class CrawlTab:
         self.output_dir_input = ft.TextField(
             label="输出目录",
             width=200,
-            text_style=ft.TextStyle(size=13),
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             value="抓取结果",
         )
 
@@ -209,10 +218,12 @@ class CrawlTab:
             min_lines=4,
             max_lines=10,
             hint_text="每行一个小说目录页URL，# 开头的行为注释",
-            text_style=ft.TextStyle(size=12),
+            text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK),
             expand=True,
         )
-        self.batch_hint = ft.Text("", size=11, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.batch_hint = ft.Text("", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                                  color=ft.Colors.ON_SURFACE_VARIANT,
+                                  font_family=FONT_STACK)
         self.batch_parse_btn = tonal_btn(
             "解析网址",
             icon=ft.Icons.FACT_CHECK,
@@ -262,8 +273,10 @@ class CrawlTab:
             color=ft.Colors.PRIMARY,
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
         )
-        self.progress_text = ft.Text("就绪", size=12,
-                                     color=ft.Colors.ON_SURFACE_VARIANT)
+        self.progress_text = ft.Text("就绪", size=SIZE_SMALL,
+                                     weight=WEIGHT_BODY,
+                                     color=ft.Colors.ON_SURFACE_VARIANT,
+                                     font_family=FONT_STACK)
 
         self.log_list = ft.ListView(
             expand=True,
@@ -610,14 +623,40 @@ class CrawlTab:
 
     # -------------------------------------------------------- UI 实现（必须在主线程）
     def _refresh_task_list_impl(self):
-        """刷新左侧任务列表 - 必须在主线程调用"""
+        """刷新左侧任务列表 - 必须在主线程调用
+
+        仅在任务状态签名变化时重建控件树, 避免每秒全量重建导致
+        用户点击瞬间控件被替换而丢事件 (删除/重下按钮点不中的诱因)。
+        """
         if self.task_list_view is None:
             return
-        self.task_list_view.controls.clear()
         tasks = self.task_manager.get_all_tasks()
+        sig = tuple(
+            (t.task_id, t.status, t.progress_current, t.progress_total,
+             t.title, t.url)
+            for t in tasks
+        )
+        if sig == self._task_list_sig:
+            return  # 无变化: 保留现有控件树
+        self._task_list_sig = sig
+        self.task_list_view.controls.clear()
         if not tasks:
+            # 空状态：显示图标 + 提示文案
             self.task_list_view.controls.append(
-                ft.Text("暂无任务", size=12, color=ft.Colors.ON_SURFACE_VARIANT, italic=True)
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.LIBRARY_BOOKS_OUTLINED, size=48,
+                                color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.5),
+                        ft.Text("暂无任务", size=SIZE_TITLE,
+                                color=ft.Colors.ON_SURFACE_VARIANT,
+                                weight=WEIGHT_TITLE, font_family=FONT_STACK),
+                        ft.Text("输入网址后点击「开始抓取」创建任务", size=SIZE_SMALL,
+                                weight=WEIGHT_BODY,
+                                color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.7,
+                                font_family=FONT_STACK),
+                    ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=ft.Padding.symmetric(vertical=40),
+                )
             )
             return
         for task in tasks:
@@ -662,20 +701,32 @@ class CrawlTab:
             )
 
             item = ft.Container(
-                content=ft.Row([
-                    ring,
-                    ft.Column([
-                        ft.Text(title_str, size=11, weight=ft.FontWeight.BOLD,
-                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                        ft.Row([
-                            status_chip(task.status),
-                            ft.Text(progress_str, size=9,
-                                    color=ft.Colors.ON_SURFACE_VARIANT),
-                        ], spacing=6),
-                    ], expand=True, spacing=3, tight=True),
-                    redownload_btn,
-                    delete_btn,
-                ], spacing=6),
+                content=ft.Column([
+                    ft.Row([
+                        ring,
+                        ft.Column([
+                            ft.Text(title_str, size=SIZE_LABEL, weight=WEIGHT_SUBTITLE,
+                                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                                    font_family=FONT_STACK),
+                            ft.Row([
+                                status_chip(task.status),
+                                ft.Text(progress_str, size=SIZE_TINY,
+                                        weight=WEIGHT_BODY,
+                                        color=ft.Colors.ON_SURFACE_VARIANT,
+                                        font_family=FONT_STACK),
+                            ], spacing=6),
+                        ], expand=True, spacing=2, tight=True),
+                        ft.Text("🔗", size=SIZE_TINY, opacity=0.5,
+                                font_family=FONT_STACK),  # URL 预览指示器
+                    ], spacing=6),
+                    # URL 预览 (截断显示)
+                    ft.Text(task.url[:50] + ("…" if len(task.url) > 50 else ""),
+                            size=SIZE_TINY, weight=WEIGHT_BODY,
+                            color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.6,
+                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                            font_family=FONT_STACK),
+                    ft.Row([redownload_btn, delete_btn], spacing=4),
+                ], spacing=4),
                 padding=ft.Padding.symmetric(horizontal=8, vertical=6),
                 border=ft.Border.all(2, ft.Colors.PRIMARY)
                 if task.task_id == self.selected_task_id
@@ -693,58 +744,58 @@ class CrawlTab:
         task = self.task_manager.get_task(task_id)
         if not task:
             return
+        if self.page is None:
+            return
         has_file = bool(task.output_file) and os.path.isfile(task.output_file)
         del_file_check = ft.Checkbox(
             label="同时删除已下载的源文件",
             value=False,
             disabled=not has_file,
             visible=has_file,
+            label_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK),
         )
         dlg = ft.AlertDialog(
             modal=True,
-            title=ft.Text("删除任务", size=14, weight=ft.FontWeight.BOLD),
+            title=ft.Text("删除任务", size=SIZE_SUBTITLE, weight=WEIGHT_TITLE,
+                          font_family=FONT_STACK),
             content=ft.Column([
-                ft.Text(f"确定删除任务「{task.title[:30]}」吗？", size=12),
+                ft.Text(f"确定删除任务「{task.title[:30]}」吗？", size=SIZE_BODY,
+                        weight=WEIGHT_BODY, font_family=FONT_STACK),
                 del_file_check,
             ], tight=True, spacing=8),
             actions=[
-                ft.TextButton("取消", on_click=lambda ev: self._close_dialog(ev)),
+                ft.TextButton("取消", on_click=lambda ev: self._close_dialog()),
                 ft.TextButton(
                     "删除",
-                    on_click=lambda ev: self._confirm_delete(task_id, del_file_check.value, ev),
+                    on_click=lambda ev: self._confirm_delete(task_id, del_file_check, ev),
                     style=ft.ButtonStyle(color=ft.Colors.ERROR),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
         try:
-            self.page.open(dlg)
-        except Exception:
-            dlg.open = True
-            try:
-                self.page.update()
-            except Exception:
-                pass
+            # Flet 0.86: 对话框用 show_dialog() 打开 (旧版 page.open 已移除)
+            self.page.show_dialog(dlg)
+        except Exception as ex:
+            _log("GUI", f"打开删除确认对话框失败: {ex}")
+            self._show_snackbar_impl(f"打开对话框失败: {ex}")
 
-    def _close_dialog(self, ev):
-        """关闭对话框 (Flet 0.86: page.close / dialog.open=False 双保险)"""
+    def _close_dialog(self):
+        """关闭对话框 (Flet 0.86: pop_dialog 关闭最近的对话框)"""
         try:
-            if ev is not None and hasattr(ev, 'page'):
-                ev.page.close(ev.control.parent)
-        except Exception:
-            pass
-        try:
-            self.page.update()
+            self.page.pop_dialog()
         except Exception:
             pass
 
-    def _confirm_delete(self, task_id: str, delete_file: bool, ev=None):
-        """确认删除任务"""
-        self._close_dialog(ev)
+    def _confirm_delete(self, task_id: str, del_file_check: ft.Checkbox, ev=None):
+        """确认删除任务 (复选框决定是否同时删除已下载的源文件)"""
+        delete_file = bool(del_file_check.value)
+        self._close_dialog()
         ok = self.task_manager.delete_task(task_id, delete_file=delete_file)
         if ok:
             if self.selected_task_id == task_id:
                 self.selected_task_id = None
+            self._task_list_sig = None  # 强制下次重建列表
             _log("GUI", f"删除任务 {task_id} (删除源文件={delete_file})")
             self._show_snackbar_impl(
                 f"任务已删除" + ("，源文件已删除" if delete_file else ""))
@@ -752,22 +803,22 @@ class CrawlTab:
             self._show_snackbar_impl("删除失败: 任务不存在")
 
     def on_task_redownload(self, task_id: str):
-        """重新下载: 用原参数从头重新抓取 (输出覆盖)"""
+        """重新下载: 在原任务内从头重新抓取 (不新建任务, 输出覆盖)"""
         task = self.task_manager.get_task(task_id)
         if not task:
             return
         if task.status == "running":
             self._show_snackbar_impl("任务运行中，请先停止再重新下载")
             return
-        new_id = self.task_manager.redownload_task(task_id)
-        if new_id:
-            self.selected_task_id = new_id
+        ok = self.task_manager.restart_task(task_id)
+        if ok:
+            self.selected_task_id = task_id
             self.stop_btn.disabled = False
-            _log("GUI", f"重新下载: {task_id} -> {new_id} ({task.url})")
-            self._show_snackbar_impl(f"已创建重新下载任务: {new_id}")
+            _log("GUI", f"重新下载 (原任务重启): {task_id} ({task.url})")
+            self._show_snackbar_impl("已在原任务中重新开始抓取")
             self._ensure_refresh_thread()
         else:
-            self._show_snackbar_impl("重新下载失败: 任务不存在")
+            self._show_snackbar_impl("重新下载失败: 任务不存在或运行中")
 
     def _refresh_display_impl(self):
         """刷新右侧进度和日志 - 必须在主线程调用"""
@@ -804,13 +855,13 @@ class CrawlTab:
             msg = log['msg']
             text_color = log_line_color(msg)
             if '[错误]' in msg or '失败' in msg:
-                text_color = ft.Colors.RED_300
+                text_color = MORANDI_ERROR
             elif '成功' in msg or '完成' in msg:
-                text_color = ft.Colors.GREEN_300
+                text_color = MORANDI_SUCCESS
             self.log_list.controls.append(
                 ft.Text(
                     f"[{log['time']}] {msg}",
-                    size=10,
+                    size=SIZE_TINY,
                     font_family=LOG_TERMINAL_FONT,
                     color=text_color,
                     selectable=True,
