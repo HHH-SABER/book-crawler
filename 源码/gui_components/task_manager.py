@@ -226,10 +226,10 @@ class TaskManager:
         with self._lock:
             self.tasks[task_id] = task
 
-        # 启动子线程执行抓取
+        # 启动子线程执行抓取 (新任务启用同名去重序号)
         t = threading.Thread(
             target=self._run_task,
-            args=(task, url, mode, chapter_range, threads, delay, resume, output_dir),
+            args=(task, url, mode, chapter_range, threads, delay, resume, output_dir, True),
             daemon=True
         )
         task.thread = t
@@ -287,7 +287,8 @@ class TaskManager:
                 show_progress=True,
                 output_dir=output_dir,
                 delay=delay,
-                stop_event=task.stop_flag
+                stop_event=task.stop_flag,
+                unique_title=True
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":
@@ -306,7 +307,7 @@ class TaskManager:
 
     def _run_task(self, task: TaskInfo, url: str, mode: str,
                   chapter_range: tuple, threads: int, delay: float,
-                  resume: bool, output_dir: str):
+                  resume: bool, output_dir: str, unique_title: bool = False):
         """在子线程中执行 run_crawl，重定向 print 到任务日志"""
         # 注册到线程感知 stdout 调度器 (不再直接替换全局 sys.stdout, 避免多任务互踩)
         _THREAD_STDOUT.register(TaskLogRedirector(task, sys.__stdout__))
@@ -328,7 +329,8 @@ class TaskManager:
                 chapter_range=chapter_range,
                 threads=threads,
                 delay=delay,
-                stop_event=task.stop_flag
+                stop_event=task.stop_flag,
+                unique_title=unique_title
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":

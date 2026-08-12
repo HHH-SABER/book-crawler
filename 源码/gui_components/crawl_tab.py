@@ -26,8 +26,8 @@ except Exception:
 # UI 主题系统 (卡片/按钮/状态标签/日志终端)
 from .ui_theme import (  # noqa: E402
     make_card, status_chip, status_color, filled_btn, tonal_btn,
-    outline_btn, danger_btn, LOG_TERMINAL_BG, LOG_TERMINAL_FONT,
-    log_line_color,
+    outline_btn, text_btn, danger_btn, BTN_TEXT_STYLE,
+    LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color,
 )
 
 # 统一字体规范
@@ -236,7 +236,7 @@ class CrawlTab:
             on_click=lambda e: self._start_batch(self._pending_urls),
             visible=False,
         )
-        self.batch_cancel_btn = ft.TextButton(
+        self.batch_cancel_btn = text_btn(
             "取消", on_click=self._hide_batch_panel, visible=False)
         self.batch_panel = make_card(
             ft.Column([
@@ -728,11 +728,20 @@ class CrawlTab:
                     ft.Row([redownload_btn, delete_btn], spacing=4),
                 ], spacing=4),
                 padding=ft.Padding.symmetric(horizontal=8, vertical=6),
-                border=ft.Border.all(2, ft.Colors.PRIMARY)
-                if task.task_id == self.selected_task_id
-                else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                # 选中态: 左侧 3px 主色高亮条 + 淡主色容器 (替代粗边框, 更精致)
+                border=(
+                    ft.Border(
+                        left=ft.BorderSide(3, ft.Colors.PRIMARY),
+                        right=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                        top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                        bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT),
+                    ) if task.task_id == self.selected_task_id
+                    else ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+                ),
                 border_radius=8,
-                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+                bgcolor=(ft.Colors.PRIMARY_CONTAINER
+                         if task.task_id == self.selected_task_id
+                         else ft.Colors.SURFACE_CONTAINER_LOW),
                 ink=True,
                 on_click=lambda e, tid=task.task_id: self.on_task_selected(tid),
             )
@@ -764,11 +773,18 @@ class CrawlTab:
                 del_file_check,
             ], tight=True, spacing=8),
             actions=[
-                ft.TextButton("取消", on_click=lambda ev: self._close_dialog()),
+                ft.TextButton(
+                    "取消",
+                    on_click=lambda ev: self._close_dialog(),
+                    style=ft.ButtonStyle(text_style=BTN_TEXT_STYLE),
+                ),
                 ft.TextButton(
                     "删除",
                     on_click=lambda ev: self._confirm_delete(task_id, del_file_check, ev),
-                    style=ft.ButtonStyle(color=ft.Colors.ERROR),
+                    style=ft.ButtonStyle(
+                        color=ft.Colors.ERROR,
+                        text_style=BTN_TEXT_STYLE,
+                    ),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,

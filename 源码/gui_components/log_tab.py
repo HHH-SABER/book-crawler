@@ -13,7 +13,8 @@ import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
 from _path_utils import get_app_base_dir  # noqa: E402
 
 # UI 主题系统
-from .ui_theme import make_card, tonal_btn, LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color
+from .ui_theme import (make_card, tonal_btn, BTN_TEXT_STYLE,
+                       LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
 
 # 统一字体规范
 from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL,
@@ -218,9 +219,13 @@ class LogTab:
                     shape=ft.RoundedRectangleBorder(radius=10),
                     bgcolor=ft.Colors.PRIMARY_CONTAINER,
                     color=ft.Colors.ON_PRIMARY_CONTAINER,
+                    text_style=BTN_TEXT_STYLE,
                 )
             else:
-                btn.style = ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10))
+                btn.style = ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                    text_style=BTN_TEXT_STYLE,
+                )
         # 重新加载当前日志文件
         if self.date_dropdown.value:
             self._load_file(f"{self.date_dropdown.value}.log")

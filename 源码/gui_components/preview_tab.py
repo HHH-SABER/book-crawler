@@ -10,7 +10,7 @@ import sys; sys.path.insert(0, _HERE)  # noqa: E402  (保证 import _path_utils)
 from _path_utils import get_default_output_dir  # noqa: E402
 
 # UI 主题系统
-from .ui_theme import make_card, tonal_btn, danger_btn
+from .ui_theme import make_card, tonal_btn, danger_btn, BTN_TEXT_STYLE
 
 # 统一字体规范
 from .ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_SUBTITLE, SIZE_LABEL,
@@ -269,12 +269,18 @@ class PreviewTab:
                             size=SIZE_BODY, weight=WEIGHT_BODY,
                             font_family=FONT_STACK),
             actions=[
-                ft.TextButton("取消",
-                              on_click=lambda ev: self._close_confirm_dialog()),
+                ft.TextButton(
+                    "取消",
+                    on_click=lambda ev: self._close_confirm_dialog(),
+                    style=ft.ButtonStyle(text_style=BTN_TEXT_STYLE),
+                ),
                 ft.TextButton(
                     "删除",
                     on_click=lambda ev: self._do_delete_file(filepath, filename),
-                    style=ft.ButtonStyle(color=ft.Colors.ERROR),
+                    style=ft.ButtonStyle(
+                        color=ft.Colors.ERROR,
+                        text_style=BTN_TEXT_STYLE,
+                    ),
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,

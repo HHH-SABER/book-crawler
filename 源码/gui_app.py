@@ -70,10 +70,11 @@ def main(page: ft.Page):
     # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
     from gui_components.ui_morandi import (
         make_morandi_theme, make_morandi_dark_theme,
-        FONT_STACK, SIZE_TITLE, SIZE_SMALL, WEIGHT_TITLE, WEIGHT_BODY,
+        FONT_STACK, SIZE_TITLE, SIZE_SUBTITLE, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+        WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING,
     )
-    from gui_components.ui_theme import tonal_btn
+    from gui_components.ui_theme import tonal_btn  # noqa: F401 (预留)
     page.theme = make_morandi_theme()
     page.dark_theme = make_morandi_dark_theme()
 
@@ -121,46 +122,104 @@ def main(page: ft.Page):
         app_log.info("系统", f"主题切换为: {'深色' if _theme_dark[0] else '浅色'}")
         page.update()
 
-    theme_btn = tonal_btn(
-        "切换主题",
+    theme_btn = ft.IconButton(
         icon=ft.Icons.DARK_MODE_OUTLINED,
-        on_click=toggle_theme,
         tooltip="切换为深色主题",
+        on_click=toggle_theme,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
     )
 
-    # ---- 左侧导航 Sidebar ----
-    rail = ft.NavigationRail(
-        selected_index=0,
-        label_type=ft.NavigationRailLabelType.ALL,
-        min_width=96,
-        min_extended_width=180,
-        group_alignment=-0.9,
-        destinations=[
-            ft.NavigationRailDestination(
-                icon=ft.Icons.DOWNLOAD_OUTLINED,
-                selected_icon=ft.Icons.DOWNLOAD,
-                label="抓取"),
-            ft.NavigationRailDestination(
-                icon=ft.Icons.FOLDER_OUTLINED,
-                selected_icon=ft.Icons.FOLDER,
-                label="结果预览"),
-            ft.NavigationRailDestination(
-                icon=ft.Icons.SETTINGS_OUTLINED,
-                selected_icon=ft.Icons.SETTINGS,
-                label="站点配置"),
-            ft.NavigationRailDestination(
-                icon=ft.Icons.TERMINAL_OUTLINED,
-                selected_icon=ft.Icons.TERMINAL,
-                label="运行日志"),
-        ],
-        on_change=lambda e: _switch_page(int(e.control.selected_index)),
-        indicator_color=ft.Colors.PRIMARY_CONTAINER,
-        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+    # ---- 自定义侧边栏 (Linear/Notion 风格: 徽标 + 图标文字导航 + 选中高亮条) ----
+    _PAGE_NAMES = ["抓取", "结果预览", "站点配置", "运行日志"]
+    _NAV_META = [
+        # (未选中图标, 选中图标, 标签)
+        (ft.Icons.DOWNLOAD_OUTLINED, ft.Icons.DOWNLOAD, "抓取"),
+        (ft.Icons.FOLDER_OUTLINED, ft.Icons.FOLDER, "结果预览"),
+        (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "站点配置"),
+        (ft.Icons.TERMINAL_OUTLINED, ft.Icons.TERMINAL, "运行日志"),
+    ]
+    nav_items = []  # 保存每项控件引用, 切换时更新选中态
+    page_title_ref = ft.Text("抓取", size=SIZE_TITLE, weight=WEIGHT_TITLE,
+                             font_family=FONT_STACK)
+
+    def _make_nav_item(icon, icon_sel, label, idx):
+        """导航项: 左侧 3px 高亮条 + 图标 + 文字, 选中时主色容器"""
+        bar = ft.Container(
+            width=3, height=18,
+            border_radius=ft.BorderRadius(0, 3, 3, 0),
+        )
+        icon_ctrl = ft.Icon(icon, size=20, color=ft.Colors.ON_SURFACE)
+        text_ctrl = ft.Text(label, size=SIZE_LABEL, weight=WEIGHT_BODY,
+                            color=ft.Colors.ON_SURFACE, font_family=FONT_STACK)
+        item = ft.Container(
+            content=ft.Row([bar, icon_ctrl, text_ctrl], spacing=12),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=11),
+            border_radius=10,
+            ink=True,
+            on_click=lambda e, i=idx: _switch_page(i),
+        )
+        nav_items.append({
+            "idx": idx, "container": item, "bar": bar,
+            "icon": icon_ctrl, "icon_outlined": icon, "icon_sel": icon_sel,
+            "text": text_ctrl, "label": label,
+        })
+        return item
+
+    # 顶部徽标区: 圆角图标 + 应用名 + 副标题
+    logo_badge = ft.Container(
+        content=ft.Icon(ft.Icons.MENU_BOOK, size=22, color=ft.Colors.PRIMARY),
+        width=40, height=40,
+        bgcolor=ft.Colors.PRIMARY_CONTAINER,
+        border_radius=12,
+        shadow=ft.BoxShadow(
+            blur_radius=8, spread_radius=0, offset=ft.Offset(0, 2),
+            color=ft.Colors.with_opacity(0.12, ft.Colors.BLACK),
+        ),
+    )
+    sidebar_header = ft.Row([
+        logo_badge,
+        ft.Column([
+            ft.Text("小说爬虫", size=SIZE_SUBTITLE, weight=WEIGHT_TITLE,
+                    color=ft.Colors.ON_SURFACE, font_family=FONT_STACK),
+            ft.Text("便携版 · 多站抓取", size=SIZE_TINY,
+                    color=ft.Colors.ON_SURFACE_VARIANT, font_family=FONT_STACK),
+        ], spacing=1, tight=True),
+    ], spacing=10)
+
+    sidebar = ft.Container(
+        content=ft.Column([
+            sidebar_header,
+            ft.Container(height=18),
+            *[_make_nav_item(ic, ic_sel, lb, i)
+              for i, (ic, ic_sel, lb) in enumerate(_NAV_META)],
+            ft.Container(expand=True),
+            ft.Divider(height=1),
+            ft.Text("小说爬虫 · 便携版", size=SIZE_TINY,
+                    color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.75,
+                    font_family=FONT_STACK),
+        ], spacing=4),
+        width=200,
+        padding=ft.Padding.symmetric(horizontal=12, vertical=16),
+        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+        border=ft.Border(right=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
     )
 
     def _switch_page(idx: int):
+        """切换页签: 更新导航选中态 + 可见性 + 工具栏标题"""
         for i, p in enumerate(pages):
             p.visible = (i == idx)
+        # 更新侧边栏选中态
+        for meta in nav_items:
+            sel = meta["idx"] == idx
+            meta["bar"].bgcolor = ft.Colors.PRIMARY if sel else None
+            meta["icon"].name = (meta["icon_sel"] if sel
+                                  else meta["icon_outlined"])
+            meta["icon"].color = (ft.Colors.PRIMARY if sel
+                                  else ft.Colors.ON_SURFACE_VARIANT)
+            meta["text"].weight = WEIGHT_SUBTITLE if sel else WEIGHT_BODY
+            meta["container"].bgcolor = (ft.Colors.PRIMARY_CONTAINER if sel
+                                         else None)
+        page_title_ref.value = _PAGE_NAMES[idx]
         # 页签切换时刷新对应内容
         if idx == 1:  # 结果预览
             try:
@@ -178,14 +237,12 @@ def main(page: ft.Page):
         except Exception:
             pass
 
-    # ---- 顶部工具栏 ----
+    # ---- 顶部工具栏 (动态页标题) ----
     toolbar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.MENU_BOOK_OUTLINED, size=22,
-                    color=ft.Colors.PRIMARY),
-            ft.Text("小说爬虫", size=SIZE_TITLE, weight=WEIGHT_TITLE,
-                    font_family=FONT_STACK),
-            ft.Text("便携版 · 多站抓取", size=SIZE_SMALL,
+            page_title_ref,
+            ft.Container(width=10),
+            ft.Text("多站小说抓取工具", size=SIZE_SMALL,
                     weight=WEIGHT_BODY,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                     font_family=FONT_STACK),
@@ -193,7 +250,7 @@ def main(page: ft.Page):
             theme_btn,
         ]),
         padding=ft.Padding.symmetric(horizontal=16, vertical=8),
-        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
         border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
     )
 
@@ -216,7 +273,7 @@ def main(page: ft.Page):
                     font_family=FONT_STACK),
         ]),
         padding=ft.Padding.symmetric(horizontal=12, vertical=4),
-        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
         border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
     )
 
@@ -255,12 +312,23 @@ def main(page: ft.Page):
 
     page.add(
         ft.Row([
-            rail,
-            ft.VerticalDivider(width=1),
-            ft.Column([toolbar, content_stack], expand=True, spacing=0),
+            sidebar,
+            # 主内容区: 极淡暖色渐变背景 (左上→右下), 提升层次感
+            ft.Container(
+                content=ft.Column([toolbar, content_stack],
+                                  expand=True, spacing=0),
+                expand=True,
+                gradient=ft.LinearGradient(
+                    begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+                    colors=[ft.Colors.SURFACE, ft.Colors.SURFACE_CONTAINER_LOW],
+                ),
+            ),
         ], expand=True, spacing=0),
         status_bar,
     )
+
+    # 初始选中第 0 项 (控件挂载后再设置选中态样式)
+    _switch_page(0)
 
     # 保存 page 引用到 crawl_tab / log_tab 以便后续更新
     crawl_tab.page = page
