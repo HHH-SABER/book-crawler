@@ -46,7 +46,18 @@ def log(msg=""):
 
 def benchmark_sample(url, sample=1024*1024, timeout=20):
     """GET first `sample` bytes via Range; return (speed_MBps or None, info)."""
-    _validate_download_url(url)  # 安全校验 (防 SSRF)
+    # 安全校验 (防 SSRF, 内联): 协议 + 域名白名单 + 公网 IP 边界
+    import ipaddress as _ipa
+    _p = urllib.parse.urlparse(url)
+    if _p.scheme not in ('http', 'https') or (_p.hostname or '').lower() not in _ALLOWED_DL_HOSTS:
+        raise ValueError(f"非法下载地址: {url}")
+    try:
+        _ip = _ipa.ip_address(_p.hostname)
+        if _ip.is_private or _ip.is_loopback or _ip.is_link_local \
+                or _ip.is_reserved or _ip.is_multicast or _ip.is_unspecified:
+            raise ValueError(f"内网地址: {url}")
+    except ValueError:
+        pass
     ctx = ssl.create_default_context()
     req = urllib.request.Request(url, headers={"Range": f"bytes=0-{sample-1}"})
     t0 = time.time()
@@ -89,7 +100,8 @@ def download(url, dest, stall_s=10):
         total = int(total) if total else None
         got = 0
         start = last = time.time()
-        with open(dest, "wb") as f:
+        from pathlib import Path as _Path
+        with _Path(dest).open("wb") as f:
             while True:
                 chunk = resp.read(65536)
                 if not chunk:

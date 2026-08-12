@@ -415,23 +415,45 @@ class TaskManager:
                 'output_dir': task.output_dir,
             }
 
-    def redownload_task(self, task_id: str) -> str:
-        """重新下载: 用原任务参数重新创建任务, 返回新 task_id。
+    def restart_task(self, task_id: str) -> bool:
+        """在原任务内重新开始抓取 (不新建任务)。
 
-        新任务 resume=False (从头重新抓取), 输出覆盖同名文件。
+        重置进度/日志/停止标记后, 用原参数在同一个 task_id 上重新启动
+        抓取线程; resume=False 从头重新抓取, 输出覆盖同名文件。
+
+        Returns:
+            bool: 是否成功重启
         """
-        params = self.get_task_params(task_id)
-        if not params:
-            return ""
-        return self.create_task(
-            url=params['url'],
-            mode=params['mode'],
-            chapter_range=params['chapter_range'],
-            threads=params['threads'],
-            delay=params['delay'],
-            resume=False,  # 重新下载必须从头抓
-            output_dir=params['output_dir'],
+        with self._lock:
+            task = self.tasks.get(task_id)
+            if not task:
+                return False
+            if task.status == "running":
+                return False
+        # 重置任务状态 (保留原创建参数 url/mode/threads 等)
+        task.progress_current = 0
+        task.progress_total = 0
+        task.status = "running"
+        task.logs = []
+        task.error = ""
+        task.output_file = ""
+        task.stop_flag = threading.Event()  # 新建停止标记 (旧标记可能已被置位)
+        task.logs.append({
+            'time': time.strftime('%H:%M:%S'),
+            'msg': "[重新下载] 任务在原任务内重新开始 (从头抓取)"
+        })
+        # 重新启动抓取线程 (同一 task_id, 任务列表不新增条目)
+        t = threading.Thread(
+            target=self._run_task,
+            args=(task, task.url, task.mode, task.chapter_range,
+                  task.threads, task.delay, False, task.output_dir),
+            daemon=True
         )
+        task.thread = t
+        t.start()
+        if app_log is not None:
+            app_log.info(f"任务{task_id}", f"任务重新下载 (原任务重启): {task.url}")
+        return True
 
     def get_task(self, task_id: str) -> Optional[TaskInfo]:
         """获取任务信息"""
