@@ -67,25 +67,23 @@ def main(page: ft.Page):
     page.window.min_height = 640
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
-    # Material3 主题: 靛蓝 seed 色 + 统一圆角, 深浅主题共用同一配色方案
-    page.theme = ft.Theme(
-        color_scheme_seed=ft.Colors.INDIGO,
-        use_material3=True,
+    # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
+    from gui_components.ui_morandi import (
+        make_morandi_theme, make_morandi_dark_theme,
+        FONT_STACK, SIZE_TITLE, SIZE_SMALL, WEIGHT_TITLE, WEIGHT_BODY,
+        MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING,
     )
-    page.dark_theme = ft.Theme(
-        color_scheme_seed=ft.Colors.INDIGO,
-        use_material3=True,
-    )
+    from gui_components.ui_theme import tonal_btn
+    page.theme = make_morandi_theme()
+    page.dark_theme = make_morandi_dark_theme()
 
     # 全局任务管理器
     task_manager = TaskManager(page)
-
     # 四个页签组件
     crawl_tab = CrawlTab(task_manager)
     preview_tab = PreviewTab()
     config_tab = ConfigTab()
     log_tab = LogTab()
-
     # 启动日志: 记录系统信息 (便于事后排查版本/环境问题)
     try:
         import platform
@@ -123,15 +121,11 @@ def main(page: ft.Page):
         app_log.info("系统", f"主题切换为: {'深色' if _theme_dark[0] else '浅色'}")
         page.update()
 
-    theme_btn = ft.IconButton(
+    theme_btn = tonal_btn(
+        "切换主题",
         icon=ft.Icons.DARK_MODE_OUTLINED,
-        icon_size=20,
-        tooltip="切换为深色主题",
         on_click=toggle_theme,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=10),
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-        ),
+        tooltip="切换为深色主题",
     )
 
     # ---- 左侧导航 Sidebar ----
@@ -189,9 +183,12 @@ def main(page: ft.Page):
         content=ft.Row([
             ft.Icon(ft.Icons.MENU_BOOK_OUTLINED, size=22,
                     color=ft.Colors.PRIMARY),
-            ft.Text("小说爬虫", size=17, weight=ft.FontWeight.BOLD),
-            ft.Text("便携版 · 多站抓取", size=11,
-                    color=ft.Colors.ON_SURFACE_VARIANT),
+            ft.Text("小说爬虫", size=SIZE_TITLE, weight=WEIGHT_TITLE,
+                    font_family=FONT_STACK),
+            ft.Text("便携版 · 多站抓取", size=SIZE_SMALL,
+                    weight=WEIGHT_BODY,
+                    color=ft.Colors.ON_SURFACE_VARIANT,
+                    font_family=FONT_STACK),
             ft.Container(expand=True),
             theme_btn,
         ]),
@@ -205,18 +202,56 @@ def main(page: ft.Page):
     # - PyInstaller onefile (小说爬虫.exe)   : EXE 所在目录/抓取结果
     output_dir = get_default_output_dir()
 
+    status_dot = ft.Icon(ft.Icons.CIRCLE, color=MORANDI_SUCCESS, size=8)
+    status_text = ft.Text("就绪", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                          font_family=FONT_STACK)
     status_bar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.CIRCLE, color=ft.Colors.GREEN, size=8),
-            ft.Text("就绪", size=11),
+            status_dot,
+            status_text,
             ft.VerticalDivider(width=1),
-            ft.Text(f"输出: {output_dir}", size=11,
-                    color=ft.Colors.ON_SURFACE_VARIANT),
+            ft.Text(f"输出: {output_dir}", size=SIZE_SMALL,
+                    weight=WEIGHT_BODY,
+                    color=ft.Colors.ON_SURFACE_VARIANT,
+                    font_family=FONT_STACK),
         ]),
         padding=ft.Padding.symmetric(horizontal=12, vertical=4),
         bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
         border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
     )
+
+    # 状态栏动态刷新: 每秒汇总任务状态 (原来永远显示"就绪", 无参考价值)
+    async def _status_loop():
+        import asyncio
+        last = ""
+        while True:
+            try:
+                tasks = task_manager.get_all_tasks()
+                running = sum(1 for t in tasks if t.status == "running")
+                failed = sum(1 for t in tasks if t.status == "failed")
+                done = sum(1 for t in tasks if t.status == "completed")
+                if running > 0:
+                    dot_color, label = MORANDI_RUNNING, f"抓取中 {running} 项"
+                    if done:
+                        label += f" · 已完成 {done}"
+                elif failed and not tasks:
+                    dot_color, label = MORANDI_ERROR, "就绪"
+                elif failed:
+                    dot_color, label = MORANDI_ERROR, f"就绪 · 失败 {failed} 项"
+                elif done:
+                    dot_color, label = MORANDI_SUCCESS, f"就绪 · 已完成 {done} 项"
+                else:
+                    dot_color, label = MORANDI_SUCCESS, "就绪"
+                if label != last:
+                    last = label
+                    status_dot.color = dot_color
+                    status_text.value = label
+                    page.update()
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+
+    page.run_task(_status_loop)
 
     page.add(
         ft.Row([

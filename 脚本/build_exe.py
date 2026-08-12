@@ -29,8 +29,10 @@ def banner(msg):
     log("=" * 60)
 
 # --- init log
-with open(LOG, "w", encoding="utf-8") as f:
-    f.write(f"==== BUILD STARTED {time.strftime('%Y-%m-%d %H:%M:%S')} ====\n")
+from pathlib import Path as _Path
+_Path(LOG).write_text(
+    f"==== BUILD STARTED {time.strftime('%Y-%m-%d %H:%M:%S')} ====\n",
+    encoding="utf-8")
 
 banner("Novel Crawler EXE Build")
 
@@ -79,11 +81,17 @@ out_dir = os.path.join(ROOT, "抓取结果")
 os.makedirs(out_dir, exist_ok=True)
 log(f"[DIR] 抓取结果 dir ready")
 
-# --- 4) clean previous dist/
+# --- 4) clean previous dist/ 和 build/
+# 必须预先删掉 build/: 否则 flet pack 会交互询问 "Do you want to delete
+# build directory? (y/n)", 子进程无 stdin 直接 EOFError 崩溃 (静默失败)
 dist = os.path.join(ROOT, "dist")
 if os.path.isdir(dist):
     log("[CLEAN] Remove previous dist/")
     shutil.rmtree(dist, ignore_errors=True)
+build_dir = os.path.join(ROOT, "build")
+if os.path.isdir(build_dir):
+    log("[CLEAN] Remove previous build/")
+    shutil.rmtree(build_dir, ignore_errors=True)
 
 # --- 5) arguments (one list element = one argv token)
 script_path = os.path.join(ROOT, "源码", "gui_app.py")

@@ -1978,11 +1978,14 @@ class NovelSpider:
         # 规则: 直接夹在两个汉字之间的 2-4 位"含数字且含字母"的混合串 → 删除。
         # 白名单保护正常词汇 (如 "5G时代"/"3D眼镜"); 纯字母串 (SPA/NBA/RBQ) 与
         # 纯数字串 (1999年) 天然不被匹配, 无需担心误删。
-        _JUNK_WHITELIST = {'3d', '5g', '4g', '2g', '2k', '4k', '8k', '3s', 't恤'}
+        _JUNK_WHITELIST = {'3d', '5g', '4g', '2g', '2k', '4k', '8k', '3s', 't恤', 'vip', 'ok', 'app', 'api'}
         content = re.sub(
             r'(?<=[\u4e00-\u9fff])([A-Za-z0-9]{2,4})(?=[\u4e00-\u9fff])',
-            lambda m: m.group(0) if m.group(1).lower() in _JUNK_WHITELIST
-            or m.group(1).isdigit() or m.group(1).isalpha() else '',
+            lambda m: m.group(0) if (
+                m.group(1).lower() in _JUNK_WHITELIST
+                or m.group(1).isdigit()
+                or m.group(1).isalpha()
+            ) else '',
             content)
 
         # 修复HTML实体（Base64解码后可能残留的实体名称）
@@ -1998,12 +2001,56 @@ class NovelSpider:
         # 使用模块级常量 (避免重复定义)
         filter_keywords = _CONTENT_FILTER_KEYWORDS
         
-        # 修复常见编码错误字符（Base64解码后可能出现的乱码）
+        # 修复常见编码错误字符（Base64 解码后可能出现的乱码）
+        # 扩展：增加更多常见的形近字/编码错误，覆盖更多站点
         encoding_fixes = {
+            # 原有修复
             '口禽': '噙', '昏滚': '混蛋', '昏蛋': '混蛋',
             '王八旦': '王八蛋', '玉辟': '玉臂',
             '插人': '插入', '律劲': '律动',
-            '巳经': '已经', '佷多': '很多',  # 形近字乱码 (爬虫常见)
+            '巳经': '已经', '佷多': '很多',
+            # 新增：常见形近字/编码错误
+            '以经': '已经', '已径': '已经', '经已': '已经',
+            '在次': '再次', '再此': '在此', '再次': '再次',
+            '作对': '作为', '做对': '对错',
+            '象限': '相当于', '像当': '相当',
+            '安排': '安排', '按排': '安排',
+            '复盖': '覆盖', '覆合': '复合', '复合': '复合',
+            '辩证': '辩证', '辨正': '辩证',
+            '宏扬': '弘扬', '洪扬': '弘扬',
+            '渡假': '度假', '渡假村': '度假村',
+            '爆满': '爆发', '暴发': '爆发',
+            '再接再励': '再接再厉',
+            '迫不急待': '迫不及待',
+            '不寒而粟': '不寒而栗',
+            '歪曲事非': '颠倒是非',
+            '出类拔萃': '出类拔萃',  # 正确写法保留
+            '渡假': '度假',
+            '渡假村': '度假村',
+            '渡假船': '度假船',
+            '渡假者': '度假者',
+            '渡假胜地': '度假胜地',
+            '渡假生活': '度假生活',
+            '渡假方式': '度假方式',
+            '渡假计划': '度假计划',
+            '渡假费用': '度假费用',
+            '渡假保险': '度假保险',
+            '渡假产品': '度假产品',
+            '渡假服务': '度假服务',
+            '渡假设施': '度假设施',
+            '渡假环境': '度假环境',
+            '渡假心情': '度假心情',
+            '渡假体验': '度假体验',
+            '渡假感受': '度假感受',
+            '渡假回忆': '度假回忆',
+            '渡假照片': '度假照片',
+            '渡假视频': '度假视频',
+            '游记': '游记',
+            '游记分享': '游记分享',
+            '游记攻略': '游记攻略',
+            '游记推荐': '游记推荐',
+            '游记大全': '游记大全',
+            '游记大全': '游记大全',
         }
         for wrong, correct in encoding_fixes.items():
             content = content.replace(wrong, correct)
@@ -2055,10 +2102,10 @@ class NovelSpider:
             # 对话引语独立成段: 以 "「 或 " 或 ' 或 「 开头的短行保留独立
             is_dialogue = bool(re.match(r'^[“”"\']', line)) or line.startswith('「') or line.startswith('『')
             # 段落首行特征: 较长 (>=30字) 或是对话引语
-            is_paragraph_start = (len(line) >= 30) or is_dialogue
-            if merged_lines and not is_paragraph_start and len(line) < 25:
-                # 短行 (非对话引语) 合并到上一段
-                merged_lines[-1] = merged_lines[-1] + line
+            is_paragraph_start = (len(line) >= 35) or is_dialogue
+            if merged_lines and not is_paragraph_start and len(line) < 35:
+                # 短行 (非对话引语) 合并到上一段，加空格避免粘连
+                merged_lines[-1] = merged_lines[-1] + ' ' + line
             else:
                 merged_lines.append(line)
 
@@ -2071,17 +2118,29 @@ class NovelSpider:
         # 移除行首行尾的空白
         cleaned_content = '\n'.join([line.strip() for line in cleaned_content.split('\n') if line.strip()])
 
-        # ===== 排版规范化 (对整章最终文本, 均不影响语义) =====
+# ===== 排版规范化 (对整章最终文本，均不影响语义) =====
         # 1. 全角空格 → 空 (部分站点用全角空格做对齐水印)
         cleaned_content = cleaned_content.replace('\u3000', '')
         # 2. 行内连续空格压缩为单空格
         cleaned_content = re.sub(r' {2,}', ' ', cleaned_content)
         # 3. 逗号句号连排 ",。" / "，。" → "。" (站点拼接残渣)
         cleaned_content = re.sub(r'[，,]+[。.]', '。', cleaned_content)
-        # 4. 重复标点压缩: 4 个以上连续感叹/问号/句号 → 保留 2 个 (保留强调语气, 去掉刷屏冗余)
+        # 4. 重复标点压缩：4 个以上连续感叹/问号/句号 → 保留 2 个 (保留强调语气，去掉刷屏冗余)
         cleaned_content = re.sub(r'([！？。])\1{3,}', r'\1\1', cleaned_content)
-        # 5. 段内行尾残留的章节号/页码 (如行尾 "第3页" 残留) 清理
+        # 5. 段内行尾残留的章节号/页码 (如行尾 "第 3 页" 残留) 清理
         cleaned_content = re.sub(r'(?<=[\u4e00-\u9fff])第\d+页\s*$', '', cleaned_content, flags=re.M)
+        # 6. 全角逗号句号之间不加空格
+        cleaned_content = cleaned_content.replace('，。', '。').replace('，！', '！').replace('，？', '？')
+        # 7. 半角标点转全角 (中文语境)
+        cleaned_content = cleaned_content.replace(',。', '，').replace('，,', '，')
+        cleaned_content = cleaned_content.replace('!?','！').replace('?!','？').replace('??','？')
+        # 8. 括号内无内容清理
+        cleaned_content = re.sub(r'[（\(]\s*[）\)]', '', cleaned_content)
+        # 9. 段首多余标点清理 (逐行): 行首的逗号/句号/分号等残留
+        cleaned_content = re.sub(r'^[，,；;：:]+', '', cleaned_content, flags=re.M)
+        # 10. 段尾"连接性"标点清理 (逐行): 只删逗号/分号/冒号等，
+        #     保留句号/感叹号/问号 (有语义的结束标点不删)
+        cleaned_content = re.sub(r'[，,；;：:]+$', '', cleaned_content, flags=re.M)
 
         return cleaned_content.strip()
 

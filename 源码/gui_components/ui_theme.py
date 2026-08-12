@@ -1,11 +1,18 @@
 # -*- coding: utf-8 -*-
 """UI 主题系统：卡片工厂 + 状态标签 + 按钮统一样式
 
-双主题适配原则：所有颜色使用 Flet Material3 语义色
-（SURFACE_CONTAINER_* / PRIMARY / ERROR_CONTAINER 等），
-深浅主题下自动适配，不写死浅色专用色值。
+双主题适配原则：颜色优先使用 Flet Material3 语义色
+（SURFACE_CONTAINER_* / PRIMARY / ERROR_CONTAINER 等）自动适配深浅主题；
+需要跨主题保持辨识度的状态色/日志色则使用 ui_morandi 定义的莫兰迪色相。
 """
 import flet as ft
+
+# 统一字体与字重规范 (来自 ui_morandi, 本模块所有文本必须遵守)
+from .ui_morandi import (
+    FONT_STACK, FONT_TERMINAL, SIZE_TINY, WEIGHT_EMPHASIS,
+    MORANDI_TERMINAL_BG, LOG_COLOR_INFO, LOG_COLOR_ERROR,
+    LOG_COLOR_WARN, LOG_COLOR_DEBUG,
+)
 
 # ---------------------------------------------------------------- 卡片
 CARD_RADIUS = 12
@@ -34,13 +41,15 @@ def make_card(content, padding=CARD_PADDING, radius=CARD_RADIUS,
 
 
 # ---------------------------------------------------------------- 状态标签
-# 任务状态 -> (前景色, 背景色)  均为 M3 语义色
+# 任务状态 -> (前景色, 背景色)
+# 每种状态使用独立莫兰迪色相 (跨主题固定色, 深浅底上均可读),
+# 避免原方案中 pending/stopped 同为灰、completed 与背景混色的问题
 STATUS_STYLES = {
-    'running':   (ft.Colors.ON_PRIMARY, ft.Colors.PRIMARY),
-    'completed': (ft.Colors.ON_PRIMARY_CONTAINER, ft.Colors.PRIMARY_CONTAINER),
-    'failed':    (ft.Colors.ON_ERROR_CONTAINER, ft.Colors.ERROR_CONTAINER),
-    'pending':   (ft.Colors.ON_SURFACE_VARIANT, ft.Colors.SURFACE_CONTAINER_HIGH),
-    'stopped':   (ft.Colors.ON_SURFACE_VARIANT, ft.Colors.SURFACE_CONTAINER_HIGH),
+    'running':   ('#FFFFFF', '#7C9CA8'),   # 灰蓝: 进行中
+    'completed': ('#FFFFFF', '#6B8E6B'),   # 莫兰迪绿: 完成
+    'failed':    ('#FFFFFF', '#A86B6B'),   # 莫兰迪红: 失败
+    'pending':   ('#FFFFFF', '#A09488'),   # 暖沙灰: 等待中
+    'stopped':   ('#FFFFFF', '#9E8AA0'),   # 藕荷紫: 已停止
 }
 
 STATUS_LABELS = {
@@ -53,11 +62,12 @@ STATUS_LABELS = {
 
 
 def status_chip(status: str) -> ft.Control:
-    """状态胶囊标签（圆角背景 + 加粗文字）"""
+    """状态胶囊标签（圆角背景 + 统一字重小字）"""
     fg, bg = STATUS_STYLES.get(status, STATUS_STYLES['pending'])
     return ft.Container(
-        content=ft.Text(STATUS_LABELS.get(status, status), size=9,
-                        weight=ft.FontWeight.BOLD, color=fg),
+        content=ft.Text(STATUS_LABELS.get(status, status), size=SIZE_TINY,
+                        weight=WEIGHT_EMPHASIS, color=fg,
+                        font_family=FONT_STACK),
         padding=ft.Padding.symmetric(horizontal=8, vertical=2),
         bgcolor=bg,
         border_radius=10,
@@ -113,16 +123,17 @@ def danger_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
 
 
 # ---------------------------------------------------------------- 日志终端
-LOG_TERMINAL_BG = ft.Colors.BLACK87          # 终端深底
-LOG_TERMINAL_FONT = "Consolas"               # 等宽字体
+# 莫兰迪深暖灰底 + 等宽字体 (深底上各级别用低饱和莫兰迪色着色)
+LOG_TERMINAL_BG = MORANDI_TERMINAL_BG
+LOG_TERMINAL_FONT = FONT_TERMINAL
 
 
 def log_line_color(line: str):
-    """日志行着色（终端风格）"""
+    """日志行着色（终端风格, 莫兰迪低饱和色）"""
     if '[ERROR]' in line:
-        return ft.Colors.RED_300
+        return LOG_COLOR_ERROR
     if '[WARN]' in line:
-        return ft.Colors.AMBER_300
+        return LOG_COLOR_WARN
     if '[DEBUG]' in line:
-        return ft.Colors.GREY_400
-    return ft.Colors.GREY_200
+        return LOG_COLOR_DEBUG
+    return LOG_COLOR_INFO
