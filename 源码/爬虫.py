@@ -27,7 +27,6 @@
 
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from bs4 import BeautifulSoup
 import time
 from fake_useragent import UserAgent
@@ -378,20 +377,37 @@ class NovelSpider:
         # 确需代理时, 在 captcha_config.json 的 request_proxy 字段显式配置
         # (如 "http://127.0.0.1:7890"), 仅对该字段指定的代理生效。
         self.session.trust_env = False
+        # ===== TLS 证书校验 (P1-1 修复) =====
+        # 默认开启校验 (verify=True), 防中间人篡改抓取内容。
+        # 个别站点证书链有问题时, 在 captcha_config.json 显式配置
+        # "disable_tls_verify": true 关闭校验 (此时按会话抑制对应告警)。
+        self.session.verify = True
+        self._tls_verify_disabled = False
         try:
             import _path_utils
             _cfg_path = _path_utils.resolve_data_file("captcha_config.json")
             if os.path.isfile(_cfg_path):
-                _rp = json.loads(Path(_cfg_path).read_text(encoding='utf-8')).get('request_proxy') or ''
+                _cfg = json.loads(Path(_cfg_path).read_text(encoding='utf-8'))
+                _rp = _cfg.get('request_proxy') or ''
                 if _rp:
                     self.session.proxies.update({'http': _rp, 'https': _rp})
+                if _cfg.get('disable_tls_verify') is True:
+                    self.session.verify = False
+                    self._tls_verify_disabled = True
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         except Exception:
-            pass  # 配置读取失败时保持直连
-        self.session.verify = False
+            pass  # 配置读取失败时保持直连 + 校验开启
         self.ua = UserAgent()
         # 固定 UA (会话内不变): ① WAF 验证码放行 cookie 与 UA 绑定, 每次随机 UA
         # 会导致验证码白过; ② 固定 UA 更接近真实浏览器, 降低反爬触发率
-        self._fixed_ua = self.ua.random
+        try:
+            self._fixed_ua = self.ua.random
+        except Exception:
+            # fake-useragent 某些版本初始化/取值需联网拉取数据, 离线或数据源
+            # 失效时降级为内置固定 UA 池 (P2-2), 保证 NovelSpider 始终可创建
+            self._fixed_ua = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                              'AppleWebKit/537.36 (KHTML, like Gecko) '
+                              'Chrome/124.0.0.0 Safari/537.36')
         # 添加完整的请求头，模拟真实浏览器
         self.session.headers.update({
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -1988,8 +2004,8 @@ class NovelSpider:
                             page_urls.append(next_page_url)
                         else:
                             break
-                    except:
-                        break
+                    except Exception:
+                        break  # 分页探测失败即终止, 已获取的分页仍可用
 
         print(f"找到 {len(page_urls)} 个分页页面")
         
@@ -2374,8 +2390,8 @@ class NovelSpider:
                                 return key
                             print(f"[排序键值] '{title[:30]}' -> 9999 (模式{i+1}: 无法解析)")
                             return 9999
-                        except:
-                            pass
+                        except (ValueError, KeyError, IndexError):
+                            pass  # 该模式解析失败, 尝试下一模式
 
                 # 尝试从URL中提取章节号
                 url = chap['url']
@@ -2395,8 +2411,8 @@ class NovelSpider:
                             key = int(match.group(1))
                             print(f"[排序键值] '{title[:30]}' -> {key} (URL模式{i+1})")
                             return key
-                        except:
-                            pass
+                        except (ValueError, IndexError):
+                            pass  # 数字转换失败, 尝试下一模式
 
                 # 默认值
                 print(f"[排序键值] '{title[:30]}' -> 9999 (默认值，无法提取)")
@@ -4615,9 +4631,19 @@ class NovelSpider:
             return None
         return ck
 
-    def _save_checkpoint(self, output_file, catalog_url, completed, total):
-        """保存检查点 (JSON 写入检查点文件)"""
+    def _save_checkpoint(self, output_file, catalog_url, completed, total,
+                         file_handle=None):
+        """保存检查点 (JSON 写入检查点文件)。
+
+        file_handle: 正在写入的输出文件句柄。传入时会先 flush 确保章节内容
+        先于检查点落盘——否则崩溃/断电时检查点显示已完成、内容却丢失，
+        续传将永久跳过该章 (P0-1 修复)。"""
         ck_path = self._checkpoint_paths(output_file)
+        if file_handle is not None:
+            try:
+                file_handle.flush()
+            except (OSError, ValueError):
+                pass  # 句柄已关闭等场景, 不阻塞检查点保存
         data = {
             'catalog_url': catalog_url,
             'output_file': output_file,
@@ -4796,9 +4822,13 @@ class NovelSpider:
             pass
         return delay
 
-    def _fetch_chapter_worker(self, chap):
+    def _fetch_chapter_worker(self, chap, stop_event=None):
         """并发抓取单章 (每个调用使用独立 Session, 避免共享 Session 的 cookie 竞态)。
-        返回该章合并后的正文内容字符串。"""
+        返回该章合并后的正文内容字符串。
+        stop_event: 置位时立即返回空串, 让线程池快速排空 (P1-2 修复:
+        否则点停止后要等所有已提交章节请求完才能退出)。"""
+        if stop_event is not None and stop_event.is_set():
+            return ''
         old_session = self.session
         new_session = requests.Session()
         new_session.headers.update(old_session.headers)
@@ -4811,6 +4841,42 @@ class NovelSpider:
             return self._fetch_with_qc(chap)
         finally:
             self.session = old_session
+
+    # ================== 资源清理 (P1-3 修复) ==================
+    def close(self):
+        """释放爬虫持有的资源: 持久化 Selenium driver、验证码模块浏览器等。
+
+        GUI 停止任务 / 抓取异常中断后必须调用, 否则 Chrome 进程和临时
+        profile 目录 (tanmixs_chrome_profile 等) 会残留在系统中。
+        可重复调用, 幂等。"""
+        # 持久化 tanmixs driver (串行模式)
+        driver = self._tanmixs_driver
+        self._tanmixs_driver = None
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        # 交给验证码模块自清理 (若它持有浏览器实例)
+        if getattr(self, '_captcha_manager', None) is not None:
+            try:
+                cleanup = getattr(self._captcha_manager, 'close', None)
+                if callable(cleanup):
+                    cleanup()
+            except Exception:
+                pass
+        # 关闭 requests Session 连接池
+        try:
+            self.session.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
@@ -4969,16 +5035,21 @@ class NovelSpider:
                                 print(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
                                       f"{chapters[i]['title']}")
                                 continue
-                            futures[i] = pool.submit(worker, chapters[i])
+                            futures[i] = pool.submit(worker, chapters[i], stop_event)
                         for i in range(start, total):
                             if i not in futures:
                                 # 被增量跳过的章节: 仅更新检查点, 不写入
-                                self._save_checkpoint(output_file, catalog_url, i + 1, total)
+                                self._save_checkpoint(output_file, catalog_url,
+                                                      i + 1, total, file_handle=f)
                                 if show_progress:
                                     print_progress_bar(i + 1, total,
                                                        extra=chapters[i]['title'][:20])
                                 continue
                             if stop_event is not None and stop_event.is_set():
+                                # 取消尚未开始的任务; 已在运行的会因 worker 内的
+                                # stop_event 检查立即返回, 不再卡住退出 (P1-2)
+                                for _fut in futures.values():
+                                    _fut.cancel()
                                 print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
                                 return output_file
                             chap = chapters[i]
@@ -4999,7 +5070,8 @@ class NovelSpider:
                                 failed.append(i + 1)
                                 print("失败: 未提取到内容")
                             # 每章完成后更新检查点（中断后可从断点续传）
-                            self._save_checkpoint(output_file, catalog_url, i + 1, total)
+                            self._save_checkpoint(output_file, catalog_url,
+                                                  i + 1, total, file_handle=f)
                             if show_progress:
                                 print_progress_bar(i + 1, total, extra=chap['title'][:20])
                 else:
@@ -5014,7 +5086,8 @@ class NovelSpider:
                         if self._是否应跳过章节(chap['url']):
                             self._增量跳过数 += 1
                             print(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
-                            self._save_checkpoint(output_file, catalog_url, i + 1, total)
+                            self._save_checkpoint(output_file, catalog_url,
+                                                  i + 1, total, file_handle=f)
                             if show_progress:
                                 print_progress_bar(i + 1, total, extra=chap['title'][:20])
                             continue
@@ -5033,7 +5106,8 @@ class NovelSpider:
                             failed.append(i + 1)
                             print("失败: 未提取到内容")
                         # 每章完成后更新检查点（中断后可从断点续传）
-                        self._save_checkpoint(output_file, catalog_url, i + 1, total)
+                        self._save_checkpoint(output_file, catalog_url,
+                                              i + 1, total, file_handle=f)
                         if show_progress:
                             print_progress_bar(i + 1, total, extra=chap['title'][:20])
                         if delay > 0:
@@ -5338,6 +5412,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         for i, chap in enumerate(chapters):
             print(f"  {i+1}. {chap['title']} -> {chap['url']}")
         print(f"\n共找到 {len(chapters)} 个章节")
+        spider.close()
         return
 
     if mode == "test":
@@ -5355,6 +5430,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             print(f"内容预览: {content[:200]}...")
         else:
             print("⚠️ 未提取到内容，可能需要调整内容选择器")
+        spider.close()
         return
 
     # mode == "full" or "range"
@@ -5382,17 +5458,21 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         if src_idx > 0:
             print(f"[多源回退] ⚠️ 主源抓取异常, 切换备用源 {src_idx}/{len(sources)-1}: {src}")
         src_spider = NovelSpider(get_base_url(src))
-        if mode == "range" and chapter_range:
-            src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
-                           resume=resume, show_progress=show_progress,
-                           chapter_range=chapter_range, threads=threads, delay=delay,
-                           stop_event=stop_event, unique_title=unique_title,
-                           novel_title=unique_novel_title)
-        else:
-            src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
-                           resume=resume, show_progress=show_progress,
-                           threads=threads, delay=delay, stop_event=stop_event,
-                           unique_title=unique_title, novel_title=unique_novel_title)
+        try:
+            if mode == "range" and chapter_range:
+                src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
+                               resume=resume, show_progress=show_progress,
+                               chapter_range=chapter_range, threads=threads, delay=delay,
+                               stop_event=stop_event, unique_title=unique_title,
+                               novel_title=unique_novel_title)
+            else:
+                src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
+                               resume=resume, show_progress=show_progress,
+                               threads=threads, delay=delay, stop_event=stop_event,
+                               unique_title=unique_title, novel_title=unique_novel_title)
+        finally:
+            # 每个源抓完(含异常/停止)立即释放浏览器与连接资源, 防止 Chrome 进程泄漏 (P1-3)
+            src_spider.close()
         # 成功判定: 失败章节占比 < 20% 且验证码触发率 < 50%
         failed = getattr(src_spider, 'last_failed', None)
         total_n = getattr(src_spider, 'last_total', 0)
@@ -5537,8 +5617,6 @@ def _parse_batch_opts(argv, start_idx):
 
 
 if __name__ == "__main__":
-    import sys
-
     # ===== CLI 模式日志落盘: 所有 print 同时写入 日志/YYYY-MM-DD.log =====
     # GUI 模式由 task_manager.TaskLogRedirector 统一落盘, 此处仅 CLI 生效
     try:
