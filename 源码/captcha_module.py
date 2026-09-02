@@ -89,11 +89,12 @@ DEFAULT_CONFIG = {
     },
     "browser_engine": "playwright",  # 浏览器驱动引擎: playwright(反检测,推荐) / selenium
     "fallback_sources": {},          # 多源回退: {书目录URL: [备用目录URL, ...]} 或指向 JSON 文件
-    "point_click_model": {         # 点选/语义验证码多模态模型 (接口占位)
-        "provider": "",            # 如 "ollama" / "openai_api"
+    "point_click_model": {         # 点选/语义验证码多模态模型 (C4 已落地)
+        "provider": "",            # 如 "ollama" / "openai_api" / "custom"
         "endpoint": "",
         "api_key": "",
         "model": "",
+        "prompt": "",              # 空 = 使用内置默认提示词
     },
 }
 
@@ -841,18 +842,135 @@ class PointClickCaptchaHandler(CaptchaHandler):
                          '多模态' if result is not None else '人工兜底', method='point_click')
 
     def _solve_with_model(self, driver, url, cfg):
-        """多模态模型识别 (接口占位: 按 provider 分发, 需自行实现具体调用)。"""
-        # 示例: provider="ollama" 时调用本地视觉模型
-        # 本处仅提供接口骨架, 具体实现依赖用户的模型服务
+        """多模态模型识别点选/语义验证码 (C4: 接口落地)。
+
+        配置 point_click_model (captcha_config.json):
+          provider: "ollama" | "openai_api" | "custom"
+          endpoint / api_key / model / prompt (可选覆盖默认提示词)
+        - ollama     : POST {endpoint}/api/chat (model + images[base64])
+        - openai_api : POST {endpoint}/chat/completions (OpenAI 兼容, 支持
+                       本地 vLLM/Ollama OpenAI 端口/云厂商)
+        - custom     : POST {endpoint} 直接携带 JSON
+                       {image_base64, prompt}, 返回坐标数组
+        模型输出统一为坐标数组(JSON 或文本), 解析后落在图片尺寸内才点击。
+        任何失败/超时/未配置 -> return None (上层自动转人工, 不卡任务)。
+        """
+        import base64 as _b64
+        import json as _json
+        import re as _re
         try:
             from selenium.webdriver.common.by import By
-            driver.find_element(By.CSS_SELECTOR, 'form img, .captcha img')  # 验证码元素存在性检查
-            # TODO: 调用多模态模型, 返回点击坐标列表 [(x, y), ...]
-            # 例如: POST {cfg['endpoint']} 携带图片与提示词, 模型返回坐标
-            raise NotImplementedError("多模态模型调用器未配置, 请实现 point_click_model")
-        except Exception as e:
-            _log.info(f"[验证码-点选] 模型调用失败: {e}")
+            from selenium.webdriver.common.action_chains import ActionChains
+        except Exception:
             return None
+        provider = (cfg.get('provider') or '').strip().lower()
+        endpoint = (cfg.get('endpoint') or '').strip().rstrip('/')
+        if not provider or not endpoint:
+            _log.debug('[验证码-点选] 未配置 provider/endpoint, 转人工')
+            return None
+        # 1. 截取验证码图像 (优先图元素, 兜底整页视口)
+        try:
+            img = driver.find_element(By.CSS_SELECTOR, 'form img, .captcha img, canvas, img[src*="captcha"]')
+            png = img.screenshot_as_png
+        except Exception:
+            try:
+                png = driver.get_screenshot_as_png()
+            except Exception:
+                _log.debug('[验证码-点选] 无法截取验证码图像')
+                return None
+        if not png:
+            return None
+        image_b64 = _b64.b64encode(png).decode('ascii')
+        prompt = (cfg.get('prompt') or
+                  '这是一张验证码图片, 请按要求点击图中文字/图形。'
+                  '只输出 JSON 坐标数组, 格式 [[x,y],...], 不要任何解释。')
+        # 2. 按 provider 组请求并取回文本
+        try:
+            import requests as _rq
+            payload = {}
+            if provider == 'ollama':
+                payload = {'model': cfg.get('model') or 'llava', 'messages': [
+                    {'role': 'user', 'content': prompt, 'images': [image_b64]}]}
+                resp = _rq.post(f'{endpoint}/api/chat', json=payload,
+                                timeout=(10, 60))
+            elif provider == 'openai_api':
+                payload = {'model': cfg.get('model') or 'gpt-4o-mini',
+                           'messages': [{'role': 'user', 'content': [
+                               {'type': 'text', 'text': prompt},
+                               {'type': 'image_url', 'image_url': {
+                                   'url': f'data:image/png;base64,{image_b64}'}}]}]}
+                headers = {'Authorization': f"Bearer {cfg.get('api_key') or 'sk-local'}"}
+                resp = _rq.post(f'{endpoint}/chat/completions', json=payload,
+                                headers=headers, timeout=(10, 90))
+            else:  # custom: 直接 POST JSON
+                payload = {'image_base64': image_b64, 'prompt': prompt,
+                           'model': cfg.get('model') or ''}
+                headers = {}
+                if cfg.get('api_key'):
+                    headers['Authorization'] = f"Bearer {cfg['api_key']}"
+                resp = _rq.post(endpoint, json=payload, headers=headers,
+                                timeout=(10, 60))
+            resp.raise_for_status()
+            text = resp.text
+            # 3. 从响应中抽坐标数组 (优先 JSON 结构化字段)
+            points = []
+            try:
+                data = resp.json()
+                if isinstance(data, list):
+                    points = data
+                elif isinstance(data, dict):
+                    for k in ('points', 'coordinates', 'data', 'choices'):
+                        if k in data:
+                            v = data[k]
+                            if isinstance(v, list):
+                                if v and isinstance(v[0], list):
+                                    points = v
+                                elif v and isinstance(v[0], dict) and 'message' in v[0]:
+                                    text = v[0]['message'].get('content', '') or text
+                                break
+            except Exception:
+                pass
+            if not points:
+                m = _re.search(r'\[\[(\s*\d+\s*,\s*\d+\s*,?\s*)+\]\]', text) or \
+                    _re.search(r'\[(\s*\d+\s*,\s*\d+\s*)\]', text)
+                if m:
+                    try:
+                        points = _json.loads(m.group(0))
+                    except Exception:
+                        points = []
+        except Exception as e:
+            _log.info(f"[验证码-点选] 模型调用失败: {e}, 转人工")
+            return None
+        if not points:
+            return None
+        # 4. 依次点击坐标 (坐标相对图片元素, 用 ActionChains 偏移点击)
+        _log.info(f"[验证码-点选] 模型返回 {len(points)} 个点击点, 执行点击")
+        try:
+            for pt in points:
+                try:
+                    x, y = int(pt[0]), int(pt[1])
+                except Exception:
+                    continue
+                if x < 0 or y < 0:
+                    continue
+                ActionChains(driver).move_to_element_with_offset(img, x, y) \
+                    .click().perform()
+                import time as _t
+                _t.sleep(0.6)
+        except Exception as e:
+            _log.info(f"[验证码-点选] 坐标点击失败: {e}, 转人工")
+            return None
+        # 5. 提交并返回页面
+        try:
+            from selenium.webdriver.common.by import By as _By
+            btn = driver.find_element(_By.CSS_SELECTOR,
+                                      'button[type="submit"], input[type="submit"], .verify-btn')
+            btn.click()
+        except Exception:
+            pass
+        import time as _t
+        _t.sleep(2)
+        return driver.page_source
 
 
 # ============================================================

@@ -47,6 +47,8 @@
     "provider": "",
     "endpoint": "",
     "api_key": "",
-    "model": ""
+    "model": "",
+    "prompt": "",
+    "_说明": "点选/语义验证码多模态模型 (C4): provider=ollama/openai_api/custom, endpoint 填服务地址, 返回坐标自动点击; 留空则点选验证码转人工"
   }
 }

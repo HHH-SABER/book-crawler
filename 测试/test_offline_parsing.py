@@ -246,6 +246,31 @@ class TestCleanContent(unittest.TestCase):
 
 
 # ============================================================
+# 5b. 点选验证码多模态调用器 (C4 回归)
+# ============================================================
+
+class TestPointClickModel(unittest.TestCase):
+    """_solve_with_model: 未配置/坏配置必须安全返回 None (上层转人工), 绝不抛异常。"""
+
+    def test_no_provider_returns_none(self):
+        from captcha_module import PointClickCaptchaHandler
+        h = PointClickCaptchaHandler.__new__(PointClickCaptchaHandler)
+        self.assertIsNone(h._solve_with_model(None, 'https://x/', {}))
+
+    def test_provider_without_endpoint_returns_none(self):
+        from captcha_module import PointClickCaptchaHandler
+        h = PointClickCaptchaHandler.__new__(PointClickCaptchaHandler)
+        self.assertIsNone(h._solve_with_model(None, 'https://x/',
+                                              {'provider': 'ollama', 'endpoint': ''}))
+
+    def test_unreachable_endpoint_returns_none(self):
+        from captcha_module import PointClickCaptchaHandler
+        h = PointClickCaptchaHandler.__new__(PointClickCaptchaHandler)
+        cfg = {'provider': 'ollama', 'endpoint': 'http://127.0.0.1:1', 'model': 'm'}
+        self.assertIsNone(h._solve_with_model(None, 'https://x/', cfg))
+
+
+# ============================================================
 # 5. Session 线程隔离 (P1-8 回归)
 # ============================================================
 
