@@ -372,7 +372,17 @@ class NovelSpider:
                       用于相对 URL 拼接与 AJAX 请求的 Referer/同源设置。
         """
         self.base_url = base_url
-        self.session = requests.Session()        # 默认直连: 忽略系统/环境代理。Windows 系统代理若指向已关闭的代理软件
+        # ===== Session 线程隔离 (P1-8 修复) =====
+        # self.session 现为属性, 取值走 threading.local:
+        #   - 未在线程内单独赋值时回退到 _main_session (串行路径行为不变)
+        #   - 并发 worker 内赋值只影响自己线程, 不会互相踩踏
+        # 旧实现用 "临时替换 self.session + finally 还原" 给每个线程发独立
+        # Session, 但 self.session 是实例级共享属性: 线程B 会把 线程A 的新
+        # Session 当成自己的"旧值"保存, 最终还原出错 —— Session 错配并泄漏。
+        self._session_local = threading.local()
+        self._main_session = requests.Session()
+        self.session = self._main_session
+        # 默认直连: 忽略系统/环境代理。Windows 系统代理若指向已关闭的代理软件
         # (如 127.0.0.1:12334) 会导致所有请求 ProxyError; 小说站国内直连即可。
         # 确需代理时, 在 captcha_config.json 的 request_proxy 字段显式配置
         # (如 "http://127.0.0.1:7890"), 仅对该字段指定的代理生效。
@@ -4829,18 +4839,44 @@ class NovelSpider:
         否则点停止后要等所有已提交章节请求完才能退出)。"""
         if stop_event is not None and stop_event.is_set():
             return ''
-        old_session = self.session
+        main_session = self._main_session
         new_session = requests.Session()
-        new_session.headers.update(old_session.headers)
-        new_session.keep_alive = True
-        # 与主 Session 一致: 直连忽略系统代理, 保留显式配置的代理
-        new_session.trust_env = False
-        new_session.proxies.update(old_session.proxies)
-        self.session = new_session
         try:
-            return self._fetch_with_qc(chap)
+            # 继承主 Session 的全部配置, 只隔离 cookie / 连接池
+            new_session.headers.update(main_session.headers)
+            new_session.cookies.update(main_session.cookies)  # 带上 WAF 放行 cookie
+            new_session.proxies.update(main_session.proxies)
+            new_session.trust_env = False          # 与主 Session 一致: 直连忽略系统代理
+            new_session.verify = main_session.verify  # 继承 TLS 校验开关 (P1-1)
+            new_session.keep_alive = True
+            # 线程本地赋值, 其它线程不受影响 (P1-8)
+            self.session = new_session
+            try:
+                return self._fetch_with_qc(chap)
+            finally:
+                # 复位本线程槽位: 线程池会复用线程, 避免后续误用已关闭的 Session
+                self.session = main_session
         finally:
-            self.session = old_session
+            # 关闭临时 Session 释放连接池 (旧实现从未关闭, 长任务会累积句柄)
+            try:
+                new_session.close()
+            except Exception:
+                pass
+
+    # ================== Session 线程隔离 (P1-8 修复) ==================
+    @property
+    def session(self):
+        """当前线程使用的 requests.Session。
+
+        未在当前线程显式赋值过时回退到 _main_session, 因此串行路径
+        (run / CLI / GUI 单线程) 的行为与旧实现完全一致。
+        """
+        return getattr(self._session_local, 'session', self._main_session)
+
+    @session.setter
+    def session(self, value):
+        # 只写入当前线程的 local 槽位, 不触碰其它线程看见的 Session
+        self._session_local.session = value
 
     # ================== 资源清理 (P1-3 修复) ==================
     def close(self):
@@ -4865,11 +4901,14 @@ class NovelSpider:
                     cleanup()
             except Exception:
                 pass
-        # 关闭 requests Session 连接池
-        try:
-            self.session.close()
-        except Exception:
-            pass
+        # 关闭 requests Session 连接池: 主 Session + 本线程可能残留的临时 Session
+        for _s in (self._main_session, getattr(self._session_local, 'session', None)):
+            if _s is None:
+                continue
+            try:
+                _s.close()
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
