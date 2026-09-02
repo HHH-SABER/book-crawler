@@ -1191,6 +1191,7 @@ class NovelSpider:
         ('zhiruo.org', '_parse_catalog_zhiruo'),
         ('ciyewk.com', '_parse_catalog_ciyewk'),
         ('630wang.cc', '_parse_catalog_630wang'),
+        ('xingguangks.com', '_parse_catalog_xingguang'),
         ('ltbook.net', '_parse_catalog_ltbook'),
         ('biquwx.cc', '_parse_catalog_biquwx'),
         ('11bzw.org', '_parse_catalog_11bzw'),
@@ -1300,6 +1301,57 @@ class NovelSpider:
         for i, chap in enumerate(chapters):
             _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
         return chapters
+
+    def _parse_catalog_xingguang(self, catalog_url, sort_chapters, soup=None):
+        """星光书苑 (xingguangks.com): 目录页 /part/{id}/ 只列"分卷阅读"入口,
+        正文分卷页 /list/{id}/{n}.html (每卷=一章正文, 无内部页码)。
+
+        流程: 收集目录页上全部 /list/{id}/{n}.html 链接按卷号排序作为章节列表;
+        链接文本如 "分卷阅读3" 作为标题 (正文提取时会剥离页眉元信息)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        _log.info("检测到xingguangks.com网站，使用专门的处理逻辑")
+        m_id = re.search(r'/part/(\d+)/', catalog_url) or re.search(r'/list/(\d+)/', catalog_url)
+        if not m_id:
+            _log.info("[xingguang] 无法从URL提取小说ID")
+            return chapters
+        book_id = m_id.group(1)
+        _log.info(f"[xingguang] 小说ID: {book_id}")
+        base = self.base_url.rstrip('/')
+        if '/list/' in catalog_url:
+            # 用户给的是分卷正文页: 从该卷页的"目录"链接反查目录页
+            target = catalog_url
+        else:
+            target = f"{base}/part/{book_id}/"
+        try:
+            page_soup = soup if (soup is not None and '/list/' not in catalog_url) else self.inspect_page(target)
+        except Exception:
+            return chapters
+        if page_soup is None:
+            return chapters
+        seen = set()
+        vols = []
+        for a in page_soup.find_all('a', href=True):
+            href = a.get('href', '')
+            m = re.search(r'/list/' + book_id + r'/(\d+)\.html', href)
+            if not m:
+                continue
+            n = int(m.group(1))
+            if n in seen:
+                continue
+            seen.add(n)
+            title = (a.get_text(strip=True) or f"分卷{n}")[:60]
+            vols.append((n, title, href if href.startswith('http') else base + href))
+        vols.sort(key=lambda x: x[0])
+        chapters = [{'title': t, 'url': u} for n, t, u in vols]
+        _log.info(f"[xingguang] 收集到 {len(chapters)} 个分卷 (卷号 {vols[0][0] if vols else '-'}..{vols[-1][0] if vols else '-'})")
+        for i, chap in enumerate(chapters[:8]):
+            _log.info(f"  {i+1}. {chap['title'][:40]} -> {chap['url']}")
+        return chapters
+
 
     def _parse_catalog_ciyewk(self, catalog_url, sort_chapters, soup=None):
         """特殊处理ciyewk.com网站 (词夜书屋):
@@ -4127,7 +4179,7 @@ class NovelSpider:
             # 其余站点保持原通用检测行为不变。
             # 注意: 只启用 extract_content_html_selector 中已实现的分支,
             # 未实现的 (如 yqyp_nav_strip) 保持原通用提取路径, 避免行为退化。
-            _IMPLEMENTED_EXTRACTORS = ('yunquge_p_filter', 'ltbook_junk_filter', 'word_read_p_filter', 'yqyp_nav_strip')
+            _IMPLEMENTED_EXTRACTORS = ('yunquge_p_filter', 'ltbook_junk_filter', 'word_read_p_filter', 'yqyp_nav_strip', 'xingguang_filter')
             if (site_pattern and site_pattern.get('pattern') == PATTERN_HTML_SELECTOR
                     and site_pattern.get('content_extractor') in _IMPLEMENTED_EXTRACTORS):
                 try:
