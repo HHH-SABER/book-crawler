@@ -142,15 +142,20 @@ def parse_codepoint_stream(content, replace_map=None):
     """解析压缩字符流为正文文本。
 
     格式:
-      - 4位十六进制 = Unicode 码点 (仅当其前是实体分隔符 \\x01/\\x02/\\x03 或 ( 时)
-      - \\x01=\\;&#x, \\x02=&#x (HTML实体结构), \\x03 为分隔符, \\x04=换行
+      - 4位十六进制 = Unicode 码点 (两种写法都支持)
+          a) x 前缀:  "x6700"          (tanmixs 的 .xs)
+          b) 裸码点:  "\x01 6700"      (ciyewk 的 .book, 由前缀标记引导)
+      - 前缀标记 \x01 / \x02 / \x03 表示其后 4 位十六进制是码点
+          (原始 HTML 实体分别为 ";&#x" / "&#x" / ";&#", 压缩时被整体替换)
+      - \x04 = 换行 (原始 ";\n")
       - 高频字被压缩为控制字符, 映射表 {码点: 控制字符} 由 replace_map 提供
       - 明文 ASCII 直接保留; 孤立 ; 为实体残留, 不显示
-      - 孤立十六进制序列 (如 x6700) 也尝试解码 (ciyewk 等站点常见)
 
     Args:
         content: 压缩字符流 (str)
-        replace_map: {码点字符串: 控制字符} 映射, 用于还原高频字
+        replace_map: {码点字符串: 控制字符} 映射, 用于还原高频字。
+            键为 2-6 位十六进制时按"压缩字"处理; 形如 ";&#x" 的非十六进制键
+            表示前缀标记/换行, 不参与映射。
 
     Returns:
         str: 还原后的正文
@@ -162,13 +167,39 @@ def parse_codepoint_stream(content, replace_map=None):
                 if re.fullmatch(r'[0-9a-fA-F]{2,6}', code):
                     mapping[ctrl] = chr(int(code, 16))
 
-    tokens = re.findall(r'[\x00-\x1f]x[0-9a-fA-F]{4}|x[0-9a-fA-F]{4}|[^\x00-\x1f]', content)
+    # 分词顺序很重要 (P1-7 修复):
+    #   ① x+4位hex        → x 前缀码点 (tanmixs)
+    #   ② 4位hex          → 裸码点, 仅当前一个 token 是前缀标记时才解码
+    #                        (ciyewk 等站点把 ";&#x6700;" 压成 "\x016700")
+    #   ③ 单个控制字符     → 压缩字 / 前缀标记 / 换行
+    #   ④ 其它单字符       → 明文
+    #
+    # 旧实现的第一个候选是 "控制字符 + x码点" 的合并模式, 会把紧邻码点的压缩字
+    # 吞进一个 6 字符 token: mapping 查不到 (键是单字符), 又不匹配纯 x码点,
+    # 最终落入 else 原样输出 —— 高频字整段丢失, 正文出现裸控制字符。
+    # 改为逐字符切分 + 循环内判定前缀标记后, 压缩字与码点都能正确还原。
+    tokens = re.findall(r'x[0-9a-fA-F]{4}|[0-9a-fA-F]{4}|[\x00-\x1f]|[^\x00-\x1f]',
+                        content)
     result = []
     prev = ''
+    pending_marker = False   # 上一个 token 是未被 mapping 消费的前缀标记
     for t in tokens:
+        # 前缀标记后的裸码点 (P2-7: ciyewk 连续码点流支持)
+        if pending_marker and re.fullmatch(r'[0-9a-fA-F]{4}', t):
+            pending_marker = False
+            prev = t
+            try:
+                result.append(chr(int(t, 16)))
+            except ValueError:
+                result.append(t)
+            continue
+        pending_marker = False
+
         if t in mapping:
             result.append(mapping[t])
         elif t in ('\x01', '\x02', '\x03'):
+            # 未被 mapping 消费时才是"前缀标记"; 否则它本身是压缩字, 已在上一步输出
+            pending_marker = True
             prev = t
             continue
         elif t == '\x04':
@@ -176,25 +207,20 @@ def parse_codepoint_stream(content, replace_map=None):
         elif t == ';':
             prev = t
             continue
-        elif re.fullmatch(r'x[0-9a-fA-F]{4}', t):
-            if prev in ('\x01', '\x02', '\x03', '('):
-                try:
-                    # t格式为"x6700"，移除x前缀后解码
-                    hex_num = t[1:]
-                    result.append(chr(int(hex_num, 16)))
-                except Exception:
-                    pass
-            else:
-                # 孤立十六进制序列也尝试解码 (ciyewk 站点常见)
-                try:
-                    # t格式为"x6700"，移除x前缀后解码
-                    hex_num = t[1:]
-                    result.append(chr(int(hex_num, 16)))
-                except Exception:
-                    result.append(t)
+        elif len(t) == 5 and t[0] == 'x':
+            # x 前缀码点。旧逻辑要求前导为分隔符才解码, 否则尝试解码并兜底保留;
+            # 两条分支行为一致, 这里合并为"解码失败才回退原 token"。
+            try:
+                result.append(chr(int(t[1:], 16)))
+            except ValueError:
+                result.append(t)
+        elif t < ' ':
+            # 未映射的控制字符: 无还原依据, 直接丢弃 (与旧分词规则行为一致)
+            prev = t
+            continue
         else:
             result.append(t)
-        prev = t if t not in ('\x01', '\x02', '\x03', ';') else prev
+        prev = t
     return ''.join(result)
 
 

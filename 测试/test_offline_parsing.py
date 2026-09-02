@@ -13,6 +13,7 @@
 """
 
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -92,21 +93,20 @@ class TestDecodeData(unittest.TestCase):
         self.assertEqual(method, 'codepoint_stream')
         self.assertEqual(text, expected)
 
-    @unittest.expectedFailure
     def test_codepoint_stream_with_replace_map(self):
-        """【已知 bug】高频字压缩映射路径失效。
+        """【P1-7 回归】高频字压缩映射路径。
 
-        tokenizer 的第一候选 [\\x00-\\x1f]x[0-9a-fA-F]{4} 会把"控制字符+紧跟的
-        x码点"吞成单个 5 字符 token, 而解析循环只处理"单控制字符"或"纯 x码点"
-        两种形态, 5 字符 token 落入 else 被原样保留 —— replace_map 永远无法命中,
-        含压缩映射的数据文件解码输出乱码。
-        修复 tokenizer/循环后移除 expectedFailure 即可。"""
+        旧 tokenizer 的首个候选 [\\x00-\\x1f]x[0-9a-fA-F]{4} 会把"控制字符+紧跟的
+        x码点"吞成一个 6 字符 token, mapping 查不到、又不匹配纯 x码点, 落入 else
+        原样输出 —— replace_map 永不命中, 含压缩映射的数据文件解码出乱码。
+        现改为逐字符分词 + 循环内判定, 压缩字与码点各自还原。"""
         from content_decoder import decode_data
         expected = '一章' * 12
         payload = json.dumps({'content': 'x4e00\x01' * 12, 'replace': {'7ae0': '\x01'}},
                              ensure_ascii=False)
         text, method = decode_data(f'_txt_call({payload})')
         self.assertIsNotNone(text)
+        self.assertEqual(method, 'codepoint_stream')
         self.assertEqual(text, expected)
 
     def test_json_content_field(self):
@@ -133,17 +133,24 @@ class TestDecodeData(unittest.TestCase):
         self.assertEqual(method, 'base64')
         self.assertEqual(text, long_text)
 
-    @unittest.expectedFailure
     def test_ciyewk_continuous_hex_stream(self):
-        """【已知能力缺口】ciyewk 的连续 hex+分号码点流 (26063001;7aef... 无 x 前缀)
-        无法被 parse_codepoint_stream 解码 (它只认 x 前缀 token)。
-        当前生产环境 ciyewk 靠 Selenium 渲染兜底, 此用例记录该限制:
-        若站点改为直连 .book 数据, 解码将失效。修复时移除 expectedFailure 即可。"""
+        """【P2-7 回归】ciyewk 的裸码点流 (无 x 前缀, 由 \\x01/\\x02/\\x03 引导)。
+
+        数据形如 "\\x026606\\x013001;(...": 前缀标记后的 4 位十六进制即码点,
+        其余控制字符查 replace 表还原高频字, ';' 是实体残留分隔符, \\x04 是换行。
+        旧实现只认 x 前缀 token, 整段码点被当成明文字母输出 (解码失败)。
+        生产环境此前靠 Selenium 渲染兜底, 现已可直接解码 .book 数据文件。"""
         from content_decoder import decode_data
         raw = _read('ciyewk_1.book')
         text, method = decode_data(raw)
-        self.assertIsNotNone(text, 'ciyewk 连续hex码点流应被解码')
+        self.assertIsNotNone(text, 'ciyewk 裸码点流应被解码')
+        self.assertEqual(method, 'codepoint_stream')
         self.assertGreater(len(text), 1000)
+        self.assertIn(FEATURE_OPENING, text)
+        # 还原质量: 汉字应占绝对多数, 且不应残留未还原的控制字符 (换行除外)
+        chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
+        self.assertGreater(chinese / len(text), 0.6)
+        self.assertEqual(len(re.findall(r'[\x00-\x1f]', text.replace('\n', ''))), 0)
 
 
 # ============================================================
@@ -226,6 +233,118 @@ class TestCleanContent(unittest.TestCase):
     def test_keeps_normal_paragraphs(self):
         raw = '正常段落，含有完整的中文标点与足够的长度，不应该被广告过滤器误伤。'
         self.assertIn(raw, self.spider.clean_content(raw))
+
+
+# ============================================================
+# 5. Session 线程隔离 (P1-8 回归)
+# ============================================================
+
+class TestSessionThreadIsolation(unittest.TestCase):
+    """并发抓取时每个线程必须拿到自己刚赋的 Session。
+
+    旧实现靠 "替换 self.session + finally 还原" 发独立 Session, 而 self.session
+    是实例级共享属性: 线程B 进入时读到的"旧值"可能是 线程A 刚赋的新 Session,
+    于是 A 还原后 B 又把 A 的 Session 写回去 —— Session 错配 + 连接泄漏。
+    现改为 threading.local 属性, 赋值只作用于当前线程。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from 爬虫 import NovelSpider
+        cls.spider = NovelSpider('https://www.example.com')  # 离线可构造 (~0.8s)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.spider.close()
+
+    def test_fallback_to_main_session(self):
+        """主线程未赋值时, self.session 回退到主 Session (串行路径行为不变)。"""
+        self.assertIs(self.spider.session, self.spider._main_session)
+
+    def test_concurrent_assignment_isolated(self):
+        """4 线程同时赋值, 各自读回的必须是自己那一个。"""
+        import threading
+        import requests
+        main = self.spider._main_session
+        barrier = threading.Barrier(4)
+        errors = []
+        seen = {}
+        lock = threading.Lock()
+
+        def body(idx):
+            try:
+                mine = requests.Session()
+                self.spider.session = mine
+                barrier.wait(timeout=10)          # 强制重叠, 放大竞态窗口
+                with lock:
+                    seen[idx] = id(self.spider.session)
+                if self.spider.session is not mine:
+                    errors.append(f'线程 {idx} 读到了别的线程的 Session')
+                self.spider.session = main       # 模拟 worker 的 finally 复位
+            except Exception as e:               # noqa: BLE001 - 收集后统一断言
+                errors.append(f'线程 {idx} 异常: {e!r}')
+
+        threads = [threading.Thread(target=body, args=(i,)) for i in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+            self.assertFalse(t.is_alive(), '线程未在 30s 内结束 (barrier 死锁?)')
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(set(seen.values())), 4, '各线程应持有互不相同的 Session')
+
+    def test_worker_restores_and_closes_session(self):
+        """_fetch_chapter_worker 用独立 Session 执行, 结束后复位并关闭。"""
+        from unittest import mock
+        import requests
+        from 爬虫 import NovelSpider
+        spider = NovelSpider('https://www.example.com')
+        main = spider._main_session
+        captured = {}
+        closed_ids = []
+
+        class SpySession(requests.Session):
+            """记录 close() 调用 —— requests 的 Session.close() 不会清空
+            adapters 字典, 无法从外部观测, 只能靠间谍子类。"""
+
+            def close(self):
+                closed_ids.append(id(self))
+                super().close()
+
+        # 用假实现替换 _fetch_with_qc, 只验证 Session 生命周期, 不触网
+        def fake_qc(chap):
+            captured['session'] = spider.session
+            captured['is_main'] = spider.session is main
+            return '正文'
+
+        spider._fetch_with_qc = fake_qc
+        try:
+            with mock.patch.object(requests, 'Session', SpySession):
+                spider._fetch_chapter_worker({'title': '第一章', 'url': '/1.html'})
+
+            self.assertIsNotNone(captured.get('session'))
+            self.assertFalse(captured['is_main'], 'worker 内应拿到独立 Session')
+            self.assertIs(spider.session, main, 'worker 结束后本线程应复位为主 Session')
+            self.assertIn(id(captured['session']), closed_ids,
+                          '临时 Session 未关闭, 连接池泄漏 (旧实现从不关闭)')
+        finally:
+            spider.close()
+
+    def test_worker_returns_empty_when_stopped(self):
+        """stop_event 已置位时 worker 立即返回空串, 不发请求 (P1-2)。"""
+        import threading
+        from 爬虫 import NovelSpider
+        spider = NovelSpider('https://www.example.com')
+        try:
+            spider._fetch_with_qc = lambda chap: (_ for _ in ()).throw(
+                AssertionError('stop_event 已置位, 不应发起抓取'))
+            stop = threading.Event()
+            stop.set()
+            self.assertEqual(spider._fetch_chapter_worker(
+                {'title': '第一章', 'url': '/1.html'}, stop), '')
+        finally:
+            spider.close()
 
 
 if __name__ == '__main__':
