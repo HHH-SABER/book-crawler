@@ -329,6 +329,21 @@ SITE_PATTERNS = [
         'anti_spider': {'type': 'none'},
     },
     {
+        # xingguangks.com (星光书苑): 目录页 /part/{id}/ 只列"分卷阅读"入口,
+        # 分卷页 /list/{id}/{n}.html 即正文大章 (卷内 50+ <p> 段落, 无内部页码),
+        # 顺序由 /list/{id}/{n+1}.html 的 "下一章(→)" 链接衔接
+        # 正文 div.content 首行带 "如果出现文字缺失，格式混乱请取消转码/退出阅读模式"
+        # 提示, 次行前缀含 "书名作者:xxx" 元信息, 由 xingguang_filter 剥离 (2026-09 实测适配)
+        'domain': 'xingguangks.com',
+        'pattern': 'html_selector',
+        'catalog_parser': 'xingguang',
+        'chapter_url_regex': r'/list/(\d+)/(\d+)\.html',
+        'content_pagination': {'max_pages': 1},   # 分卷页=单页正文, 不探测页码
+        'content_selectors': ['div.content', '.content', '#content'],
+        'content_extractor': 'xingguang_filter',
+        'anti_spider': {'type': 'none'},
+    },
+    {
         # ciyewk.com (词夜书屋): 目录 /shu/{bid}.html 的 #list dl dd a 结构
         # 章节URL: /shu/{bid}/{N}.html (bid 为字母数字, 如 OqWe)
         # 正文: 章节页仅有 "章节内容加载中" 占位, 通过 initTxt('//js.ciyewk.com/data/chapter/.../N.book')
@@ -644,6 +659,10 @@ def extract_content_html_selector(html, selectors, extractor=None):
             text = _extract_yqyp_nav_strip(el)
             if text:
                 return text
+        if extractor == 'xingguang_filter':
+            text = _extract_xingguang_filter(el)
+            if text:
+                return text
         text = el.get_text('\n', strip=True)
         if len(text) > 200:
             return text
@@ -751,6 +770,31 @@ def _extract_yqyp_nav_strip(container):
             break
         parts.append(txt)
     return '\n\n'.join(parts)
+
+
+def _extract_xingguang_filter(container):
+    """星光书苑 (xingguangks.com) 正文提取器
+
+    分卷页 div.content 内 50+ <p> 段落即一章正文, 但存在两类页眉污染:
+      1) 首行提示: "如果出现文字缺失，格式混乱请取消转码/退出阅读模式" (整行丢弃)
+      2) 次行前缀: "少年阿宾作者:ben第一章胡太太..." —— 书名+作者标记与章节标题
+         粘连在同一 <p> 开头, 需剥离 "书名作者:作者名" 前缀 (保留其后章节标题+正文)。
+    """
+    if container is None:
+        return ''
+    lines = [p.get_text(strip=True) for p in container.find_all('p')]
+    lines = [l for l in lines if l]
+    out = []
+    for line in lines:
+        if '如果出现文字缺失' in line or '取消转码' in line or '退出阅读模式' in line:
+            continue
+        out.append(line)
+    # 剥离首个段落粘连的 书名+作者 前缀 (仅当能衔接 "第X章/回/节/卷..." 时才剥)
+    if out and '作者:' in out[0][:40]:
+        m = re.match(r'^(?:[^\s]{1,40}?作者:[^\s]{1,12}?)(第[0-9一二三四五六七八九十百千]+[章回节卷].*)$', out[0])
+        if m:
+            out[0] = m.group(1)
+    return '\n\n'.join(out)
 
 
 def _extract_word_read_p_filter(container):
