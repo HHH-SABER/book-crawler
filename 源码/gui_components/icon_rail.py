@@ -6,9 +6,7 @@
 """
 import flet as ft
 
-from .ui_theme import make_card
-from .ui_morandi import (FONT_STACK, SIZE_TINY, WEIGHT_BODY,
-                         MORANDI_PRIMARY, MORANDI_ON_PRIMARY)
+from .ui_morandi import MORANDI_PRIMARY
 
 # 页面定义: (key, 图标, 选中图标, 标题)
 NAV_PAGES = [

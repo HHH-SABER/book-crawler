@@ -7,13 +7,11 @@
 刷新策略: 签名比对, 数据无变化跳过重建 (防止高频 update 丢点击事件)。
 """
 import flet as ft
-import os
-import subprocess
 
 from .task_manager import TaskManager
 from .ui_theme import make_card, status_chip, status_color
 from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                         SIZE_BODY, WEIGHT_TITLE, WEIGHT_SUBTITLE,
+                         WEIGHT_TITLE, WEIGHT_SUBTITLE,
                          WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR,
                          MORANDI_WARNING)
 from .row_detail import build_row_detail, _fmt_elapsed

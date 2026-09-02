@@ -440,8 +440,6 @@ class DdddocrHandler(CaptchaHandler):
                 return page_source  # 非验证码页, 直接返回
 
             from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
 
             retry_limit = (self.config.retry_limit if self.config else 3)
             for attempt in range(1, retry_limit + 1):
@@ -488,7 +486,7 @@ class DdddocrHandler(CaptchaHandler):
             print(f"[验证码-识别] 模块异常: {e}")
         finally:
             self._record('ocr', start, result is not None,
-                         f'ddddocr 识别' if result is not None else '识别失败', method='ddddocr')
+                         'ddddocr 识别' if result is not None else '识别失败', method='ddddocr')
         return result
 
 
@@ -526,8 +524,8 @@ class SliderCaptchaHandler(CaptchaHandler):
 
             # 2. 背景图截图 → OpenCV 定位缺口
             bg_png = bg_el.screenshot_as_png
-            import numpy as np
             import cv2
+            import numpy as np
             img = cv2.imdecode(np.frombuffer(bg_png, np.uint8), cv2.IMREAD_COLOR)
             gap_x = self._locate_gap(img)
             if gap_x is None:
@@ -572,7 +570,6 @@ class SliderCaptchaHandler(CaptchaHandler):
         """
         try:
             import cv2
-            import numpy as np
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             # 边缘检测
             edges = cv2.Canny(gray, 100, 200)
@@ -793,8 +790,8 @@ class ThirdPartyCaptchaHandler(CaptchaHandler):
                 try:
                     el = driver.find_element(By.CSS_SELECTOR, f'textarea[name="{name}"]')
                     driver.execute_script(
-                        f"arguments[0].value = arguments[1]; "
-                        f"arguments[0].dispatchEvent(new Event('input', {{bubbles:true}}));", el, answer)
+                        "arguments[0].value = arguments[1]; "
+                        "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));", el, answer)
                 except Exception:
                     continue
             # 尝试提交表单
@@ -846,8 +843,7 @@ class PointClickCaptchaHandler(CaptchaHandler):
         # 本处仅提供接口骨架, 具体实现依赖用户的模型服务
         try:
             from selenium.webdriver.common.by import By
-            img_el = driver.find_element(By.CSS_SELECTOR, 'form img, .captcha img')
-            png = img_el.screenshot_as_png
+            driver.find_element(By.CSS_SELECTOR, 'form img, .captcha img')  # 验证码元素存在性检查
             # TODO: 调用多模态模型, 返回点击坐标列表 [(x, y), ...]
             # 例如: POST {cfg['endpoint']} 携带图片与提示词, 模型返回坐标
             raise NotImplementedError("多模态模型调用器未配置, 请实现 point_click_model")

@@ -22,10 +22,9 @@ except Exception:
     app_log = None
 
 from .ui_theme import (make_card, filled_btn, tonal_btn, outline_btn,
-                       text_btn, danger_btn, BTN_TEXT_STYLE)
+                       text_btn, danger_btn)
 from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_BODY, SIZE_SMALL,
-                          SIZE_TINY, WEIGHT_BODY, MORANDI_SUCCESS,
-                          MORANDI_ERROR)
+                          WEIGHT_BODY)
 
 
 def _log(source: str, message: str):

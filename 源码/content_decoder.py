@@ -181,13 +181,11 @@ def parse_codepoint_stream(content, replace_map=None):
     tokens = re.findall(r'x[0-9a-fA-F]{4}|[0-9a-fA-F]{4}|[\x00-\x1f]|[^\x00-\x1f]',
                         content)
     result = []
-    prev = ''
     pending_marker = False   # 上一个 token 是未被 mapping 消费的前缀标记
     for t in tokens:
         # 前缀标记后的裸码点 (P2-7: ciyewk 连续码点流支持)
         if pending_marker and re.fullmatch(r'[0-9a-fA-F]{4}', t):
             pending_marker = False
-            prev = t
             try:
                 result.append(chr(int(t, 16)))
             except ValueError:
@@ -200,12 +198,10 @@ def parse_codepoint_stream(content, replace_map=None):
         elif t in ('\x01', '\x02', '\x03'):
             # 未被 mapping 消费时才是"前缀标记"; 否则它本身是压缩字, 已在上一步输出
             pending_marker = True
-            prev = t
             continue
         elif t == '\x04':
             result.append('\n')
         elif t == ';':
-            prev = t
             continue
         elif len(t) == 5 and t[0] == 'x':
             # x 前缀码点。旧逻辑要求前导为分隔符才解码, 否则尝试解码并兜底保留;
@@ -216,11 +212,9 @@ def parse_codepoint_stream(content, replace_map=None):
                 result.append(t)
         elif t < ' ':
             # 未映射的控制字符: 无还原依据, 直接丢弃 (与旧分词规则行为一致)
-            prev = t
             continue
         else:
             result.append(t)
-        prev = t
     return ''.join(result)
 
 

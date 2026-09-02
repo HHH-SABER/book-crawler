@@ -11,11 +11,9 @@ import os
 import glob
 
 from .task_manager import TaskManager
-from .ui_theme import (make_card, status_chip, status_color, tonal_btn,
-                        text_btn)
-from .ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
-                          SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY, MORANDI_PRIMARY,
+from .ui_theme import (status_chip, status_color, tonal_btn)
+from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+                          WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
                           MORANDI_WARNING, MORANDI_ACCENT)
 

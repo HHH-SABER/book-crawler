@@ -715,13 +715,11 @@ def _extract_yqyp_nav_strip(container):
     junk_markers = ('阅读指南', '收藏', '红包', '么么', '宝贝们',
                     '本章完', '作者有话说', '谢谢', '评论')
     parts = []
-    passed_h2 = False
     passed_first_read_btn = False
     for child in container.children:
         name = getattr(child, 'name', None)
         # 遇到 h2 标记标题后开始收集
         if name == 'h2':
-            passed_h2 = True
             continue
         # 第一个 read_btn 之后才真正开始正文
         if name == 'div' and 'read_btn' in ' '.join(child.get('class', [])):

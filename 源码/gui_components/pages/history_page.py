@@ -10,9 +10,9 @@ import flet as ft
 import time
 
 from . import history_data
-from ..ui_theme import make_card, tonal_btn, status_chip
+from ..ui_theme import make_card, tonal_btn
 from ..ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
-                          SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
+                          SIZE_TINY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_PRIMARY, MORANDI_SECONDARY, MORANDI_SUCCESS,
                           MORANDI_ERROR, MORANDI_WARNING, MORANDI_ACCENT)
@@ -355,7 +355,7 @@ class HistoryPage:
                 border_radius=6,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
                 ink=True,
-                tooltip=f"点击筛选该站点",
+                tooltip="点击筛选该站点",
                 on_click=lambda e, d=s.get('域名', ''): self._filter_to_domain(d),
             ))
 

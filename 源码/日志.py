@@ -14,7 +14,6 @@ import sys
 import time
 import traceback
 import threading
-from pathlib import Path
 
 # 日志级别
 DEBUG, INFO, WARN, ERROR = "DEBUG", "INFO", "WARN", "ERROR"

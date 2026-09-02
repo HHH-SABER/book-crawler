@@ -83,7 +83,7 @@ def main(page: ft.Page):
     # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
     from gui_components.ui_morandi import (
         make_morandi_theme, make_morandi_dark_theme,
-        FONT_STACK, SIZE_TITLE, SIZE_SMALL, WEIGHT_TITLE, WEIGHT_BODY,
+        FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING,
     )
     page.theme = make_morandi_theme()
@@ -165,7 +165,6 @@ def main(page: ft.Page):
     content_stack = ft.Stack(
         controls=[pages_map[k] for k, _, _, _ in NAV_PAGES],
         expand=True)
-    page_keys = [k for k, _, _, _ in NAV_PAGES]
     for i, p in enumerate(pages_map.values()):
         p.visible = (i == 0)
 

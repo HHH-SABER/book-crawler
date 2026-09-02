@@ -43,9 +43,8 @@ import hashlib
 # 导入站点适配模式库 (可复用的网站适配配置)
 try:
     from sites_config import (
-        SITE_PATTERNS, PATTERN_QSBS_BB, PATTERN_AJAX_TWO_STEP,
-        PATTERN_HTML_SELECTOR, PATTERN_SELENIUM,
-        get_site_pattern, build_paged_url, auto_detect_pattern,
+        PATTERN_HTML_SELECTOR,
+        get_site_pattern, build_paged_url,
         extract_content as extract_content_by_pattern,
         validate_public_url,
     )
@@ -640,7 +639,7 @@ class NovelSpider:
             # profile 损坏(上次运行崩溃遗留)会导致 Chrome 无法启动:
             # 备份损坏的 profile 并换全新 profile 重试, 保证爬虫可用
             print(f"[tanmixs] 使用持久化 profile 启动失败: {str(e)[:120]}")
-            print(f"[tanmixs] 备份损坏的 profile 并创建新 profile 重试...")
+            print("[tanmixs] 备份损坏的 profile 并创建新 profile 重试...")
             try:
                 import shutil
                 backup_dir = profile_dir + f'_corrupt_{int(time.time())}'
@@ -1786,7 +1785,6 @@ class NovelSpider:
             return chapters
         book_id = book_id_match.group(1)
         novel_path = f'/{book_id}/'
-        novel_path_alt = novel_path
         print(f"[tanmixs] 小说ID: {book_id}, 路径: {novel_path}")
 
         # 收集所有目录分页 URL
@@ -1807,10 +1805,6 @@ class NovelSpider:
             new_on_page = 0
             # 优先从 ul.chapter-list 提取, 避免匹配到推荐区
             chap_list_ul = page_soup.find('ul', class_='chapter-list')
-            if chap_list_ul:
-                link_containers = [chap_list_ul]
-            else:
-                link_containers = None
             for a in (chap_list_ul.find_all('a', href=True) if chap_list_ul else page_soup.find_all('a', href=True)):
                 href = a.get('href', '')
                 text = a.get_text(strip=True)
@@ -2022,7 +2016,7 @@ class NovelSpider:
                 if catalog_soup and catalog_soup.find('a', href=True):
                     soup = catalog_soup
                     catalog_link = mulu_url
-                    print(f"成功访问章节目录页面")
+                    print("成功访问章节目录页面")
                 else:
                     print("章节目录页面访问失败，尝试从当前页面提取")
             else:
@@ -2062,7 +2056,7 @@ class NovelSpider:
         # 处理分页（特别针对322zw.com等有分页的网站）
         # 对于ahxsw.com网站，使用/mulu/分页URL格式
         if 'ahxsw.com' in catalog_url and catalog_link:
-            print(f"\n[分页检测] ahxsw.com网站，使用/mulu/分页URL格式")
+            print("\n[分页检测] ahxsw.com网站，使用/mulu/分页URL格式")
             print(f"[分页检测] 起始目录页: {catalog_link}")
             page_urls = [catalog_link]
             # ahxsw.com的mulu分页格式: /mulu/{前3位}/{完整ID}/{页码}.html
@@ -2861,7 +2855,7 @@ class NovelSpider:
                 return 'qsbs_bb'
             # 2. AJAX 两步加载
             if re.search(r'/api/read_sign\.php', html):
-                print(f"[通用检测] ✅ 识别到 AJAX 两步加载特征 (/api/read_sign.php)")
+                print("[通用检测] ✅ 识别到 AJAX 两步加载特征 (/api/read_sign.php)")
                 return 'ajax_two_step'
             # 3. HTML 选择器 (尝试常见容器能否提取到足够文本)
             soup = BeautifulSoup(html, 'lxml')
@@ -2878,7 +2872,7 @@ class NovelSpider:
                         return 'html_selector'
                     else:
                         print(f"[通用检测] 选择器 '{sel}' 命中但内容过短 ({text_len} 字符 < 200), 跳过")
-            print(f"[通用检测] ⚠️ 未识别到任何已知内容模式, 将回退到域名分支")
+            print("[通用检测] ⚠️ 未识别到任何已知内容模式, 将回退到域名分支")
             return None
         except Exception as e:
             print(f"[通用检测] ❌ 检测失败: {e}")
@@ -3040,7 +3034,7 @@ class NovelSpider:
             if best_text:
                 print(f"[通用提取-html] ✅ 最终选用 '{best_sel}', 提取 {len(best_text)} 字符")
                 return best_text
-            print(f"[通用提取-html] ⚠️ 所有选择器均未命中正文")
+            print("[通用提取-html] ⚠️ 所有选择器均未命中正文")
             return ''
         except Exception as e:
             print(f"[通用提取-html] ❌ HTML 选择器提取失败: {e}")
@@ -3116,7 +3110,7 @@ class NovelSpider:
             content_html = content_resp.text
             print(f"[通用提取-ajax] 正文获取成功, HTML长度={len(content_html)} 字符")
             if not content_html.strip():
-                print(f"[通用提取-ajax] ⚠️ 正文为空")
+                print("[通用提取-ajax] ⚠️ 正文为空")
                 return ''
 
             # 6. 解析正文 HTML, 逐行过滤广告/导航行 (基于内容特征, 不依赖域名)
@@ -3362,7 +3356,7 @@ class NovelSpider:
                                 # 找到有效编码后不再尝试其它编码(避免乱码污染)
                                 if encoding_found:
                                     break
-                        except Exception as e:
+                        except Exception:
                             pass
                 except Exception as e:
                     print(f"  匹配 {i+1} 解码失败: {e}")
@@ -4020,7 +4014,7 @@ class NovelSpider:
                 if site_pattern and 'content_pagination' in site_pattern:
                     current_url = build_paged_url(chapter_url, page_index, site_pattern['content_pagination'])
                     if current_url is None:
-                        print(f"[分页] 已达到最大页数限制，停止")
+                        print("[分页] 已达到最大页数限制，停止")
                         break
                 elif '.html' in chapter_url:
                     # 11bzw.org分页: 第2页是_2.html, 第3页是_3.html (page_index+1)
@@ -4086,13 +4080,13 @@ class NovelSpider:
                             print(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                             page_text = self.clean_content(data_content)
                             if len(page_text) < 50:
-                                print(f"[数据文件] 内容过短, 可能已到末页")
+                                print("[数据文件] 内容过短, 可能已到末页")
                                 break
                             import hashlib
                             # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                             fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                             if fingerprint == self._last_page_fingerprint:
-                                print(f"[数据文件] 与上一页指纹相同, 停止抓取")
+                                print("[数据文件] 与上一页指纹相同, 停止抓取")
                                 break
                             self._last_page_fingerprint = fingerprint
                             total_content += page_text + '\n\n'
@@ -4133,7 +4127,7 @@ class NovelSpider:
                     page_text = self.clean_content(site_content)
                     print(f"[sites_config] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                     if len(page_text) < 50:
-                        print(f"[sites_config] 正文过短, 可能已到末页, 结束分页")
+                        print("[sites_config] 正文过短, 可能已到末页, 结束分页")
                         break
                     # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                     import hashlib
@@ -4152,7 +4146,7 @@ class NovelSpider:
             # 已知站点配置优先于通用检测，确保特殊处理正确执行
             if site_pattern and site_pattern.get('pattern') == 'datafile':
                 if page_index == 0:
-                    print(f"[站点配置] 使用数据文件解码模式")
+                    print("[站点配置] 使用数据文件解码模式")
                 from content_decoder import decode_chapter_data
                 data_text, data_method = decode_chapter_data(
                     current_url, page=page_index + 1,
@@ -4194,23 +4188,23 @@ class NovelSpider:
             
             if self._detected_pattern == 'qsbs_bb':
                 if page_index == 0:
-                    print(f"[通用检测] 检测到 qsbs.bb Base64 加密, 走通用解码路径")
+                    print("[通用检测] 检测到 qsbs.bb Base64 加密, 走通用解码路径")
                 generic_content = self._extract_qsbs_bb_generic(current_url, headers)
             elif self._detected_pattern == 'str_decode_bb':
                 if page_index == 0:
-                    print(f"[通用检测] 检测到 str_decode Base64 加密, 走通用解码路径")
+                    print("[通用检测] 检测到 str_decode Base64 加密, 走通用解码路径")
                 generic_content = self._extract_str_decode_generic(current_url, headers)
             elif self._detected_pattern == 'ajax_two_step':
                 if page_index == 0:
-                    print(f"[通用检测] 检测到 AJAX 两步加载, 走通用 AJAX 提取路径")
+                    print("[通用检测] 检测到 AJAX 两步加载, 走通用 AJAX 提取路径")
                 generic_content = self._extract_ajax_two_step_generic(current_url, headers)
             elif self._detected_pattern == 'html_selector':
                 if page_index == 0:
-                    print(f"[通用检测] 检测到 HTML 选择器模式, 走通用提取路径")
+                    print("[通用检测] 检测到 HTML 选择器模式, 走通用提取路径")
                 generic_content = self._extract_html_selector_generic(current_url, headers)
             elif self._detected_pattern == 'datafile':
                 if page_index == 0:
-                    print(f"[通用检测] 检测到数据文件模式, 走数据文件解码路径")
+                    print("[通用检测] 检测到数据文件模式, 走数据文件解码路径")
                 from content_decoder import decode_chapter_data
                 data_text, data_method = decode_chapter_data(
                     current_url, page=page_index + 1,
@@ -4236,7 +4230,7 @@ class NovelSpider:
                 page_text = self.clean_content(generic_content)
                 print(f"[通用提取] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                 if len(page_text) < 50:
-                    print(f"[通用提取] 正文过短, 可能已到末页, 结束分页")
+                    print("[通用提取] 正文过短, 可能已到末页, 结束分页")
                     break
                 # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                 fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
@@ -4343,7 +4337,7 @@ class NovelSpider:
                                         print(f"[tanmixs] 检测到下一分页: {current_url}")
                                         continue
                                 else:
-                                    print(f"[tanmixs] 未找到 ?page= 链接, 本章分页结束")
+                                    print("[tanmixs] 未找到 ?page= 链接, 本章分页结束")
                 except Exception as e:
                     print(f"[tanmixs] Selenium抓取失败: {e}")
                     import traceback
@@ -4625,7 +4619,7 @@ class NovelSpider:
                 response.encoding = response.apparent_encoding
                 text = response.text
                 soup = BeautifulSoup(text, 'html.parser')
-            except Exception as e:
+            except Exception:
                 # 方法B: 尝试使用chardet检测编码
                 try:
                     import chardet
@@ -4644,9 +4638,9 @@ class NovelSpider:
                                 if text and len(text) > 100:
                                     soup = BeautifulSoup(text, 'html.parser')
                                     break
-                            except Exception as e:
+                            except Exception:
                                 pass
-                except Exception as e:
+                except Exception:
                     # 最终 fallback: 使用ignore模式
                     text = response.content.decode('utf-8', errors='ignore')
                     soup = BeautifulSoup(text, 'html.parser')
@@ -5787,7 +5781,7 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
     for url, status, dur, _ in results:
         print(f"  {status} [{dur:.0f}秒] {url}")
     ok = sum(1 for _, st, _, _ in results if '✅' in st)
-    print(f"===================================")
+    print("===================================")
     print(f"[批量] 完成 {ok}/{len(results)} 本")
     return results
 
