@@ -252,3 +252,6 @@ __marimo__/
 *.py.bak2
 /测试/_refactor_*.py
 _version_info.txt
+
+# NVIDIA 用户态驱动日志空壳 (运行进程偶发在 cwd 生成, 删除会再生, 忽略即可)
+NVIDIA Corporation/
