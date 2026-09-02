@@ -8,6 +8,7 @@
 """
 import flet as ft
 import os
+import sys
 import glob
 
 from .task_manager import TaskManager
@@ -260,6 +261,8 @@ class DetailDrawer:
             d = os.path.dirname(os.path.abspath(filepath))
             if os.name == 'nt':
                 os.startfile(d)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', d])
             else:
                 subprocess.Popen(['xdg-open', d])
         except Exception:

@@ -8,6 +8,7 @@
 """
 import flet as ft
 import os
+import sys
 import subprocess
 
 from .task_manager import TaskManager
@@ -275,6 +276,8 @@ class InputBar:
         try:
             if os.name == 'nt':
                 os.startfile(abs_dir)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', abs_dir])
             else:
                 subprocess.Popen(['xdg-open', abs_dir])
         except Exception as ex:
