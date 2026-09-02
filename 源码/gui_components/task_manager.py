@@ -21,6 +21,18 @@ except Exception:
 
 
 @dataclasses.dataclass
+class TaskMetrics:
+    """任务运行时指标 (由爬虫结构化日志解析回填, 见 TaskLogRedirector)"""
+    engine: str = ""              # 当前引擎: requests/cloudscraper/curl_cffi
+    anti_spider_type: str = ""    # 最近命中的反爬类型: js_challenge/rate_limit/...
+    quality_score: float = -1.0   # 最近一次内容质检得分 0-100 (-1=尚未质检)
+    quality_passed: bool = False  # 最近一次质检是否通过
+    incremental_skipped: int = 0  # 增量模式累计跳过章节数
+    engine_fallback_chain: list = dataclasses.field(default_factory=list)  # 引擎降级尝试记录
+    start_time: float = 0.0       # 任务启动时间戳 (计算耗时用)
+
+
+@dataclasses.dataclass
 class TaskInfo:
     """单个爬虫任务的状态信息"""
     task_id: str
@@ -41,6 +53,9 @@ class TaskInfo:
     delay: float = 1.0
     resume: bool = True
     output_dir: str = None
+    # 运行时指标 (GUI 表格列数据源)
+    metrics: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
+    selected: bool = False  # 当前是否被选中 (供抽屉/表格高亮)
 
 
 class TaskLogRedirector:
@@ -122,6 +137,69 @@ class TaskLogRedirector:
         m = re.search(r'已保存至(.+\.txt)', line)
         if m:
             self.task.output_file = m.group(1).strip()
+        # ---- 运行时指标解析 (引擎/反爬/质检/增量) ----
+        self._parse_metrics(line)
+
+    def _parse_metrics(self, line: str):
+        """从爬虫结构化日志行解析运行时指标 (与 _parse_progress 同级, 只改数据不动 UI)
+
+        已知日志格式 (爬虫.py / 请求引擎.py / 内容质检器.py 输出):
+          [反爬] ✅ {引擎} 引擎请求成功 ...      → 当前引擎
+          [反爬] ⚠️ {引擎} 引擎请求失败 ...      → 降级链追加
+          [引擎] {引擎} 请求异常: ...            → 降级链追加
+          [反爬] 命中 {机制}, ...                → 反爬类型
+          [反爬] 频率限制, 退避 ...              → 反爬类型 rate_limit
+          [反爬检测] 命中 WAF 图片验证码页 / WAF JS 挑战页 → 反爬类型
+          [反爬检测] 检测到JS cookie校验页面     → 反爬类型 js_cookie
+          [质检] {章节} 得分{分} 通过/失败(...)  → 质检得分
+          [增量] 跳过第 X/Y 章 (未变化)          → 增量跳过计数
+        """
+        mt = self.task.metrics
+
+        # 引擎: 成功
+        m = re.search(r'\[反爬\]\s*✅\s*(\S+)\s*引擎请求成功', line)
+        if m:
+            mt.engine = m.group(1)
+            return
+        # 引擎: 失败/异常 → 降级链
+        m = re.search(r'\[反爬\]\s*⚠️\s*(\S+)\s*引擎请求失败', line)
+        if m and m.group(1) not in mt.engine_fallback_chain:
+            mt.engine_fallback_chain.append(m.group(1))
+            return
+        m = re.search(r'\[引擎\]\s*(\S+)\s*请求异常', line)
+        if m and m.group(1) not in mt.engine_fallback_chain:
+            mt.engine_fallback_chain.append(m.group(1))
+            return
+
+        # 反爬类型
+        if '[反爬] 频率限制' in line:
+            mt.anti_spider_type = 'rate_limit'
+            return
+        m = re.search(r'\[反爬\]\s*命中\s*(\S+?),', line)
+        if m:
+            mt.anti_spider_type = m.group(1)
+            return
+        if '[反爬检测] 命中 WAF 图片验证码页' in line:
+            mt.anti_spider_type = 'waf_captcha'
+            return
+        if '[反爬检测] 命中 WAF JS 挑战页' in line:
+            mt.anti_spider_type = 'waf_js_challenge'
+            return
+        if '检测到JS cookie校验页面' in line or '命中JS cookie校验' in line:
+            mt.anti_spider_type = 'js_cookie'
+            return
+
+        # 质检得分: "[质检] {章节} 得分{分} 通过" / "得分{分} 失败(...)"
+        m = re.search(r'\[质检\].*?得分(\d+(?:\.\d+)?)\s*(通过|失败)', line)
+        if m:
+            mt.quality_score = float(m.group(1))
+            mt.quality_passed = (m.group(2) == '通过')
+            return
+
+        # 增量跳过
+        if '[增量] 跳过第' in line:
+            mt.incremental_skipped += 1
+            return
 
 
 class _ThreadAwareStdout:
@@ -202,6 +280,48 @@ class TaskManager:
         self.tasks: dict[str, TaskInfo] = {}
         self._lock = threading.Lock()
         self._counter = 0
+        self._selected_task_id: str = ""       # 当前选中任务 (表格高亮/抽屉联动)
+        self._selected_callbacks: list = []    # 选中变化订阅者 (主线程调用)
+
+    # ------------------------------------------------------------ 选中联动
+    def on_selected_change(self, callback):
+        """订阅选中任务变化 (回调签名: callback(task_id: str), 空串=取消选中)"""
+        self._selected_callbacks.append(callback)
+
+    def select_task(self, task_id: str):
+        """选中/取消选中任务 (切换到新任务时触发回调, 线程安全)"""
+        with self._lock:
+            old = self._selected_task_id
+            if task_id == old:
+                return
+            for t in self.tasks.values():
+                t.selected = (t.task_id == task_id)
+            self._selected_task_id = task_id
+        for cb in self._selected_callbacks:
+            try:
+                cb(task_id)
+            except Exception:
+                pass
+
+    @property
+    def selected_task_id(self) -> str:
+        """当前选中任务 ID (空串=无选中)"""
+        return self._selected_task_id
+
+    # ------------------------------------------------------------ 指标更新
+    def update_metrics(self, task_id: str, **fields):
+        """外部直接更新任务指标字段 (仅改数据不动 UI, 线程安全)
+
+        可用字段: engine / anti_spider_type / quality_score / quality_passed /
+                  incremental_skipped / engine_fallback_chain
+        """
+        with self._lock:
+            task = self.tasks.get(task_id)
+            if task is None:
+                return
+            for k, v in fields.items():
+                if hasattr(task.metrics, k):
+                    setattr(task.metrics, k, v)
 
     def create_task(self, url: str, mode: str = "full",
                     chapter_range: tuple = None, threads: int = 1,
@@ -223,6 +343,7 @@ class TaskManager:
             resume=resume,
             output_dir=output_dir,
         )
+        task.metrics.start_time = time.time()
         with self._lock:
             self.tasks[task_id] = task
 
@@ -254,6 +375,7 @@ class TaskManager:
             mode="batch",
             status="running"
         )
+        task.metrics.start_time = time.time()
         with self._lock:
             self.tasks[task_id] = task
 
@@ -439,6 +561,7 @@ class TaskManager:
         task.logs = []
         task.error = ""
         task.output_file = ""
+        task.metrics = TaskMetrics(start_time=time.time())  # 重置运行时指标
         task.stop_flag = threading.Event()  # 新建停止标记 (旧标记可能已被置位)
         task.logs.append({
             'time': time.strftime('%H:%M:%S'),

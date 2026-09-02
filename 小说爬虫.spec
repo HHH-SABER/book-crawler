@@ -35,5 +35,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='K:/程序文件/小说爬虫/_version_info.txt',
     icon=['K:/程序文件/小说爬虫/脚本/图标.ico'],
 )
