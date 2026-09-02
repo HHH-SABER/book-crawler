@@ -58,14 +58,14 @@ def make_card(content, padding=CARD_PADDING, radius=CARD_RADIUS,
 
 # ---------------------------------------------------------------- 状态标签
 # 任务状态 -> (前景色, 背景色)
-# 每种状态使用独立莫兰迪色相 (跨主题固定色, 深浅底上均可读),
-# 避免原方案中 pending/stopped 同为灰、completed 与背景混色的问题
+# 采用 ColorScheme 容器色 (主题感知): 白天=渲染图风格 (淡紫/淡青/淡红等),
+# 夜间=莫兰迪深色主题容器色 (保持夜间观感不变)
 STATUS_STYLES = {
-    'running':   ('#FFFFFF', '#7C9CA8'),   # 灰蓝: 进行中
-    'completed': ('#FFFFFF', '#6B8E6B'),   # 莫兰迪绿: 完成
-    'failed':    ('#FFFFFF', '#A86B6B'),   # 莫兰迪红: 失败
-    'pending':   ('#FFFFFF', '#A09488'),   # 暖沙灰: 等待中
-    'stopped':   ('#FFFFFF', '#9E8AA0'),   # 藕荷紫: 已停止
+    'running':   (ft.Colors.ON_PRIMARY_CONTAINER, ft.Colors.PRIMARY_CONTAINER),   # 紫: 进行中
+    'completed': (ft.Colors.ON_SECONDARY_CONTAINER, ft.Colors.SECONDARY_CONTAINER),  # 蓝青: 完成
+    'failed':    (ft.Colors.ON_ERROR_CONTAINER, ft.Colors.ERROR_CONTAINER),       # 红: 失败
+    'pending':   (ft.Colors.ON_SURFACE_VARIANT, ft.Colors.SURFACE_CONTAINER),     # 灰: 等待中
+    'stopped':   (ft.Colors.ON_SURFACE_VARIANT, ft.Colors.SURFACE_CONTAINER_HIGH),  # 灰: 已停止
 }
 
 STATUS_LABELS = {

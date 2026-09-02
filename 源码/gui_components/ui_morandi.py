@@ -59,50 +59,41 @@ def txt(value, size=SIZE_BODY, weight=WEIGHT_BODY, color=None,
 # 二、莫兰迪色板 (低饱和度、中亮度、暖调)
 # ====================================================================
 
-# ---- 四个主色 ----
-MORANDI_PRIMARY = '#A88E8E'          # 灰粉 Dusty Rose (抓取区主色)
-MORANDI_PRIMARY_LIGHT = '#C4A9A9'
-MORANDI_PRIMARY_DARK = '#8C7A7A'
-MORANDI_SECONDARY = '#8EA89E'        # 灰绿 Sage (预览区主色)
-MORANDI_SECONDARY_LIGHT = '#A9B8A8'
-MORANDI_SECONDARY_DARK = '#7A8C7A'
-MORANDI_TERTIARY = '#C49A7C'         # 陶土 Terracotta (日志区主色)
-MORANDI_TERTIARY_LIGHT = '#D4B8A9'
-MORANDI_TERTIARY_DARK = '#A97A6B'
-MORANDI_ACCENT = '#7C9CA8'           # 灰蓝 Dusty Blue (配置区主色)
+# ---- 主色/语义色: 主题感知别名 ----
+# 直接映射到 Flet 语义色槽位 (ft.Colors.*), 由 ColorScheme 按当前 theme_mode 解析:
+#   白天 (LIGHT)  → 渲染图风格 (紫/蓝青/琥珀/红, 见 make_morandi_theme)
+#   夜间 (DARK)   → 莫兰迪深色主题 (make_morandi_dark_theme), 保持夜间观感不变
+MORANDI_PRIMARY = ft.Colors.PRIMARY
+MORANDI_SECONDARY = ft.Colors.SECONDARY
+MORANDI_TERTIARY = ft.Colors.TERTIARY
+MORANDI_ACCENT = ft.Colors.TERTIARY          # 配置/强调区: 琥珀橙
+MORANDI_SUCCESS = ft.Colors.SECONDARY        # 成功/完成: 蓝青
+MORANDI_ERROR = ft.Colors.ERROR              # 失败/错误: 红
+MORANDI_WARNING = ft.Colors.TERTIARY         # 警告: 琥珀
+MORANDI_INFO = ft.Colors.SECONDARY           # 信息: 蓝青
+MORANDI_RUNNING = ft.Colors.PRIMARY          # 进行中: 紫
+MORANDI_STOPPED = ft.Colors.ON_SURFACE_VARIANT
+MORANDI_PENDING = ft.Colors.ON_SURFACE_VARIANT
 
-# ---- 扩展色 (丰富化: 保持同档低饱和, 增加色相多样性) ----
-MORANDI_MAUVE = '#9E8AA0'            # 藕荷紫 (已停止状态 / 点缀)
-MORANDI_GOLD = '#B3A26E'             # 芥末金 (警告 / 强调点缀)
-MORANDI_TEAL = '#7FA3A0'             # 雾霾青 (信息 / 链接感)
-MORANDI_CLAY = '#A98467'             # 陶土棕 (辅助暖色)
-MORANDI_LILAC = '#A9A0B8'            # 灰丁香紫 (调试级日志)
+# ---- 表面/文字/边框: 主题感知别名 (旧常量名保持兼容) ----
+MORANDI_BACKGROUND = ft.Colors.SURFACE
+MORANDI_SURFACE = ft.Colors.SURFACE
+MORANDI_SURFACE_CONTAINER = ft.Colors.SURFACE_CONTAINER
+MORANDI_SURFACE_CONTAINER_HIGH = ft.Colors.SURFACE_CONTAINER_HIGH
+MORANDI_SURFACE_CONTAINER_HIGHEST = ft.Colors.SURFACE_CONTAINER_HIGHEST
+MORANDI_ON_PRIMARY = ft.Colors.ON_PRIMARY
+MORANDI_ON_SECONDARY = ft.Colors.ON_SECONDARY
+MORANDI_ON_SURFACE = ft.Colors.ON_SURFACE
+MORANDI_ON_SURFACE_VARIANT = ft.Colors.ON_SURFACE_VARIANT
+MORANDI_OUTLINE = ft.Colors.OUTLINE
+MORANDI_OUTLINE_VARIANT = ft.Colors.OUTLINE_VARIANT
 
-# ---- 语义状态色 (各状态色相独立, 一眼可辨) ----
-MORANDI_SUCCESS = '#6B8E6B'          # 低饱和绿: 完成/成功
-MORANDI_ERROR = '#A86B6B'            # 低饱和红: 失败/错误
-MORANDI_WARNING = '#B3A26E'          # 芥末金: 警告
-MORANDI_INFO = '#7C9CA8'             # 灰蓝: 信息
-MORANDI_RUNNING = '#7C9CA8'          # 灰蓝: 进行中
-MORANDI_STOPPED = '#9E8AA0'          # 藕荷紫: 已停止
-MORANDI_PENDING = '#A09488'          # 暖沙灰: 等待中
-
-# ---- 表面色 (浅暖灰层级, 浅色主题) ----
-MORANDI_BACKGROUND = '#FAF7F4'               # 极浅暖白 (页面底)
-MORANDI_SURFACE = '#F8F4F0'                  # 暖白 (卡片)
-MORANDI_SURFACE_CONTAINER = '#F0EBE5'        # 浅暖灰 (次级容器)
-MORANDI_SURFACE_CONTAINER_HIGH = '#E8E0D8'   # 暖灰 (输入框底)
-MORANDI_SURFACE_CONTAINER_HIGHEST = '#E0D8D0'
-
-# ---- 文字色 ----
-MORANDI_ON_PRIMARY = '#FFFFFF'
-MORANDI_ON_SECONDARY = '#FFFFFF'
-MORANDI_ON_SURFACE = '#3D3530'               # 深暖灰 (非纯黑)
-MORANDI_ON_SURFACE_VARIANT = '#6B5E55'       # 中暖灰
-
-# ---- 边框/分割线 ----
-MORANDI_OUTLINE = '#D8D0C8'
-MORANDI_OUTLINE_VARIANT = '#C0B8B0'
+# ---- 扩展色 (主题感知别名, 旧引用兼容) ----
+MORANDI_MAUVE = ft.Colors.PRIMARY
+MORANDI_GOLD = ft.Colors.TERTIARY
+MORANDI_TEAL = ft.Colors.SECONDARY
+MORANDI_CLAY = ft.Colors.TERTIARY
+MORANDI_LILAC = ft.Colors.ON_SURFACE_VARIANT
 
 # ---- 终端背景 (日志区深底, 深暖灰黑比纯黑柔和) ----
 MORANDI_TERMINAL_BG = '#2C2825'
@@ -187,36 +178,41 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
 
 
 def make_morandi_theme() -> ft.Theme:
-    """莫兰迪浅色主题: 暖白底 + 四主色容器分区"""
+    """白天主题: 渲染图风格 (紫色品牌 + 蓝青次级 + 琥珀强调 + 明亮中性面)"""
     return _build_theme({
-        'primary': MORANDI_PRIMARY,
-        'on_primary': MORANDI_ON_PRIMARY,
-        'primary_container': '#EAD9D6',                  # 淡灰粉容器
-        'on_primary_container': '#5A4442',
-        'secondary': MORANDI_SECONDARY,
-        'on_secondary': MORANDI_ON_SECONDARY,
-        'secondary_container': '#DDE6DE',                # 淡灰绿容器
-        'on_secondary_container': '#3D4F45',
-        'tertiary': MORANDI_TERTIARY,
-        'on_tertiary': MORANDI_ON_PRIMARY,
-        'tertiary_container': '#EFDFD0',                 # 淡陶土容器
-        'on_tertiary_container': '#5C4634',
-        'error': MORANDI_ERROR,
-        'error_container': '#EAD5D2',
-        'on_error': MORANDI_ON_PRIMARY,
-        'on_error_container': '#6E4040',
-        'background': MORANDI_BACKGROUND,
-        'on_background': MORANDI_ON_SURFACE,
-        'surface': MORANDI_SURFACE,
-        'on_surface': MORANDI_ON_SURFACE,
-        'surface_variant': MORANDI_SURFACE_CONTAINER,
-        'on_surface_variant': MORANDI_ON_SURFACE_VARIANT,
-        'outline': MORANDI_OUTLINE,
-        'outline_variant': MORANDI_OUTLINE_VARIANT,
-        'surface_container_low': '#F5F1EC',               # 导航/工具栏底
-        'surface_container': MORANDI_SURFACE_CONTAINER,   # 卡片底
-        'surface_container_high': MORANDI_SURFACE_CONTAINER_HIGH,
-        'surface_container_highest': MORANDI_SURFACE_CONTAINER_HIGHEST,
+        # 品牌紫 (导航/高亮/主按钮)
+        'primary': '#7C5CFF',
+        'on_primary': '#FFFFFF',
+        'primary_container': '#EBE7FF',                  # 淡紫容器
+        'on_primary_container': '#3C2F86',
+        # 蓝青 (次级/成功/信息)
+        'secondary': '#3AA6B9',
+        'on_secondary': '#FFFFFF',
+        'secondary_container': '#DEF4F8',                # 淡青容器
+        'on_secondary_container': '#13505C',
+        # 琥珀橙 (强调/警告)
+        'tertiary': '#E8A33D',
+        'on_tertiary': '#FFFFFF',
+        'tertiary_container': '#FCEDDA',                 # 淡橙容器
+        'on_tertiary_container': '#67430A',
+        # 红 (失败/错误)
+        'error': '#E0625F',
+        'error_container': '#FCE5E3',
+        'on_error': '#FFFFFF',
+        'on_error_container': '#7C2220',
+        # 明亮中性面 (渲染图 surface 体系)
+        'background': '#F8F9FC',                         # 极浅蓝灰白
+        'on_background': '#1F2330',
+        'surface': '#FFFFFF',                            # 卡片纯白
+        'on_surface': '#1F2330',
+        'surface_variant': '#ECEFF2',
+        'on_surface_variant': '#6B7280',
+        'outline': '#C6CCD4',
+        'outline_variant': '#DCE1E8',
+        'surface_container_low': '#F6F7F9',              # 导航/工具栏底
+        'surface_container': '#F1F3F6',                  # 卡片底
+        'surface_container_high': '#ECEEF2',
+        'surface_container_highest': '#E4E7EC',
     })
 
 

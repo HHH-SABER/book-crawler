@@ -13,6 +13,10 @@ httpcore>=1.0.0
 selenium>=4.15.0
 playwright>=1.40.0
 
+# 成熟反爬库（多引擎自动降级：curl_cffi TLS 指纹 / cloudscraper JS 质询）
+curl_cffi>=0.6.0
+cloudscraper>=1.2.0
+
 # 图片 / OCR / 验证码
 Pillow>=10.0.0
 ddddocr>=1.4.11

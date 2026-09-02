@@ -32,6 +32,13 @@ output/
 抓取结果 - 副本/
 *.txt.bak
 
+# 运行时数据 (站点历史/爬取历史 JSON 等, 仅保留目录占位)
+数据/*
+!数据/.gitkeep
+
+# 历史临时目录模式 (防止再次生成)
+_tmp_*/
+
 # 运行时生成的配置文件（从 config/ 模板复制到根目录）
 /captcha_config.json
 /站点配置.json

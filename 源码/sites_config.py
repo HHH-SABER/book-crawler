@@ -34,6 +34,7 @@
 """
 
 import re
+import os
 import time
 import base64
 import ipaddress
@@ -112,6 +113,10 @@ def paginate_orion34g(base_url, page_index):
 #   'anti_spider':     反爬机制
 #       - {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'}
 #       - {'type': 'none'}
+#       - {'type': 'auto'}   # 自动检测 (默认): 由 反爬检测器.py 基于响应特征实时识别
+#           可识别机制: rate_limit(429/频繁) / ua_block(403+UA特征) / waf_captcha
+#           / waf_js_challenge / js_cookie / dynamic_token(CSRF隐藏域)
+#           并动态调整策略: 指数退避 / UA轮换 / 引擎切换, 未知站点无需配置
 # }
 
 SITE_PATTERNS = [
@@ -326,12 +331,12 @@ SITE_PATTERNS = [
         # 正文: 章节页仅有 "章节内容加载中" 占位, 通过 initTxt('//js.ciyewk.com/data/chapter/.../N.book')
         #       加载数据文件; .book 为 _txt_call({content:...}) 码点流压缩格式,
         #       由 content_decoder.decode_chapter_data 自动探测并解码
+        # 注意: 不使用通用html_selector模式, 避免提取到"章节内容加载中"占位内容
         'domain': 'ciyewk.com',
-        'pattern': 'html_selector',
+        'pattern': 'datafile',  # 强制使用数据文件解码模式
         'catalog_parser': 'ciyewk',
         'chapter_url_regex': r'/shu/[A-Za-z0-9]+/(\d+)\.html',
         'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 5},
-        'content_selectors': ['#content', '.content'],
         'anti_spider': {'type': 'waf_js'},
     },
     {
@@ -358,11 +363,66 @@ SITE_PATTERNS = [
 
 def get_site_pattern(url):
     """根据 URL 返回匹配的站点配置, 未匹配返回 None"""
+    _apply_runtime_config()  # 首次调用时合并 站点配置.json (幂等)
     url_lower = url.lower()
     for pat in SITE_PATTERNS:
         if pat['domain'] in url_lower:
+            if pat.get('enabled') is False:
+                return None  # 站点被用户禁用 (站点管理页开关)
             return pat
     return None
+
+
+# ============================================================
+# 运行时配置合并: 站点配置.json (GUI 站点管理页写入) 覆盖/追加内置配置
+# ============================================================
+_RUNTIME_APPLIED = False
+
+
+def _apply_runtime_config():
+    """把 BASE_DIR/站点配置.json 合并进 SITE_PATTERNS (按域名 upsert)。
+
+    - 同域名: 用 JSON 字段覆盖内置条目 (函数型字段如自定义分页不受影响)
+    - 新域名: 追加到列表末尾
+    - enabled=False: 保留条目但 get_site_pattern 跳过 (可随时重新启用)
+    - 任何异常静默降级 (仅用内置配置), 不影响爬虫主流程
+    """
+    global _RUNTIME_APPLIED
+    if _RUNTIME_APPLIED:
+        return
+    _RUNTIME_APPLIED = True
+    try:
+        import json as _json
+        from _path_utils import resolve_data_file
+        cfg_path = resolve_data_file("站点配置.json",
+                                     copy_default_from_resource_if_missing=False)
+        if not os.path.isfile(cfg_path):
+            return
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            items = _json.load(f)
+        if not isinstance(items, list):
+            return
+        # 内置条目按域名索引 (upsert 用)
+        by_domain = {p['domain']: p for p in SITE_PATTERNS}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            domain = item.get('domain', '')
+            if not domain:
+                continue
+            if domain in by_domain:
+                # 覆盖内置条目 (只更新 JSON 中出现的字段, 保留函数型字段)
+                for k, v in item.items():
+                    by_domain[domain][k] = v
+            else:
+                SITE_PATTERNS.append(dict(item))
+                by_domain[domain] = item
+    except Exception as _e:
+        # 运行时配置加载失败 → 静默使用内置配置
+        try:
+            print(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
+        except Exception:
+            pass
 
 
 def build_paged_url(base_url, page_index, pagination):
