@@ -146,6 +146,7 @@ def parse_codepoint_stream(content, replace_map=None):
       - \\x01=\\;&#x, \\x02=&#x (HTML实体结构), \\x03 为分隔符, \\x04=换行
       - 高频字被压缩为控制字符, 映射表 {码点: 控制字符} 由 replace_map 提供
       - 明文 ASCII 直接保留; 孤立 ; 为实体残留, 不显示
+      - 孤立十六进制序列 (如 x6700) 也尝试解码 (ciyewk 等站点常见)
 
     Args:
         content: 压缩字符流 (str)
@@ -161,7 +162,7 @@ def parse_codepoint_stream(content, replace_map=None):
                 if re.fullmatch(r'[0-9a-fA-F]{2,6}', code):
                     mapping[ctrl] = chr(int(code, 16))
 
-    tokens = re.findall(r'[\x00-\x1f]|[0-9a-fA-F]{4}|[^\x00-\x1f]', content)
+    tokens = re.findall(r'[\x00-\x1f]x[0-9a-fA-F]{4}|x[0-9a-fA-F]{4}|[^\x00-\x1f]', content)
     result = []
     prev = ''
     for t in tokens:
@@ -175,14 +176,22 @@ def parse_codepoint_stream(content, replace_map=None):
         elif t == ';':
             prev = t
             continue
-        elif re.fullmatch(r'[0-9a-fA-F]{4}', t):
+        elif re.fullmatch(r'x[0-9a-fA-F]{4}', t):
             if prev in ('\x01', '\x02', '\x03', '('):
                 try:
-                    result.append(chr(int(t, 16)))
+                    # t格式为"x6700"，移除x前缀后解码
+                    hex_num = t[1:]
+                    result.append(chr(int(hex_num, 16)))
                 except Exception:
                     pass
             else:
-                result.append(t)
+                # 孤立十六进制序列也尝试解码 (ciyewk 站点常见)
+                try:
+                    # t格式为"x6700"，移除x前缀后解码
+                    hex_num = t[1:]
+                    result.append(chr(int(hex_num, 16)))
+                except Exception:
+                    result.append(t)
         else:
             result.append(t)
         prev = t if t not in ('\x01', '\x02', '\x03', ';') else prev

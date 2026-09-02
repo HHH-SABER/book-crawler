@@ -85,6 +85,45 @@ try:
 except ImportError:
     print("Selenium 未安装，将使用传统方法")
 
+# ===== 反爬机制自动检测器 + 内容语义质检器 (通用特征驱动, 不依赖域名) =====
+try:
+    from 反爬检测器 import 取检测器, 格式化日志 as _反爬日志
+    _反爬检测器可用 = True
+except Exception:
+    _反爬检测器可用 = False
+
+try:
+    from 内容质检器 import 质检器 as _章节质检器
+    _内容质检器可用 = True
+except Exception:
+    _内容质检器可用 = False
+
+# ===== 站点抓取历史记录 (跨会话持久化, 数据/站点历史.json) =====
+try:
+    from 站点历史 import 取站点历史
+    _站点历史可用 = True
+except Exception:
+    _站点历史可用 = False
+
+# ===== 爬取历史记录 (按 URL 维度, 数据/爬取历史.json) =====
+# 记录每次请求的状态码/耗时/内容哈希/结果(新增/更新/未变化/失败),
+# 支持增量爬取跳过未变更页面, 提供按站点/时间/结果查询统计
+try:
+    from 爬取历史 import 取爬取历史, RESULT_NEW, RESULT_UPDATE, \
+        RESULT_UNCHANGED, RESULT_FAIL
+    _爬取历史可用 = True
+except Exception:
+    _爬取历史可用 = False
+
+# ===== 多引擎请求 (成熟反爬库: curl_cffi TLS指纹 / cloudscraper JS质询) =====
+try:
+    from 请求引擎 import 获取引擎管理器
+    _引擎管理器 = 获取引擎管理器()
+    _多引擎可用 = _引擎管理器.可用.get('curl_cffi') or _引擎管理器.可用.get('cloudscraper')
+except Exception:
+    _引擎管理器 = None
+    _多引擎可用 = False
+
 
 def _is_waf_js_challenge(response) -> bool:
     """判断响应是否为 WAF JS 动态令牌挑战页 (banlvzw 等)
@@ -392,6 +431,27 @@ class NovelSpider:
         self._tanmixs_concurrent = False
         # 通用数据文件解码模式 (每章第1页探测, 命中后整章走数据文件)
         self._datafile_mode = False
+        # ===== 反爬机制自动检测 + 内容语义质检 =====
+        # _get_with_js_challenge 每次请求先过检测器: 限频退避/UA轮换自动处理,
+        # WAF验证码/JS挑战仍由下方分级循环作为执行器解决
+        self._反爬检测器 = 取检测器() if _反爬检测器可用 else None
+        self._ua连续失败 = 0       # 同一 UA 连续 403/406 次数 (ua_block 判据)
+        self._限频连续次数 = 0     # 连续频率限制次数 (决定指数退避档位)
+        self._限频最大退避 = 0     # 本次任务最大退避秒数 (汇总报告用)
+        self._反爬统计 = {}        # 本次任务反爬机制命中统计 {机制: 次数}
+        self._质检记录 = []        # 本次任务各章质检报告 (整书汇总用)
+        self._引擎管理器 = _引擎管理器   # 多引擎请求 (curl_cffi/cloudscraper, 可为 None)
+        self._引擎统计 = {}        # 本次任务多引擎成功请求统计 {引擎: 次数}
+        # ===== 爬取历史记录 (按 URL 维度, 增量爬取支持) =====
+        # _爬取历史: 单例管理器 (None=不可用, 主流程降级)
+        # _增量模式: True 时跳过最近 max_age_hours 内已成功抓取的 URL
+        # _爬取历史统计: 本次任务各结果类型计数 {新增/更新/未变化/失败: N}
+        self._爬取历史 = 取爬取历史() if _爬取历史可用 else None
+        self._增量模式 = False
+        self._增量最大年龄小时 = 24
+        self._爬取历史统计 = {RESULT_NEW: 0, RESULT_UPDATE: 0,
+                              RESULT_UNCHANGED: 0, RESULT_FAIL: 0} \
+            if _爬取历史可用 else {}
 
     def _create_tanmixs_driver(self, visible=False, profile_dir=None):
         """创建 tanmixs.com 专用的浏览器 driver (支持反检测引擎)
@@ -587,6 +647,50 @@ class NovelSpider:
         _t0 = time.time()
         challenge_markers = ['ge_js_validator', 'window.location.reload']
         response = self.session.get(url, headers=headers, timeout=timeout)
+        # ---- 反爬机制自动识别 (限频退避 / UA轮换; WAF验证码/JS挑战交给下方执行器) ----
+        # 检测器基于状态码+响应头+body特征通用识别, 命中即打印结构化日志并动态调整策略
+        if self._反爬检测器 is not None:
+            结果 = self._反爬检测器.识别(response, self._ua连续失败)
+            if 结果.机制 != 'none':
+                print(_反爬日志(结果))
+                self._反爬统计[结果.机制] = self._反爬统计.get(结果.机制, 0) + 1
+                if 结果.机制 == 'rate_limit':
+                    # 指数退避: Retry-After 优先, 否则 5s→10s→20s→60s
+                    self._限频连续次数 += 1
+                    等待 = self._反爬检测器.计算退避秒数(
+                        self._限频连续次数, 结果.建议策略.get('retry_after', 0))
+                    self._限频最大退避 = max(self._限频最大退避, 等待)
+                    print(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
+                          f"(第{self._限频连续次数}次连续限频)")
+                    time.sleep(等待)
+                    response = self.session.get(url, headers=headers, timeout=timeout)
+                elif 结果.机制 == 'ua_block':
+                    self._轮换UA()
+                    response = self.session.get(url, headers=headers, timeout=timeout)
+                elif 结果.机制 in ('waf_js_challenge', 'js_cookie', 'dynamic_token'):
+                    # 成熟反爬库引擎介入: cloudscraper 自动执行 JS 质询 /
+                    # curl_cffi 模拟 TLS 指纹; 成功则替换 response, 由下方反爬层校验
+                    if self._引擎管理器 is not None:
+                        print(f"[反爬] 命中 {结果.机制}, 尝试成熟反爬库引擎重发...")
+                        引擎响应 = self._引擎管理器.请求(
+                            url, headers=headers, timeout=timeout, 机制=结果.机制)
+                        if 引擎响应 is not None:
+                            if 引擎响应.成功:
+                                self._引擎统计[引擎响应.引擎] = \
+                                    self._引擎统计.get(引擎响应.引擎, 0) + 1
+                                print(f"[反爬] ✅ {引擎响应.引擎} 引擎请求成功 "
+                                      f"(状态 {引擎响应.status_code}), 交由反爬层校验")
+                                response = 引擎响应
+                            else:
+                                print(f"[反爬] ⚠️ {引擎响应.引擎} 引擎请求失败 "
+                                      f"(状态 {引擎响应.status_code}), 保留原响应走现有流程")
+            else:
+                self._限频连续次数 = 0  # 正常响应, 重置退避档位
+            # 同一 UA 连续 403/406 计数 (ua_block "连续失败"判据)
+            if response.status_code in (403, 406):
+                self._ua连续失败 += 1
+            else:
+                self._ua连续失败 = 0
         # ---- 反爬分级循环处理 (banlvzw 等站点可能"JS挑战 → 图片验证码"连续多层) ----
         # 每轮先识别并解决一层 (图片验证码 / JS令牌挑战), 解决后重试;
         # 若重试后仍未通过 (再次命中反爬页), 进入下一轮继续解决, 最多 _MAX_WAF_ROUNDS 轮。
@@ -656,7 +760,62 @@ class NovelSpider:
             response = self.session.get(url, headers=headers, timeout=timeout)
         # 调试日志: 请求 URL + 状态码 + 耗时 (供事后排查网络/反爬问题)
         print(f"[调试] GET {url} -> 状态 {response.status_code}, 耗时 {time.time()-_t0:.2f}s")
+        # 爬取历史记录: 记录最终响应 (覆盖目录页/章节首页/通用 GET 入口)
+        self._记录请求(url, response, time.time() - _t0)
         return response
+
+    def _记录请求(self, url, response, 耗时秒: float, 错误原因: str = ''):
+        """把一次请求结果写入爬取历史 (URL 维度, 增量爬取与查询统计用)。
+
+        - 写入失败静默降级, 绝不影响主流程
+        - 失败响应 (非 2xx/3xx 或带错误原因) 标记为 RESULT_FAIL, 仍记录便于排查
+        - response 可为 None (请求异常时), 此时只记录失败
+
+        Args:
+            url: 请求 URL
+            response: requests.Response / 引擎响应 / None
+            耗时秒: 本次请求总耗时
+            错误原因: 异常描述 (有则记为失败)
+        """
+        if not _爬取历史可用 or self._爬取历史 is None:
+            return
+        try:
+            状态码 = 0
+            content = b''
+            if response is not None:
+                # 兼容 requests.Response 与 请求引擎.引擎响应 两种对象
+                状态码 = int(getattr(response, 'status_code', 0) or 0)
+                try:
+                    content = response.content or b''
+                except Exception:
+                    content = b''
+            结果 = self._爬取历史.记录请求(
+                url, 状态码, 耗时秒, content=content, 错误原因=错误原因)
+            if 结果 in self._爬取历史统计:
+                self._爬取历史统计[结果] += 1
+        except Exception as e:
+            print(f"[爬取历史] 记录异常: {e}")
+
+    def _轮换UA(self) -> bool:
+        """轮换会话 User-Agent (ua_block / 质检失败重试时调用)。
+
+        注意: WAF 验证码/JS挑战站点的放行 cookie 与 UA 绑定, 轮换会使
+        cookie 失效, 因此仅在没有命中过验证码类反爬时才真正轮换。
+        Returns: 是否实际轮换了 UA
+        """
+        if any(k in self._反爬统计 for k in ('waf_captcha', 'waf_js_challenge', 'js_cookie')):
+            print("[反爬] 站点使用验证码类反爬 (cookie绑定UA), 保持UA不变")
+            return False
+        try:
+            新ua = self.ua.random
+            self._fixed_ua = 新ua
+            self.session.headers['User-Agent'] = 新ua
+            self._ua连续失败 = 0  # 新UA从零计数
+            print(f"[反爬] 已轮换 User-Agent: {新ua[:60]}...")
+            return True
+        except Exception as e:
+            print(f"[反爬] UA轮换失败: {e}")
+            return False
 
     def _solve_waf_js_challenge(self, url, max_wait: int = 12) -> bool:
         """用 Playwright 渲染解决 WAF JS 动态令牌挑战, 并把浏览器 cookie 回灌 requests session。
@@ -2308,6 +2467,19 @@ class NovelSpider:
         # 部分网站会在正文中插入这些不可见字符用于反爬/水印, 通用清理适用于所有站点
         content = re.sub(r'[\u200b\u200c\u200d\ufeff\u2060\u00ad]', '', content)
 
+        # 移除Unicode编码错误乱码
+        # 1. 十六进制Unicode转义序列 (如 x6700;x65b0;x627e;x56de;xff14;...)
+        # 2. 未解码的编码错误 (如 65294)
+        # 这些通常是HTML编码错误或Base64解码残留
+        while True:
+            old_len = len(content)
+            # 移除十六进制Unicode转义序列 (xHHHH;xHHHH;...格式)
+            content = re.sub(r'x[0-9a-fA-F]{4}(?:;x[0-9a-fA-F]{4})*', '', content)
+            # 移除未解码的数字乱码 (单个数字或短数字串)
+            content = re.sub(r'\b\d{4,}\b', '', content)
+            if len(content) == old_len:
+                break
+
         # 移除反爬干扰串: 部分站点 (如 oldtimeswx.net) 会在正文中随机插入
         # "字母+数字"混合短串作为水印 (如"给体0N肏烂了"中的"0N")。
         # 规则: 直接夹在两个汉字之间的 2-4 位"含数字且含字母"的混合串 → 删除。
@@ -2759,6 +2931,7 @@ class NovelSpider:
             sign_url = f"{self.base_url}/api/read_sign.php?aid={aid}&cid={cid_base}&_={ts}"
             validate_public_url(sign_url)  # 安全校验
             sign_resp = self.session.get(sign_url, headers={**headers, **ajax_headers}, timeout=20)
+            self._记录请求(sign_url, sign_resp, 0)
             sign_data = sign_resp.json()
             if sign_data.get('code') != 0:
                 print(f"[通用提取-ajax] ❌ 签名失败: {sign_data}")
@@ -2772,6 +2945,7 @@ class NovelSpider:
             content_url = f"{self.base_url}{page_path}?ajax=1&aid={aid}&cid={cid_full}&bk={bk}&sign={sign}&_={ts2}"
             validate_public_url(content_url)  # 安全校验
             content_resp = self.session.get(content_url, headers={**headers, **ajax_headers}, timeout=20)
+            self._记录请求(content_url, content_resp, 0)
             content_html = content_resp.text
             print(f"[通用提取-ajax] 正文获取成功, HTML长度={len(content_html)} 字符")
             if not content_html.strip():
@@ -3077,17 +3251,50 @@ class NovelSpider:
                     page_index += 1
                     continue
 
+            # ===== 站点配置模式分发层 (优先于通用检测) =====
+            # 已知站点配置优先于通用检测，确保特殊处理正确执行
+            if site_pattern and site_pattern.get('pattern') == 'datafile':
+                if page_index == 0:
+                    print(f"[站点配置] 使用数据文件解码模式")
+                from content_decoder import decode_chapter_data
+                data_text, data_method = decode_chapter_data(
+                    current_url, page=page_index + 1,
+                    page_html=getattr(self, '_datafile_page_html', None),
+                    headers=headers)
+                if data_text and len(data_text) > 50:
+                    data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
+                    if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
+                                       or '☆' in data_lines[0] or '第' in data_lines[0]):
+                        data_lines = data_lines[1:]
+                    data_lines = [l for l in data_lines
+                                  if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
+                    data_content = '\n'.join(data_lines)
+                    if len(data_content) > 50:
+                        print(f"[站点配置] 数据文件解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
+                        generic_content = data_content
+                        # 数据文件模式不需要继续分页（每页内容独立）
+                        # 清除通用检测缓存，避免通用检测覆盖
+                        self._detected_pattern = None
+                        break
+
             # ===== 通用自动检测分发层 (基于内容特征, 不依赖域名) =====
             # 对未知站点自动识别内容模式 (qsbs_bb / html_selector), 优先尝试通用提取;
             # 已知站点的域名分支作为备用, 保证向后兼容。
             # 检测只在第1页做一次, 后续页面复用结果 (避免重复请求)
             # tanmixs.com: requests必然401, 跳过通用检测层直接走Selenium分支, 省去每页~15秒重试
-            if 'tanmixs.com' in current_url:
+            # ciyewk.com等使用数据文件模式的站点，跳过通用检测
+            if site_pattern and site_pattern.get('pattern') == 'datafile':
+                # 站点配置已处理，跳过通用检测
+                pass
+            elif 'tanmixs.com' in current_url:
                 self._detected_pattern = None
             elif page_index == 0:
                 self._detected_pattern = None  # 清除上一章节的缓存, 强制重新检测
                 self._detected_pattern = self._detect_content_pattern(current_url, headers)
-            generic_content = ''
+            
+            # 初始化 generic_content，避免 UnboundLocalError
+            generic_content = None
+            
             if self._detected_pattern == 'qsbs_bb':
                 if page_index == 0:
                     print(f"[通用检测] 检测到 qsbs.bb Base64 加密, 走通用解码路径")
@@ -3104,6 +3311,27 @@ class NovelSpider:
                 if page_index == 0:
                     print(f"[通用检测] 检测到 HTML 选择器模式, 走通用提取路径")
                 generic_content = self._extract_html_selector_generic(current_url, headers)
+            elif self._detected_pattern == 'datafile':
+                if page_index == 0:
+                    print(f"[通用检测] 检测到数据文件模式, 走数据文件解码路径")
+                from content_decoder import decode_chapter_data
+                data_text, data_method = decode_chapter_data(
+                    current_url, page=page_index + 1,
+                    page_html=getattr(self, '_datafile_page_html', None),
+                    headers=headers)
+                if data_text and len(data_text) > 50:
+                    data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
+                    if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
+                                       or '☆' in data_lines[0] or '第' in data_lines[0]):
+                        data_lines = data_lines[1:]
+                    data_lines = [l for l in data_lines
+                                  if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
+                    data_content = '\n'.join(data_lines)
+                    if len(data_content) > 50:
+                        print(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
+                        generic_content = data_content
+                        # 数据文件模式不需要继续分页（每页内容独立）
+                        break
 
             if generic_content:
                 # 通用提取成功, 走通用清洗+指纹去重流程
@@ -3124,6 +3352,8 @@ class NovelSpider:
                 success = True
                 page_index += 1
                 continue
+
+            # 通用层未命中或返回空内容, 尝试其他提取方式 (Selenium 等)
 
             # 通用层未命中或返回空内容, 尝试其他提取方式 (Selenium 等)
 
@@ -3268,18 +3498,22 @@ class NovelSpider:
                     break
                 try:
                     # 随机延迟，避免被反爬虫 (0.5~1.5秒, 平衡速度与反爬)
-                    delay = random.uniform(0.5, 1.5)
+                    delay = random.SystemRandom().uniform(0.5, 1.5)
                     time.sleep(delay)
                     
                     response = self.session.get(current_url, headers=headers, timeout=30)
-                    
+
                     # 检查状态码
                     if response.status_code == 404:
                         # 404 = 该页不存在 = 已到末页 (分页探测的 _N.html 常见此情况)
                         print(f"第{page_index+1}页不存在(404), 视为末页, 结束分页")
+                        self._记录请求(current_url, response, 0,
+                                      错误原因='404 末页 (分页探测)')
                         break
                     if response.status_code != 200:
                         print(f"请求失败，状态码: {response.status_code}")
+                        self._记录请求(current_url, response, 0,
+                                      错误原因=f'HTTP {response.status_code}')
                         if i < max_retries - 1:
                             # 更新User-Agent
                             headers['User-Agent'] = self._fixed_ua
@@ -3305,6 +3539,9 @@ class NovelSpider:
                                 print(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
                             time.sleep(2)
                         response = self.session.get(current_url, headers=headers, timeout=30)
+
+                    # 爬取历史记录: 分页请求最终响应 (覆盖挑战解决后的真实内容)
+                    self._记录请求(current_url, response, 0)
 
                     # 统一编码检测 (适用于所有网站)
                     try:
@@ -4407,6 +4644,158 @@ class NovelSpider:
         except (FileNotFoundError, UnicodeDecodeError, OSError):
             return 0
 
+    def _是否应跳过章节(self, chapter_url) -> bool:
+        """增量模式判断: 该 URL 是否在时间窗口内成功抓取且未变化 (可跳过)。
+
+        - 仅在 self._增量模式=True 时启用, 否则一律返回 False (兼容全量抓取)
+        - 基于爬取历史 (数据/爬取历史.json) 的最后抓取时间与结果判定
+        - 历史模块不可用或读取异常时返回 False (宁可重抓不漏抓)
+        """
+        if not self._增量模式 or not _爬取历史可用 or self._爬取历史 is None:
+            return False
+        try:
+            return self._爬取历史.是否已抓取且未变化(
+                chapter_url, max_age_hours=self._增量最大年龄小时)
+        except Exception:
+            return False
+
+    def _fetch_with_qc(self, chap, max_retries=2):
+        """带语义质检的章节抓取 (get_chapter_content 的质检包装)。
+
+        流程:
+            1. 正常抓取一章, 对清洗后正文做五维质检 (长度/中文占比/乱码率/重复率/标点密度)
+            2. 质检未通过且剩余重试 > 0 → 清除内容模式缓存 (强制重新检测) +
+               轮换 UA 后重试 (最多 max_retries 次)
+            3. 仍失败: 乱码/中文占比硬伤类 → 保存空占位 (章节标题仍在, 可断点续传重抓);
+               仅长度/重复率等软性未达标且内容 ≥100 字 → 保留内容但记录质检警告
+        Args:
+            chap: {'title': 章节标题, 'url': 章节URL}
+            max_retries: 质检失败后的最大重试次数
+        Returns:
+            str: 章节正文 (质检硬伤失败返回 '')
+        """
+        if not _内容质检器可用:
+            return self.get_chapter_content(chap['url'])
+        报告 = None
+        content = ''
+        for attempt in range(max_retries + 1):  # 初次 + N 次重试
+            try:
+                content = self.get_chapter_content(chap['url'])
+            except Exception as e:
+                print(f"[质检] 抓取异常: {e}")
+                content = ''
+            报告 = _章节质检器.质检(content, chap.get('title', ''))
+            if 报告.有效:
+                if attempt > 0:
+                    print(f"[质检] 第{attempt}次重试后通过: {报告.摘要()}")
+                self._质检记录.append(报告)
+                return content
+            print(f"[质检] {报告.摘要()}")
+            if attempt < max_retries:
+                print(f"[质检] 未通过, 清除模式缓存并轮换UA后重试 ({attempt+1}/{max_retries})...")
+                self._detected_pattern = None  # 强制下次重新检测内容模式
+                self._轮换UA()
+        # 全部重试仍未通过
+        if 报告 is not None:
+            self._质检记录.append(报告)
+            # 软性未达标 (仅长度/重复率/标点) 且有实际内容: 保留但记录警告
+            if content and len(content) >= 100 and not self._是硬伤(报告):
+                print(f"[质检] ⚠️ 软性未达标但内容可读, 保留内容: {报告.摘要()}")
+                return content
+            print(f"[质检] ❌ 多次重试仍未通过, 本章保存空占位 (可断点续传重抓): {报告.摘要()}")
+        return ''
+
+    @staticmethod
+    def _是硬伤(报告) -> bool:
+        """质检失败原因中是否含硬伤项 (乱码率/中文占比严重超标)"""
+        return any(('乱码率' in r and '>' in r) or
+                   ('中文占比' in r and '<' in r) for r in 报告.原因)
+
+    def _生成质检汇总报告(self, output_file, total, failed):
+        """整书完成后生成质检汇总报告 (控制台输出 + 保存到输出文件旁)。
+
+        Returns:
+            dict: 一行式摘要 {'质检章数','通过','未通过','平均分'} (供站点历史记录)
+        """
+        记录 = self._质检记录
+        摘要 = {'质检章数': len(记录), '通过': 0, '未通过': 0, '平均分': 0.0}
+        lines = ['=' * 60, '质检汇总报告', '=' * 60]
+        if 记录:
+            通过 = sum(1 for r in 记录 if r.有效)
+            平均分 = sum(r.得分 for r in 记录) / len(记录)
+            摘要.update(通过=通过, 未通过=len(记录) - 通过, 平均分=round(平均分, 1))
+            lines.append(f'质检章节: {len(记录)}/{total}  通过: {通过}  '
+                         f'未通过/软性警告: {len(记录) - 通过}  平均得分: {平均分:.1f}/100')
+            未过 = [r for r in 记录 if not r.有效]
+            if 未过:
+                lines.append(f'未通过章节 ({len(未过)}):')
+                for r in 未过[:20]:
+                    lines.append(f'  - {r.摘要()}')
+                if len(未过) > 20:
+                    lines.append(f'  ... 其余 {len(未过) - 20} 章详见日志')
+        else:
+            lines.append('无质检记录 (质检器未启用或本次无新增章节)')
+        if self._反爬统计:
+            stats = ', '.join(f'{k}×{v}' for k, v in sorted(self._反爬统计.items()))
+            lines.append(f'反爬对抗统计: {stats}')
+        if self._限频最大退避 > 0:
+            lines.append(f'频率限制最大退避: {self._限频最大退避:.0f} 秒')
+        if self._引擎统计:
+            stats = ', '.join(f'{k}×{v}' for k, v in sorted(self._引擎统计.items()))
+            lines.append(f'多引擎使用统计 (成熟反爬库): {stats}')
+        # 爬取历史统计 (按 URL 维度, 增量爬取依据)
+        if _爬取历史可用 and self._爬取历史统计:
+            hs = self._爬取历史统计
+            stats = ', '.join(f'{k}×{v}' for k, v in hs.items() if v)
+            if stats:
+                lines.append(f'爬取历史统计: {stats}')
+        if getattr(self, '_增量跳过数', 0) > 0:
+            lines.append(f'增量跳过章节: {self._增量跳过数} (未变更, 复用旧输出)')
+        if failed:
+            lines.append(f'抓取失败章节号 ({len(failed)}): {failed}')
+        lines.append('=' * 60)
+        文本 = '\n'.join(lines)
+        print(f"\n{文本}")
+        try:
+            报告路径 = str(output_file) + '.质检报告.txt'
+            with open(报告路径, 'w', encoding='utf-8') as f:
+                f.write(文本 + '\n')
+            print(f"[质检] 汇总报告已保存: {报告路径}")
+        except OSError as e:
+            print(f"[质检] 汇总报告保存失败: {e}")
+        return 摘要
+
+    def _记录站点历史(self, catalog_url, novel_title, total, failed, output_file, 质检摘要=None):
+        """任务完成后写入站点抓取历史 (数据/站点历史.json)"""
+        if not _站点历史可用:
+            return
+        try:
+            取站点历史().记录任务(
+                catalog_url, novel_title, total, failed,
+                反爬统计=self._反爬统计 or None,
+                质检摘要=质检摘要, output_file=output_file)
+        except Exception as e:
+            print(f"[站点历史] 记录失败: {e}")
+
+    def _打印站点历史先验(self, catalog_url, delay):
+        """抓取前打印该站点的历史信息, 为反爬敏感站点给出延迟建议"""
+        if not _站点历史可用:
+            return delay
+        try:
+            信息 = 取站点历史().查站点(catalog_url)
+            if not 信息:
+                return delay
+            反爬 = 信息.get('反爬统计') or {}
+            统计 = ', '.join(f'{k}×{v}' for k, v in sorted(反爬.items())) or '无'
+            print(f"[站点历史] {信息['域名']}: 累计 {信息['任务数']} 个任务, "
+                  f"最近抓取 {信息.get('最近抓取', '未知')}, 历史反爬: {统计}")
+            if ('rate_limit' in 反爬 or 'ua_block' in 反爬) and delay < 2:
+                print(f"[站点历史] ⚠️ 该站点历史存在频率/UA类反爬, 建议将章节间隔 "
+                      f"从 {delay} 秒提高到 2 秒以上")
+        except Exception:
+            pass
+        return delay
+
     def _fetch_chapter_worker(self, chap):
         """并发抓取单章 (每个调用使用独立 Session, 避免共享 Session 的 cookie 竞态)。
         返回该章合并后的正文内容字符串。"""
@@ -4419,13 +4808,14 @@ class NovelSpider:
         new_session.proxies.update(old_session.proxies)
         self.session = new_session
         try:
-            return self.get_chapter_content(chap['url'])
+            return self._fetch_with_qc(chap)
         finally:
             self.session = old_session
 
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
-            stop_event=None, unique_title=False, novel_title=None):
+            stop_event=None, unique_title=False, novel_title=None,
+            incremental=False, incremental_max_age_hours=24):
         """完整抓取小说。
         resume=True 时自动检测检查点，从上次中断处继续（追加写入）。
         show_progress=True 时每章更新下载进度条。
@@ -4435,6 +4825,11 @@ class NovelSpider:
         unique_title=True 时, 若输出目录已存在同名文件/任务, 自动为小说标题和
         输出文件名加上 (1)/(2) 等序号 (供 GUI 新任务使用; CLI 默认关闭以保留
         断点续传行为)。
+        incremental: 增量爬取开关。True 时跳过 incremental_max_age_hours 小时内
+            已成功抓取且内容未变化的章节 (基于 数据/爬取历史.json), 减少重复请求。
+            默认 False 保持原有全量抓取行为, 对外接口完全兼容。
+        incremental_max_age_hours: 增量模式的时间窗口 (小时), 默认 24。
+            仅在 incremental=True 时生效。
         """
         # 提取小说名称 (调用方已提供时直接使用, 避免重复请求)
         title_from_caller = novel_title is not None
@@ -4473,6 +4868,28 @@ class NovelSpider:
             if not output_file.startswith(output_dir_abs + os.sep):
                 raise ValueError(f"输出路径越界: {output_file}")
             print(f"输出目录: {output_dir}")
+
+        # 任务级统计重置 (同一实例可能连续抓多本书)
+        self._质检记录 = []
+        self._反爬统计 = {}
+        self._限频连续次数 = 0
+        self._限频最大退避 = 0
+        self._引擎统计 = {}
+        # 爬取历史: 任务级结果计数重置 + 增量模式配置
+        if _爬取历史可用:
+            self._爬取历史统计 = {RESULT_NEW: 0, RESULT_UPDATE: 0,
+                                  RESULT_UNCHANGED: 0, RESULT_FAIL: 0}
+        self._增量跳过数 = 0
+        self._增量模式 = bool(incremental) and _爬取历史可用
+        self._增量最大年龄小时 = float(incremental_max_age_hours or 0)
+        if incremental and not _爬取历史可用:
+            print("[爬取历史] ⚠️ 增量模式不可用 (爬取历史模块未加载), 退化为全量抓取")
+        if self._增量模式:
+            print(f"[爬取历史] 增量模式已启用: 跳过 {self._增量最大年龄小时} 小时内"
+                  f"已成功抓取且未变化的章节 (跳过章节不写入输出, 需配合 resume=True 复用旧文件)")
+
+        # 站点历史先验: 打印该站点历史反爬情况, 给出延迟建议
+        delay = self._打印站点历史先验(catalog_url, delay)
 
         chapters = self.get_chapter_list(catalog_url, sort_chapters)
 
@@ -4546,8 +4963,21 @@ class NovelSpider:
                     with ThreadPoolExecutor(max_workers=threads) as pool:
                         futures = {}
                         for i in range(start, total):
+                            # 增量模式: 跳过未变更章节 (不提交到线程池, 不写入)
+                            if self._是否应跳过章节(chapters[i]['url']):
+                                self._增量跳过数 += 1
+                                print(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
+                                      f"{chapters[i]['title']}")
+                                continue
                             futures[i] = pool.submit(worker, chapters[i])
                         for i in range(start, total):
+                            if i not in futures:
+                                # 被增量跳过的章节: 仅更新检查点, 不写入
+                                self._save_checkpoint(output_file, catalog_url, i + 1, total)
+                                if show_progress:
+                                    print_progress_bar(i + 1, total,
+                                                       extra=chapters[i]['title'][:20])
+                                continue
                             if stop_event is not None and stop_event.is_set():
                                 print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
                                 return output_file
@@ -4579,9 +5009,18 @@ class NovelSpider:
                             print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
                             return output_file
                         chap = chapters[i]
+                        # 增量模式: 跳过未变更章节 (不请求, 不写入; 需配合
+                        # resume=True 复用旧输出文件中已抓取的正文)
+                        if self._是否应跳过章节(chap['url']):
+                            self._增量跳过数 += 1
+                            print(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
+                            self._save_checkpoint(output_file, catalog_url, i + 1, total)
+                            if show_progress:
+                                print_progress_bar(i + 1, total, extra=chap['title'][:20])
+                            continue
                         print(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                         try:
-                            content = self.get_chapter_content(chap['url'])
+                            content = self._fetch_with_qc(chap)
                         except Exception as e:
                             print(f"抓取异常: {e}")
                             content = ''
@@ -4607,6 +5046,14 @@ class NovelSpider:
         # 暴露抓取结果统计 (供多源回退判定使用)
         self.last_failed = failed
         self.last_total = total
+        # 整书质检汇总报告 + 站点抓取历史记录
+        try:
+            质检摘要 = self._生成质检汇总报告(output_file, total, failed)
+        except Exception as e:
+            质检摘要 = None
+            print(f"[质检] 汇总报告生成异常: {e}")
+        self._记录站点历史(catalog_url, novel_title, total, failed,
+                            output_file, 质检摘要=质检摘要)
         # 验证码监控报告 (类型/耗时/成功率/成本) 与告警
         if self._captcha_manager is not None:
             try:
@@ -5162,20 +5609,33 @@ if __name__ == "__main__":
             if urls:
                 run_batch(urls, threads=opts['threads'], resume=opts['resume'],
                           show_progress=opts['show_progress'],
-                          output_dir=opts['output_dir'], delay=opts['delay'])
+                          output_dir=opts['output_dir'], delay=opts['delay'],
+                          unique_title=True)
             exit(0)
 
         # 收集所有非选项参数作为 URL (支持一次抓多本)
         # 排除裸数字参数 (如 --start 1 --end 3 中的 1/3, --threads 5 中的 5),
+        # 以及带值选项 (--threads/--output-dir/--delay) 的值,
         # 避免被误当成附加 URL 而进入批量模式
         _is_numeric_arg = lambda a: bool(re.fullmatch(r'\d+(\.\d+)?', a))
-        url_args = [a for a in sys.argv[1:]
-                    if not a.startswith('--') and not _is_numeric_arg(a)]
+        _val_opts = {"--threads", "--output-dir", "--delay"}
+        url_args = []
+        _skip_next = False
+        for a in sys.argv[1:]:
+            if _skip_next:
+                _skip_next = False
+                continue
+            if a in _val_opts:
+                _skip_next = True
+                continue
+            if not a.startswith('--') and not _is_numeric_arg(a):
+                url_args.append(a)
         if len(url_args) > 1:
             opts = _parse_batch_opts(sys.argv, 1)
             run_batch(url_args, threads=opts['threads'], resume=opts['resume'],
                       show_progress=opts['show_progress'],
-                      output_dir=opts['output_dir'], delay=opts['delay'])
+                      output_dir=opts['output_dir'], delay=opts['delay'],
+                      unique_title=True)
             exit(0)
 
         catalog_url = sys.argv[1].strip()

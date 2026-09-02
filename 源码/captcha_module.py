@@ -606,19 +606,19 @@ class SliderCaptchaHandler(CaptchaHandler):
         while current < target:
             remain = target - current
             if remain > target * 0.4:
-                step = random.uniform(8, 20)      # 加速段大步
+                step = random.SystemRandom().uniform(8, 20)  # 加速段大步
             elif remain > target * 0.1:
-                step = random.uniform(3, 8)       # 减速段小步
+                step = random.SystemRandom().uniform(3, 8)   # 减速段小步
             else:
-                step = random.uniform(0.5, 2.5)   # 微调段
+                step = random.SystemRandom().uniform(0.5, 2.5)  # 微调段
             step = min(step, remain + 2)          # 允许轻微过冲
-            dy = random.uniform(-noise, noise)    # 垂直抖动
+            dy = random.SystemRandom().uniform(-noise, noise)  # 垂直抖动
             track.append((step, dy))
             current += step
         # 末端微回拉 (抵消过冲)
         over = current - target
         if over > 1:
-            track.append((-over, random.uniform(-1, 1)))
+            track.append((-over, random.SystemRandom().uniform(-1, 1)))
         return track
 
 
