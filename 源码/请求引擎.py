@@ -20,7 +20,6 @@
 - 按域名缓存 curl_cffi / cloudscraper 会话 (避免跨站 cookie 混淆 + 提升性能)
 """
 
-import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 from urllib.parse import urlparse

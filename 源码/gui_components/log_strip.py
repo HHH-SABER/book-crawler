@@ -9,7 +9,7 @@ import flet as ft
 from .task_manager import TaskManager
 from .ui_theme import (make_card, LOG_TERMINAL_BG, LOG_TERMINAL_FONT,
                        log_line_color)
-from .ui_morandi import (FONT_STACK, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
+from .ui_morandi import (FONT_STACK, SIZE_TINY, SIZE_SMALL,
                          WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR)
 
 # 两种状态的高度
