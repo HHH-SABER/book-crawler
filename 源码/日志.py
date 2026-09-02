@@ -23,6 +23,12 @@ _MAX_FILE_SIZE = 5 * 1024 * 1024   # 单文件 5MB 轮转
 _RETENTION_DAYS = 30               # 日志保留天数
 _DEFAULT_LEVEL = DEBUG             # 默认记录全部级别 (含调试详情)
 
+# console 镜像: 开启后每条日志同时原样打到 stdout (不加级别/来源前缀,
+# 兼容 GUI TaskLogRedirector 对原始消息行的捕获与指标解析); 默认仅 INFO+,
+# DEBUG 只落盘不镜像, 避免调试噪音刷屏。
+_console_enabled = False
+_console_min_level = INFO
+
 
 def get_log_dir() -> str:
     """日志目录: BASE_DIR/日志 (自动创建)"""
@@ -102,6 +108,12 @@ class AppLogger:
                 self._file.write(line + '\n')
             except Exception:
                 pass  # 日志失败绝不影响主流程
+        # console 镜像: 原样输出消息 (无前缀), 供 CLI 进度与 GUI 日志条捕获 (B1)
+        if _console_enabled and _LEVEL_ORDER.get(level, 20) >= _LEVEL_ORDER.get(_console_min_level, INFO):
+            try:
+                print(message, flush=True)
+            except Exception:
+                pass
 
     def debug(self, source: str, message: str):
         self._write(DEBUG, source, message)
@@ -164,6 +176,52 @@ def warn(source: str, message: str): AppLogger().warn(source, message)
 def error(source: str, message: str): AppLogger().error(source, message)
 def error_exc(source: str, message: str, exc: Exception = None):
     AppLogger().error_exc(source, message, exc)
+
+
+# ---------------------------------------------------------------- 控制台镜像
+def enable_console(min_level: str = INFO):
+    """开启 stdout 镜像: 日志(>=min_level)原样打到控制台 (B1)。
+
+    CLI 入口在 argparse 后调用; GUI 运行时 stdout 由日志条组件重定向,
+    镜像消息会被一并捕获, 因此 print -> 日志 后 GUI 进度显示不受影响。
+    """
+    global _console_enabled, _console_min_level
+    _console_enabled = True
+    _console_min_level = min_level
+
+
+def is_console_enabled() -> bool:
+    return _console_enabled
+
+
+# ---------------------------------------------------------------- 绑定 logger
+class BoundLogger:
+    """绑定 source 的便捷 logger: 模块顶部 `_log = 日志.get('模块名')` 后,
+    用 `_log.info('...')` 替代 print, 同时落盘 + (可选)镜像控制台。"""
+
+    def __init__(self, source: str):
+        self._source = source
+
+    def debug(self, message: str):  AppLogger().debug(self._source, message)
+    def info(self, message: str):   AppLogger().info(self._source, message)
+    def warn(self, message: str):   AppLogger().warn(self._source, message)
+    def error(self, message: str):  AppLogger().error(self._source, message)
+    def error_exc(self, message: str, exc: Exception = None):
+        AppLogger().error_exc(self._source, message, exc)
+
+
+_BOUND_CACHE = {}
+_get_lock = threading.Lock()
+
+
+def get(source: str) -> BoundLogger:
+    """获取绑定 source 的日志器 (缓存复用, 线程安全)。"""
+    with _get_lock:
+        lg = _BOUND_CACHE.get(source)
+        if lg is None:
+            lg = BoundLogger(source)
+            _BOUND_CACHE[source] = lg
+        return lg
 
 
 def install_global_excepthook():

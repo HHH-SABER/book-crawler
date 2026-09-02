@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import 日志 as _app_log
+_log = _app_log.get('content_decoder')
+
 """
 通用小说正文解码器 (所有站点可用)
 ==================================
@@ -344,7 +347,7 @@ def decode_chapter_data(chapter_url, page_html=None, page=1, headers=None):
         try:
             url = validate_data_url(chapter_url, data_url)
         except ValueError as e:
-            print(f"[数据文件] 跳过非法引用 ({kind}): {e}")
+            _log.info(f"[数据文件] 跳过非法引用 ({kind}): {e}")
             continue
         # 分页: 页码形式的文件名 (如 1.xs -> 2.xs, 1.book -> 2.book)
         if page > 1:
@@ -356,8 +359,8 @@ def decode_chapter_data(chapter_url, page_html=None, page=1, headers=None):
                 continue
             text, method = decode_data(r.text)
             if text:
-                print(f"[数据文件] {kind} 解码成功: {method}, {len(text)} 字符")
+                _log.info(f"[数据文件] {kind} 解码成功: {method}, {len(text)} 字符")
                 return text, method
         except Exception as e:
-            print(f"[数据文件] 下载/解码失败 ({kind}): {e}")
+            _log.info(f"[数据文件] 下载/解码失败 ({kind}): {e}")
     return None, None

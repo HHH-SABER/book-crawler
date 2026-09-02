@@ -1,3 +1,6 @@
+import 日志 as _app_log
+_log = _app_log.get('sites_config')
+
 """
 站点适配模式库
 ===============
@@ -420,7 +423,7 @@ def _apply_runtime_config():
     except Exception as _e:
         # 运行时配置加载失败 → 静默使用内置配置
         try:
-            print(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
+            _log.info(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
         except Exception:
             pass
 

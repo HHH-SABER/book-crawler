@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import 日志 as _app_log
+_log = _app_log.get('captcha_module')
+
 """
 验证码处理模块 (完整版)
 ========================
@@ -116,7 +119,7 @@ class Config:
             loaded = json.loads(Path(self.path).read_text(encoding='utf-8'))
             self._merge(loaded)
         except Exception as e:
-            print(f"[验证码模块] 配置加载失败: {e}, 使用默认配置")
+            _log.info(f"[验证码模块] 配置加载失败: {e}, 使用默认配置")
         return self
 
     def save(self, path=None):
@@ -367,7 +370,7 @@ class ManualCaptchaHandler(CaptchaHandler):
         start = time.time()
         result = None
         try:
-            print("[验证码-人工] 检测到验证码页面, 自动识别不可用或失败, 转人工处理")
+            _log.info("[验证码-人工] 检测到验证码页面, 自动识别不可用或失败, 转人工处理")
             try:
                 driver.quit()
             except Exception:
@@ -377,8 +380,8 @@ class ManualCaptchaHandler(CaptchaHandler):
                 raise RuntimeError("未配置可见浏览器工厂 (driver_factory)")
             visible_driver = factory()
             visible_driver.get(url)
-            print("[验证码-人工] 已打开浏览器窗口, 请在浏览器中输入验证码图片字符并提交")
-            print(f"[验证码-人工] 系统将自动检测验证码是否已解决 (最多等待 {self.MAX_WAIT_MINUTES} 分钟)...")
+            _log.info("[验证码-人工] 已打开浏览器窗口, 请在浏览器中输入验证码图片字符并提交")
+            _log.info(f"[验证码-人工] 系统将自动检测验证码是否已解决 (最多等待 {self.MAX_WAIT_MINUTES} 分钟)...")
 
             solved = False
             for wait_round in range(self.MAX_WAIT_MINUTES * 12):  # 每5秒轮询
@@ -387,15 +390,15 @@ class ManualCaptchaHandler(CaptchaHandler):
                     cur = visible_driver.page_source
                     if not self.is_captcha_page(cur):
                         solved = True
-                        print(f"[验证码-人工] ✅ 验证码已解决 (等待了 {(wait_round + 1) * 5} 秒)")
+                        _log.info(f"[验证码-人工] ✅ 验证码已解决 (等待了 {(wait_round + 1) * 5} 秒)")
                         break
                 except Exception:
                     pass
                 if (wait_round + 1) % 12 == 0:
-                    print(f"[验证码-人工] 仍在等待验证码解决... (已等待 {(wait_round + 1) * 5} 秒)")
+                    _log.info(f"[验证码-人工] 仍在等待验证码解决... (已等待 {(wait_round + 1) * 5} 秒)")
 
             if not solved:
-                print("[验证码-人工] ❌ 等待超时, 验证码未解决")
+                _log.info("[验证码-人工] ❌ 等待超时, 验证码未解决")
                 return None
 
             visible_driver.get(url)
@@ -443,7 +446,7 @@ class DdddocrHandler(CaptchaHandler):
 
             retry_limit = (self.config.retry_limit if self.config else 3)
             for attempt in range(1, retry_limit + 1):
-                print(f"[验证码-识别] ddddocr 第 {attempt}/{retry_limit} 次尝试...")
+                _log.info(f"[验证码-识别] ddddocr 第 {attempt}/{retry_limit} 次尝试...")
                 try:
                     # 1. 定位验证码图片元素 (优先 form 内的 img)
                     img_el = None
@@ -456,9 +459,9 @@ class DdddocrHandler(CaptchaHandler):
                     # 3. 本地识别
                     code = self._get_ocr().classification(png)
                     if not code:
-                        print(f"[验证码-识别] 第 {attempt} 次: 识别为空, 重试")
+                        _log.info(f"[验证码-识别] 第 {attempt} 次: 识别为空, 重试")
                         continue
-                    print(f"[验证码-识别] 第 {attempt} 次: 识别结果 {code!r}")
+                    _log.info(f"[验证码-识别] 第 {attempt} 次: 识别结果 {code!r}")
                     # 4. 填入输入框 (form 内第一个文本输入框)
                     input_el = driver.find_element(By.CSS_SELECTOR, 'form input[type="text"], form input:not([type])')
                     input_el.clear()
@@ -473,17 +476,17 @@ class DdddocrHandler(CaptchaHandler):
                     time.sleep(2)
                     cur = driver.page_source
                     if not self.is_captcha_page(cur):
-                        print(f"[验证码-识别] ✅ ddddocr 识别成功 (第 {attempt} 次)")
+                        _log.info(f"[验证码-识别] ✅ ddddocr 识别成功 (第 {attempt} 次)")
                         result = cur
                         break
-                    print(f"[验证码-识别] 第 {attempt} 次: 提交后仍在验证码页, 重试")
+                    _log.info(f"[验证码-识别] 第 {attempt} 次: 提交后仍在验证码页, 重试")
                 except Exception as e:
-                    print(f"[验证码-识别] 第 {attempt} 次异常: {e}")
+                    _log.info(f"[验证码-识别] 第 {attempt} 次异常: {e}")
                     time.sleep(1)
             if result is None:
-                print(f"[验证码-识别] ❌ {retry_limit} 次识别均失败")
+                _log.info(f"[验证码-识别] ❌ {retry_limit} 次识别均失败")
         except Exception as e:
-            print(f"[验证码-识别] 模块异常: {e}")
+            _log.info(f"[验证码-识别] 模块异常: {e}")
         finally:
             self._record('ocr', start, result is not None,
                          'ddddocr 识别' if result is not None else '识别失败', method='ddddocr')
@@ -529,9 +532,9 @@ class SliderCaptchaHandler(CaptchaHandler):
             img = cv2.imdecode(np.frombuffer(bg_png, np.uint8), cv2.IMREAD_COLOR)
             gap_x = self._locate_gap(img)
             if gap_x is None:
-                print("[验证码-滑块] 未定位到缺口, 识别失败")
+                _log.info("[验证码-滑块] 未定位到缺口, 识别失败")
                 return None
-            print(f"[验证码-滑块] 缺口位置 x={gap_x}px")
+            _log.info(f"[验证码-滑块] 缺口位置 x={gap_x}px")
 
             # 3. 拟人轨迹
             track = self._human_track(gap_x)
@@ -546,12 +549,12 @@ class SliderCaptchaHandler(CaptchaHandler):
             time.sleep(2)
             cur = driver.page_source
             if not self.is_captcha_page(cur):
-                print("[验证码-滑块] ✅ 滑块验证通过")
+                _log.info("[验证码-滑块] ✅ 滑块验证通过")
                 result = cur
             else:
-                print("[验证码-滑块] ❌ 滑块验证未通过")
+                _log.info("[验证码-滑块] ❌ 滑块验证未通过")
         except Exception as e:
-            print(f"[验证码-滑块] 模块异常: {e}")
+            _log.info(f"[验证码-滑块] 模块异常: {e}")
         finally:
             self._record('slider', start, result is not None,
                          'OpenCV缺口+拟人轨迹' if result is not None else '失败', method='slider')
@@ -730,31 +733,31 @@ class ThirdPartyCaptchaHandler(CaptchaHandler):
                 return page_source
             cfg = self.config.data.get('third_party_api', {}) if self.config else {}
             if not cfg.get('api_key'):
-                print("[验证码-打码平台] 未配置 api_key, 跳过 (请配置 captcha_config.json)")
+                _log.info("[验证码-打码平台] 未配置 api_key, 跳过 (请配置 captcha_config.json)")
                 return None
 
             provider = self._get_provider()
             # 检测验证码类型与 sitekey
             captcha_type, site_key = self._detect(page_source)
-            print(f"[验证码-打码平台] 提交 {captcha_type} 任务 (sitekey={site_key})")
+            _log.info(f"[验证码-打码平台] 提交 {captcha_type} 任务 (sitekey={site_key})")
 
             # 余额预警
             bal = provider.balance()
             if self.monitor:
                 alarm = self.monitor.check_balance(bal)
                 if alarm:
-                    print(alarm)
+                    _log.info(alarm)
 
             task_id = provider.submit(captcha_type, url, site_key)
             answer = provider.poll(task_id, cfg.get('timeout', 120))
             if answer:
                 cost = 0.03  # 单次解算成本估算(元), 平台差异可在配置中覆盖
-                print(f"[验证码-打码平台] ✅ 获取答案: {str(answer)[:60]}")
+                _log.info(f"[验证码-打码平台] ✅ 获取答案: {str(answer)[:60]}")
                 result = self._inject_answer(driver, answer)
             else:
-                print("[验证码-打码平台] ❌ 任务超时/失败")
+                _log.info("[验证码-打码平台] ❌ 任务超时/失败")
         except Exception as e:
-            print(f"[验证码-打码平台] 异常: {e}")
+            _log.info(f"[验证码-打码平台] 异常: {e}")
         finally:
             self._record('third_party', start, result is not None,
                          f'成本约{cost:.2f}元' if result is not None else '失败',
@@ -823,11 +826,11 @@ class PointClickCaptchaHandler(CaptchaHandler):
                 return page_source
             cfg = self.config.data.get('point_click_model', {}) if self.config else {}
             if cfg.get('provider'):
-                print(f"[验证码-点选] 检测到配置的多模态模型 ({cfg['provider']}), 尝试模型识别...")
+                _log.info(f"[验证码-点选] 检测到配置的多模态模型 ({cfg['provider']}), 尝试模型识别...")
                 result = self._solve_with_model(driver, url, cfg)
                 if result:
                     return result
-            print("[验证码-点选] 点选/语义验证码无可靠自动方案, 转人工处理")
+            _log.info("[验证码-点选] 点选/语义验证码无可靠自动方案, 转人工处理")
             # 转人工: 复用 ManualCaptchaHandler
             manual = ManualCaptchaHandler(self.monitor, self.config)
             manual.driver_factory = getattr(self, 'driver_factory', None)
@@ -848,7 +851,7 @@ class PointClickCaptchaHandler(CaptchaHandler):
             # 例如: POST {cfg['endpoint']} 携带图片与提示词, 模型返回坐标
             raise NotImplementedError("多模态模型调用器未配置, 请实现 point_click_model")
         except Exception as e:
-            print(f"[验证码-点选] 模型调用失败: {e}")
+            _log.info(f"[验证码-点选] 模型调用失败: {e}")
             return None
 
 
@@ -1075,9 +1078,9 @@ class CaptchaManager:
             if name == 'manual':
                 # 人工策略需要可见浏览器工厂 (由调用方注入)
                 if not hasattr(handler, 'driver_factory') or handler.driver_factory is None:
-                    print("[验证码] 人工策略未配置浏览器工厂, 无法处理")
+                    _log.info("[验证码] 人工策略未配置浏览器工厂, 无法处理")
                     continue
-            print(f"[验证码] 尝试策略: {name}")
+            _log.info(f"[验证码] 尝试策略: {name}")
             result = handler.handle(driver, url, page_source)
             if result is not None and not self.is_captcha_page(result):
                 return result
