@@ -219,8 +219,9 @@ class 请求引擎管理器:
             host = self._取host(url)
             会话 = self._curl_sessions.get(host)
             if 会话 is None:
-                # impersonate='chrome' 模拟 Chrome TLS 指纹 + HTTP/2
-                会话 = self._curl_cffi.Session(impersonate='chrome')
+                # impersonate 显式指定具体 Chrome 版本指纹 (P2-1): 泛 'chrome' 可能
+                # 映射到较旧指纹被新站点识破; chrome124 为 curl_cffi 内置的稳定档
+                会话 = self._curl_cffi.Session(impersonate='chrome124')
                 self._curl_sessions[host] = 会话
             resp = 会话.get(url, headers=headers, timeout=timeout, cookies=cookies,
                             proxies=proxies, allow_redirects=支持重定向)

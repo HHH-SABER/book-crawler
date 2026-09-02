@@ -139,6 +139,31 @@ def clear_domain_cooldown(domain: str):
         pass
 
 
+def delay_factor(domain: str, hours: int = 24) -> float:
+    """P0-2 限速自适应: 依据近 N 小时该域反爬命中与当前冷却, 返回请求间隔放大倍数。
+
+    - 有生效冷却 或 24h 内 blocked 命中   -> 3.0
+    - 24h 内 rate_limit 命中 >= 3         -> 2.0
+    - 24h 内 rate_limit 命中 >= 1         -> 1.5
+    - 无命中                             -> 1.0 (不改变用户 delay)
+    """
+    try:
+        if get_domain_cooldown(domain) > 0:
+            return 3.0
+        agg = summary_by_domain(hours).get(domain, {})
+        anti = agg.get("anti", {})
+        if anti.get("blocked", 0) > 0:
+            return 3.0
+        rl = anti.get("rate_limit", 0)
+        if rl >= 3:
+            return 2.0
+        if rl >= 1:
+            return 1.5
+    except Exception:
+        pass
+    return 1.0
+
+
 # ============================================================
 # 聚合统计 API (P2-2/2-4 共用): monitor_summary.py 与 GUI 站点健康度列
 # ============================================================

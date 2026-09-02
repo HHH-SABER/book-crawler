@@ -50,5 +50,7 @@
     "model": "",
     "prompt": "",
     "_说明": "点选/语义验证码多模态模型 (C4): provider=ollama/openai_api/custom, endpoint 填服务地址, 返回坐标自动点击; 留空则点选验证码转人工"
-  }
+  },
+  "proxies": [],
+  "_proxies说明": "代理池(P0-1): 字符串数组, 如 [\"http://127.0.0.1:7890\", \"socks5://...\"], 空=直连; 兼容原 request_proxy 单点"
 }
