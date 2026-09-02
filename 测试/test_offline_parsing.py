@@ -244,6 +244,15 @@ class TestCleanContent(unittest.TestCase):
         self.assertNotIn('\n## ', cleaned, '正文中的 "## " 行首标记未被清除')
         self.assertIn('正文里残留的章节标记', cleaned, '应只去前缀不删文本')
 
+    def test_removes_fallback_domain_ad(self):
+        """'找回新域名'类广告行 (banlvzw 移动版实测: '最新找回4F4F4F,C〇M') 须清除。"""
+        raw = ('第一段正常叙事内容，足够长度跨越短行阈值，句子结构完整。\n'
+               '最新找回4F4F4F,C〇M\n'
+               '第二段正常叙事内容，继续推进情节发展不受影响。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertNotIn('找回4F4F', cleaned, '找回站广告行未被过滤')
+        self.assertIn('第一段正常叙事内容', cleaned)
+
 
 # ============================================================
 # 5b. 点选验证码多模态调用器 (C4 回归)

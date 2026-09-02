@@ -276,6 +276,10 @@ _AD_PHRASE_FRAGMENTS = (
     '请勿开启浏览器', '阅读模式',
     '创作者：', '创作完成日',
     'Copyright', '版权所有', 'All Rights Reserved',
+    # "找不到原站/被屏蔽后引导去新域名"类广告 (多站点模板, 如
+    # "最新找回4F4F4F,C〇M" / "网址被屏蔽 请访问 xxx,C0M" — 2026-09 实测 banlvzw 移动版)
+    '最新找回', '地址找回', '网址找回', '原域名', '新域名',
+    'C〇M', ',C0M', ',C○M',
 )
 
 # 通用正文过滤关键词 (跨站点共用, 在 clean_content 和 get_chapter_content 中复用)
