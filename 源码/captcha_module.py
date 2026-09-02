@@ -355,6 +355,15 @@ class CaptchaHandler(ABC):
                 kind=kind, duration=time.time() - start,
                 success=success, note=note, cost=cost,
                 method=method or self.name))
+        # P2-1 打点: 验证码命中/结果写入风控事件 (旁路失败不影响)
+        try:
+            import 风控事件 as _event
+            _event.add('captcha', {
+                '类型': str(kind), '结果': 'success' if success else 'fail',
+                '方式': method or self.name,
+            })
+        except Exception:
+            pass
 
 
 class ManualCaptchaHandler(CaptchaHandler):
