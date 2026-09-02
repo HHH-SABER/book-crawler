@@ -33,6 +33,45 @@ import urllib3
 from bs4 import BeautifulSoup
 import time
 from fake_useragent import UserAgent
+
+# P1-1 内置 UA 池: fake-useragent 需联网拉数据, 失败/离线时降级用 (避免所有
+# 降级 run 共用同一个 UA 被集中封禁)。选择按域名 hash 稳定 + 轮换时排除当前。
+_BUILTIN_UA_POOL = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0',
+    'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    # 移动端
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/122.0.6261.62 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 13; 2201123G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+]
+
+
+def _pick_builtin_ua(domain: str = '', exclude: str = '') -> str:
+    """从内置 UA 池选一个: 同域稳定 (hash), 轮换时排除当前 UA。"""
+    pool = _BUILTIN_UA_POOL
+    if exclude in pool and len(pool) > 1:
+        pool = [u for u in pool if u != exclude]
+    if domain:
+        idx = abs(hash(domain)) % len(pool)
+        return pool[idx]
+    import random as _rnd
+    return _rnd.choice(pool)
 import re
 import json
 import base64
@@ -558,10 +597,9 @@ class NovelSpider:
             self._fixed_ua = self.ua.random
         except Exception:
             # fake-useragent 某些版本初始化/取值需联网拉取数据, 离线或数据源
-            # 失效时降级为内置固定 UA 池 (P2-2), 保证 NovelSpider 始终可创建
-            self._fixed_ua = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                              'AppleWebKit/537.36 (KHTML, like Gecko) '
-                              'Chrome/124.0.0.0 Safari/537.36')
+            # 失效时降级为内置 UA 池 (P1-1): 按域名稳定选取, 避免所有降级 run
+            # 共用同一 UA 被集中封禁
+            self._fixed_ua = _pick_builtin_ua(domain=getattr(self, 'base_url', '') or '')
         # 添加完整的请求头，模拟真实浏览器
         self.session.headers.update({
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -995,6 +1033,16 @@ class NovelSpider:
             _log.info(f"[反爬] 已轮换 User-Agent: {新ua[:60]}...")
             return True
         except Exception as e:
+            # P1-1: fake-useragent 失效时从内置 UA 池轮换 (排除当前), 保证降级仍可轮换
+            try:
+                新ua = _pick_builtin_ua(exclude=self._fixed_ua)
+                self._fixed_ua = 新ua
+                self.session.headers['User-Agent'] = 新ua
+                self._ua连续失败 = 0
+                _log.info(f"[反爬] 内置池轮换 User-Agent (fake-useragent 不可用): {新ua[:60]}...")
+                return True
+            except Exception:
+                pass
             _log.info(f"[反爬] UA轮换失败: {e}")
             return False
 
