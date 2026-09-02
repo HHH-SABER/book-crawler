@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import 日志 as _app_log
+_log = _app_log.get('站点历史')
+
 """站点抓取历史记录
 ==================
 
@@ -97,7 +100,7 @@ class 站点历史:
                 json.dump(self._数据, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self._file)   # 原子替换, 避免写一半损坏
         except OSError as e:
-            print(f"[站点历史] 保存失败: {e}")
+            _log.info(f"[站点历史] 保存失败: {e}")
 
     # ------------------------------------------------------------------
     # 对外 API

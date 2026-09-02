@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import 日志 as _app_log
+_log = _app_log.get('爬取历史')
+
 """爬取历史记录
 ================
 
@@ -117,7 +120,7 @@ class 爬取历史:
                 json.dump(self._数据, f, ensure_ascii=False, indent=2)
             os.replace(tmp, self._file)
         except OSError as e:
-            print(f"[爬取历史] 保存失败: {e}")
+            _log.info(f"[爬取历史] 保存失败: {e}")
 
     # ------------------------------------------------------------------
     # 工具方法
@@ -246,7 +249,7 @@ class 爬取历史:
                 self._保存()
         except Exception as e:
             # 任何异常都不能影响主流程
-            print(f"[爬取历史] 记录异常: {e}")
+            _log.info(f"[爬取历史] 记录异常: {e}")
             return RESULT_FAIL
         return 结果
 
