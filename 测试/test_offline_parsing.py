@@ -234,6 +234,16 @@ class TestCleanContent(unittest.TestCase):
         raw = '正常段落，含有完整的中文标点与足够的长度，不应该被广告过滤器误伤。'
         self.assertIn(raw, self.spider.clean_content(raw))
 
+    def test_removes_markdown_heading_markers(self):
+        """正文行首 '## ' 标记须被清除 (P2-6): 否则输出文件里 '## ' 开头行
+        会被 _count_written_chapters 误计为章节标题, 检查点兜底续传时跳章。"""
+        raw = ('第一段正常叙事内容，长度足以跨越短行阈值，句子结构完整。\n'
+               '## 正文里残留的章节标记\n'
+               '第二段正常叙事内容，继续推进情节发展，不应当受影响。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertNotIn('\n## ', cleaned, '正文中的 "## " 行首标记未被清除')
+        self.assertIn('正文里残留的章节标记', cleaned, '应只去前缀不删文本')
+
 
 # ============================================================
 # 5. Session 线程隔离 (P1-8 回归)
