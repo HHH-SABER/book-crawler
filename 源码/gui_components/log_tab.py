@@ -141,7 +141,11 @@ class LogTab:
             else:
                 subprocess.Popen(['xdg-open', log_dir])
         except Exception as ex:
-            print(f"[日志] 无法打开日志目录: {ex}")
+            try:
+                import 日志 as _app_log
+                _app_log.warn('日志页', f"无法打开日志目录: {ex}")
+            except Exception:
+                pass
 
     def _reload(self):
         """刷新日期下拉 + 加载选中日期的日志内容"""
