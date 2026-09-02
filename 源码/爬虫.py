@@ -514,8 +514,13 @@ class NovelSpider:
                     self.session.verify = False
                     self._tls_verify_disabled = True
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        except Exception:
-            pass  # 配置读取失败时保持直连 + 校验开启
+        except Exception as e:
+            # 配置读取失败时保持直连 + 校验开启; 失败原因写入日志便于排查 (A3)
+            try:
+                import 日志 as _app_log
+                _app_log.debug('爬虫', f'captcha_config.json 读取/解析失败, 使用默认直连+校验: {e}')
+            except Exception:
+                pass
         self.ua = UserAgent()
         # 固定 UA (会话内不变): ① WAF 验证码放行 cookie 与 UA 绑定, 每次随机 UA
         # 会导致验证码白过; ② 固定 UA 更接近真实浏览器, 降低反爬触发率
@@ -2814,6 +2819,11 @@ class NovelSpider:
         # 10. 段尾"连接性"标点清理 (逐行): 只删逗号/分号/冒号等，
         #     保留句号/感叹号/问号 (有语义的结束标点不删)
         cleaned_content = re.sub(r'[，,；;：:]+$', '', cleaned_content, flags=re.M)
+        # 11. 行首 markdown 标记清理 (P2-6): 正文残留的 "## xxx" 若未处理,
+        #     会让 _count_written_chapters 的 "## " 前缀计数虚增, 续传跳章。
+        #     章节标题由调用方以 "## {title}" 写出(不经过本函数), 故此处去前缀
+        #     可保证输出文件中 "## " 开头行必然 == 真实章节标题。
+        cleaned_content = re.sub(r'^##\s+', '', cleaned_content, flags=re.M)
 
         return cleaned_content.strip()
 
@@ -4829,8 +4839,14 @@ class NovelSpider:
         if file_handle is not None:
             try:
                 file_handle.flush()
-            except (OSError, ValueError):
-                pass  # 句柄已关闭等场景, 不阻塞检查点保存
+            except (OSError, ValueError) as e:
+                # 句柄已关闭等场景不阻塞检查点保存, 但需留痕: 若反复出现说明
+                # 调用点未按 P0-1 约定传入打开中的句柄 (A3)
+                try:
+                    import 日志 as _app_log
+                    _app_log.debug('爬虫', f'检查点前 flush 输出文件失败: {e}')
+                except Exception:
+                    pass
         data = {
             'catalog_url': catalog_url,
             'output_file': output_file,
