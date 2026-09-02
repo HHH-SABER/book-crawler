@@ -195,7 +195,7 @@ def main():
     log(_同步CHANGELOG(_新版本, _今天))
     log("")
 
-    # --- 1) find pyinstaller.exe
+    # --- 1) find pyinstaller.exe (或回退 python -m PyInstaller)
     # 说明: 直接调用 PyInstaller 而非 flet pack, 以便传入 --version-file
     # 嵌入 EXE 属性中的版本号 (flet pack 0.86 会静默忽略 --product-version 参数)
     pyinstaller_candidates = [
@@ -204,9 +204,15 @@ def main():
     ]
     pyinstaller_exe = next((p for p in pyinstaller_candidates if p and os.path.isfile(p)), None)
     if not pyinstaller_exe:
-        log("[ERROR] pyinstaller.exe not found. Install deps first:")
-        log("         .venv\\Scripts\\pip.exe install -r requirements.txt")
-        sys.exit(1)
+        # console script 缺失时回退到 `python -m PyInstaller` (下方执行路径即是)
+        try:
+            import PyInstaller  # noqa: F401
+            pyinstaller_exe = sys.executable  # 实际以 -m PyInstaller 执行
+            log("[INFO] pyinstaller.exe 缺失, 回退 python -m PyInstaller")
+        except ImportError:
+            log("[ERROR] PyInstaller not found. Install deps first:")
+            log("         .venv\\Scripts\\pip.exe install -r requirements.txt")
+            sys.exit(1)
     log(f"[OK] PyInstaller : {pyinstaller_exe}")
 
     # --- 2) ensure Flet client is downloaded & extracted (sandbox can't write home dirs)
@@ -245,12 +251,14 @@ def main():
     # --- 4) clean previous dist/ 和 build/
     # 必须预先删掉 build/: 否则 PyInstaller 会交互询问 "Do you want to delete
     # build directory? (y/n)", 子进程无 stdin 直接 EOFError 崩溃 (静默失败)
+    # 环境变量 WBC_SKIP_CLEAN=1 时跳过目录删除 (dist 被进程占用/沙箱拦截时用;
+    # PyInstaller --noconfirm 会覆盖 dist 内同名 EXE)
     dist = os.path.join(ROOT, "dist")
-    if os.path.isdir(dist):
+    if os.path.isdir(dist) and not os.environ.get("WBC_SKIP_CLEAN"):
         log("[CLEAN] Remove previous dist/")
         shutil.rmtree(dist, ignore_errors=True)
     build_dir = os.path.join(ROOT, "build")
-    if os.path.isdir(build_dir):
+    if os.path.isdir(build_dir) and not os.environ.get("WBC_SKIP_CLEAN"):
         log("[CLEAN] Remove previous build/")
         shutil.rmtree(build_dir, ignore_errors=True)
 
