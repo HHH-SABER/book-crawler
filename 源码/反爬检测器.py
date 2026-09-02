@@ -81,11 +81,33 @@ class 反爬检测器:
             反爬识别结果 (未命中时 机制='none')
         """
         try:
-            return self._识别_impl(response, ua连续失败数)
+            result = self._识别_impl(response, ua连续失败数)
         except Exception as e:
             # 检测器自身异常不应中断抓取主流程
-            return 反爬识别结果(机制='none', 置信度=0.0,
+            result = 反爬识别结果(机制='none', 置信度=0.0,
                               证据=[f'检测异常: {e}'], 建议策略={})
+        # P2-1 打点: 命中反爬时记录风控事件 (正常 200 由 request 事件覆盖, 此处不重复)
+        try:
+            机制 = getattr(result, '机制', 'none') or 'none'
+            if 机制 != 'none':
+                import re as _re
+                import 风控事件 as _event
+                _域名 = ''
+                try:
+                    u = getattr(response, 'url', '') or ''
+                    m = _re.match(r'https?://([^/:]+)', u)
+                    _域名 = m.group(1) if m else ''
+                except Exception:
+                    pass
+                _event.add('anti_spider', {
+                    '域名': _域名,
+                    '类型': str(机制),
+                    '状态码': getattr(response, 'status_code', 0),
+                    '建议': getattr(result, '建议策略', {}) or {},
+                })
+        except Exception:
+            pass
+        return result
 
     # ------------------------------------------------------------------
     def _识别_impl(self, response, ua连续失败数: int) -> 反爬识别结果:
