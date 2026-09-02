@@ -4981,6 +4981,27 @@ class NovelSpider:
         except Exception:
             return False
 
+    def _fetch_with_retry(self, chap, max_retries=2):
+        """P1-2: 章节抓取外层兜底重试。
+
+        _fetch_with_qc 内部已做 UA 轮换+清缓存重试 (质检层); 本层在它仍返回
+        空内容时, 间隔 3s 再补试 (限速/瞬时抖动层), 与内部重试互补。
+        返回最终 content (可能为空, 由调用方记为 failed)。
+        """
+        import time as _t
+        content = self._fetch_with_qc(chap)
+        for attempt in range(max_retries):
+            if content:
+                break
+            _t.sleep(3 * (attempt + 1))
+            _log.info(f"[重试] 第{attempt + 1}次补试: {chap.get('title', '')[:30]}")
+            try:
+                content = self._fetch_with_qc(chap)
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+                content = ''
+        return content
+
     def _fetch_with_qc(self, chap, max_retries=2):
         """带语义质检的章节抓取 (get_chapter_content 的质检包装)。
 
@@ -5391,7 +5412,13 @@ class NovelSpider:
                             chap = chapters[i]
                             _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                             try:
-                                content = futures[i].result()
+                                # P1-2 超时防线: 单章 result 最长等 180s, 防站点挂起卡死整个 run
+                                # (concurrent.futures.TimeoutError 即内置 TimeoutError)
+                                content = futures[i].result(timeout=180)
+                            except TimeoutError:
+                                _log.info(f"⚠️ 第 {i + 1} 章抓取超时(>180s), 取消该任务并记失败")
+                                futures[i].cancel()
+                                content = ''
                             except KeyboardInterrupt:
                                 raise
                             except Exception as e:
@@ -5428,11 +5455,7 @@ class NovelSpider:
                                 print_progress_bar(i + 1, total, extra=chap['title'][:20])
                             continue
                         _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
-                        try:
-                            content = self._fetch_with_qc(chap)
-                        except Exception as e:
-                            _log.info(f"抓取异常: {e}")
-                            content = ''
+                        content = self._fetch_with_retry(chap)
                         # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
                         f.write(f"## {chap['title']}\n\n")
                         f.write(content + "\n\n")
