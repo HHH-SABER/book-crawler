@@ -217,3 +217,23 @@ pattern = auto_detect_pattern(session, url, headers, base_url)
 - 输出目录统一为绝对路径（项目根/抓取结果/），并通过 `--output-dir` 支持覆盖；bat 入口强制指定
 
 > 当通用层稳定后可删除 爬虫.py 中三处标记为「向后兼容备用分支」的旧域名硬编码逻辑。
+
+
+---
+
+## 模块命名约定 (C5 / P3-4)
+
+> 目标: 新代码遵守既有约定, 避免命名风格进一步分裂; 存量混用不强制回改。
+
+| 层 | 约定 | 示例 |
+|---|---|---|
+| 站点配置层 | **英文** snake_case 模块 / 函数 | `sites_config.py`, `extract_content_html_selector` |
+| 业务核心层 | 中文模块名 + 中文方法名 | `爬虫.py`(NovelSpider), `请求引擎.py`, `爬取历史.py` |
+| GUI 层 | 英文包 `gui_components/`, 组件文件英文 snake_case | `input_bar.py`, `detail_drawer.py`, `pages/history_page.py` |
+| 新站点方法 | 接入分发器用 `_parse_catalog_<site>` (域名 token 小写) | `_parse_catalog_zhiruo` |
+| 新增纯函数 | 模块级英文 snake_case, 前缀 `_` 表内部 | `_resolve_novel_paths`, `_chapter_sort_key` |
+
+新增站点适配时:
+1. 配置项加在 `sites_config.py` 的 `SITE_PATTERNS`(统一字典)
+2. 目录页结构特殊 → 在 `_CATALOG_PARSERS` 注册 `_parse_catalog_<site>` 方法
+3. 正文提取特殊 → 用 `content_extractor` 标记 + `sites_config` 内专用过滤器, 勿散落进 `爬虫.py`

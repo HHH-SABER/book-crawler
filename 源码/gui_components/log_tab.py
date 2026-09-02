@@ -136,6 +136,8 @@ class LogTab:
         try:
             if os.name == 'nt':
                 os.startfile(log_dir)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', log_dir])
             else:
                 subprocess.Popen(['xdg-open', log_dir])
         except Exception as ex:
