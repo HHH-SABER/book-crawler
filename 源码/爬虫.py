@@ -514,9 +514,32 @@ class NovelSpider:
             _cfg_path = _path_utils.resolve_data_file("captcha_config.json")
             if os.path.isfile(_cfg_path):
                 _cfg = json.loads(Path(_cfg_path).read_text(encoding='utf-8'))
-                _rp = _cfg.get('request_proxy') or ''
-                if _rp:
-                    self.session.proxies.update({'http': _rp, 'https': _rp})
+                # P0-1: 优先走代理池 (proxies 列表), 兼容原 request_proxy 单点
+                try:
+                    import 代理池 as _proxypool
+                    _px = _proxypool.get_pool()
+                    if len(_px):
+                        _host = ''
+                        try:
+                            import re as _re_px
+                            _m_px = _re_px.match(r'https?://([^/:]+)', base_url or '')
+                            _host = _m_px.group(1) if _m_px else ''
+                        except Exception:
+                            pass
+                        _pd = _px.get(_host)
+                        if _pd:
+                            self.session.proxies.update(_pd)
+                            _log.debug(f'[代理池] 使用代理 {_pd["http"]} (池内 {len(_px)} 个)')
+                        else:
+                            _log.debug('[代理池] 无健康代理, 直连')
+                    else:
+                        _rp = _cfg.get('request_proxy') or ''
+                        if _rp:
+                            self.session.proxies.update({'http': _rp, 'https': _rp})
+                except Exception:
+                    _rp = _cfg.get('request_proxy') or ''
+                    if _rp:
+                        self.session.proxies.update({'http': _rp, 'https': _rp})
                 if _cfg.get('disable_tls_verify') is True:
                     self.session.verify = False
                     self._tls_verify_disabled = True
@@ -5213,6 +5236,17 @@ class NovelSpider:
 
         _log.info(f"提取到小说名称: {novel_title}")
 
+        # P0-2 限速自适应: 依据该域近期风控命中/冷却, 放大请求间隔 (run 内只算一次)
+        try:
+            import re as _re_df
+            import 风控事件 as _event_df
+            _m_df = _re_df.match(r'https?://([^/:]+)', catalog_url)
+            self._延迟因子 = _event_df.delay_factor(_m_df.group(1), 24) if _m_df else 1.0
+            if self._延迟因子 > 1.0:
+                _log.info(f"⚠️ [限速自适应] 该域近期有风控记录, 请求间隔 ×{self._延迟因子:.1f}")
+        except Exception:
+            self._延迟因子 = 1.0
+
         # 处理输出文件名 (安全: 只使用 basename, 禁止 ../ 路径穿越)
         if not output_file:
             safe_title = re.sub(r'[<>:"/\\|?*]', '_', novel_title)
@@ -5413,7 +5447,7 @@ class NovelSpider:
                         if show_progress:
                             print_progress_bar(i + 1, total, extra=chap['title'][:20])
                         if delay > 0:
-                            time.sleep(delay)  # 请求间隔，尊重服务器
+                            time.sleep(delay * getattr(self, '_延迟因子', 1.0))  # 请求间隔, 尊重服务器 (P0-2 自适应)
         except KeyboardInterrupt:
             _log.info(f"\n⚠️ 用户中断! 进度检查点已保存，下次运行将自动从断点继续 (输出: {output_file})")
             return output_file
