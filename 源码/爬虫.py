@@ -5487,6 +5487,15 @@ class NovelSpider:
                 '目标': total, '模式': mode,
             })
             _event.flush()
+            # P2-2 站点改版漂移检测: 空章=失败未提取内容数, 短章=质检未通过数
+            try:
+                import 站点漂移检测 as _drift
+                _empty = sum(1 for i in failed if True)  # failed 即未提取到内容的章
+                _short = (质检摘要 or {}).get('未通过', 0) if 质检摘要 else 0
+                _drift.report_task(_m.group(1) if _m else '', total,
+                                   empty=_empty, short=_short, failed=len(failed))
+            except Exception:
+                pass
         except Exception:
             pass
         return output_file
