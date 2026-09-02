@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "request_proxy": "",
+  "disable_tls_verify": false,
   "avoid_first": true,
   "strategies": {
     "manual": {
