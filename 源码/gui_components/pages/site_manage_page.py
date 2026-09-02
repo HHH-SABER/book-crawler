@@ -146,8 +146,62 @@ class SiteManagePage:
         self._build_edit_card()
 
         self._refresh_table()
-        return ft.Column([toolbar, table_card, self._edit_card],
+        banner = self._build_alarm_banner()
+        return ft.Column([banner, toolbar, table_card, self._edit_card],
                          expand=True, spacing=10)
+
+    def _build_alarm_banner(self):
+        """P1-3: 顶部风控告警横幅 (24h 高反爬命中 + 改版漂移告警), 无告警时空。
+
+        数据源: 风控事件 JSONL (content_issue=漂移检测告警; anti 聚合=高命中域)。
+        """
+        lines = []
+        try:
+            import 风控事件 as _ev
+            # 1) 漂移/改版告警 (content_issue 事件最近 3 条)
+            import os, json, time as _t
+            d = os.path.join(_path_utils.get_app_base_dir(), "数据") \
+                if 'get_app_base_dir' in dir(_path_utils) else os.path.dirname(os.path.abspath(__file__))
+            files = sorted([os.path.join(d, f) for f in os.listdir(d)
+                            if f.startswith("风控事件-")]) if os.path.isdir(d) else []
+            cutoff = _t.time() - 24 * 3600
+            hits = []
+            for fp in files[-2:]:
+                try:
+                    with open(fp, encoding="utf-8") as fh:
+                        for ln in fh:
+                            ln = ln.strip()
+                            if 'content_issue' not in ln:
+                                continue
+                            rec = json.loads(ln)
+                            try:
+                                ts = _t.mktime(_t.strptime(rec.get("t", ""), "%Y-%m-%d %H:%M:%S"))
+                            except Exception:
+                                continue
+                            if ts >= cutoff:
+                                hits.append(rec.get("告警") or rec.get("域名", ""))
+                except Exception:
+                    continue
+            for h in hits[-3:]:
+                if h and h not in lines:
+                    lines.append(h[:90])
+            # 2) 24h 高反爬命中域 (rate_limit/blocked 或 >=3 次)
+            agg = _ev.summary_by_domain(24)
+            for dom, s in sorted(agg.items()):
+                anti = s.get("anti", {})
+                if anti.get("blocked", 0) or anti.get("rate_limit", 0) or sum(anti.values()) >= 3:
+                    top = max(anti, key=anti.get)
+                    lines.append(f"风控 {dom}: {top}×{anti[top]}")
+        except Exception:
+            return ft.Container()
+        if not lines:
+            return ft.Container()
+        return ft.Container(
+            content=ft.Column([ft.Text("⚠ " + ln, size=12, color=MORANDI_ERROR,
+                                       font_family=FONT_STACK) for ln in lines[:5]],
+                              spacing=3),
+            bgcolor=ft.Colors.ERROR_CONTAINER, border_radius=8, padding=8, margin=0,
+        )
 
     def _build_edit_card(self):
         """底部编辑卡 (新增/编辑共用)"""
