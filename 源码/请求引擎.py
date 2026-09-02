@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import 日志 as _app_log
+_log = _app_log.get('请求引擎')
+
 """多引擎请求封装 (requests + curl_cffi + cloudscraper 自动降级)
 ============================================================
 
@@ -205,7 +208,7 @@ class 请求引擎管理器:
                 status_code=resp.status_code, headers=dict(resp.headers),
                 text=resp.text, content=resp.content, url=resp.url, 引擎='requests')
         except Exception as e:
-            print(f"[引擎] requests 请求异常: {e}")
+            _log.info(f"[引擎] requests 请求异常: {e}")
             return None
 
     def _请求_curl_cffi(self, url, headers=None, timeout=30, cookies=None,
@@ -225,7 +228,7 @@ class 请求引擎管理器:
                 status_code=resp.status_code, headers=dict(resp.headers),
                 text=resp.text, content=resp.content, url=str(resp.url), 引擎='curl_cffi')
         except Exception as e:
-            print(f"[引擎] curl_cffi 请求异常: {e}")
+            _log.info(f"[引擎] curl_cffi 请求异常: {e}")
             return None
 
     def _请求_cloudscraper(self, url, headers=None, timeout=30, cookies=None,
@@ -245,7 +248,7 @@ class 请求引擎管理器:
                 status_code=resp.status_code, headers=dict(resp.headers),
                 text=resp.text, content=resp.content, url=resp.url, 引擎='cloudscraper')
         except Exception as e:
-            print(f"[引擎] cloudscraper 请求异常: {e}")
+            _log.info(f"[引擎] cloudscraper 请求异常: {e}")
             return None
 
     # ------------------------------------------------------------------

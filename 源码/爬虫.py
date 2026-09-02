@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import 日志 as _app_log
+_log = _app_log.get('爬虫')
+
 """
 小说爬虫主程序
 ==============
@@ -79,9 +82,9 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     selenium_available = True
-    print("Selenium 导入成功，可以使用浏览器模拟")
+    _log.info("Selenium 导入成功，可以使用浏览器模拟")
 except ImportError:
-    print("Selenium 未安装，将使用传统方法")
+    _log.info("Selenium 未安装，将使用传统方法")
 
 # ===== 反爬机制自动检测器 + 内容语义质检器 (通用特征驱动, 不依赖域名) =====
 try:
@@ -358,24 +361,24 @@ def _resolve_novel_paths(catalog_url):
         (novel_path, novel_path_alt): 两个候选路径前缀
     """
     if 'hatxt.cc' in catalog_url:
-        print("检测到hatxt.cc网站，使用专门的处理逻辑")
+        _log.info("检测到hatxt.cc网站，使用专门的处理逻辑")
         # 提取小说ID
         novel_id_pattern = re.search(r'/books/(\d+)', catalog_url)
         novel_id = novel_id_pattern.group(1) if novel_id_pattern else ''
-        print(f"当前小说ID: {novel_id}")
+        _log.info(f"当前小说ID: {novel_id}")
         # 构建两种可能的路径格式
         novel_path = f'/books/{novel_id}/'
         novel_path_alt = f'/books/{novel_id}'  # 用于匹配194971_1.html这种格式
     # 特殊处理pjxdd.com网站
     elif 'pjxdd.com' in catalog_url:
-        print("检测到pjxdd.com网站，使用专门的处理逻辑")
+        _log.info("检测到pjxdd.com网站，使用专门的处理逻辑")
         # 提取小说路径
         novel_path_pattern = re.search(r'(/xiaoshuo/\d+/)', catalog_url)
         novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
         novel_path_alt = novel_path  # 对于pjxdd.com，两种路径格式相同
     # 特殊处理ahxsw.com网站
     elif 'ahxsw.com' in catalog_url:
-        print("检测到ahxsw.com网站，使用专门的处理逻辑")
+        _log.info("检测到ahxsw.com网站，使用专门的处理逻辑")
         # 提取小说ID路径，如 /book/143259/
         novel_path_pattern = re.search(r'(/book/\d+/)', catalog_url)
         novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
@@ -383,21 +386,21 @@ def _resolve_novel_paths(catalog_url):
         # 提取/read/路径部分用于匹配
         read_path_pattern = re.search(r'(/read/\d+/\d+/)', catalog_url)
         novel_path_alt = read_path_pattern.group(1) if read_path_pattern else '/read/'
-        print(f"当前小说路径: {novel_path}, 读取路径: {novel_path_alt}")
+        _log.info(f"当前小说路径: {novel_path}, 读取路径: {novel_path_alt}")
     elif '5hbook.net' in catalog_url:
-        print("检测到5hbook.net网站，使用专门的处理逻辑")
+        _log.info("检测到5hbook.net网站，使用专门的处理逻辑")
         # 提取小说ID路径，如 /books/539.html → /books/539/
         novel_path_pattern = re.search(r'(/books/\d+)\.html', catalog_url)
         novel_path = (novel_path_pattern.group(1) + '/') if novel_path_pattern else ''
         novel_path_alt = novel_path
-        print(f"当前小说路径: {novel_path}")
+        _log.info(f"当前小说路径: {novel_path}")
     elif 'exotxt.net' in catalog_url:
-        print("检测到exotxt.net网站，使用专门的处理逻辑")
+        _log.info("检测到exotxt.net网站，使用专门的处理逻辑")
         book_id_match = re.search(r'/infos/(\d+)', catalog_url)
         book_id = book_id_match.group(1) if book_id_match else ''
         novel_path = f"/infos/{book_id}/" if book_id_match else ''
         novel_path_alt = novel_path
-        print(f"当前小说路径: {novel_path}")
+        _log.info(f"当前小说路径: {novel_path}")
     else:
         # 通用逻辑：尝试多种URL模式提取小说路径
         novel_path = ''
@@ -414,7 +417,7 @@ def _resolve_novel_paths(catalog_url):
                 prefix = novel_path_pattern.group(1)
                 book_id = novel_path_pattern.group(2)
                 novel_path = f"{prefix}{book_id}/"
-                print(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
+                _log.info(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
             else:
                 # 模式3: /infos/5523629.html → /infos/5523629/ (zhiruo.org格式)
                 novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)(?:\.html?|/)', catalog_url)
@@ -422,34 +425,34 @@ def _resolve_novel_paths(catalog_url):
                     prefix = novel_path_pattern.group(1)
                     book_id = novel_path_pattern.group(2)
                     novel_path = f"{prefix}{book_id}/"
-                    print(f"[路径提取] 模式3: 从URL提取小说路径 {novel_path}")
+                    _log.info(f"[路径提取] 模式3: 从URL提取小说路径 {novel_path}")
                 else:
                     # 模式4: 提取URL中的数字ID作为关键词
                     id_match = re.search(r'/(\d{4,})', catalog_url)
                     if id_match:
                         novel_path = id_match.group(1)
-                        print(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
+                        _log.info(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
                     else:
                         # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
                         # 字母数字书ID + index_分页目录)
                         alt_match = re.search(r'/([a-z0-9]{2,12})/index(?:_\d+)?\.html?', catalog_url)
                         if alt_match:
                             novel_path = f"/{alt_match.group(1)}/"
-                            print(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
+                            _log.info(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
                         else:
                             # 模式6: /shu/OqWe.html → /shu/OqWe/ (ciyewk等字母数字书ID
                             # 目录页, 章节链接 /shu/OqWe/{N}.html)
                             path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
                             if path6:
                                 novel_path = f"{path6.group(1)}/"
-                                print(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
+                                _log.info(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
                             else:
                                 # 模式7: /163/163654/index.html → /163/163654/ (zhiruo等
                                 # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
                                 path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
                                 if path7:
                                     novel_path = f"{path7.group(1)}/"
-                                    print(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
+                                    _log.info(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
 
         novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
 
@@ -519,8 +522,8 @@ class NovelSpider:
             try:
                 import 日志 as _app_log
                 _app_log.debug('爬虫', f'captcha_config.json 读取/解析失败, 使用默认直连+校验: {e}')
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         self.ua = UserAgent()
         # 固定 UA (会话内不变): ① WAF 验证码放行 cookie 与 UA 绑定, 每次随机 UA
         # 会导致验证码白过; ② 固定 UA 更接近真实浏览器, 降低反爬触发率
@@ -559,10 +562,10 @@ class NovelSpider:
         try:
             from captcha_module import build_manager
             self._captcha_manager, self._avoidance = build_manager(ua_provider=self.ua)
-            print("[验证码模块] 已加载 (策略: {})".format(
+            _log.info("[验证码模块] 已加载 (策略: {})".format(
                 self._captcha_manager.current_strategy()))
         except Exception as e:
-            print(f"[验证码模块] 初始化失败, 使用内置人工流程: {e}")
+            _log.info(f"[验证码模块] 初始化失败, 使用内置人工流程: {e}")
         # tanmixs.com 持久化 Selenium driver: 验证码解决后复用同一浏览器实例
         # 避免每次创建新driver都触发WAF验证码
         self._tanmixs_driver = None
@@ -612,8 +615,8 @@ class NovelSpider:
         if self._captcha_manager is not None:
             try:
                 engine = self._captcha_manager.config.data.get('browser_engine', 'playwright')
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         if engine == 'playwright':
             try:
                 from browser_driver import create_driver
@@ -621,7 +624,7 @@ class NovelSpider:
                                        user_data_dir=profile_dir)
                 return driver
             except Exception as e:
-                print(f"[tanmixs] Playwright 反检测引擎启动失败: {str(e)[:100]}, 回退 Selenium")
+                _log.info(f"[tanmixs] Playwright 反检测引擎启动失败: {str(e)[:100]}, 回退 Selenium")
 
         options = Options()
         if not visible:
@@ -643,20 +646,20 @@ class NovelSpider:
         except Exception as e:
             # profile 损坏(上次运行崩溃遗留)会导致 Chrome 无法启动:
             # 备份损坏的 profile 并换全新 profile 重试, 保证爬虫可用
-            print(f"[tanmixs] 使用持久化 profile 启动失败: {str(e)[:120]}")
-            print("[tanmixs] 备份损坏的 profile 并创建新 profile 重试...")
+            _log.info(f"[tanmixs] 使用持久化 profile 启动失败: {str(e)[:120]}")
+            _log.info("[tanmixs] 备份损坏的 profile 并创建新 profile 重试...")
             try:
                 import shutil
                 backup_dir = profile_dir + f'_corrupt_{int(time.time())}'
                 if os.path.exists(profile_dir):
                     shutil.move(profile_dir, backup_dir)
-                    print(f"[tanmixs] 已备份损坏 profile 到: {backup_dir}")
+                    _log.info(f"[tanmixs] 已备份损坏 profile 到: {backup_dir}")
             except Exception as be:
-                print(f"[tanmixs] 备份失败(继续尝试): {be}")
+                _log.info(f"[tanmixs] 备份失败(继续尝试): {be}")
                 try:
                     shutil.rmtree(profile_dir, ignore_errors=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
             driver = webdriver.Chrome(options=options)
 
         driver.set_page_load_timeout(30)
@@ -690,8 +693,8 @@ class NovelSpider:
             except Exception:
                 try:
                     self._tanmixs_driver.quit()
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                 self._tanmixs_driver = None
 
         driver = self._create_tanmixs_driver(visible)
@@ -716,24 +719,24 @@ class NovelSpider:
         if '__wafcaptcha' not in page_source and '_waform' not in page_source and '访问频率太高' not in page_source:
             return page_source  # 不是验证码页面, 直接返回
 
-        print("[tanmixs] 检测到WAF验证码页面")
+        _log.info("[tanmixs] 检测到WAF验证码页面")
         # 优先走验证码模块的自动识别链 (ddddocr → slider → 打码平台 → 人工)
         # 仅当配置中启用了对应识别策略时才会尝试自动识别, 否则直接进入人工流程
         if self._captcha_manager is not None:
             try:
                 solved = self._captcha_manager.handle(driver, url, page_source)
                 if solved is not None and not self._captcha_manager.is_captcha_page(solved):
-                    print("[tanmixs] ✅ 验证码模块已解决 (自动识别或人工输入)")
+                    _log.info("[tanmixs] ✅ 验证码模块已解决 (自动识别或人工输入)")
                     self._captcha_manager.record_request(True)
                     return solved
-                print("[tanmixs] 验证码模块未解决, 回退内置人工流程")
+                _log.info("[tanmixs] 验证码模块未解决, 回退内置人工流程")
             except Exception as e:
-                print(f"[tanmixs] 验证码模块异常, 回退内置人工流程: {e}")
+                _log.info(f"[tanmixs] 验证码模块异常, 回退内置人工流程: {e}")
         # 关闭当前headless driver, 切换到可见driver
         try:
             driver.quit()
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         if self._tanmixs_concurrent:
             # 并发模式: 重置当前线程的 driver, 用可见模式重建
             import threading
@@ -746,8 +749,8 @@ class NovelSpider:
             # 创建可见driver (复用同一user-data-dir)
             visible_driver = self._get_tanmixs_driver(visible=True)
         visible_driver.get(url)
-        print("[tanmixs] 已打开浏览器窗口, 请在浏览器中输入验证码图片字符并提交")
-        print("[tanmixs] 系统将自动检测验证码是否已解决 (最多等待5分钟)...")
+        _log.info("[tanmixs] 已打开浏览器窗口, 请在浏览器中输入验证码图片字符并提交")
+        _log.info("[tanmixs] 系统将自动检测验证码是否已解决 (最多等待5分钟)...")
 
         # 自动轮询检测验证码是否已解决
         captcha_solved = False
@@ -757,15 +760,15 @@ class NovelSpider:
                 cur_src = visible_driver.page_source
                 if '__wafcaptcha' not in cur_src and '_waform' not in cur_src and '访问频率太高' not in cur_src:
                     captcha_solved = True
-                    print(f"[tanmixs] 验证码已解决 (等待了{(wait_round+1)*5}秒)")
+                    _log.info(f"[tanmixs] 验证码已解决 (等待了{(wait_round+1)*5}秒)")
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
             if (wait_round + 1) % 6 == 0:
-                print(f"[tanmixs] 仍在等待验证码解决... (已等待{(wait_round+1)*5}秒)")
+                _log.info(f"[tanmixs] 仍在等待验证码解决... (已等待{(wait_round+1)*5}秒)")
 
         if not captcha_solved:
-            print("[tanmixs] 验证码等待超时(5分钟)")
+            _log.info("[tanmixs] 验证码等待超时(5分钟)")
             raise RuntimeError('验证码超时未解决')
 
         # 验证码解决后, 用同一driver访问目标URL
@@ -775,7 +778,7 @@ class NovelSpider:
         )
         time.sleep(2)
         page_source = visible_driver.page_source
-        print(f"[tanmixs] 验证码解决后页面长度: {len(page_source)} 字符")
+        _log.info(f"[tanmixs] 验证码解决后页面长度: {len(page_source)} 字符")
         return page_source
 
     def _get_with_js_challenge(self, url, headers=None, timeout=30):
@@ -792,7 +795,7 @@ class NovelSpider:
         if self._反爬检测器 is not None:
             结果 = self._反爬检测器.识别(response, self._ua连续失败)
             if 结果.机制 != 'none':
-                print(_反爬日志(结果))
+                _log.info(_反爬日志(结果))
                 self._反爬统计[结果.机制] = self._反爬统计.get(结果.机制, 0) + 1
                 if 结果.机制 == 'rate_limit':
                     # 指数退避: Retry-After 优先, 否则 5s→10s→20s→60s
@@ -800,7 +803,7 @@ class NovelSpider:
                     等待 = self._反爬检测器.计算退避秒数(
                         self._限频连续次数, 结果.建议策略.get('retry_after', 0))
                     self._限频最大退避 = max(self._限频最大退避, 等待)
-                    print(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
+                    _log.info(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
                           f"(第{self._限频连续次数}次连续限频)")
                     time.sleep(等待)
                     response = self.session.get(url, headers=headers, timeout=timeout)
@@ -811,18 +814,18 @@ class NovelSpider:
                     # 成熟反爬库引擎介入: cloudscraper 自动执行 JS 质询 /
                     # curl_cffi 模拟 TLS 指纹; 成功则替换 response, 由下方反爬层校验
                     if self._引擎管理器 is not None:
-                        print(f"[反爬] 命中 {结果.机制}, 尝试成熟反爬库引擎重发...")
+                        _log.info(f"[反爬] 命中 {结果.机制}, 尝试成熟反爬库引擎重发...")
                         引擎响应 = self._引擎管理器.请求(
                             url, headers=headers, timeout=timeout, 机制=结果.机制)
                         if 引擎响应 is not None:
                             if 引擎响应.成功:
                                 self._引擎统计[引擎响应.引擎] = \
                                     self._引擎统计.get(引擎响应.引擎, 0) + 1
-                                print(f"[反爬] ✅ {引擎响应.引擎} 引擎请求成功 "
+                                _log.info(f"[反爬] ✅ {引擎响应.引擎} 引擎请求成功 "
                                       f"(状态 {引擎响应.status_code}), 交由反爬层校验")
                                 response = 引擎响应
                             else:
-                                print(f"[反爬] ⚠️ {引擎响应.引擎} 引擎请求失败 "
+                                _log.info(f"[反爬] ⚠️ {引擎响应.引擎} 引擎请求失败 "
                                       f"(状态 {引擎响应.status_code}), 保留原响应走现有流程")
             else:
                 self._限频连续次数 = 0  # 正常响应, 重置退避档位
@@ -852,7 +855,7 @@ class NovelSpider:
                 # 因为该 WAF 按请求数限频, 放行 cookie 会周期性过期, 需随时可重试
                 if _now_t - self._waf_last_try > 10:
                     try:
-                        print(f"[反爬检测] 命中 WAF 图片验证码页 ({len(response.text)}字节)，尝试自动解决...")
+                        _log.info(f"[反爬检测] 命中 WAF 图片验证码页 ({len(response.text)}字节)，尝试自动解决...")
                         if solve_waf_captcha(self.session, url, headers=headers, log=print):
                             self._waf_last_try = 0.0  # 成功: 允许后续立即重试
                             response = self.session.get(url, headers=headers, timeout=timeout)
@@ -860,7 +863,7 @@ class NovelSpider:
                         else:
                             self._waf_last_try = time.time()  # 失败: 10 秒冷却
                     except Exception as e:
-                        print(f"[反爬检测] WAF 验证码处理异常: {e}")
+                        _log.info(f"[反爬检测] WAF 验证码处理异常: {e}")
 
             # 2. WAF JS 动态令牌挑战 (banlvzw 等: 401 + @wafjs 混淆脚本)
             if is_waf_captcha_page is not None and _is_waf_js_challenge(response):
@@ -870,7 +873,7 @@ class NovelSpider:
                 if _now_t - self._waf_js_last_try > 30:
                     self._waf_js_last_try = _now_t
                     try:
-                        print("[反爬检测] 命中 WAF JS 挑战页, 用浏览器渲染获取令牌 cookie...")
+                        _log.info("[反爬检测] 命中 WAF JS 挑战页, 用浏览器渲染获取令牌 cookie...")
                         if self._solve_waf_js_challenge(url):
                             self._waf_js_last_try = 0.0
                             # 令牌 cookie 绑定浏览器 UA, 重试时用同步后的 UA
@@ -879,7 +882,7 @@ class NovelSpider:
                             response = self.session.get(url, headers=hdrs2, timeout=timeout)
                             continue  # 解决成功, 进入下一轮检查是否还有反爬层
                     except Exception as e:
-                        print(f"[反爬检测] WAF JS 挑战处理异常: {e}")
+                        _log.info(f"[反爬检测] WAF JS 挑战处理异常: {e}")
 
             # 3. 未命中任何反爬层 → 拿到真实页面, 退出循环
             break
@@ -887,7 +890,7 @@ class NovelSpider:
             raw = response.content
             if not any(m.encode() in raw for m in challenge_markers):
                 break
-            print(f"[反爬检测] 第{retry+1}次请求命中JS cookie校验页面({len(raw)}字节)，提取cookie后重试...")
+            _log.info(f"[反爬检测] 第{retry+1}次请求命中JS cookie校验页面({len(raw)}字节)，提取cookie后重试...")
             m = re.search(rb'document\.cookie\s*=\s*"([^"]+)"', raw)
             if m:
                 cookie_str = m.group(1).decode('utf-8', errors='ignore')
@@ -895,11 +898,11 @@ class NovelSpider:
                 if '=' in cookie_kv:
                     ck_name, ck_val = cookie_kv.split('=', 1)
                     self.session.cookies.set(ck_name.strip(), ck_val.strip())
-                    print(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
+                    _log.info(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
             time.sleep(2)
             response = self.session.get(url, headers=headers, timeout=timeout)
         # 调试日志: 请求 URL + 状态码 + 耗时 (供事后排查网络/反爬问题)
-        print(f"[调试] GET {url} -> 状态 {response.status_code}, 耗时 {time.time()-_t0:.2f}s")
+        _log.info(f"[调试] GET {url} -> 状态 {response.status_code}, 耗时 {time.time()-_t0:.2f}s")
         # 爬取历史记录: 记录最终响应 (覆盖目录页/章节首页/通用 GET 入口)
         self._记录请求(url, response, time.time() - _t0)
         return response
@@ -934,7 +937,7 @@ class NovelSpider:
             if 结果 in self._爬取历史统计:
                 self._爬取历史统计[结果] += 1
         except Exception as e:
-            print(f"[爬取历史] 记录异常: {e}")
+            _log.info(f"[爬取历史] 记录异常: {e}")
 
     def _轮换UA(self) -> bool:
         """轮换会话 User-Agent (ua_block / 质检失败重试时调用)。
@@ -944,17 +947,17 @@ class NovelSpider:
         Returns: 是否实际轮换了 UA
         """
         if any(k in self._反爬统计 for k in ('waf_captcha', 'waf_js_challenge', 'js_cookie')):
-            print("[反爬] 站点使用验证码类反爬 (cookie绑定UA), 保持UA不变")
+            _log.info("[反爬] 站点使用验证码类反爬 (cookie绑定UA), 保持UA不变")
             return False
         try:
             新ua = self.ua.random
             self._fixed_ua = 新ua
             self.session.headers['User-Agent'] = 新ua
             self._ua连续失败 = 0  # 新UA从零计数
-            print(f"[反爬] 已轮换 User-Agent: {新ua[:60]}...")
+            _log.info(f"[反爬] 已轮换 User-Agent: {新ua[:60]}...")
             return True
         except Exception as e:
-            print(f"[反爬] UA轮换失败: {e}")
+            _log.info(f"[反爬] UA轮换失败: {e}")
             return False
 
     def _solve_waf_js_challenge(self, url, max_wait: int = 12) -> bool:
@@ -970,7 +973,7 @@ class NovelSpider:
         try:
             from browser_driver import create_driver
         except Exception as e:
-            print(f"[反爬检测] Playwright 不可用: {e}")
+            _log.info(f"[反爬检测] Playwright 不可用: {e}")
             return False
         driver = None
         try:
@@ -985,11 +988,11 @@ class NovelSpider:
                     if src and '@wafjs' not in src and 'Loading...' not in src \
                             and '<title>' in src and 'loading banlvzw' not in src:
                         break
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
             cookies = driver.get_cookies()
             if not cookies:
-                print("[反爬检测] 浏览器未获得令牌 cookie")
+                _log.info("[反爬检测] 浏览器未获得令牌 cookie")
                 return False
             # 令牌 cookie 绑定浏览器 UA: 把浏览器 UA 同步到 session,
             # 否则 requests 用自己的 UA 请求仍会被挑战拦截
@@ -998,8 +1001,8 @@ class NovelSpider:
                 if ua:
                     self._fixed_ua = ua
                     self.session.headers['User-Agent'] = ua
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
             # 把浏览器 cookie 回灌 requests session (cookie 有效期一般 24 小时)
             for c in cookies:
                 if c.get('name') and c.get('value') is not None:
@@ -1012,19 +1015,19 @@ class NovelSpider:
                     except Exception:
                         try:
                             self.session.cookies.set(c['name'], c['value'])
-                        except Exception:
-                            pass
-            print(f"[反爬检测] ✅ 已获取 {len(cookies)} 个令牌 cookie, 回灌 session")
+                        except Exception as e:
+                            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+            _log.info(f"[反爬检测] ✅ 已获取 {len(cookies)} 个令牌 cookie, 回灌 session")
             return True
         except Exception as e:
-            print(f"[反爬检测] JS 挑战渲染失败: {e}")
+            _log.info(f"[反爬检测] JS 挑战渲染失败: {e}")
             return False
         finally:
             if driver is not None:
                 try:
                     driver.quit()
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
     def _selenium_get_soup(self, url, headers):
         """统一 Selenium 抓取: 创建无头 Chrome → 访问页面 → 处理 JS cookie 反爬 → 返回 BeautifulSoup。
@@ -1058,18 +1061,18 @@ class NovelSpider:
                 for _ in range(5):
                     if not any(m in page_source for m in challenge_markers):
                         break
-                    print(f"[反爬检测] 检测到JS cookie校验页面({len(page_source)}字符)，等待reload后重试...")
+                    _log.info(f"[反爬检测] 检测到JS cookie校验页面({len(page_source)}字符)，等待reload后重试...")
                     time.sleep(3)
                     page_source = driver.page_source
-                print(f"[Selenium] 获取到页面内容，长度: {len(page_source)} 字符")
+                _log.info(f"[Selenium] 获取到页面内容，长度: {len(page_source)} 字符")
                 return BeautifulSoup(page_source, 'lxml')
             finally:
                 try:
                     driver.quit()
                 except Exception as e:
-                    print(f"[Selenium] 关闭浏览器失败: {e}")
+                    _log.info(f"[Selenium] 关闭浏览器失败: {e}")
         except Exception as e:
-            print(f"[Selenium] 抓取失败: {e}")
+            _log.info(f"[Selenium] 抓取失败: {e}")
             return None
 
     def inspect_page(self, url):
@@ -1098,7 +1101,7 @@ class NovelSpider:
         # tanmixs.com: 使用持久化 Selenium driver, 验证码解决后复用同一浏览器实例
         # 避免每次创建新driver都触发WAF验证码
         if 'tanmixs.com' in url and selenium_available:
-            print("[tanmixs] 使用持久化Selenium driver抓取")
+            _log.info("[tanmixs] 使用持久化Selenium driver抓取")
             try:
                 driver = self._get_tanmixs_driver(visible=False)
                 driver.get(url)
@@ -1108,13 +1111,13 @@ class NovelSpider:
                 # 检测并处理验证码 (如有)
                 page_source = self._solve_tanmixs_captcha(driver, url)
                 if '<html' in page_source.lower() or '<body' in page_source.lower():
-                    print(f"[tanmixs] 成功获取页面, 长度: {len(page_source)} 字符")
+                    _log.info(f"[tanmixs] 成功获取页面, 长度: {len(page_source)} 字符")
                     soup = BeautifulSoup(page_source, 'lxml')
                     return soup
                 else:
-                    print("[tanmixs] 未能获取到HTML内容")
+                    _log.info("[tanmixs] 未能获取到HTML内容")
             except Exception as e:
-                print(f"[tanmixs] Selenium抓取失败: {e}")
+                _log.info(f"[tanmixs] Selenium抓取失败: {e}")
                 import traceback
                 traceback.print_exc()
 
@@ -1122,7 +1125,7 @@ class NovelSpider:
         # (zhiruo.org也使用JS cookie校验反爬ge_js_validator，但经测试用requests提取cookie重试即可绕过，
         #  无需Selenium，因此zhiruo.org走下方requests路径；仅当requests失败时才回退到末尾的Selenium)
         if ('qingheks.com' in url or '27xsw.cc' in url) and selenium_available:
-            print(f"直接使用Selenium抓取{url.split('/')[2]}网站")
+            _log.info(f"直接使用Selenium抓取{url.split('/')[2]}网站")
             soup = self._selenium_get_soup(url, headers)
             if soup:
                 return soup
@@ -1138,36 +1141,36 @@ class NovelSpider:
                     response = self._get_with_js_challenge(url, headers)
                     break
                 except Exception as e:
-                    print(f"请求失败({_attempt}/{_conn_retries}): {e}")
+                    _log.info(f"请求失败({_attempt}/{_conn_retries}): {e}")
                     if _attempt >= _conn_retries:
                         break
                     time.sleep(3)
             if response is None:
-                print("请求重试耗尽, 返回空页面(交由调用方Selenium兜底)")
+                _log.info("请求重试耗尽, 返回空页面(交由调用方Selenium兜底)")
                 return BeautifulSoup('', 'lxml')
 
             # 尝试使用ignore模式解码
             try:
                 text = response.content.decode('utf-8', errors='ignore')
                 # 打印解码后的内容，看看实际获取到了什么
-                print(f"解码后内容前500个字符: {text[:500]}")
+                _log.info(f"解码后内容前500个字符: {text[:500]}")
                 # 检查解码后的内容是否包含HTML标签
                 if '<html' in text.lower() or '<body' in text.lower():
-                    print(f"成功获取到HTML内容，长度: {len(text)} 字符")
+                    _log.info(f"成功获取到HTML内容，长度: {len(text)} 字符")
                     response.encoding = 'utf-8'
                     soup = BeautifulSoup(text, 'lxml')
                     return soup
                 else:
                     # 尝试使用其他解析器
-                    print("尝试使用html.parser解析器")
+                    _log.info("尝试使用html.parser解析器")
                     soup = BeautifulSoup(text, 'html.parser')
                     if soup.find():  # 检查是否解析出了任何元素
-                        print("成功解析出HTML元素")
+                        _log.info("成功解析出HTML元素")
                         return soup
             except Exception as e:
-                print(f"解码失败: {e}")
+                _log.info(f"解码失败: {e}")
         except Exception as e:
-            print(f"请求失败: {e}")
+            _log.info(f"请求失败: {e}")
         
         # requests 失败后的 Selenium 兜底 (复用 _selenium_get_soup 方法)
         if ('qingheks.com' in url or '27xsw.cc' in url or 'zhiruo.org' in url or 'tanmixs.com' in url) and selenium_available:
@@ -1222,17 +1225,17 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到zhiruo.org网站，使用onclick解析章节列表")
+        _log.info("检测到zhiruo.org网站，使用onclick解析章节列表")
         # 提取书路径前缀: 支持 /infos/{id} 和 /{cat}/{id} 两种格式
         # 例: /infos/5523629.html → /infos/5523629
         #     /163/163654/index.html → /163/163654
         #     /163/163654/1/ (目录分页) → /163/163654
         path_m = re.search(r'/((?:infos|[a-zA-Z0-9_]+)/\d+)', catalog_url)
         if not path_m:
-            print("[zhiruo] 无法从URL提取小说路径")
+            _log.info("[zhiruo] 无法从URL提取小说路径")
             return chapters
         novel_path = path_m.group(1)
-        print(f"[zhiruo] 书路径前缀: {novel_path}")
+        _log.info(f"[zhiruo] 书路径前缀: {novel_path}")
         # 详情页 (如 index.html 或书根目录) 无章节列表, 需先跳转到 "章节目录" 链接
         if 'index.html' in catalog_url or catalog_url.rstrip('/').endswith(novel_path):
             catalog_link_a = None
@@ -1245,7 +1248,7 @@ class NovelSpider:
                 href = catalog_link_a.get('href', '')
                 if not href.startswith('http'):
                     href = self.base_url + href
-                print(f"[zhiruo] 详情页, 跳转章节目录: {href}")
+                _log.info(f"[zhiruo] 详情页, 跳转章节目录: {href}")
                 page_soup_first = self.inspect_page(href)
                 if page_soup_first:
                     soup = page_soup_first
@@ -1256,13 +1259,13 @@ class NovelSpider:
                 page_soup = soup  # 第1页已由inspect_page抓取，直接复用
             else:
                 catalog_page_url = f"{self.base_url}/{novel_path}/{page_no}/"
-                print(f"[zhiruo] 抓取目录第{page_no}页: {catalog_page_url}")
+                _log.info(f"[zhiruo] 抓取目录第{page_no}页: {catalog_page_url}")
                 page_soup = self.inspect_page(catalog_page_url)
             if not page_soup:
                 break
             chap_as = page_soup.find_all('a', onclick=re.compile(r'read_tz\s*\('))
             if not chap_as:
-                print(f"[zhiruo] 第{page_no}页未找到章节链接，结束分页提取")
+                _log.info(f"[zhiruo] 第{page_no}页未找到章节链接，结束分页提取")
                 break
             new_count = 0
             for a in chap_as:
@@ -1280,18 +1283,18 @@ class NovelSpider:
                 chap_url = f"{self.base_url}/{novel_path}/{chap_id}.html"
                 chapters.append({'title': self.clean_chapter_title(title), 'url': chap_url})
                 new_count += 1
-            print(f"[zhiruo] 第{page_no}页: 新增 {new_count} 章，累计 {len(chapters)} 章")
+            _log.info(f"[zhiruo] 第{page_no}页: 新增 {new_count} 章，累计 {len(chapters)} 章")
             if new_count == 0:
                 break
             page_no += 1
             if page_no > 50:  # 安全上限
                 break
-        print(f"[zhiruo] 共提取 {len(chapters)} 个章节")
+        _log.info(f"[zhiruo] 共提取 {len(chapters)} 个章节")
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[zhiruo] 已按章节号排序")
+            _log.info("[zhiruo] 已按章节号排序")
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title']} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
         return chapters
 
     def _parse_catalog_ciyewk(self, catalog_url, sort_chapters, soup=None):
@@ -1309,17 +1312,17 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到ciyewk.com网站，使用专门的处理逻辑")
+        _log.info("检测到ciyewk.com网站，使用专门的处理逻辑")
         book_id_match = re.search(r'/shu/([A-Za-z0-9]+)', catalog_url)
         if not book_id_match:
-            print("[ciyewk] 无法从URL提取小说ID")
+            _log.info("[ciyewk] 无法从URL提取小说ID")
             return chapters
         book_id = book_id_match.group(1)
-        print(f"[ciyewk] 小说ID: {book_id}")
+        _log.info(f"[ciyewk] 小说ID: {book_id}")
         # 若用户给的是章节页 (如 ml.html / N.html), 规范化到目录页
         if not re.search(r'/shu/' + re.escape(book_id) + r'\.html$', catalog_url):
             catalog_page_url = f"{self.base_url}/shu/{book_id}.html"
-            print(f"[ciyewk] 规范化目录URL: {catalog_page_url}")
+            _log.info(f"[ciyewk] 规范化目录URL: {catalog_page_url}")
             soup = self.inspect_page(catalog_page_url)
         seen_urls = set()
         for a in soup.select('#list dl dd a[href]'):
@@ -1335,14 +1338,14 @@ class NovelSpider:
                 continue
             seen_urls.add(chap_url)
             chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
-        print(f"[ciyewk] 共提取 {len(chapters)} 个章节")
+        _log.info(f"[ciyewk] 共提取 {len(chapters)} 个章节")
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[ciyewk] 已按章节号排序")
+            _log.info("[ciyewk] 已按章节号排序")
         for i, chap in enumerate(chapters[:10]):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         if len(chapters) > 10:
-            print(f"  ... (共 {len(chapters)} 章)")
+            _log.info(f"  ... (共 {len(chapters)} 章)")
         return chapters
 
     def _parse_catalog_630wang(self, catalog_url, sort_chapters, soup=None):
@@ -1360,24 +1363,24 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到630wang.cc网站，使用专门的处理逻辑")
+        _log.info("检测到630wang.cc网站，使用专门的处理逻辑")
         book_id_match = re.search(r'/kan/(\d+)', catalog_url)
         if not book_id_match:
-            print("[630wang] 无法从URL提取小说ID")
+            _log.info("[630wang] 无法从URL提取小说ID")
             return chapters
         book_id = book_id_match.group(1)
-        print(f"[630wang] 小说ID: {book_id}")
+        _log.info(f"[630wang] 小说ID: {book_id}")
         # 目录第1页: 用户给的若是章节页/详情页, 用 /kan/{id}/1.html
         first_page = catalog_url
         if not re.search(r'/kan/' + book_id + r'/(\d+)\.html$', catalog_url):
             first_page = f"{self.base_url}/kan/{book_id}/1.html"
-            print(f"[630wang] 目录第1页: {first_page}")
+            _log.info(f"[630wang] 目录第1页: {first_page}")
         catalog_pages = [first_page]
         for page_no in range(2, 51):  # 最多50页
             catalog_pages.append(f"{self.base_url}/kan/{book_id}/{page_no}.html")
         seen_urls = set()
         for page_url in catalog_pages:
-            print(f"[630wang] 抓取目录页: {page_url}")
+            _log.info(f"[630wang] 抓取目录页: {page_url}")
             page_soup = self.inspect_page(page_url)
             if not page_soup:
                 continue
@@ -1403,18 +1406,18 @@ class NovelSpider:
                 chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
                                  'url': chap_url})
                 new_on_page += 1
-            print(f"[630wang] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+            _log.info(f"[630wang] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
             # 当前页没拿到任何新章节 → 后续分页已结束
             if new_on_page == 0 and page_url != first_page:
                 break
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[630wang] 已按章节号排序")
-        print(f"[630wang] 共提取 {len(chapters)} 个章节")
+            _log.info("[630wang] 已按章节号排序")
+        _log.info(f"[630wang] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters[:10]):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         if len(chapters) > 10:
-            print(f"  ... (共 {len(chapters)} 章)")
+            _log.info(f"  ... (共 {len(chapters)} 章)")
         return chapters
 
     def _parse_catalog_ltbook(self, catalog_url, sort_chapters, soup=None):
@@ -1431,13 +1434,13 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到ltbook.net网站，使用专门的处理逻辑")
+        _log.info("检测到ltbook.net网站，使用专门的处理逻辑")
         book_id_match = re.search(r'/(\d+)', catalog_url)
         if not book_id_match:
-            print("[ltbook] 无法从URL提取小说ID")
+            _log.info("[ltbook] 无法从URL提取小说ID")
             return chapters
         book_id = book_id_match.group(1)
-        print(f"[ltbook] 小说ID: {book_id}")
+        _log.info(f"[ltbook] 小说ID: {book_id}")
         seen_urls = set()
         # 1. 从简介页提取章节链接
         for a in soup.find_all('a', href=True):
@@ -1456,7 +1459,7 @@ class NovelSpider:
             seen_urls.add(chap_url)
             chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
                              'url': chap_url})
-        print(f"[ltbook] 简介页提取 {len(chapters)} 个章节")
+        _log.info(f"[ltbook] 简介页提取 {len(chapters)} 个章节")
         # 2. 若章节过少 (<10), 从连读页追踪补充 (连读页 "下一页" 指向下一章)
         if len(chapters) < 10:
             next_url = None
@@ -1475,7 +1478,7 @@ class NovelSpider:
                 if next_url in visited:
                     break
                 visited.add(next_url)
-                print(f"[ltbook] 连读追踪: {next_url}")
+                _log.info(f"[ltbook] 连读追踪: {next_url}")
                 page_soup = self.inspect_page(next_url)
                 if not page_soup:
                     break
@@ -1498,7 +1501,7 @@ class NovelSpider:
                     if not _dup:
                         chapters.append({'title': chap_title, 'url': next_url})
                     else:
-                        print(f"[ltbook] 跳过重复章节: {chap_title}")
+                        _log.info(f"[ltbook] 跳过重复章节: {chap_title}")
                 next_a = None
                 for a in page_soup.find_all('a', href=True):
                     text = a.get_text(strip=True)
@@ -1512,12 +1515,12 @@ class NovelSpider:
                 next_url = next_a
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[ltbook] 已按章节号排序")
-        print(f"[ltbook] 共提取 {len(chapters)} 个章节")
+            _log.info("[ltbook] 已按章节号排序")
+        _log.info(f"[ltbook] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters[:10]):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         if len(chapters) > 10:
-            print(f"  ... (共 {len(chapters)} 章)")
+            _log.info(f"  ... (共 {len(chapters)} 章)")
         return chapters
 
     def _parse_catalog_biquwx(self, catalog_url, sort_chapters, soup=None):
@@ -1535,10 +1538,10 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到biquwx.cc网站，使用专门的处理逻辑")
+        _log.info("检测到biquwx.cc网站，使用专门的处理逻辑")
         book_id_match = re.search(r'[/_](\d{5,})', catalog_url)
         book_id = book_id_match.group(1) if book_id_match else ''
-        print(f"当前小说ID: {book_id}")
+        _log.info(f"当前小说ID: {book_id}")
         # 优先访问全文目录 /txt{id}.shtml，其次是原始catalog_url
         pages_to_try = []
         if book_id:
@@ -1547,7 +1550,7 @@ class NovelSpider:
             pages_to_try.append(catalog_url)
         seen_urls = set()
         for page_url in pages_to_try:
-            print(f"[biquwx] 抓取目录页: {page_url}")
+            _log.info(f"[biquwx] 抓取目录页: {page_url}")
             page_soup = self.inspect_page(page_url)
             if not page_soup:
                 continue
@@ -1580,17 +1583,17 @@ class NovelSpider:
                     page_chaps += 1
                 if page_chaps > 0:
                     found_on_page += page_chaps
-                    print(f"[biquwx] 选择器 {sel} 提取 {page_chaps} 章")
+                    _log.info(f"[biquwx] 选择器 {sel} 提取 {page_chaps} 章")
                     break  # 这个选择器命中了就不用下一个
             if found_on_page:
-                print(f"[biquwx] 页面 {page_url} 共新增 {found_on_page} 章")
+                _log.info(f"[biquwx] 页面 {page_url} 共新增 {found_on_page} 章")
         # 按章节号排序(biquwx常倒序显示，最新在前)
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[biquwx] 已按章节号排序")
-        print(f"[biquwx] 共提取 {len(chapters)} 个章节")
+            _log.info("[biquwx] 已按章节号排序")
+        _log.info(f"[biquwx] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         return chapters
 
     def _parse_catalog_11bzw(self, catalog_url, sort_chapters, soup=None):
@@ -1607,13 +1610,13 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到11bzw.org网站，使用专门的处理逻辑")
+        _log.info("检测到11bzw.org网站，使用专门的处理逻辑")
         aid_match = re.search(r'/(?:index|book)/(\d+)', catalog_url)
         if not aid_match:
-            print("[11bzw] 无法从URL提取小说ID")
+            _log.info("[11bzw] 无法从URL提取小说ID")
             return chapters
         aid = aid_match.group(1)
-        print(f"[11bzw] 小说ID: {aid}")
+        _log.info(f"[11bzw] 小说ID: {aid}")
         # 目录页可能含"开始阅读"等导航链接，对每个cid选最长文本作为章节名
         cid_texts = {}
         for a in soup.find_all('a', href=True):
@@ -1633,9 +1636,9 @@ class NovelSpider:
             title = self.clean_chapter_title(cid_texts[cid])
             chap_url = f"{self.base_url}/read/{aid}/{cid}.html"
             chapters.append({'title': title, 'url': chap_url})
-        print(f"[11bzw] 共提取 {len(chapters)} 个章节")
+        _log.info(f"[11bzw] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         return chapters
 
     def _parse_catalog_yqyp(self, catalog_url, sort_chapters, soup=None):
@@ -1653,21 +1656,21 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到yqyp.net网站，使用专门的处理逻辑")
+        _log.info("检测到yqyp.net网站，使用专门的处理逻辑")
         aid_match = re.search(r'/book/(\d+)', catalog_url)
         if not aid_match:
-            print("[yqyp] 无法从URL提取小说ID")
+            _log.info("[yqyp] 无法从URL提取小说ID")
             return chapters
         aid = aid_match.group(1)
-        print(f"[yqyp] 小说ID: {aid}")
+        _log.info(f"[yqyp] 小说ID: {aid}")
         # 目录页可能是 /book/{aid}.html (用户给的是章节页时需跳转)
         catalog_page_url = f"{self.base_url}/book/{aid}.html"
         if catalog_url.endswith(f"/{aid}.html"):
             catalog_page_url = catalog_url
-        print(f"[yqyp] 目录页: {catalog_page_url}")
+        _log.info(f"[yqyp] 目录页: {catalog_page_url}")
         page_soup = self.inspect_page(catalog_page_url)
         if not page_soup:
-            print("[yqyp] 目录页获取失败")
+            _log.info("[yqyp] 目录页获取失败")
             return chapters
         # 提取 /book/{aid}/{cid}.html 链接, 去重(同一cid取第一次出现)
         seen_cids = set()
@@ -1686,9 +1689,9 @@ class NovelSpider:
             chapters.append({'title': self.clean_chapter_title(text), 'url': f"{self.base_url}/book/{aid}/{cid}.html"})
         # 按章节号排序
         chapters.sort(key=_chapter_sort_key)
-        print(f"[yqyp] 共提取 {len(chapters)} 个章节")
+        _log.info(f"[yqyp] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         return chapters
 
     def _parse_catalog_yunquge(self, catalog_url, sort_chapters, soup=None):
@@ -1707,15 +1710,15 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到云趣阁(28zw.org/spscl.com)，使用专门的处理逻辑")
+        _log.info("检测到云趣阁(28zw.org/spscl.com)，使用专门的处理逻辑")
         is_yue = '/yue/' in catalog_url
         path_prefix = '/yue/' if is_yue else '/book/'
         aid_match = re.search(path_prefix + r'(\d+)', catalog_url)
         if not aid_match:
-            print("[云趣阁] 无法从URL提取小说ID")
+            _log.info("[云趣阁] 无法从URL提取小说ID")
             return chapters
         aid = aid_match.group(1)
-        print(f"[云趣阁] 小说ID: {aid}")
+        _log.info(f"[云趣阁] 小说ID: {aid}")
 
         # 收集所有目录分页 URL (ml1.html, ml2.html, ...)
         # 同时把详情页本身也作为一页(含"章节列表"区, 部分短篇只有详情页)
@@ -1727,7 +1730,7 @@ class NovelSpider:
 
         seen_cids = set()
         for page_url in catalog_pages:
-            print(f"[云趣阁] 抓取目录页: {page_url}")
+            _log.info(f"[云趣阁] 抓取目录页: {page_url}")
             page_soup = self.inspect_page(page_url)
             if not page_soup:
                 continue
@@ -1753,7 +1756,7 @@ class NovelSpider:
                 chap_url = f"{self.base_url}{path_prefix}{aid}/{cid}.html"
                 chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
                 new_on_page += 1
-            print(f"[云趣阁] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+            _log.info(f"[云趣阁] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
             # 当前页没拿到任何新章节 → 后续分页应已结束
             if new_on_page == 0 and page_url != catalog_url:
                 break
@@ -1761,10 +1764,10 @@ class NovelSpider:
         # 按章节号/章节数字排序 (云趣阁目录常倒序+正序混合)
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[云趣阁] 已按章节号排序")
-        print(f"[云趣阁] 共提取 {len(chapters)} 个章节")
+            _log.info("[云趣阁] 已按章节号排序")
+        _log.info(f"[云趣阁] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         return chapters
 
     def _parse_catalog_tanmixs(self, catalog_url, sort_chapters, soup=None):
@@ -1783,14 +1786,14 @@ class NovelSpider:
             list[dict]: [{title, url}], 解析失败时为 []
         """
         chapters = []
-        print("检测到tanmixs.com网站，使用专门的处理逻辑")
+        _log.info("检测到tanmixs.com网站，使用专门的处理逻辑")
         book_id_match = re.search(r'/([A-Za-z0-9]+)/', catalog_url)
         if not book_id_match:
-            print("[tanmixs] 无法从URL提取小说ID")
+            _log.info("[tanmixs] 无法从URL提取小说ID")
             return chapters
         book_id = book_id_match.group(1)
         novel_path = f'/{book_id}/'
-        print(f"[tanmixs] 小说ID: {book_id}, 路径: {novel_path}")
+        _log.info(f"[tanmixs] 小说ID: {book_id}, 路径: {novel_path}")
 
         # 收集所有目录分页 URL
         # ml.html (第1页, 不带数字) + ml_2.html, ml_3.html, ... (后续页)
@@ -1803,7 +1806,7 @@ class NovelSpider:
 
         seen_cids = set()
         for page_url in catalog_pages:
-            print(f"[tanmixs] 抓取目录页: {page_url}")
+            _log.info(f"[tanmixs] 抓取目录页: {page_url}")
             page_soup = self.inspect_page(page_url)
             if not page_soup:
                 continue
@@ -1844,7 +1847,7 @@ class NovelSpider:
                     chap_title = text
                 chapters.append({'title': self.clean_chapter_title(chap_title), 'url': chap_url})
                 new_on_page += 1
-            print(f"[tanmixs] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+            _log.info(f"[tanmixs] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
             # 当前页没拿到任何新章节 → 后续分页应已结束 (到末尾了)
             if new_on_page == 0 and page_url != catalog_url:
                 break
@@ -1852,12 +1855,12 @@ class NovelSpider:
         # 按章节号排序
         if sort_chapters and chapters:
             chapters.sort(key=_chapter_sort_key)
-            print("[tanmixs] 已按章节号排序")
-        print(f"[tanmixs] 共提取 {len(chapters)} 个章节")
+            _log.info("[tanmixs] 已按章节号排序")
+        _log.info(f"[tanmixs] 共提取 {len(chapters)} 个章节")
         for i, chap in enumerate(chapters[:10]):
-            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
         if len(chapters) > 10:
-            print(f"  ... (共 {len(chapters)} 章)")
+            _log.info(f"  ... (共 {len(chapters)} 章)")
         return chapters
 
     def get_chapter_list(self, catalog_url, sort_chapters=False):
@@ -1888,7 +1891,7 @@ class NovelSpider:
                 book_id = book_id_match.group(1)
                 normalized_url = f"{self.base_url}/infos/{book_id}.html"
                 if normalized_url != catalog_url:
-                    print(f"[exotxt.net] 规范化目录URL: {catalog_url} → {normalized_url}")
+                    _log.info(f"[exotxt.net] 规范化目录URL: {catalog_url} → {normalized_url}")
                     catalog_url = normalized_url
 
         # 先查看网页结构
@@ -1903,12 +1906,12 @@ class NovelSpider:
         # 通用提取段 (第 4 批修复: 曾随路径计算误切进 _resolve_novel_paths, 迁回此处)
         chapters = []
         novel_path, novel_path_alt = _resolve_novel_paths(catalog_url)
-        print(f"当前小说路径: {novel_path}")
-        print(f"章节排序选项: {'启用' if sort_chapters else '禁用'}")
+        _log.info(f"当前小说路径: {novel_path}")
+        _log.info(f"章节排序选项: {'启用' if sort_chapters else '禁用'}")
 
         # 5hbook.net: 专用章节提取 (路径 + 正则双重验证)
         if '5hbook.net' in catalog_url and not chapters:
-            print("[5hbook.net] 使用专用章节提取逻辑")
+            _log.info("[5hbook.net] 使用专用章节提取逻辑")
             book_id_match = re.search(r'/books/(\d+)', catalog_url)
             book_id = book_id_match.group(1) if book_id_match else ''
             if book_id:
@@ -1935,19 +1938,19 @@ class NovelSpider:
                     seen_ids.add(chap_id)
                     url = href if href.startswith('http') else self.base_url + href
                     chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                print(f"[5hbook.net] 专用提取: {len(chapters)} 个章节 (去重后)")
+                _log.info(f"[5hbook.net] 专用提取: {len(chapters)} 个章节 (去重后)")
                 if sort_chapters and chapters:
                     chapters.sort(key=_chapter_sort_key)
-                    print("[5hbook.net] 已按章节号排序")
+                    _log.info("[5hbook.net] 已按章节号排序")
                 for i, chap in enumerate(chapters[:5]):
-                    print(f"  {i+1}. {chap['title']} -> {chap['url']}")
+                    _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
                 if len(chapters) > 5:
-                    print(f"  ... 共 {len(chapters)} 章")
+                    _log.info(f"  ... 共 {len(chapters)} 章")
                 return chapters
 
         # exotxt.net: 专用章节提取 (.yanqing_list ul 结构)
         if 'exotxt.net' in catalog_url and not chapters:
-            print("[exotxt.net] 使用专用章节提取逻辑")
+            _log.info("[exotxt.net] 使用专用章节提取逻辑")
             book_id_match = re.search(r'/infos/(\d+)', catalog_url)
             book_id = book_id_match.group(1) if book_id_match else ''
             if book_id:
@@ -1995,37 +1998,37 @@ class NovelSpider:
                         seen_ids.add(chap_id)
                         url = href if href.startswith('http') else self.base_url + href
                         chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                print(f"[exotxt.net] 专用提取: {len(chapters)} 个章节 (去重后)")
+                _log.info(f"[exotxt.net] 专用提取: {len(chapters)} 个章节 (去重后)")
                 if sort_chapters and chapters:
                     chapters.sort(key=_chapter_sort_key)
-                    print("[exotxt.net] 已按章节号排序")
+                    _log.info("[exotxt.net] 已按章节号排序")
                 for i, chap in enumerate(chapters[:5]):
-                    print(f"  {i+1}. {chap['title']} -> {chap['url']}")
+                    _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
                 if len(chapters) > 5:
-                    print(f"  ... 共 {len(chapters)} 章")
+                    _log.info(f"  ... 共 {len(chapters)} 章")
                 return chapters
 
         # 首先检查是否有章节目录链接
         catalog_link = None
         # 对于ahxsw.com网站，构建章节目录URL并跳转
         if 'ahxsw.com' in catalog_url:
-            print("ahxsw.com网站，跳转到章节目录页面提取完整章节列表")
+            _log.info("ahxsw.com网站，跳转到章节目录页面提取完整章节列表")
             # 从/book/143259/构建/mulu/143/143259/1.html
             book_id_match = re.search(r'/book/(\d+)/', catalog_url)
             if book_id_match:
                 book_id = book_id_match.group(1)
                 # ahxsw.com的mulu URL格式: /mulu/{前3位数字}/{完整ID}/1.html
                 mulu_url = f"{self.base_url}/mulu/{book_id[:3]}/{book_id}/1.html"
-                print(f"构建章节目录URL: {mulu_url}")
+                _log.info(f"构建章节目录URL: {mulu_url}")
                 catalog_soup = self.inspect_page(mulu_url)
                 if catalog_soup and catalog_soup.find('a', href=True):
                     soup = catalog_soup
                     catalog_link = mulu_url
-                    print("成功访问章节目录页面")
+                    _log.info("成功访问章节目录页面")
                 else:
-                    print("章节目录页面访问失败，尝试从当前页面提取")
+                    _log.info("章节目录页面访问失败，尝试从当前页面提取")
             else:
-                print("无法从URL提取小说ID，尝试从当前页面提取")
+                _log.info("无法从URL提取小说ID，尝试从当前页面提取")
         else:
             # 查找章节目录链接（验证链接URL包含小说ID，避免匹配到推荐链接）
             # 从catalog_url提取小说ID用于验证
@@ -2040,12 +2043,12 @@ class NovelSpider:
                     # 验证链接URL包含小说ID（避免匹配到推荐其他小说的链接）
                     if novel_id and novel_id in href:
                         catalog_link = href
-                        print(f"找到章节目录链接: {catalog_link} (验证小说ID: {novel_id})")
+                        _log.info(f"找到章节目录链接: {catalog_link} (验证小说ID: {novel_id})")
                         break
                     # 如果无法验证小说ID，且链接文本精确匹配（不是推荐链接）
                     elif not novel_id and link.get_text().strip() == text:
                         catalog_link = href
-                        print(f"找到章节目录链接: {catalog_link}")
+                        _log.info(f"找到章节目录链接: {catalog_link}")
                         break
                 if catalog_link:
                     break
@@ -2054,15 +2057,15 @@ class NovelSpider:
             if catalog_link:
                 if not catalog_link.startswith('http'):
                     catalog_link = self.base_url + catalog_link
-                print(f"访问章节目录页面: {catalog_link}")
+                _log.info(f"访问章节目录页面: {catalog_link}")
                 catalog_soup = self.inspect_page(catalog_link)
                 soup = catalog_soup
         
         # 处理分页（特别针对322zw.com等有分页的网站）
         # 对于ahxsw.com网站，使用/mulu/分页URL格式
         if 'ahxsw.com' in catalog_url and catalog_link:
-            print("\n[分页检测] ahxsw.com网站，使用/mulu/分页URL格式")
-            print(f"[分页检测] 起始目录页: {catalog_link}")
+            _log.info("\n[分页检测] ahxsw.com网站，使用/mulu/分页URL格式")
+            _log.info(f"[分页检测] 起始目录页: {catalog_link}")
             page_urls = [catalog_link]
             # ahxsw.com的mulu分页格式: /mulu/{前3位}/{完整ID}/{页码}.html
             # 尝试获取后续分页页面（最多10页）
@@ -2070,7 +2073,7 @@ class NovelSpider:
             if book_id_match:
                 book_id = book_id_match.group(1)
                 prefix = book_id[:3]
-                print(f"[分页检测] 提取小说ID: {book_id}, 前缀: {prefix}")
+                _log.info(f"[分页检测] 提取小说ID: {book_id}, 前缀: {prefix}")
 
                 # 先收集第一页的章节URL，用于后续比较
                 first_page_links = set()
@@ -2081,45 +2084,45 @@ class NovelSpider:
                         href = a.get('href', '')
                         if '/read/' in href and href.endswith('.html'):
                             first_page_links.add(href)
-                    print(f"[分页检测] 第1页章节链接集合 ({len(first_page_links)}个):")
+                    _log.info(f"[分页检测] 第1页章节链接集合 ({len(first_page_links)}个):")
                     for link in first_page_links:
-                        print(f"[分页检测]   - {link}")
+                        _log.info(f"[分页检测]   - {link}")
                 except Exception as e:
-                    print(f"[分页检测] 第1页章节链接收集失败: {e}")
+                    _log.info(f"[分页检测] 第1页章节链接收集失败: {e}")
 
                 for page_num in range(2, 11):
                     mulu_page_url = f"{self.base_url}/mulu/{prefix}/{book_id}/{page_num}.html"
-                    print(f"\n[分页检测] 检查分页 {page_num}: {mulu_page_url}")
+                    _log.info(f"\n[分页检测] 检查分页 {page_num}: {mulu_page_url}")
                     try:
                         check_soup = self.inspect_page(mulu_page_url)
                         check_links = check_soup.select('#list a, dd a[href*="/read/"]')
                         read_links = [a for a in check_links if '/read/' in a.get('href', '') and a.get('href', '').endswith('.html')]
-                        print(f"[分页检测] 分页{page_num}: 找到 {len(read_links)} 个章节链接")
+                        _log.info(f"[分页检测] 分页{page_num}: 找到 {len(read_links)} 个章节链接")
 
                         if read_links:
                             # 检查新页面的章节URL是否与第一页相同
                             new_page_links = set(a.get('href') for a in read_links)
-                            print(f"[分页检测] 分页{page_num} 链接集合 ({len(new_page_links)}个):")
+                            _log.info(f"[分页检测] 分页{page_num} 链接集合 ({len(new_page_links)}个):")
                             for link in new_page_links:
-                                print(f"[分页检测]   - {link}")
+                                _log.info(f"[分页检测]   - {link}")
 
                             if new_page_links == first_page_links:
-                                print(f"[分页检测] ⚠️ 分页{page_num} 章节链接与第一页完全相同，停止查找")
+                                _log.info(f"[分页检测] ⚠️ 分页{page_num} 章节链接与第一页完全相同，停止查找")
                                 break
                             # 检查部分重叠
                             overlap = new_page_links & first_page_links
                             if overlap:
-                                print(f"[分页检测] ⚠️ 分页{page_num} 与第一页有 {len(overlap)} 个重叠链接")
+                                _log.info(f"[分页检测] ⚠️ 分页{page_num} 与第一页有 {len(overlap)} 个重叠链接")
 
-                            print(f"[分页检测] ✅ 找到分页页面 {page_num}: {mulu_page_url} ({len(read_links)}个章节)")
+                            _log.info(f"[分页检测] ✅ 找到分页页面 {page_num}: {mulu_page_url} ({len(read_links)}个章节)")
                             page_urls.append(mulu_page_url)
                         else:
-                            print(f"[分页检测] 分页{page_num} 无章节内容，停止查找")
+                            _log.info(f"[分页检测] 分页{page_num} 无章节内容，停止查找")
                             break
                     except Exception as e:
-                        print(f"[分页检测] 分页{page_num} 访问失败: {e}，停止查找")
+                        _log.info(f"[分页检测] 分页{page_num} 访问失败: {e}，停止查找")
                         break
-                print(f"[分页检测] 共找到 {len(page_urls)} 个分页页面")
+                _log.info(f"[分页检测] 共找到 {len(page_urls)} 个分页页面")
         else:
             page_urls = [catalog_url]
 
@@ -2158,11 +2161,11 @@ class NovelSpider:
                     except Exception:
                         break  # 分页探测失败即终止, 已获取的分页仍可用
 
-        print(f"找到 {len(page_urls)} 个分页页面")
+        _log.info(f"找到 {len(page_urls)} 个分页页面")
         
         # 遍历所有分页页面
         for page_url in page_urls:
-            print(f"处理分页页面: {page_url}")
+            _log.info(f"处理分页页面: {page_url}")
             page_soup = self.inspect_page(page_url)
 
             # 尝试不同的常见章节列表选择器
@@ -2244,7 +2247,7 @@ class NovelSpider:
                                 relevant_links.append(link)
                         
                         if relevant_links:
-                            print(f"ahxsw.com: 找到章节列表，使用选择器: {selector}")
+                            _log.info(f"ahxsw.com: 找到章节列表，使用选择器: {selector}")
                             for link in relevant_links:
                                 title = link.get_text().strip()
                                 url = link.get('href')
@@ -2284,7 +2287,7 @@ class NovelSpider:
                                 relevant_links.append(link)
                     
                     if relevant_links:
-                        print(f"找到章节列表，使用选择器: {selector}")
+                        _log.info(f"找到章节列表，使用选择器: {selector}")
                         # 抓取所有章节
                         for link in relevant_links:
                             title = link.get_text().strip()
@@ -2304,7 +2307,7 @@ class NovelSpider:
             
             # 如果没有找到，尝试使用简单的选择器
             if not found_chapters:
-                print("尝试使用简单的选择器")
+                _log.info("尝试使用简单的选择器")
                 for selector in simple_selectors:
                     links = page_soup.select(selector)
                     if links:
@@ -2323,7 +2326,7 @@ class NovelSpider:
                                     relevant_links.append(link)
                         
                         if relevant_links:
-                            print(f"找到章节列表，使用简单选择器: {selector}")
+                            _log.info(f"找到章节列表，使用简单选择器: {selector}")
                             # 抓取所有章节
                             for link in relevant_links:
                                 title = link.get_text().strip()
@@ -2343,15 +2346,15 @@ class NovelSpider:
             
             # 如果没有找到特定的章节列表，尝试通用的链接选择
             if not found_chapters:
-                print("尝试通用的链接选择")
+                _log.info("尝试通用的链接选择")
                 # 查找所有链接
                 all_links = page_soup.find_all('a', href=True)
-                print(f"找到 {len(all_links)} 个链接")
+                _log.info(f"找到 {len(all_links)} 个链接")
                 
                 for i, link in enumerate(all_links):
                     href = link.get('href', '')
                     text = link.get_text().strip()
-                    print(f"链接 {i+1}: {text} -> {href}")
+                    _log.info(f"链接 {i+1}: {text} -> {href}")
                     
                     # 过滤掉太短的文本
                     if len(text) > 1:
@@ -2370,7 +2373,7 @@ class NovelSpider:
                                     continue
                                 url = self.base_url + href if not href.startswith('http') else href
                                 chapters.append({'title': text, 'url': url})
-                                print(f"添加链接: {text} -> {url}")
+                                _log.info(f"添加链接: {text} -> {url}")
                         else:
                             # 对于其他网站，使用原来的条件
                             path_match = False
@@ -2400,27 +2403,27 @@ class NovelSpider:
                 
                 # 对于pjxdd.com网站，尝试直接从文本中提取链接
                 if 'pjxdd.com' in catalog_url and not chapters:
-                    print("尝试直接从文本中提取链接")
+                    _log.info("尝试直接从文本中提取链接")
                     # 获取原始文本
                     text = str(page_soup)
                     # 使用正则表达式提取链接
                     # 匹配http或https链接
                     http_links = re.findall(r'http[s]?://[^"\'>\s]+', text)
-                    print(f"找到 {len(http_links)} 个http链接")
+                    _log.info(f"找到 {len(http_links)} 个http链接")
                     for link in http_links:
-                        print(f"HTTP链接: {link}")
+                        _log.info(f"HTTP链接: {link}")
                         # 检查是否包含小说路径、章节路径或小说ID
                         if novel_path in link or '/chapter/' in link or 'chapter' in link.lower():
                             # 提取标题（使用链接的最后一部分作为标题）
                             title = link.split('/')[-1].replace('.html', '').replace('_', ' ')
                             chapters.append({'title': title, 'url': link})
-                            print(f"添加HTTP链接: {title} -> {link}")
+                            _log.info(f"添加HTTP链接: {title} -> {link}")
                     
                     # 匹配相对路径链接
                     relative_links = re.findall(r'href=["\']([^"\'>]+)["\']', text)
-                    print(f"找到 {len(relative_links)} 个相对路径链接")
+                    _log.info(f"找到 {len(relative_links)} 个相对路径链接")
                     for link in relative_links:
-                        print(f"相对路径链接: {link}")
+                        _log.info(f"相对路径链接: {link}")
                         # 检查是否包含小说路径、章节路径或小说ID
                         if novel_path in link or '/chapter/' in link or 'chapter' in link.lower():
                             # 构建完整URL
@@ -2434,10 +2437,10 @@ class NovelSpider:
                             # 提取标题（使用链接的最后一部分作为标题）
                             title = url.split('/')[-1].replace('.html', '').replace('_', ' ')
                             chapters.append({'title': title, 'url': url})
-                            print(f"添加相对路径链接: {title} -> {url}")
+                            _log.info(f"添加相对路径链接: {title} -> {url}")
 
         # 去重章节（基于URL），保持原始顺序
-        print(f"\n[章节去重] 去重前共 {len(chapters)} 个章节")
+        _log.info(f"\n[章节去重] 去重前共 {len(chapters)} 个章节")
         # 非章节导航链接(如"查看更多章节...")，需过滤掉
         nav_keywords = ['查看更多章节', '更多章节', '查看全部', '全部章节', '展开全部', '加载更多',
                         '上一页', '下一页', '上一章', '下一章', '返回书页', '返回目录',
@@ -2451,13 +2454,13 @@ class NovelSpider:
             # 过滤导航类链接(标题完全匹配导航关键词，或以"查看更多"开头)
             if any(title_stripped == kw or title_stripped.startswith(kw) for kw in nav_keywords):
                 nav_filtered += 1
-                print(f"[章节过滤] 移除导航链接: '{title_stripped[:30]}' -> {chap['url']}")
+                _log.info(f"[章节过滤] 移除导航链接: '{title_stripped[:30]}' -> {chap['url']}")
                 continue
             # 过滤目录/列表/首页链接 (URL 特征: list/mulu/catalog 页或站点根)
             if re.search(r'/(list|mulu|catalog|booklist)\d*\.html', chap['url']) or \
                     chap['url'].rstrip('/') == self.base_url.rstrip('/'):
                 nav_filtered += 1
-                print(f"[章节过滤] 移除目录页链接: '{title_stripped[:30]}' -> {chap['url']}")
+                _log.info(f"[章节过滤] 移除目录页链接: '{title_stripped[:30]}' -> {chap['url']}")
                 continue
             if chap['url'] not in seen_urls:
                 seen_urls.add(chap['url'])
@@ -2465,16 +2468,16 @@ class NovelSpider:
                 original_title = chap['title']
                 chap['title'] = self.clean_chapter_title(chap['title'])
                 if original_title != chap['title']:
-                    print(f"[标题清理] '{original_title[:30]}...' -> '{chap['title'][:30]}...'")
+                    _log.info(f"[标题清理] '{original_title[:30]}...' -> '{chap['title'][:30]}...'")
                 unique_chapters.append(chap)
             else:
                 duplicate_count += 1
         chapters = unique_chapters
-        print(f"[章节去重] 去重后共 {len(chapters)} 个章节，移除 {duplicate_count} 个重复，过滤 {nav_filtered} 个导航链接")
+        _log.info(f"[章节去重] 去重后共 {len(chapters)} 个章节，移除 {duplicate_count} 个重复，过滤 {nav_filtered} 个导航链接")
 
         # 根据参数决定是否进行章节排序
         if sort_chapters:
-            print("\n[章节排序] 启用章节排序")
+            _log.info("\n[章节排序] 启用章节排序")
             # 尝试按章节顺序排序
             def chapter_sort_key(chap):
                 title = chap['title']
@@ -2482,17 +2485,17 @@ class NovelSpider:
 
                 # 特殊处理楔子
                 if '楔子' in title:
-                    print(f"[排序键值] '{title[:30]}' -> 0 (楔子)")
+                    _log.info(f"[排序键值] '{title[:30]}' -> 0 (楔子)")
                     return 0
 
                 # 特殊处理"开始阅读"，视为第1章
                 if '开始阅读' in title:
-                    print(f"[排序键值] '{title[:30]}' -> 1 (开始阅读)")
+                    _log.info(f"[排序键值] '{title[:30]}' -> 1 (开始阅读)")
                     return 1
 
                 # 特殊处理番外
                 if '番外' in title:
-                    print(f"[排序键值] '{title[:30]}' -> 99999 (番外)")
+                    _log.info(f"[排序键值] '{title[:30]}' -> 99999 (番外)")
                     return 99999
 
                 # 中文数字映射
@@ -2524,12 +2527,12 @@ class NovelSpider:
                             # 如果是纯数字
                             if num_str.isdigit():
                                 key = int(num_str)
-                                print(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 数字)")
+                                _log.info(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 数字)")
                                 return key
                             # 如果是中文数字
                             if num_str in chinese_nums:
                                 key = chinese_nums[num_str]
-                                print(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 中文数字)")
+                                _log.info(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 中文数字)")
                                 return key
                             # 尝试解析复杂中文数字（如二十三）
                             if '十' in num_str:
@@ -2537,9 +2540,9 @@ class NovelSpider:
                                 tens = chinese_nums.get(parts[0], 1) if parts[0] else 1
                                 ones = chinese_nums.get(parts[1], 0) if len(parts) > 1 and parts[1] else 0
                                 key = tens * 10 + ones
-                                print(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 复杂中文数字)")
+                                _log.info(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 复杂中文数字)")
                                 return key
-                            print(f"[排序键值] '{title[:30]}' -> 9999 (模式{i+1}: 无法解析)")
+                            _log.info(f"[排序键值] '{title[:30]}' -> 9999 (模式{i+1}: 无法解析)")
                             return 9999
                         except (ValueError, KeyError, IndexError):
                             pass  # 该模式解析失败, 尝试下一模式
@@ -2560,32 +2563,32 @@ class NovelSpider:
                     if match:
                         try:
                             key = int(match.group(1))
-                            print(f"[排序键值] '{title[:30]}' -> {key} (URL模式{i+1})")
+                            _log.info(f"[排序键值] '{title[:30]}' -> {key} (URL模式{i+1})")
                             return key
                         except (ValueError, IndexError):
                             pass  # 数字转换失败, 尝试下一模式
 
                 # 默认值
-                print(f"[排序键值] '{title[:30]}' -> 9999 (默认值，无法提取)")
+                _log.info(f"[排序键值] '{title[:30]}' -> 9999 (默认值，无法提取)")
                 return 9999
 
             # 记录排序前的顺序
-            print("[章节排序] 排序前顺序:")
+            _log.info("[章节排序] 排序前顺序:")
             for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title'][:40]}")
+                _log.info(f"  {i+1}. {chap['title'][:40]}")
 
             chapters.sort(key=chapter_sort_key)
 
-            print("[章节排序] 排序后顺序:")
+            _log.info("[章节排序] 排序后顺序:")
             for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title'][:40]}")
+                _log.info(f"  {i+1}. {chap['title'][:40]}")
         else:
-            print("保持原目录顺序，不进行自动排序")
+            _log.info("保持原目录顺序，不进行自动排序")
 
-        print(f"\n共找到 {len(chapters)} 个章节（已去重并排序）")
+        _log.info(f"\n共找到 {len(chapters)} 个章节（已去重并排序）")
         # 打印章节列表
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title']} -> {chap['url']}")
+            _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
 
         return chapters
     def clean_chapter_title(self, title):
@@ -2843,29 +2846,29 @@ class NovelSpider:
         if hasattr(self, '_detected_pattern') and self._detected_pattern:
             return self._detected_pattern
         try:
-            print(f"[通用检测] 开始检测内容模式: {url}")
+            _log.info(f"[通用检测] 开始检测内容模式: {url}")
             response = self._get_with_js_challenge(url, headers)
             response.encoding = response.apparent_encoding
             html = response.text
-            print(f"[通用检测] 页面获取成功, 状态码={response.status_code}, HTML长度={len(html)} 字符")
+            _log.info(f"[通用检测] 页面获取成功, 状态码={response.status_code}, HTML长度={len(html)} 字符")
             # 1. qsbs.bb Base64 加密
             qsbs_blocks = re.findall(r"qsbs\.bb\('([A-Za-z0-9+/=]+)'\)", html)
             if qsbs_blocks:
-                print(f"[通用检测] ✅ 识别到 qsbs.bb Base64 加密, 共 {len(qsbs_blocks)} 个加密块")
+                _log.info(f"[通用检测] ✅ 识别到 qsbs.bb Base64 加密, 共 {len(qsbs_blocks)} 个加密块")
                 return 'qsbs_bb'
             # 1b. str_decode Base64 加密 (5hbook.net 等)
             str_decode_blocks = re.findall(r'str_decode\("([^"]+)"\)', html)
             if str_decode_blocks:
-                print(f"[通用检测] ✅ 识别到 str_decode Base64 加密, 共 {len(str_decode_blocks)} 个加密块")
+                _log.info(f"[通用检测] ✅ 识别到 str_decode Base64 加密, 共 {len(str_decode_blocks)} 个加密块")
                 return 'str_decode_bb'
             # 1c. document.writeln(obj.func('BASE64')) 加密 (3gxs 的 racgr.tggjzdv 等)
             writeln_blocks = re.findall(r"document\.writeln\(\s*[A-Za-z_]\w*\.[A-Za-z_]\w*\s*\(\s*'([A-Za-z0-9+/=]{20,})'\s*\)\s*\)", html)
             if writeln_blocks:
-                print(f"[通用检测] ✅ 识别到 writeln Base64 加密, 共 {len(writeln_blocks)} 个加密块")
+                _log.info(f"[通用检测] ✅ 识别到 writeln Base64 加密, 共 {len(writeln_blocks)} 个加密块")
                 return 'qsbs_bb'
             # 2. AJAX 两步加载
             if re.search(r'/api/read_sign\.php', html):
-                print("[通用检测] ✅ 识别到 AJAX 两步加载特征 (/api/read_sign.php)")
+                _log.info("[通用检测] ✅ 识别到 AJAX 两步加载特征 (/api/read_sign.php)")
                 return 'ajax_two_step'
             # 3. HTML 选择器 (尝试常见容器能否提取到足够文本)
             soup = BeautifulSoup(html, 'lxml')
@@ -2878,14 +2881,14 @@ class NovelSpider:
                 if el:
                     text_len = len(el.get_text(strip=True))
                     if text_len > 200:
-                        print(f"[通用检测] ✅ 选择器 '{sel}' 命中正文 ({text_len} 字符 > 200)")
+                        _log.info(f"[通用检测] ✅ 选择器 '{sel}' 命中正文 ({text_len} 字符 > 200)")
                         return 'html_selector'
                     else:
-                        print(f"[通用检测] 选择器 '{sel}' 命中但内容过短 ({text_len} 字符 < 200), 跳过")
-            print("[通用检测] ⚠️ 未识别到任何已知内容模式, 将回退到域名分支")
+                        _log.info(f"[通用检测] 选择器 '{sel}' 命中但内容过短 ({text_len} 字符 < 200), 跳过")
+            _log.info("[通用检测] ⚠️ 未识别到任何已知内容模式, 将回退到域名分支")
             return None
         except Exception as e:
-            print(f"[通用检测] ❌ 检测失败: {e}")
+            _log.info(f"[通用检测] ❌ 检测失败: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -2913,11 +2916,11 @@ class NovelSpider:
                     r"document\.writeln\(\s*[A-Za-z_]\w*\.[A-Za-z_]\w*\s*\(\s*'([A-Za-z0-9+/=]{20,})'\s*\)\s*\)",
                     html)
                 if blocks:
-                    print(f"[通用提取-{tag}] 使用通用 writeln 加密模式, 找到 {len(blocks)} 个加密块")
+                    _log.info(f"[通用提取-{tag}] 使用通用 writeln 加密模式, 找到 {len(blocks)} 个加密块")
             if not blocks:
-                print(f"[通用提取-{tag}] ⚠️ 未找到加密块")
+                _log.info(f"[通用提取-{tag}] ⚠️ 未找到加密块")
                 return ''
-            print(f"[通用提取-{tag}] 找到 {len(blocks)} 个 Base64 块, 开始解码...")
+            _log.info(f"[通用提取-{tag}] 找到 {len(blocks)} 个 Base64 块, 开始解码...")
             parts = []
             decoded_count = 0
             filtered_count = 0
@@ -2933,7 +2936,7 @@ class NovelSpider:
                         except Exception:
                             continue
                     if not decoded_text or '<p>' not in decoded_text:
-                        print(f"[通用提取-{tag}] 块{i+1}: 解码后无<p>标签, 跳过")
+                        _log.info(f"[通用提取-{tag}] 块{i+1}: 解码后无<p>标签, 跳过")
                         continue
                     p_soup = BeautifulSoup(decoded_text, 'lxml')
                     text = p_soup.get_text(separator='\n', strip=True)
@@ -2941,17 +2944,17 @@ class NovelSpider:
                         continue
                     if _is_ad_line(text):
                         filtered_count += 1
-                        print(f"[通用提取-{tag}] 块{i+1}: 广告行过滤 ({len(text)} 字符)")
+                        _log.info(f"[通用提取-{tag}] 块{i+1}: 广告行过滤 ({len(text)} 字符)")
                         continue
                     decoded_count += 1
                     parts.append(text)
                 except Exception as e:
-                    print(f"[通用提取-{tag}] 块{i+1}: 解码失败 - {e}")
+                    _log.info(f"[通用提取-{tag}] 块{i+1}: 解码失败 - {e}")
             result = '\n\n'.join(parts)
-            print(f"[通用提取-{tag}] 解码完成: {decoded_count} 有效块, 过滤 {filtered_count} 广告行, 提取 {len(result)} 字符")
+            _log.info(f"[通用提取-{tag}] 解码完成: {decoded_count} 有效块, 过滤 {filtered_count} 广告行, 提取 {len(result)} 字符")
             return result
         except Exception as e:
-            print(f"[通用提取-{tag}] ❌ 解码失败: {e}")
+            _log.info(f"[通用提取-{tag}] ❌ 解码失败: {e}")
             return ''
 
     def _extract_qsbs_bb_generic(self, url, headers):
@@ -3013,7 +3016,7 @@ class NovelSpider:
                         if parts:
                             text = '\n\n'.join(parts)
                             if len(text) > len(best_t):
-                                print(f"[通用提取-html] 选择器 '{sel}': {len(ps)} 个<p>, 过滤 {filtered}, {len(text)} 字符 — 当前最佳")
+                                _log.info(f"[通用提取-html] 选择器 '{sel}': {len(ps)} 个<p>, 过滤 {filtered}, {len(text)} 字符 — 当前最佳")
                                 best_t = text
                                 best_s = sel
                             continue
@@ -3023,7 +3026,7 @@ class NovelSpider:
                         if lines:
                             joined = '\n'.join(lines)
                             if len(joined) > len(best_t):
-                                print(f"[通用提取-html] 选择器 '{sel}'(纯文本): {len(text)} 字符, 过滤后 {len(lines)} 行 — 当前最佳")
+                                _log.info(f"[通用提取-html] 选择器 '{sel}'(纯文本): {len(text)} 字符, 过滤后 {len(lines)} 行 — 当前最佳")
                                 best_t = joined
                                 best_s = sel
                 return best_t, best_s
@@ -3031,23 +3034,23 @@ class NovelSpider:
             # 第一次: 用原始 headers 提取
             best_text, best_sel = _try_extract(headers)
             if best_text:
-                print(f"[通用提取-html] 首次提取: '{best_sel}' → {len(best_text)} 字符")
+                _log.info(f"[通用提取-html] 首次提取: '{best_sel}' → {len(best_text)} 字符")
             # 内容过短时用 PC UA 重试 (部分网站如 yqyp.net 随机 UA 返回移动版, 内容缺失)
             if len(best_text) < 500:
-                print(f"[通用提取-html] 内容过短 ({len(best_text)} 字符), 用 PC UA 重试...")
+                _log.info(f"[通用提取-html] 内容过短 ({len(best_text)} 字符), 用 PC UA 重试...")
                 pc_headers = dict(headers)
                 pc_headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 text2, sel2 = _try_extract(pc_headers)
                 if len(text2) > len(best_text):
-                    print(f"[通用提取-html] PC UA 重试改善: '{sel2}' → {len(text2)} 字符 (原 {len(best_text)} 字符)")
+                    _log.info(f"[通用提取-html] PC UA 重试改善: '{sel2}' → {len(text2)} 字符 (原 {len(best_text)} 字符)")
                     best_text, best_sel = text2, sel2
             if best_text:
-                print(f"[通用提取-html] ✅ 最终选用 '{best_sel}', 提取 {len(best_text)} 字符")
+                _log.info(f"[通用提取-html] ✅ 最终选用 '{best_sel}', 提取 {len(best_text)} 字符")
                 return best_text
-            print("[通用提取-html] ⚠️ 所有选择器均未命中正文")
+            _log.info("[通用提取-html] ⚠️ 所有选择器均未命中正文")
             return ''
         except Exception as e:
-            print(f"[通用提取-html] ❌ HTML 选择器提取失败: {e}")
+            _log.info(f"[通用提取-html] ❌ HTML 选择器提取失败: {e}")
             return ''
 
     def _extract_ajax_two_step_generic(self, url, headers):
@@ -3089,9 +3092,9 @@ class NovelSpider:
                     page_path = path  # 用 URL 的 path 作为 page_path
 
             if not aid or not cid_base or not page_path:
-                print(f"[通用提取-ajax] ❌ 无法从 URL/HTML 提取 aid/cid: {url}")
+                _log.info(f"[通用提取-ajax] ❌ 无法从 URL/HTML 提取 aid/cid: {url}")
                 return ''
-            print(f"[通用提取-ajax] 提取参数: aid={aid}, cid={cid_full}, page_path={page_path}")
+            _log.info(f"[通用提取-ajax] 提取参数: aid={aid}, cid={cid_full}, page_path={page_path}")
 
             # 4. 取签名 (用基础 cid, sign 对所有分页通用)
             ts = int(time.time() * 1000)
@@ -3105,11 +3108,11 @@ class NovelSpider:
             self._记录请求(sign_url, sign_resp, 0)
             sign_data = sign_resp.json()
             if sign_data.get('code') != 0:
-                print(f"[通用提取-ajax] ❌ 签名失败: {sign_data}")
+                _log.info(f"[通用提取-ajax] ❌ 签名失败: {sign_data}")
                 return ''
             bk = sign_data['bk']
             sign = sign_data['sign']
-            print(f"[通用提取-ajax] 签名成功: bk={str(bk)[:16]}..., sign={str(sign)[:16]}...")
+            _log.info(f"[通用提取-ajax] 签名成功: bk={str(bk)[:16]}..., sign={str(sign)[:16]}...")
 
             # 5. 取正文
             ts2 = int(time.time() * 1000)
@@ -3118,9 +3121,9 @@ class NovelSpider:
             content_resp = self.session.get(content_url, headers={**headers, **ajax_headers}, timeout=20)
             self._记录请求(content_url, content_resp, 0)
             content_html = content_resp.text
-            print(f"[通用提取-ajax] 正文获取成功, HTML长度={len(content_html)} 字符")
+            _log.info(f"[通用提取-ajax] 正文获取成功, HTML长度={len(content_html)} 字符")
             if not content_html.strip():
-                print("[通用提取-ajax] ⚠️ 正文为空")
+                _log.info("[通用提取-ajax] ⚠️ 正文为空")
                 return ''
 
             # 6. 解析正文 HTML, 逐行过滤广告/导航行 (基于内容特征, 不依赖域名)
@@ -3139,15 +3142,15 @@ class NovelSpider:
                         continue
                     parts.append(txt)
                 if parts:
-                    print(f"[通用提取-ajax] <p>提取: {len(ps)} 个<p>, 过滤 {filtered} 广告行, 提取 {len(parts)} 段")
+                    _log.info(f"[通用提取-ajax] <p>提取: {len(ps)} 个<p>, 过滤 {filtered} 广告行, 提取 {len(parts)} 段")
                     return '\n\n'.join(parts)
             # 无 <p> 时直接取文本并逐行过滤
             text = csoup.get_text('\n', strip=True)
             lines = [l for l in text.split('\n') if l.strip() and not _is_ad_line(l.strip())]
-            print(f"[通用提取-ajax] 纯文本提取: {len(text)} 字符, 过滤后 {len(lines)} 行")
+            _log.info(f"[通用提取-ajax] 纯文本提取: {len(text)} 字符, 过滤后 {len(lines)} 行")
             return '\n'.join(lines)
         except Exception as e:
-            print(f"[通用提取-ajax] ❌ AJAX 两步加载失败: {e}")
+            _log.info(f"[通用提取-ajax] ❌ AJAX 两步加载失败: {e}")
             return ''
 
     def deduplicate_paragraphs(self, content):
@@ -3182,7 +3185,7 @@ class NovelSpider:
                 seen_lines.add(stripped)
             deduped_lines.append(line)
         if line_removed:
-            print(f"[行去重] 移除 {line_removed} 个重复行")
+            _log.info(f"[行去重] 移除 {line_removed} 个重复行")
 
         # ---- Phase 2: 段落级去重 (MD5 整段 hash) ----
         content = '\n'.join(deduped_lines)
@@ -3212,7 +3215,7 @@ class NovelSpider:
         while result and result[-1] == '':
             result.pop()
         if removed > 0:
-            print(f"[段落去重] 移除 {removed} 个重复段落, 保留 {len([r for r in result if r])} 段")
+            _log.info(f"[段落去重] 移除 {removed} 个重复段落, 保留 {len([r for r in result if r])} 段")
         return '\n'.join(result)
 
     # ================== 正文候选提取链 ==================
@@ -3282,11 +3285,11 @@ class NovelSpider:
                 if matches:
                     all_matches.extend(matches)
 
-            print(f"找到 {len(all_matches)} 个可能的Base64编码字符串")
+            _log.info(f"找到 {len(all_matches)} 个可能的Base64编码字符串")
 
             # 去重
             unique_matches = list(set(all_matches))
-            print(f"去重后剩余 {len(unique_matches)} 个唯一的Base64编码字符串")
+            _log.info(f"去重后剩余 {len(unique_matches)} 个唯一的Base64编码字符串")
 
             for i, match in enumerate(unique_matches[:8]):  # 尝试前8个
                 try:
@@ -3312,10 +3315,10 @@ class NovelSpider:
                                 # 非utf-8/gbk类编码,要求中文比例较高才算有效
                                 if encoding in ('latin1', 'utf-16', 'utf-16le', 'utf-16be'):
                                     if cjk_count < len(decoded_text) * 0.15:
-                                        print(f"  匹配 {i+1} (使用{encoding}) 解码成功但中文占比过低({cjk_count}/{len(decoded_text)})，跳过")
+                                        _log.info(f"  匹配 {i+1} (使用{encoding}) 解码成功但中文占比过低({cjk_count}/{len(decoded_text)})，跳过")
                                         continue
-                                print(f"  匹配 {i+1} (使用{encoding}) 解码成功，长度: {len(decoded_text)} 字符")
-                                print(f"  解码后前100个字符: {decoded_text[:100]}...")
+                                _log.info(f"  匹配 {i+1} (使用{encoding}) 解码成功，长度: {len(decoded_text)} 字符")
+                                _log.info(f"  解码后前100个字符: {decoded_text[:100]}...")
 
                                 # 检查是否包含HTML或文本内容
                                 if '<' in decoded_text:
@@ -3352,26 +3355,26 @@ class NovelSpider:
                                         filtered_text = '\n\n'.join(filtered_lines)
                                         if len(filtered_text) > 100:
                                             content += filtered_text + '\n\n'
-                                            print(f"  成功提取到内容，长度: {len(filtered_text)} 字符")
+                                            _log.info(f"  成功提取到内容，长度: {len(filtered_text)} 字符")
                                             encoding_found = True
                                             # 找到足够的内容后停止
                                             if len(content) > 500:
                                                 break
                                     else:
                                         content += text + '\n\n'
-                                        print(f"  成功提取到内容，长度: {len(text)} 字符")
+                                        _log.info(f"  成功提取到内容，长度: {len(text)} 字符")
                                         encoding_found = True
                                         if len(content) > 500:
                                             break
                                 # 找到有效编码后不再尝试其它编码(避免乱码污染)
                                 if encoding_found:
                                     break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                 except Exception as e:
-                    print(f"  匹配 {i+1} 解码失败: {e}")
+                    _log.info(f"  匹配 {i+1} 解码失败: {e}")
         except Exception as e:
-            print(f"  在二进制数据中查找Base64失败: {e}")
+            _log.info(f"  在二进制数据中查找Base64失败: {e}")
                     
         # 方法1.2: 在解码后的文本中查找
         if not content:
@@ -3379,12 +3382,12 @@ class NovelSpider:
                 try:
                     matches = re.findall(pattern, raw_str)
                     if matches:
-                        print(f"找到 {len(matches)} 个匹配的script标签")
+                        _log.info(f"找到 {len(matches)} 个匹配的script标签")
                         for match in matches:
                             try:
                                 # 提取Base64编码内容
                                 base64_content = match
-                                print(f"提取到Base64编码内容，长度: {len(base64_content)}字符")
+                                _log.info(f"提取到Base64编码内容，长度: {len(base64_content)}字符")
                                             
                                 # 尝试直接解码
                                 padding = '=' * ((4 - len(base64_content) % 4) % 4)
@@ -3395,17 +3398,17 @@ class NovelSpider:
                                 text = soup_decoded.get_text(strip=True)
                                 if text:
                                     content += text + '\n\n'
-                                    print(f"成功提取到内容，长度: {len(text)} 字符")
+                                    _log.info(f"成功提取到内容，长度: {len(text)} 字符")
                                     break
                             except Exception as e:
-                                print(f"解码失败: {e}")
+                                _log.info(f"解码失败: {e}")
                         if content:
                             break
                 except Exception as e:
-                    print(f"正则搜索失败: {e}")
+                    _log.info(f"正则搜索失败: {e}")
                     
         if content:
-            print(f"从script标签提取到内容，长度: {len(content)} 字符")
+            _log.info(f"从script标签提取到内容，长度: {len(content)} 字符")
                     
         # 方法2: 尝试查找可能的JSON数据
         if not content or len(content) < 500:
@@ -3423,7 +3426,7 @@ class NovelSpider:
             for pattern in json_patterns:
                 match = re.search(pattern, response.text)
                 if match:
-                    print(f"找到JSON数据: {pattern}")
+                    _log.info(f"找到JSON数据: {pattern}")
                     try:
                         json_data = match.group(1)
                         # 尝试解析JSON
@@ -3439,10 +3442,10 @@ class NovelSpider:
                             content = json_data.strip('\"\'')
                         break
                     except Exception as e:
-                        print(f"解析JSON失败: {e}")
+                        _log.info(f"解析JSON失败: {e}")
                     
         if content:
-            print(f"从JSON提取到内容，长度: {len(content)} 字符")
+            _log.info(f"从JSON提取到内容，长度: {len(content)} 字符")
 
         # ===== 通用解密链 (decrypt_utils): 自定义Base64/XOR/字符替换/拼接混淆/eval =====
         # 常规 Base64 匹配失败时, 自动识别并尝试多种站点加密变体
@@ -3456,12 +3459,12 @@ class NovelSpider:
                         sc.decompose()
                     dec_text = dec_soup.get_text('\n', strip=True)
                     if len(dec_text) > 100:
-                        print(f"[通用解密] 使用 {method} 解密成功, {len(dec_text)} 字符")
+                        _log.info(f"[通用解密] 使用 {method} 解密成功, {len(dec_text)} 字符")
                         content = dec_text
             except ImportError:
                 pass  # decrypt_utils 未部署时跳过
             except Exception as e:
-                print(f"[通用解密] 失败: {e}")
+                _log.info(f"[通用解密] 失败: {e}")
 
         # 方法2: 尝试查找特定的内容容器
         if not content or len(content) < 500:
@@ -3662,7 +3665,7 @@ class NovelSpider:
             for selector in content_selectors:
                 content_div = soup.select_one(selector)
                 if content_div:
-                    print(f"找到内容容器: {selector}")
+                    _log.info(f"找到内容容器: {selector}")
                     # 移除脚本和样式
                     for script in content_div(['script', 'style']):
                         script.decompose()
@@ -3680,7 +3683,7 @@ class NovelSpider:
                     # 针对hatxt.cc网站的特殊处理
                     if 'hatxt.cc' in chapter_url:
                         # 对hatxt.cc网站使用更严格的过滤条件
-                        print(f"原始内容长度: {len(text)} 字符")
+                        _log.info(f"原始内容长度: {len(text)} 字符")
                         # 移除导航、版权、推荐等无关信息
                         lines = text.split('\n')
                         filtered_lines = []
@@ -3720,7 +3723,7 @@ class NovelSpider:
                                     filtered_lines.append(stripped_line)
                                     
                         content = '\n\n'.join(filtered_lines)
-                        print(f"过滤后内容长度: {len(content)} 字符")
+                        _log.info(f"过滤后内容长度: {len(content)} 字符")
                     else:
                         # 其他网站使用更宽松的过滤条件
                         lines = text.split('\n')
@@ -3789,12 +3792,12 @@ class NovelSpider:
                             content = '\n\n'.join(filtered_paragraphs)
                                 
                     if content:
-                        print(f"从容器提取到内容，长度: {len(content)} 字符")
+                        _log.info(f"从容器提取到内容，长度: {len(content)} 字符")
                         break
                         
             # 如果仍然没有找到内容，对hatxt.cc网站尝试直接从整个页面提取
             if not content and 'hatxt.cc' in chapter_url:
-                print("尝试直接从整个页面提取内容")
+                _log.info("尝试直接从整个页面提取内容")
                 # 移除脚本和样式
                 for script in soup(['script', 'style']):
                     script.decompose()
@@ -3803,7 +3806,7 @@ class NovelSpider:
                     nav.decompose()
                 # 获取整个页面的文本
                 full_text = soup.get_text(separator='\n\n', strip=True)
-                print(f"整个页面原始内容长度: {len(full_text)} 字符")
+                _log.info(f"整个页面原始内容长度: {len(full_text)} 字符")
                             
                 # 对hatxt.cc网站使用更严格的过滤条件
                 lines = full_text.split('\n')
@@ -3843,9 +3846,9 @@ class NovelSpider:
                             # 如果已经进入正文，保留较短的段落
                             filtered_lines.append(stripped_line)
                 content = '\n\n'.join(filtered_lines)
-                print(f"整个页面过滤后内容长度: {len(content)} 字符")
+                _log.info(f"整个页面过滤后内容长度: {len(content)} 字符")
                 if content:
-                    print("成功从整个页面提取到内容")
+                    _log.info("成功从整个页面提取到内容")
                     
         # 方法3: 尝试使用正则表达式提取长段落
         if not content or len(content) < 500:
@@ -3866,7 +3869,7 @@ class NovelSpider:
                         
             if filtered_paragraphs:
                 content = '\n\n'.join(filtered_paragraphs)
-                print(f"使用正则表达式提取到 {len(filtered_paragraphs)} 个段落，总长度: {len(content)} 字符")
+                _log.info(f"使用正则表达式提取到 {len(filtered_paragraphs)} 个段落，总长度: {len(content)} 字符")
                     
         # 方法4: 尝试直接从页面中提取可能的小说内容特征
         if not content or len(content) < 500:
@@ -3875,7 +3878,7 @@ class NovelSpider:
             quotes = re.findall(quote_pattern, response.text)
             if quotes:
                 content = '\n\n'.join(quotes)
-                print(f"找到 {len(quotes)} 个长引号，总长度: {len(content)} 字符")
+                _log.info(f"找到 {len(quotes)} 个长引号，总长度: {len(content)} 字符")
                     
         # 最终处理
         if content:
@@ -3891,7 +3894,7 @@ class NovelSpider:
             for pattern in base64_patterns:
                 matches = re.findall(pattern, content)
                 if matches:
-                    print(f"找到 {len(matches)} 个Base64编码字符串")
+                    _log.info(f"找到 {len(matches)} 个Base64编码字符串")
                     for match in matches:
                         try:
                             # 添加缺失的填充字符
@@ -3904,13 +3907,13 @@ class NovelSpider:
                             if text:
                                 decoded_content += text + '\n\n'
                         except Exception as e:
-                            print(f"Base64解码失败: {e}")
+                            _log.info(f"Base64解码失败: {e}")
                     break
                         
             # 如果解码成功，使用解码后的内容
             if decoded_content:
                 content = decoded_content
-                print(f"Base64解码后内容长度: {len(content)} 字符")
+                _log.info(f"Base64解码后内容长度: {len(content)} 字符")
             else:
                 # 移除HTML实体
                 content = re.sub(r'&[a-zA-Z]+;', '', content)
@@ -3932,16 +3935,16 @@ class NovelSpider:
                             
                 # 对于pjxdd.com网站，进行额外的清理
                 if 'pjxdd.com' in current_url:
-                    print("对pjxdd.com网站进行额外的内容清理")
+                    _log.info("对pjxdd.com网站进行额外的内容清理")
                     # 移除可能的乱码和特殊符号
                     content = re.sub(r'[\u0000-\u001f\u007f-\u00ff]', '', content)
                     # 移除多余的空白字符
                     content = re.sub(r'\s+', ' ', content)
                     # 移除行首行尾的空白
                     content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
-                    print(f"清理后内容长度: {len(content)} 字符")
+                    _log.info(f"清理后内容长度: {len(content)} 字符")
                     
-        print(f"最终提取内容长度: {len(content) if content else 0} 字符")
+        _log.info(f"最终提取内容长度: {len(content) if content else 0} 字符")
 
         return content
 
@@ -3970,7 +3973,7 @@ class NovelSpider:
         if SITES_CONFIG_AVAILABLE:
             site_pattern = get_site_pattern(chapter_url)
             if site_pattern:
-                print(f"[sites_config] 匹配到站点配置: {site_pattern['domain']}, 模式: {site_pattern['pattern']}")
+                _log.info(f"[sites_config] 匹配到站点配置: {site_pattern['domain']}, 模式: {site_pattern['pattern']}")
 
         # 使用更真实的User-Agent，针对hatxt.cc网站添加特殊处理
         headers = {
@@ -4024,7 +4027,7 @@ class NovelSpider:
                 if site_pattern and 'content_pagination' in site_pattern:
                     current_url = build_paged_url(chapter_url, page_index, site_pattern['content_pagination'])
                     if current_url is None:
-                        print("[分页] 已达到最大页数限制，停止")
+                        _log.info("[分页] 已达到最大页数限制，停止")
                         break
                 elif '.html' in chapter_url:
                     # 11bzw.org分页: 第2页是_2.html, 第3页是_3.html (page_index+1)
@@ -4036,7 +4039,7 @@ class NovelSpider:
                     break
             
             validate_public_url(current_url)  # 安全校验: 仅允许公网 http/https
-            print(f"\n=== 提取章节内容（第{page_index+1}页）: {current_url} ===")
+            _log.info(f"\n=== 提取章节内容（第{page_index+1}页）: {current_url} ===")
             
             # 标记是否成功抓取
             success = False
@@ -4064,11 +4067,11 @@ class NovelSpider:
                         headers=headers)
                     if data_text and len(data_text) > 50:
                         self._datafile_mode = True
-                        print(f"[数据文件] 探测命中 ({data_method}), 本卷章走数据文件模式")
+                        _log.info(f"[数据文件] 探测命中 ({data_method}), 本卷章走数据文件模式")
                 except ImportError:
                     pass  # content_decoder 模块未部署时走常规流程
                 except Exception as e:
-                    print(f"[数据文件] 探测失败, 走常规流程: {e}")
+                    _log.info(f"[数据文件] 探测失败, 走常规流程: {e}")
             if self._datafile_mode:
                 try:
                     from content_decoder import decode_chapter_data
@@ -4087,27 +4090,27 @@ class NovelSpider:
                                       if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
                         data_content = '\n'.join(data_lines)
                         if len(data_content) > 50:
-                            print(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
+                            _log.info(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                             page_text = self.clean_content(data_content)
                             if len(page_text) < 50:
-                                print("[数据文件] 内容过短, 可能已到末页")
+                                _log.info("[数据文件] 内容过短, 可能已到末页")
                                 break
                             import hashlib
                             # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                             fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                             if fingerprint == self._last_page_fingerprint:
-                                print("[数据文件] 与上一页指纹相同, 停止抓取")
+                                _log.info("[数据文件] 与上一页指纹相同, 停止抓取")
                                 break
                             self._last_page_fingerprint = fingerprint
                             total_content += page_text + '\n\n'
-                            print(f"[数据文件] ✅ 合并, 累计 {len(total_content)} 字符")
+                            _log.info(f"[数据文件] ✅ 合并, 累计 {len(total_content)} 字符")
                             success = True
                             page_index += 1
                             continue
                 except ImportError:
                     self._datafile_mode = False
                 except Exception as e:
-                    print(f"[数据文件] 解码失败, 走常规流程: {e}")
+                    _log.info(f"[数据文件] 解码失败, 走常规流程: {e}")
                     self._datafile_mode = False
 
             # ===== sites_config 站点专属正文提取 (优先于通用检测) =====
@@ -4129,25 +4132,25 @@ class NovelSpider:
                         lambda u, h: self._get_with_js_challenge(u, h),
                     )
                 except Exception as e:
-                    print(f"[sites_config] 站点配置提取异常, 回退通用检测: {e}")
+                    _log.info(f"[sites_config] 站点配置提取异常, 回退通用检测: {e}")
                     site_content, site_ok = '', False
                 if site_ok and site_content:
-                    print(f"[sites_config] 站点配置提取成功: {len(site_content)} 字符 "
+                    _log.info(f"[sites_config] 站点配置提取成功: {len(site_content)} 字符 "
                           f"(extractor={site_pattern['content_extractor']})")
                     page_text = self.clean_content(site_content)
-                    print(f"[sites_config] 第{page_index+1}页清洗后: {len(page_text)} 字符")
+                    _log.info(f"[sites_config] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                     if len(page_text) < 50:
-                        print("[sites_config] 正文过短, 可能已到末页, 结束分页")
+                        _log.info("[sites_config] 正文过短, 可能已到末页, 结束分页")
                         break
                     # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                     import hashlib
                     fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                     if fingerprint == self._last_page_fingerprint:
-                        print(f"[sites_config] 第{page_index+1}页与上一页指纹相同, 停止抓取")
+                        _log.info(f"[sites_config] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                         break
                     self._last_page_fingerprint = fingerprint
                     total_content += page_text + '\n\n'
-                    print(f"[sites_config] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
+                    _log.info(f"[sites_config] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
                     success = True
                     page_index += 1
                     continue
@@ -4156,7 +4159,7 @@ class NovelSpider:
             # 已知站点配置优先于通用检测，确保特殊处理正确执行
             if site_pattern and site_pattern.get('pattern') == 'datafile':
                 if page_index == 0:
-                    print("[站点配置] 使用数据文件解码模式")
+                    _log.info("[站点配置] 使用数据文件解码模式")
                 from content_decoder import decode_chapter_data
                 data_text, data_method = decode_chapter_data(
                     current_url, page=page_index + 1,
@@ -4171,7 +4174,7 @@ class NovelSpider:
                                   if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
                     data_content = '\n'.join(data_lines)
                     if len(data_content) > 50:
-                        print(f"[站点配置] 数据文件解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
+                        _log.info(f"[站点配置] 数据文件解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                         generic_content = data_content
                         # 数据文件模式不需要继续分页（每页内容独立）
                         # 清除通用检测缓存，避免通用检测覆盖
@@ -4198,23 +4201,23 @@ class NovelSpider:
             
             if self._detected_pattern == 'qsbs_bb':
                 if page_index == 0:
-                    print("[通用检测] 检测到 qsbs.bb Base64 加密, 走通用解码路径")
+                    _log.info("[通用检测] 检测到 qsbs.bb Base64 加密, 走通用解码路径")
                 generic_content = self._extract_qsbs_bb_generic(current_url, headers)
             elif self._detected_pattern == 'str_decode_bb':
                 if page_index == 0:
-                    print("[通用检测] 检测到 str_decode Base64 加密, 走通用解码路径")
+                    _log.info("[通用检测] 检测到 str_decode Base64 加密, 走通用解码路径")
                 generic_content = self._extract_str_decode_generic(current_url, headers)
             elif self._detected_pattern == 'ajax_two_step':
                 if page_index == 0:
-                    print("[通用检测] 检测到 AJAX 两步加载, 走通用 AJAX 提取路径")
+                    _log.info("[通用检测] 检测到 AJAX 两步加载, 走通用 AJAX 提取路径")
                 generic_content = self._extract_ajax_two_step_generic(current_url, headers)
             elif self._detected_pattern == 'html_selector':
                 if page_index == 0:
-                    print("[通用检测] 检测到 HTML 选择器模式, 走通用提取路径")
+                    _log.info("[通用检测] 检测到 HTML 选择器模式, 走通用提取路径")
                 generic_content = self._extract_html_selector_generic(current_url, headers)
             elif self._detected_pattern == 'datafile':
                 if page_index == 0:
-                    print("[通用检测] 检测到数据文件模式, 走数据文件解码路径")
+                    _log.info("[通用检测] 检测到数据文件模式, 走数据文件解码路径")
                 from content_decoder import decode_chapter_data
                 data_text, data_method = decode_chapter_data(
                     current_url, page=page_index + 1,
@@ -4229,7 +4232,7 @@ class NovelSpider:
                                   if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
                     data_content = '\n'.join(data_lines)
                     if len(data_content) > 50:
-                        print(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
+                        _log.info(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                         generic_content = data_content
                         # 数据文件模式不需要继续分页（每页内容独立）
                         break
@@ -4238,18 +4241,18 @@ class NovelSpider:
                 # 通用提取成功, 走通用清洗+指纹去重流程
                 import hashlib
                 page_text = self.clean_content(generic_content)
-                print(f"[通用提取] 第{page_index+1}页清洗后: {len(page_text)} 字符")
+                _log.info(f"[通用提取] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                 if len(page_text) < 50:
-                    print("[通用提取] 正文过短, 可能已到末页, 结束分页")
+                    _log.info("[通用提取] 正文过短, 可能已到末页, 结束分页")
                     break
                 # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                 fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                 if fingerprint == self._last_page_fingerprint:
-                    print(f"[通用提取] 第{page_index+1}页与上一页指纹相同, 停止抓取")
+                    _log.info(f"[通用提取] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                     break
                 self._last_page_fingerprint = fingerprint
                 total_content += page_text + '\n\n'
-                print(f"[通用提取] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
+                _log.info(f"[通用提取] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
                 success = True
                 page_index += 1
                 continue
@@ -4264,7 +4267,7 @@ class NovelSpider:
             # 分页: ?page=N 查询参数, 末页的下一页链接指向下一章 (无 ?page=)
             # 验证码: 使用 _solve_tanmixs_captcha 自动检测处理, 解决后复用同一driver
             if 'tanmixs.com' in current_url and selenium_available:
-                print("[tanmixs] 使用持久化Selenium driver抓取章节内容")
+                _log.info("[tanmixs] 使用持久化Selenium driver抓取章节内容")
                 try:
                     driver = self._get_tanmixs_driver(visible=False)
                     driver.get(current_url)
@@ -4272,13 +4275,13 @@ class NovelSpider:
                     time.sleep(2)
                     # 检测并处理验证码 (如有)
                     page_source = self._solve_tanmixs_captcha(driver, current_url)
-                    print(f"[tanmixs] 页面长度: {len(page_source)} 字符")
+                    _log.info(f"[tanmixs] 页面长度: {len(page_source)} 字符")
 
                     soup = BeautifulSoup(page_source, 'lxml')
                     # 提取 div#chapter-content
                     content_div = soup.select_one('div#chapter-content')
                     if not content_div:
-                        print("[tanmixs] 未找到 div#chapter-content")
+                        _log.info("[tanmixs] 未找到 div#chapter-content")
                         page_text = ''
                     else:
                         paragraphs = []
@@ -4298,22 +4301,22 @@ class NovelSpider:
                                 continue
                             paragraphs.append(txt)
                         page_text = '\n\n'.join(paragraphs)
-                        print(f"[tanmixs] 提取 {len(paragraphs)} 段, 共 {len(page_text)} 字符")
+                        _log.info(f"[tanmixs] 提取 {len(paragraphs)} 段, 共 {len(page_text)} 字符")
 
                     if len(page_text) < 50:
-                        print(f"[tanmixs] 第{page_index+1}页正文过短 ({len(page_text)}字符), 结束分页")
+                        _log.info(f"[tanmixs] 第{page_index+1}页正文过短 ({len(page_text)}字符), 结束分页")
                         success = False
                     else:
                         import hashlib
                         # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                         fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                         if fingerprint == self._last_page_fingerprint:
-                            print(f"[tanmixs] 第{page_index+1}页与上一页指纹相同, 停止抓取")
+                            _log.info(f"[tanmixs] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                             success = False
                         else:
                             self._last_page_fingerprint = fingerprint
                             total_content += page_text + '\n\n'
-                            print(f"[tanmixs] 第{page_index+1}页: 合并, 累计 {len(total_content)} 字符")
+                            _log.info(f"[tanmixs] 第{page_index+1}页: 合并, 累计 {len(total_content)} 字符")
                             success = True
 
                             # 检测是否有下一页 (仅在分页URL ?page= 模式下)
@@ -4338,25 +4341,25 @@ class NovelSpider:
                                     try:
                                         validate_public_url(next_href)
                                     except ValueError:
-                                        print(f"[tanmixs] 下一页URL校验失败: {next_href}")
+                                        _log.info(f"[tanmixs] 下一页URL校验失败: {next_href}")
                                         next_href = None
                                     if next_href:
                                         # 显式递增到下一分页
                                         page_index += 1
                                         current_url = next_href
-                                        print(f"[tanmixs] 检测到下一分页: {current_url}")
+                                        _log.info(f"[tanmixs] 检测到下一分页: {current_url}")
                                         continue
                                 else:
-                                    print("[tanmixs] 未找到 ?page= 链接, 本章分页结束")
+                                    _log.info("[tanmixs] 未找到 ?page= 链接, 本章分页结束")
                 except Exception as e:
-                    print(f"[tanmixs] Selenium抓取失败: {e}")
+                    _log.info(f"[tanmixs] Selenium抓取失败: {e}")
                     import traceback
                     traceback.print_exc()
 
             # 对于pjxdd.com、qingheks.com、27xsw.cc、tanmixs.com网站，尝试使用Selenium
             # (zhiruo.org改用上方Base64解码分支，无需Selenium)
             if ('pjxdd.com' in current_url or 'qingheks.com' in current_url or '27xsw.cc' in current_url) and selenium_available:
-                print("[Selenium] 尝试使用Selenium抓取内容")
+                _log.info("[Selenium] 尝试使用Selenium抓取内容")
                 soup = self._selenium_get_soup(current_url, headers)
                 if soup:
                     content = ""
@@ -4365,28 +4368,28 @@ class NovelSpider:
                     for selector in content_selectors:
                         content_div = soup.select_one(selector)
                         if content_div:
-                            print(f"[Selenium] 找到内容容器: {selector}")
+                            _log.info(f"[Selenium] 找到内容容器: {selector}")
                             text = content_div.get_text(separator='\n\n', strip=True)
                             if text:
                                 content = text
-                                print(f"[Selenium] 提取到内容，长度: {len(content)} 字符")
+                                _log.info(f"[Selenium] 提取到内容，长度: {len(content)} 字符")
                                 break
                     if not content:
-                        print("[Selenium] 尝试获取整个页面内容")
+                        _log.info("[Selenium] 尝试获取整个页面内容")
                         text = soup.get_text(separator='\n\n', strip=True)
                         content = text
-                        print(f"[Selenium] 从整个页面提取到内容，长度: {len(content)} 字符")
+                        _log.info(f"[Selenium] 从整个页面提取到内容，长度: {len(content)} 字符")
                     if content:
                         content = re.sub(r'[\x00-\x1f\x7f-\xff]', '', content)
                         content = re.sub(r'\s+', ' ', content)
                         content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
                         total_content += content + '\n\n'
-                        print("[Selenium] 成功提取到内容")
+                        _log.info("[Selenium] 成功提取到内容")
                         success = True
                     else:
-                        print("[Selenium] 未能提取到内容")
+                        _log.info("[Selenium] 未能提取到内容")
                 else:
-                    print("[Selenium] 页面抓取失败, 跳过")
+                    _log.info("[Selenium] 页面抓取失败, 跳过")
                     success = False
             
             # 传统方法：使用requests
@@ -4407,12 +4410,12 @@ class NovelSpider:
                     # 检查状态码
                     if response.status_code == 404:
                         # 404 = 该页不存在 = 已到末页 (分页探测的 _N.html 常见此情况)
-                        print(f"第{page_index+1}页不存在(404), 视为末页, 结束分页")
+                        _log.info(f"第{page_index+1}页不存在(404), 视为末页, 结束分页")
                         self._记录请求(current_url, response, 0,
                                       错误原因='404 末页 (分页探测)')
                         break
                     if response.status_code != 200:
-                        print(f"请求失败，状态码: {response.status_code}")
+                        _log.info(f"请求失败，状态码: {response.status_code}")
                         self._记录请求(current_url, response, 0,
                                       错误原因=f'HTTP {response.status_code}')
                         if i < max_retries - 1:
@@ -4420,7 +4423,7 @@ class NovelSpider:
                             headers['User-Agent'] = self._fixed_ua
                             continue
                         else:
-                            print("所有重试机会已用尽")
+                            _log.info("所有重试机会已用尽")
                             break
 
                     # 处理JS cookie校验反爬(如zhiruo.org)
@@ -4429,7 +4432,7 @@ class NovelSpider:
                         raw = response.content
                         if not any(m.encode() in raw for m in challenge_markers):
                             break
-                        print(f"[反爬检测] 内容页命中JS cookie校验({len(raw)}字节)，提取cookie后重试...")
+                        _log.info(f"[反爬检测] 内容页命中JS cookie校验({len(raw)}字节)，提取cookie后重试...")
                         m = re.search(rb'document\.cookie\s*=\s*"([^"]+)"', raw)
                         if m:
                             cookie_str = m.group(1).decode('utf-8', errors='ignore')
@@ -4437,7 +4440,7 @@ class NovelSpider:
                             if '=' in cookie_kv:
                                 ck_name, ck_val = cookie_kv.split('=', 1)
                                 self.session.cookies.set(ck_name.strip(), ck_val.strip())
-                                print(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
+                                _log.info(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
                             time.sleep(2)
                         response = self.session.get(current_url, headers=headers, timeout=30)
 
@@ -4453,8 +4456,8 @@ class NovelSpider:
                         response.encoding = response.apparent_encoding
                         text = response.text
                         soup = BeautifulSoup(text, 'lxml')
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                     if not soup or not soup.find():
                         try:
                             import chardet
@@ -4470,8 +4473,8 @@ class NovelSpider:
                                         if text and len(text) > 100:
                                             soup = BeautifulSoup(text, 'lxml')
                                             break
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                         except Exception:
                             text = response.content.decode('utf-8', errors='ignore')
                             soup = BeautifulSoup(text, 'lxml')
@@ -4483,43 +4486,43 @@ class NovelSpider:
                     # baoshuism.com: 站点占位提示("内容正在更新，请稍后查看")视为章节未发布
                     if content and 'baoshuism.com' in current_url and \
                             any(m in content for m in ['内容正在更新', '请稍后查看']):
-                        print("⚠️ 该章节在网站端暂无内容(站点占位提示)，跳过")
+                        _log.info("⚠️ 该章节在网站端暂无内容(站点占位提示)，跳过")
                         content = ''
 
                     # 检查内容是否可能是小说
                     if content and len(content) > 100:  # 增加阈值，确保提取到足够的内容
-                        print("成功提取到小说内容")
+                        _log.info("成功提取到小说内容")
 
                         # 使用指纹检测重复内容（防止分页循环）
                         import hashlib
                         content_fingerprint = hashlib.sha256(
                             (content[:200] + f"|{len(content)}").encode('utf-8')).hexdigest()
-                        print(f"[多页合并] 第{page_index+1}页: 内容指纹 {content_fingerprint[:16]}...")
+                        _log.info(f"[多页合并] 第{page_index+1}页: 内容指纹 {content_fingerprint[:16]}...")
 
                         if self._last_page_fingerprint:
-                            print(f"[多页合并] 第{page_index+1}页: 上一页指纹 {self._last_page_fingerprint[:16]}...")
+                            _log.info(f"[多页合并] 第{page_index+1}页: 上一页指纹 {self._last_page_fingerprint[:16]}...")
                             if content_fingerprint == self._last_page_fingerprint:
-                                print(f"[多页合并] 第{page_index+1}页: ⚠️ 指纹匹配！内容与前页重复，结束抓取")
+                                _log.info(f"[多页合并] 第{page_index+1}页: ⚠️ 指纹匹配！内容与前页重复，结束抓取")
                                 break
                             else:
-                                print(f"[多页合并] 第{page_index+1}页: ✅ 指纹不同，内容不重复")
+                                _log.info(f"[多页合并] 第{page_index+1}页: ✅ 指纹不同，内容不重复")
 
                         self._last_page_fingerprint = content_fingerprint
                         # 将当前页内容添加到总内容
                         total_content += content + '\n\n'
-                        print(f"[多页合并] 第{page_index+1}页: ✅ 成功合并，累计 {len(total_content)} 字符")
+                        _log.info(f"[多页合并] 第{page_index+1}页: ✅ 成功合并，累计 {len(total_content)} 字符")
                     else:
-                        print("提取的内容可能不是小说正文")
+                        _log.info("提取的内容可能不是小说正文")
                         # 如果内容太短，可能是分页结束
                         if page_index > 0:
-                            print("内容过短，结束分页抓取")
+                            _log.info("内容过短，结束分页抓取")
                             break
                         else:
                             # 对于第一页，如果内容太短，尝试其他方法
-                            print("第一页内容过短，尝试其他提取方法")
+                            _log.info("第一页内容过短，尝试其他提取方法")
                             # 尝试使用正则表达式提取长段落
                             if not content or len(content) < 100:
-                                print("尝试使用正则表达式提取长段落")
+                                _log.info("尝试使用正则表达式提取长段落")
                                 # 移除HTML标签
                                 clean_text = re.sub(r'<[^>]+>', '', response.text)
                                 # 分割为段落
@@ -4550,10 +4553,10 @@ class NovelSpider:
                                 
                                 if filtered_paragraphs:
                                     content = '\n\n'.join(filtered_paragraphs)
-                                    print(f"使用正则表达式提取到 {len(filtered_paragraphs)} 个段落，总长度: {len(content)} 字符")
+                                    _log.info(f"使用正则表达式提取到 {len(filtered_paragraphs)} 个段落，总长度: {len(content)} 字符")
                                     if len(content) > 100:
                                         total_content += content + '\n\n'
-                                        print("成功从长段落提取到小说内容")
+                                        _log.info("成功从长段落提取到小说内容")
                     
                     # 检查是否有下一页
                     # 查找分页链接
@@ -4580,7 +4583,7 @@ class NovelSpider:
                                 break
                     
                     if not has_next_page:
-                        print("未找到下一页，结束分页抓取")
+                        _log.info("未找到下一页，结束分页抓取")
                         break
                     
                     # 进入下一页
@@ -4589,12 +4592,12 @@ class NovelSpider:
                     break
                     
                 except Exception as e:
-                    print(f"抓取失败: {current_url}, 错误: {e}")
+                    _log.info(f"抓取失败: {current_url}, 错误: {e}")
                     time.sleep(3)
             
             # 如果重试后仍然失败，结束分页抓取
             if not success:
-                print(f"多次尝试后仍然无法抓取 {current_url}，结束分页抓取")
+                _log.info(f"多次尝试后仍然无法抓取 {current_url}，结束分页抓取")
                 break
 
         # 整章段落级去重 (云趣阁等站点分页会重复前页内容)
@@ -4648,8 +4651,8 @@ class NovelSpider:
                                 if text and len(text) > 100:
                                     soup = BeautifulSoup(text, 'html.parser')
                                     break
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                 except Exception:
                     # 最终 fallback: 使用ignore模式
                     text = response.content.decode('utf-8', errors='ignore')
@@ -4709,7 +4712,7 @@ class NovelSpider:
                         for kw in ['txt', 'TXT', '全文阅读', '免费阅读', '无弹窗', '最新章节']:
                             yq_title = yq_title.replace(kw, '').strip()
                         if yq_title:
-                            print(f"[云趣阁] 从详情页提取到小说名称: {yq_title}")
+                            _log.info(f"[云趣阁] 从详情页提取到小说名称: {yq_title}")
                             return yq_title
 
                 # 清理标题中的乱码和特殊字符
@@ -4721,7 +4724,7 @@ class NovelSpider:
                 title = re.sub(r'(最新章节|全文阅读|免费阅读|无弹窗|全本|txt|TXT|阅读).*$', '', title)
                 title = title.strip().rstrip('-_—| ')
                 if title:
-                    print(f"从标题标签提取到小说名称: {title}")
+                    _log.info(f"从标题标签提取到小说名称: {title}")
                     return title
             
             # 尝试从常见的小说标题容器提取
@@ -4758,7 +4761,7 @@ class NovelSpider:
                     title = re.sub(r'\s+', ' ', title)
                     title = title.strip()
                     if title:
-                        print(f"从选择器 {selector} 提取到小说名称: {title}")
+                        _log.info(f"从选择器 {selector} 提取到小说名称: {title}")
                         return title
             
             # 尝试从meta标签提取
@@ -4770,7 +4773,7 @@ class NovelSpider:
                 title = re.sub(r'\s+', ' ', title)
                 title = title.strip()
                 if title:
-                    print(f"从meta标签提取到小说名称: {title}")
+                    _log.info(f"从meta标签提取到小说名称: {title}")
                     return title
             
             # 对于特定网站，使用默认名称
@@ -4779,7 +4782,7 @@ class NovelSpider:
 
             # 首次请求可能命中反爬挑战页 (标题为 loading/验证码占位), 等待后重试一次
             try:
-                print("[书名] 未提取到有效标题 (可能命中反爬页), 3 秒后重试...")
+                _log.info("[书名] 未提取到有效标题 (可能命中反爬页), 3 秒后重试...")
                 time.sleep(3)
                 response = self._get_with_js_challenge(catalog_url, headers)
                 response.encoding = response.apparent_encoding or 'utf-8'
@@ -4793,13 +4796,13 @@ class NovelSpider:
                     title = re.sub(r'(最新章节|全文阅读|免费阅读|最新章节列表).*$', '', title)
                     title = title.strip()
                     if title:
-                        print(f"重试后提取到小说名称: {title}")
+                        _log.info(f"重试后提取到小说名称: {title}")
                         return title
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
             return "novel"
         except Exception as e:
-            print(f"提取小说名称失败: {e}")
+            _log.info(f"提取小说名称失败: {e}")
             # 对于特定网站，使用默认名称
             if 'pjxdd.com' in catalog_url or 'qingheks.com' in catalog_url:
                 return "小说"
@@ -4845,8 +4848,8 @@ class NovelSpider:
                 try:
                     import 日志 as _app_log
                     _app_log.debug('爬虫', f'检查点前 flush 输出文件失败: {e}')
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         data = {
             'catalog_url': catalog_url,
             'output_file': output_file,
@@ -4863,7 +4866,7 @@ class NovelSpider:
         try:
             Path(ck_path).unlink(missing_ok=True)
         except OSError as e:
-            print(f"[断点续传] 删除检查点失败: {e}")
+            _log.info(f"[断点续传] 删除检查点失败: {e}")
 
     def _count_written_chapters(self, output_file):
         """统计输出文件中已写的章节数 (检查点损坏/缺失时的兜底)"""
@@ -4911,17 +4914,17 @@ class NovelSpider:
             try:
                 content = self.get_chapter_content(chap['url'])
             except Exception as e:
-                print(f"[质检] 抓取异常: {e}")
+                _log.info(f"[质检] 抓取异常: {e}")
                 content = ''
             报告 = _章节质检器.质检(content, chap.get('title', ''))
             if 报告.有效:
                 if attempt > 0:
-                    print(f"[质检] 第{attempt}次重试后通过: {报告.摘要()}")
+                    _log.info(f"[质检] 第{attempt}次重试后通过: {报告.摘要()}")
                 self._质检记录.append(报告)
                 return content
-            print(f"[质检] {报告.摘要()}")
+            _log.info(f"[质检] {报告.摘要()}")
             if attempt < max_retries:
-                print(f"[质检] 未通过, 清除模式缓存并轮换UA后重试 ({attempt+1}/{max_retries})...")
+                _log.info(f"[质检] 未通过, 清除模式缓存并轮换UA后重试 ({attempt+1}/{max_retries})...")
                 self._detected_pattern = None  # 强制下次重新检测内容模式
                 self._轮换UA()
         # 全部重试仍未通过
@@ -4929,9 +4932,9 @@ class NovelSpider:
             self._质检记录.append(报告)
             # 软性未达标 (仅长度/重复率/标点) 且有实际内容: 保留但记录警告
             if content and len(content) >= 100 and not self._是硬伤(报告):
-                print(f"[质检] ⚠️ 软性未达标但内容可读, 保留内容: {报告.摘要()}")
+                _log.info(f"[质检] ⚠️ 软性未达标但内容可读, 保留内容: {报告.摘要()}")
                 return content
-            print(f"[质检] ❌ 多次重试仍未通过, 本章保存空占位 (可断点续传重抓): {报告.摘要()}")
+            _log.info(f"[质检] ❌ 多次重试仍未通过, 本章保存空占位 (可断点续传重抓): {报告.摘要()}")
         return ''
 
     @staticmethod
@@ -4984,14 +4987,14 @@ class NovelSpider:
             lines.append(f'抓取失败章节号 ({len(failed)}): {failed}')
         lines.append('=' * 60)
         文本 = '\n'.join(lines)
-        print(f"\n{文本}")
+        _log.info(f"\n{文本}")
         try:
             报告路径 = str(output_file) + '.质检报告.txt'
             with open(报告路径, 'w', encoding='utf-8') as f:
                 f.write(文本 + '\n')
-            print(f"[质检] 汇总报告已保存: {报告路径}")
+            _log.info(f"[质检] 汇总报告已保存: {报告路径}")
         except OSError as e:
-            print(f"[质检] 汇总报告保存失败: {e}")
+            _log.info(f"[质检] 汇总报告保存失败: {e}")
         return 摘要
 
     def _记录站点历史(self, catalog_url, novel_title, total, failed, output_file, 质检摘要=None):
@@ -5004,7 +5007,7 @@ class NovelSpider:
                 反爬统计=self._反爬统计 or None,
                 质检摘要=质检摘要, output_file=output_file)
         except Exception as e:
-            print(f"[站点历史] 记录失败: {e}")
+            _log.info(f"[站点历史] 记录失败: {e}")
 
     def _打印站点历史先验(self, catalog_url, delay):
         """抓取前打印该站点的历史信息, 为反爬敏感站点给出延迟建议"""
@@ -5016,13 +5019,13 @@ class NovelSpider:
                 return delay
             反爬 = 信息.get('反爬统计') or {}
             统计 = ', '.join(f'{k}×{v}' for k, v in sorted(反爬.items())) or '无'
-            print(f"[站点历史] {信息['域名']}: 累计 {信息['任务数']} 个任务, "
+            _log.info(f"[站点历史] {信息['域名']}: 累计 {信息['任务数']} 个任务, "
                   f"最近抓取 {信息.get('最近抓取', '未知')}, 历史反爬: {统计}")
             if ('rate_limit' in 反爬 or 'ua_block' in 反爬) and delay < 2:
-                print(f"[站点历史] ⚠️ 该站点历史存在频率/UA类反爬, 建议将章节间隔 "
+                _log.info(f"[站点历史] ⚠️ 该站点历史存在频率/UA类反爬, 建议将章节间隔 "
                       f"从 {delay} 秒提高到 2 秒以上")
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         return delay
 
     def _fetch_chapter_worker(self, chap, stop_event=None):
@@ -5053,8 +5056,8 @@ class NovelSpider:
             # 关闭临时 Session 释放连接池 (旧实现从未关闭, 长任务会累积句柄)
             try:
                 new_session.close()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
     # ================== Session 线程隔离 (P1-8 修复) ==================
     @property
@@ -5084,24 +5087,24 @@ class NovelSpider:
         if driver is not None:
             try:
                 driver.quit()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         # 交给验证码模块自清理 (若它持有浏览器实例)
         if getattr(self, '_captcha_manager', None) is not None:
             try:
                 cleanup = getattr(self._captcha_manager, 'close', None)
                 if callable(cleanup):
                     cleanup()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         # 关闭 requests Session 连接池: 主 Session + 本线程可能残留的临时 Session
         for _s in (self._main_session, getattr(self._session_local, 'session', None)):
             if _s is None:
                 continue
             try:
                 _s.close()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
     def __enter__(self):
         return self
@@ -5141,7 +5144,7 @@ class NovelSpider:
             output_dir_abs = _resolve_output_dir(output_dir) if output_dir else _DEFAULT_OUTPUT_DIR
             novel_title = _resolve_unique_title(novel_title, output_dir_abs)
 
-        print(f"提取到小说名称: {novel_title}")
+        _log.info(f"提取到小说名称: {novel_title}")
 
         # 处理输出文件名 (安全: 只使用 basename, 禁止 ../ 路径穿越)
         if not output_file:
@@ -5165,7 +5168,7 @@ class NovelSpider:
             output_file = os.path.abspath(os.path.join(output_dir_abs, output_file))
             if not output_file.startswith(output_dir_abs + os.sep):
                 raise ValueError(f"输出路径越界: {output_file}")
-            print(f"输出目录: {output_dir}")
+            _log.info(f"输出目录: {output_dir}")
 
         # 任务级统计重置 (同一实例可能连续抓多本书)
         self._质检记录 = []
@@ -5181,9 +5184,9 @@ class NovelSpider:
         self._增量模式 = bool(incremental) and _爬取历史可用
         self._增量最大年龄小时 = float(incremental_max_age_hours or 0)
         if incremental and not _爬取历史可用:
-            print("[爬取历史] ⚠️ 增量模式不可用 (爬取历史模块未加载), 退化为全量抓取")
+            _log.info("[爬取历史] ⚠️ 增量模式不可用 (爬取历史模块未加载), 退化为全量抓取")
         if self._增量模式:
-            print(f"[爬取历史] 增量模式已启用: 跳过 {self._增量最大年龄小时} 小时内"
+            _log.info(f"[爬取历史] 增量模式已启用: 跳过 {self._增量最大年龄小时} 小时内"
                   f"已成功抓取且未变化的章节 (跳过章节不写入输出, 需配合 resume=True 复用旧文件)")
 
         # 站点历史先验: 打印该站点历史反爬情况, 给出延迟建议
@@ -5198,17 +5201,17 @@ class NovelSpider:
             start_idx = max(0, sr - 1)
             end_idx = min(total_all, er)
             if start_idx >= total_all:
-                print(f"⚠️ 起始章节 {sr} 超出范围 (共 {total_all} 章)，抓取终止")
+                _log.info(f"⚠️ 起始章节 {sr} 超出范围 (共 {total_all} 章)，抓取终止")
                 return None
             end_idx = max(end_idx, start_idx + 1)
             chapters = chapters[start_idx:end_idx]
             total = len(chapters)
-            print(f"[章节范围] 第 {sr} ~ {er} 章，实际 {total} 章 (全书共 {total_all} 章)")
+            _log.info(f"[章节范围] 第 {sr} ~ {er} 章，实际 {total} 章 (全书共 {total_all} 章)")
         else:
             total = len(chapters)
 
         if total == 0:
-            print("⚠️ 未提取到任何章节，抓取终止")
+            _log.info("⚠️ 未提取到任何章节，抓取终止")
             return None
 
         # ===== 断点续传: 检测检查点 =====
@@ -5218,35 +5221,35 @@ class NovelSpider:
             if ck:
                 done = int(ck.get('completed', 0))
                 if done >= total:
-                    print(f"[断点续传] 检查点显示上次已全部完成 ({done}/{total} 章)，从头重新抓取")
+                    _log.info(f"[断点续传] 检查点显示上次已全部完成 ({done}/{total} 章)，从头重新抓取")
                     self._remove_checkpoint(output_file)
                 elif done > 0:
                     start = done
-                    print(f"[断点续传] 检测到上次进度: 已完成 {done}/{total} 章，从第 {done+1} 章继续")
+                    _log.info(f"[断点续传] 检测到上次进度: 已完成 {done}/{total} 章，从第 {done+1} 章继续")
                 else:
-                    print("[断点续传] 检查点无有效进度，从头开始")
+                    _log.info("[断点续传] 检查点无有效进度，从头开始")
             else:
                 # 无有效检查点时, 用输出文件中已写章节数兜底
                 fallback = self._count_written_chapters(output_file)
                 if fallback >= total:
-                    print(f"[断点续传] 输出文件已包含全部 {total} 章，从头重新抓取")
+                    _log.info(f"[断点续传] 输出文件已包含全部 {total} 章，从头重新抓取")
                 elif fallback > 0:
                     start = fallback
-                    print(f"[断点续传] 未找到有效检查点，输出文件已有 {fallback} 章，从第 {fallback+1} 章继续")
+                    _log.info(f"[断点续传] 未找到有效检查点，输出文件已有 {fallback} 章，从第 {fallback+1} 章继续")
                 else:
-                    print("[断点续传] 未检测到该书的进度，从头开始")
+                    _log.info("[断点续传] 未检测到该书的进度，从头开始")
         else:
-            print("[断点续传] 已禁用，从头开始")
+            _log.info("[断点续传] 已禁用，从头开始")
             self._remove_checkpoint(output_file)
 
         open_mode = 'a' if start > 0 else 'w'
         if start > 0:
-            print(f"[断点续传] 以追加模式写入: {output_file}")
+            _log.info(f"[断点续传] 以追加模式写入: {output_file}")
 
         # tanmixs 的 WAF 按 IP 限流: 多浏览器并发会更容易触发验证码(实测并发3线程反而更慢)
         # 强制串行 + 持久化 driver 复用是最优策略
         if 'tanmixs.com' in catalog_url and threads > 1:
-            print("[并发] ⚠️ tanmixs.com WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
+            _log.info("[并发] ⚠️ tanmixs.com WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
             threads = 1
 
         failed = []
@@ -5255,7 +5258,7 @@ class NovelSpider:
                 if threads > 1 and (total - start) > 1:
                     # ===== 并发抓取: 并行请求章节, 按章节顺序写入 =====
                     # 保证文件顺序和断点续传正确性; 抓取完成顺序无关紧要
-                    print(f"[并发] 启用 {threads} 线程并发抓取 (按章节顺序写入)")
+                    _log.info(f"[并发] 启用 {threads} 线程并发抓取 (按章节顺序写入)")
                     from concurrent.futures import ThreadPoolExecutor
                     worker = self._fetch_chapter_worker
                     with ThreadPoolExecutor(max_workers=threads) as pool:
@@ -5264,7 +5267,7 @@ class NovelSpider:
                             # 增量模式: 跳过未变更章节 (不提交到线程池, 不写入)
                             if self._是否应跳过章节(chapters[i]['url']):
                                 self._增量跳过数 += 1
-                                print(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
+                                _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
                                       f"{chapters[i]['title']}")
                                 continue
                             futures[i] = pool.submit(worker, chapters[i], stop_event)
@@ -5282,25 +5285,25 @@ class NovelSpider:
                                 # stop_event 检查立即返回, 不再卡住退出 (P1-2)
                                 for _fut in futures.values():
                                     _fut.cancel()
-                                print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
+                                _log.info(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
                                 return output_file
                             chap = chapters[i]
-                            print(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
+                            _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                             try:
                                 content = futures[i].result()
                             except KeyboardInterrupt:
                                 raise
                             except Exception as e:
-                                print(f"抓取异常: {e}")
+                                _log.info(f"抓取异常: {e}")
                                 content = ''
                             # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
                             f.write(f"## {chap['title']}\n\n")
                             f.write(content + "\n\n")
                             if content:
-                                print(f"成功: {len(content)} 字符")
+                                _log.info(f"成功: {len(content)} 字符")
                             else:
                                 failed.append(i + 1)
-                                print("失败: 未提取到内容")
+                                _log.info("失败: 未提取到内容")
                             # 每章完成后更新检查点（中断后可从断点续传）
                             self._save_checkpoint(output_file, catalog_url,
                                                   i + 1, total, file_handle=f)
@@ -5310,33 +5313,33 @@ class NovelSpider:
                     # ===== 串行抓取 (默认) =====
                     for i in range(start, total):
                         if stop_event is not None and stop_event.is_set():
-                            print(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
+                            _log.info(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
                             return output_file
                         chap = chapters[i]
                         # 增量模式: 跳过未变更章节 (不请求, 不写入; 需配合
                         # resume=True 复用旧输出文件中已抓取的正文)
                         if self._是否应跳过章节(chap['url']):
                             self._增量跳过数 += 1
-                            print(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
+                            _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
                             self._save_checkpoint(output_file, catalog_url,
                                                   i + 1, total, file_handle=f)
                             if show_progress:
                                 print_progress_bar(i + 1, total, extra=chap['title'][:20])
                             continue
-                        print(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
+                        _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                         try:
                             content = self._fetch_with_qc(chap)
                         except Exception as e:
-                            print(f"抓取异常: {e}")
+                            _log.info(f"抓取异常: {e}")
                             content = ''
                         # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
                         f.write(f"## {chap['title']}\n\n")
                         f.write(content + "\n\n")
                         if content:
-                            print(f"成功: {len(content)} 字符")
+                            _log.info(f"成功: {len(content)} 字符")
                         else:
                             failed.append(i + 1)
-                            print("失败: 未提取到内容")
+                            _log.info("失败: 未提取到内容")
                         # 每章完成后更新检查点（中断后可从断点续传）
                         self._save_checkpoint(output_file, catalog_url,
                                               i + 1, total, file_handle=f)
@@ -5345,7 +5348,7 @@ class NovelSpider:
                         if delay > 0:
                             time.sleep(delay)  # 请求间隔，尊重服务器
         except KeyboardInterrupt:
-            print(f"\n⚠️ 用户中断! 进度检查点已保存，下次运行将自动从断点继续 (输出: {output_file})")
+            _log.info(f"\n⚠️ 用户中断! 进度检查点已保存，下次运行将自动从断点继续 (输出: {output_file})")
             return output_file
 
         self._remove_checkpoint(output_file)
@@ -5357,21 +5360,21 @@ class NovelSpider:
             质检摘要 = self._生成质检汇总报告(output_file, total, failed)
         except Exception as e:
             质检摘要 = None
-            print(f"[质检] 汇总报告生成异常: {e}")
+            _log.info(f"[质检] 汇总报告生成异常: {e}")
         self._记录站点历史(catalog_url, novel_title, total, failed,
                             output_file, 质检摘要=质检摘要)
         # 验证码监控报告 (类型/耗时/成功率/成本) 与告警
         if self._captcha_manager is not None:
             try:
-                print(f"\n{self._captcha_manager.report()}")
+                _log.info(f"\n{self._captcha_manager.report()}")
                 for alarm in self._captcha_manager.alarms():
-                    print(alarm)
-            except Exception:
-                pass
+                    _log.info(alarm)
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         if failed:
-            print(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
+            _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
         else:
-            print(f"\n抓取完成，共{total}章，已保存至{output_file}")
+            _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
         return output_file
 
 
@@ -5388,8 +5391,8 @@ def _wait_driver_body(driver):
         # Playwright 驱动: 内置显式等待
         try:
             driver.wait_for('tag name', 'body')
-        except Exception:
-            pass
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
     else:
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.TAG_NAME, 'body')))
@@ -5413,49 +5416,49 @@ def interactive_menu():
     mode: 'list' 只看章节列表 / 'full' 完整抓取 / 'test' 快速测试(提取第1章前2页) / 'range' 自定义区间
     chapter_range: (start, end) 1-based 章节索引区间，或 None 表示不限制
     threads: 并发线程数 / delay: 章节间间隔秒数"""
-    print("=== 小说爬虫 ===")
-    print("请输入小说网站的目录页面URL:")
-    print("例如: https://www.shubaoxs.net/book/391625/")
-    print("     https://www.baoshuism.com/books/301597.html")
-    print("     https://www.zhiruo.org/infos/5523629.html")
+    _log.info("=== 小说爬虫 ===")
+    _log.info("请输入小说网站的目录页面URL:")
+    _log.info("例如: https://www.shubaoxs.net/book/391625/")
+    _log.info("     https://www.baoshuism.com/books/301597.html")
+    _log.info("     https://www.zhiruo.org/infos/5523629.html")
 
     catalog_url = input("\nURL: ").strip()
     if not catalog_url:
-        print("错误: 请输入有效的URL")
+        _log.info("错误: 请输入有效的URL")
         return None, None, False, True, True, None, 1, 1.0
 
     # 章节排序选项
-    print("\n章节排序选项:")
-    print("1. 启用排序 (按照章节号排序，自动从第1章排到最后一章)")
-    print("2. 禁用排序 (保持原目录顺序)")
+    _log.info("\n章节排序选项:")
+    _log.info("1. 启用排序 (按照章节号排序，自动从第1章排到最后一章)")
+    _log.info("2. 禁用排序 (保持原目录顺序)")
     sort_choice = input("请选择 (1/2，默认1): ").strip() or "1"
     sort_chapters = sort_choice == "1"
 
     # 操作选项
-    print("\n操作选项:")
-    print("1. 只查看章节列表")
-    print("2. 完整抓取内容 (保存到 抓取结果/ 文件夹)")
-    print("3. 快速测试 (提取第1章前2页内容，验证网站是否支持)")
-    print("4. 自定义区间 (指定起始章节和结束章节，只抓取该区间)")
+    _log.info("\n操作选项:")
+    _log.info("1. 只查看章节列表")
+    _log.info("2. 完整抓取内容 (保存到 抓取结果/ 文件夹)")
+    _log.info("3. 快速测试 (提取第1章前2页内容，验证网站是否支持)")
+    _log.info("4. 自定义区间 (指定起始章节和结束章节，只抓取该区间)")
     op_choice = input("请选择 (1/2/3/4，默认2): ").strip() or "2"
     mode = {"1": "list", "2": "full", "3": "test", "4": "range"}.get(op_choice, "full")
 
     chapter_range = None
     if mode == "range":
-        print("\n--- 自定义章节区间 ---")
-        print("提示: 章节编号从 1 开始，排序后第1章=第一章")
+        _log.info("\n--- 自定义章节区间 ---")
+        _log.info("提示: 章节编号从 1 开始，排序后第1章=第一章")
         try:
             start_str = input("起始章节 (默认1): ").strip() or "1"
             end_str = input("结束章节 (默认20): ").strip() or "20"
             start_ch = int(start_str)
             end_ch = int(end_str)
             if start_ch < 1 or end_ch < start_ch:
-                print("错误: 起始章节必须 >= 1，结束章节必须 >= 起始章节")
+                _log.info("错误: 起始章节必须 >= 1，结束章节必须 >= 起始章节")
                 return None, None, False, True, True, None, 1, 1.0
             chapter_range = (start_ch, end_ch)
-            print(f"已选择: 第 {start_ch} 章 ~ 第 {end_ch} 章 (共 {end_ch - start_ch + 1} 章)")
+            _log.info(f"已选择: 第 {start_ch} 章 ~ 第 {end_ch} 章 (共 {end_ch - start_ch + 1} 章)")
         except ValueError:
-            print("错误: 请输入有效的数字")
+            _log.info("错误: 请输入有效的数字")
             return None, None, False, True, True, None, 1, 1.0
 
     resume = True
@@ -5464,22 +5467,22 @@ def interactive_menu():
     delay = 1.0
     if mode in ("full", "range"):
         # 断点续传选项
-        print("\n断点续传选项 (中断后可继续抓取):")
-        print("1. 启用 (检测到上次未完成的进度自动继续，推荐)")
-        print("2. 禁用 (从头开始)")
+        _log.info("\n断点续传选项 (中断后可继续抓取):")
+        _log.info("1. 启用 (检测到上次未完成的进度自动继续，推荐)")
+        _log.info("2. 禁用 (从头开始)")
         resume = input("请选择 (1/2，默认1): ").strip() != "2"
 
         # 下载进度条选项
-        print("\n下载进度条选项:")
-        print("1. 启用 (每章显示下载进度，推荐)")
-        print("2. 禁用")
+        _log.info("\n下载进度条选项:")
+        _log.info("1. 启用 (每章显示下载进度，推荐)")
+        _log.info("2. 禁用")
         show_progress = input("请选择 (1/2，默认1): ").strip() != "2"
 
         # 抓取速度选项
-        print("\n抓取速度选项:")
-        print("1. 标准 (串行，每章间隔1秒，最稳妥)")
-        print("2. 快速 (3线程并发，间隔0.3秒，约3倍速)")
-        print("3. 极速 (6线程并发，间隔0.1秒，最快，可能触发站点反爬)")
+        _log.info("\n抓取速度选项:")
+        _log.info("1. 标准 (串行，每章间隔1秒，最稳妥)")
+        _log.info("2. 快速 (3线程并发，间隔0.3秒，约3倍速)")
+        _log.info("3. 极速 (6线程并发，间隔0.1秒，最快，可能触发站点反爬)")
         speed_choice = input("请选择 (1/2/3，默认1): ").strip() or "1"
         if speed_choice == "2":
             threads, delay = 3, 0.3
@@ -5607,24 +5610,29 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         stop_event: threading.Event，GUI 停止按钮设置后中断抓取
         unique_title: 为 True 时, 新任务遇到同名小说自动加 (1)/(2) 序号
     """
+    # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
+    try:
+        _app_log.enable_console()
+    except Exception:
+        pass
     # 统一输出目录 -> 绝对路径, 避免多套结果目录
     if output_dir is None:
         output_dir = _DEFAULT_OUTPUT_DIR
     output_dir = _resolve_output_dir(output_dir)
-    print(f"[输出目录] {output_dir}")
+    _log.info(f"[输出目录] {output_dir}")
     # 调试日志: 抓取入口 (供事后排查)
-    print(f"[调试] 抓取开始: {catalog_url} 模式={mode} 区间={chapter_range} "
+    _log.info(f"[调试] 抓取开始: {catalog_url} 模式={mode} 区间={chapter_range} "
           f"线程={threads} 延迟={delay} 续传={resume} 输出={output_dir}")
 
     # 安全校验: 仅允许公网 http/https URL
     try:
         validate_public_url(catalog_url)
     except ValueError as e:
-        print(f"⚠️ URL 校验失败: {e}")
+        _log.info(f"⚠️ URL 校验失败: {e}")
         return
 
     base_url = get_base_url(catalog_url)
-    print(f"提取到基础URL: {base_url}")
+    _log.info(f"提取到基础URL: {base_url}")
     spider = NovelSpider(base_url)
 
     # 若启用去重序号, 在主源抓取前一次性确定唯一标题,
@@ -5634,34 +5642,34 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         try:
             raw_title = spider.get_novel_title(catalog_url)
             unique_novel_title = _resolve_unique_title(raw_title, output_dir)
-            print(f"[去重标题] {raw_title} -> {unique_novel_title}")
+            _log.info(f"[去重标题] {raw_title} -> {unique_novel_title}")
         except Exception as e:
-            print(f"[去重标题] 标题预取失败, 降级到单源内去重: {e}")
+            _log.info(f"[去重标题] 标题预取失败, 降级到单源内去重: {e}")
 
     if mode == "list":
         chapters = spider.get_chapter_list(catalog_url, sort_chapters)
-        print("\n=== 章节列表 ===")
+        _log.info("\n=== 章节列表 ===")
         for i, chap in enumerate(chapters):
-            print(f"  {i+1}. {chap['title']} -> {chap['url']}")
-        print(f"\n共找到 {len(chapters)} 个章节")
+            _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
+        _log.info(f"\n共找到 {len(chapters)} 个章节")
         spider.close()
         return
 
     if mode == "test":
         chapters = spider.get_chapter_list(catalog_url, sort_chapters)
-        print(f"\n共找到 {len(chapters)} 个章节")
+        _log.info(f"\n共找到 {len(chapters)} 个章节")
         if not chapters:
-            print("⚠️ 未提取到章节，可能需要适配该网站结构")
+            _log.info("⚠️ 未提取到章节，可能需要适配该网站结构")
             return
-        print(f"第1章: {chapters[0]['title']}")
-        print(f"最后章: {chapters[-1]['title']}")
-        print("\n--- 提取第1章内容(前2页) ---")
+        _log.info(f"第1章: {chapters[0]['title']}")
+        _log.info(f"最后章: {chapters[-1]['title']}")
+        _log.info("\n--- 提取第1章内容(前2页) ---")
         content = spider.get_chapter_content(chapters[0]['url'], max_pages=2)
-        print(f"内容长度: {len(content)} 字符")
+        _log.info(f"内容长度: {len(content)} 字符")
         if content:
-            print(f"内容预览: {content[:200]}...")
+            _log.info(f"内容预览: {content[:200]}...")
         else:
-            print("⚠️ 未提取到内容，可能需要调整内容选择器")
+            _log.info("⚠️ 未提取到内容，可能需要调整内容选择器")
         spider.close()
         return
 
@@ -5681,14 +5689,14 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                     if alt and alt not in sources:
                         sources.append(alt)
     except Exception as e:
-        print(f"[多源回退] 配置读取失败: {e}")
+        _log.info(f"[多源回退] 配置读取失败: {e}")
 
     if len(sources) > 1:
-        print(f"[多源回退] 共 {len(sources)} 个数据源 (主源 + {len(sources)-1} 个备用)")
+        _log.info(f"[多源回退] 共 {len(sources)} 个数据源 (主源 + {len(sources)-1} 个备用)")
 
     for src_idx, src in enumerate(sources):
         if src_idx > 0:
-            print(f"[多源回退] ⚠️ 主源抓取异常, 切换备用源 {src_idx}/{len(sources)-1}: {src}")
+            _log.info(f"[多源回退] ⚠️ 主源抓取异常, 切换备用源 {src_idx}/{len(sources)-1}: {src}")
         src_spider = NovelSpider(get_base_url(src))
         try:
             if mode == "range" and chapter_range:
@@ -5715,13 +5723,13 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         if src_spider._captcha_manager is not None:
             try:
                 rate = src_spider._captcha_manager.monitor.trigger_rate()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         if fail_ratio < 0.2 and rate < 0.5:
-            print(f"[多源回退] ✅ 源 {src_idx+1}/{len(sources)} 抓取成功 "
+            _log.info(f"[多源回退] ✅ 源 {src_idx+1}/{len(sources)} 抓取成功 "
                   f"(失败率 {fail_ratio:.0%}, 验证码触发率 {rate:.0%})")
             return
-        print(f"[多源回退] 源 {src_idx+1}/{len(sources)} 未达标 "
+        _log.info(f"[多源回退] 源 {src_idx+1}/{len(sources)} 未达标 "
               f"(失败率 {fail_ratio:.0%}, 验证码触发率 {rate:.0%}), "
               + ("尝试下一个备用源..." if src_idx < len(sources) - 1 else "无更多备用源"))
 
@@ -5750,14 +5758,14 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
     from urllib.parse import urlparse
 
     # 调试日志: 批量入口
-    print(f"[调试] 批量抓取开始: {len(url_list)} 本书, 并发 {threads}, 延迟 {delay}")
+    _log.info(f"[调试] 批量抓取开始: {len(url_list)} 本书, 并发 {threads}, 延迟 {delay}")
 
     # 同域分组 (限流保护: 同域最多1本并行)
     domain_map = defaultdict(list)
     for u in url_list:
         host = urlparse(u).netloc
         domain_map[host].append(u)
-    print(f"[批量] 共 {len(url_list)} 本书, {len(domain_map)} 个站点, 书级并发 {threads}")
+    _log.info(f"[批量] 共 {len(url_list)} 本书, {len(domain_map)} 个站点, 书级并发 {threads}")
 
     def _crawl_one(url):
         t0 = time.time()
@@ -5779,7 +5787,7 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
         for host, urls in domain_map.items():
             for u in urls:
                 if stop_event is not None and stop_event.is_set():
-                    print("[批量] ⚠️ 已收到停止信号, 不再提交新任务")
+                    _log.info("[批量] ⚠️ 已收到停止信号, 不再提交新任务")
                     break
                 # 包装: 同域信号量保护 (同一站点串行)
                 def _guarded(u=u, host=host):
@@ -5793,12 +5801,12 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
                 results.append((futures[fut], f'❌ 异常: {str(e)[:80]}', 0, None))
 
     # 汇总报告
-    print("\n========== 批量抓取汇总 ==========")
+    _log.info("\n========== 批量抓取汇总 ==========")
     for url, status, dur, _ in results:
-        print(f"  {status} [{dur:.0f}秒] {url}")
+        _log.info(f"  {status} [{dur:.0f}秒] {url}")
     ok = sum(1 for _, st, _, _ in results if '✅' in st)
-    print("===================================")
-    print(f"[批量] 完成 {ok}/{len(results)} 本")
+    _log.info("===================================")
+    _log.info(f"[批量] 完成 {ok}/{len(results)} 本")
     return results
 
 
@@ -5821,7 +5829,7 @@ def _parse_batch_opts(argv, start_idx):
             try:
                 opts['threads'] = max(1, min(int(argv[i + 1]), 8))
             except (ValueError, IndexError):
-                print("⚠️ --threads 后需要数字")
+                _log.info("⚠️ --threads 后需要数字")
                 exit(2)
             i += 1
         elif arg == "--no-resume":
@@ -5836,13 +5844,13 @@ def _parse_batch_opts(argv, start_idx):
             try:
                 opts['delay'] = max(0.0, float(argv[i + 1]))
             except (ValueError, IndexError):
-                print("⚠️ --delay 后需要数字")
+                _log.info("⚠️ --delay 后需要数字")
                 exit(2)
             i += 1
         elif not arg.startswith('--'):
             pass  # URL 参数, 跳过
         else:
-            print(f"⚠️ 未知参数: {arg}")
+            _log.info(f"⚠️ 未知参数: {arg}")
             exit(2)
         i += 1
     return opts
@@ -5863,28 +5871,28 @@ if __name__ == "__main__":
             def write(self, text):
                 try:
                     self._orig.write(text)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                 for line in text.split('\n'):
                     if line.strip():
                         try:
                             _app_log.info("CLI", line.strip())
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
             def flush(self):
                 try:
                     self._orig.flush()
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
             def isatty(self):
                 return False
 
         if not isinstance(sys.stdout, _CliLogStdout):
             sys.stdout = _CliLogStdout()
-    except Exception:
-        pass
+    except Exception as e:
+        _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
     # 命令行用法:
     #   python 爬虫.py                              # 交互式菜单
@@ -5906,16 +5914,16 @@ if __name__ == "__main__":
         # ===== 批量模式: --batch 清单文件 或 多个 URL 参数 =====
         if sys.argv[1] == "--batch":
             if len(sys.argv) < 3:
-                print("⚠️ --batch 后需要清单文件路径 (每行一个小说URL)")
+                _log.info("⚠️ --batch 后需要清单文件路径 (每行一个小说URL)")
                 exit(2)
             batch_file = sys.argv[2]
             if not os.path.exists(batch_file):
-                print(f"⚠️ 批量清单文件不存在: {batch_file}")
+                _log.info(f"⚠️ 批量清单文件不存在: {batch_file}")
                 exit(2)
             opts = _parse_batch_opts(sys.argv, 3)
             urls = [ln.strip() for ln in open(batch_file, encoding='utf-8')
                     if ln.strip() and not ln.strip().startswith('#')]
-            print(f"[批量] 从 {batch_file} 加载 {len(urls)} 个小说URL")
+            _log.info(f"[批量] 从 {batch_file} 加载 {len(urls)} 个小说URL")
             if urls:
                 run_batch(urls, threads=opts['threads'], resume=opts['resume'],
                           show_progress=opts['show_progress'],
@@ -5985,29 +5993,29 @@ if __name__ == "__main__":
                     try:
                         threads_arg = max(1, min(int(argv[i + 1]), 16))
                     except ValueError:
-                        print("⚠️ --threads 后必须是数字")
+                        _log.info("⚠️ --threads 后必须是数字")
                         exit(2)
                     i += 1
                 else:
-                    print("⚠️ --threads 后缺少线程数")
+                    _log.info("⚠️ --threads 后缺少线程数")
                     exit(2)
             elif arg == "--delay":
                 if i + 1 < len(argv):
                     try:
                         delay_arg = max(0.0, float(argv[i + 1]))
                     except ValueError:
-                        print("⚠️ --delay 后必须是数字")
+                        _log.info("⚠️ --delay 后必须是数字")
                         exit(2)
                     i += 1
                 else:
-                    print("⚠️ --delay 后缺少秒数")
+                    _log.info("⚠️ --delay 后缺少秒数")
                     exit(2)
             elif arg == "--output-dir":
                 if i + 1 < len(argv):
                     output_dir_arg = argv[i + 1]
                     i += 1
                 else:
-                    print("⚠️ --output-dir 后缺少目录参数")
+                    _log.info("⚠️ --output-dir 后缺少目录参数")
                     exit(2)
             elif arg == "--start":
                 if i + 1 < len(argv):
@@ -6015,11 +6023,11 @@ if __name__ == "__main__":
                         start_n = int(argv[i + 1])
                         chapter_range_arg = (start_n, chapter_range_arg[1] if chapter_range_arg else start_n)
                     except ValueError:
-                        print("⚠️ --start 后必须是数字")
+                        _log.info("⚠️ --start 后必须是数字")
                         exit(2)
                     i += 1
                 else:
-                    print("⚠️ --start 后缺少章节号")
+                    _log.info("⚠️ --start 后缺少章节号")
                     exit(2)
             elif arg == "--end":
                 if i + 1 < len(argv):
@@ -6028,14 +6036,14 @@ if __name__ == "__main__":
                         sr = chapter_range_arg[0] if chapter_range_arg else 1
                         chapter_range_arg = (sr, end_n)
                     except ValueError:
-                        print("⚠️ --end 后必须是数字")
+                        _log.info("⚠️ --end 后必须是数字")
                         exit(2)
                     i += 1
                 else:
-                    print("⚠️ --end 后缺少章节号")
+                    _log.info("⚠️ --end 后缺少章节号")
                     exit(2)
             else:
-                print(f"⚠️ 未知参数: {arg}")
+                _log.info(f"⚠️ 未知参数: {arg}")
                 exit(2)
             i += 1
         if chapter_range_arg:
@@ -6048,21 +6056,21 @@ if __name__ == "__main__":
     else:
         # 帮助信息
         if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
-            print("用法:")
-            print("  python 爬虫.py                         交互式菜单")
-            print("  python 爬虫.py <URL>                   完整抓取(默认排序+断点续传+进度条)")
-            print("  python 爬虫.py <URL> --list            只查看章节列表")
-            print("  python 爬虫.py <URL> --test            快速测试(第1章前2页)")
-            print("  python 爬虫.py <URL> --no-sort         禁用排序")
-            print("  python 爬虫.py <URL> --no-resume       禁用断点续传(从头开始)")
-            print("  python 爬虫.py <URL> --no-progress     禁用进度条")
-            print("  python 爬虫.py <URL> --output-dir <目录>")
-            print("                                         自定义输出目录 (默认: 项目根/抓取结果)")
-            print("  python 爬虫.py <URL> --start N --end M 自定义章节区间 (如 --start 10 --end 20)")
-            print("  python 爬虫.py <URL> --threads N       并发抓取线程数 (1=串行, 建议2~6)")
-            print("  python 爬虫.py <URL> --delay N         章节间间隔秒数 (如 0.2)")
-            print("  python 爬虫.py <URL> --fast            快速模式 (4线程+0.2秒间隔)")
-            print("  python 爬虫.py -h / --help             显示帮助")
+            _log.info("用法:")
+            _log.info("  python 爬虫.py                         交互式菜单")
+            _log.info("  python 爬虫.py <URL>                   完整抓取(默认排序+断点续传+进度条)")
+            _log.info("  python 爬虫.py <URL> --list            只查看章节列表")
+            _log.info("  python 爬虫.py <URL> --test            快速测试(第1章前2页)")
+            _log.info("  python 爬虫.py <URL> --no-sort         禁用排序")
+            _log.info("  python 爬虫.py <URL> --no-resume       禁用断点续传(从头开始)")
+            _log.info("  python 爬虫.py <URL> --no-progress     禁用进度条")
+            _log.info("  python 爬虫.py <URL> --output-dir <目录>")
+            _log.info("                                         自定义输出目录 (默认: 项目根/抓取结果)")
+            _log.info("  python 爬虫.py <URL> --start N --end M 自定义章节区间 (如 --start 10 --end 20)")
+            _log.info("  python 爬虫.py <URL> --threads N       并发抓取线程数 (1=串行, 建议2~6)")
+            _log.info("  python 爬虫.py <URL> --delay N         章节间间隔秒数 (如 0.2)")
+            _log.info("  python 爬虫.py <URL> --fast            快速模式 (4线程+0.2秒间隔)")
+            _log.info("  python 爬虫.py -h / --help             显示帮助")
             exit(0)
         # 交互式菜单
         catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay = interactive_menu()
