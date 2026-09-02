@@ -348,6 +348,116 @@ def _is_ad_line(line):
     return False
 
 
+def _resolve_novel_paths(catalog_url):
+    r"""按站点规则计算小说路径前缀 (第 4 批重构: 从 get_chapter_list 抽出)。
+
+    各站点章节链接的路径格式不同 (/books/{id}/、/xiaoshuo/{id}/、
+    /book/{id}/、/infos/{id}/、/\d+_\d+/ ...), 这里统一规约出两个候选
+    前缀供链接过滤使用。纯函数, 不依赖实例状态, 可离线单测。
+
+    Returns:
+        (novel_path, novel_path_alt): 两个候选路径前缀
+    """
+    if 'hatxt.cc' in catalog_url:
+        print("检测到hatxt.cc网站，使用专门的处理逻辑")
+        # 提取小说ID
+        novel_id_pattern = re.search(r'/books/(\d+)', catalog_url)
+        novel_id = novel_id_pattern.group(1) if novel_id_pattern else ''
+        print(f"当前小说ID: {novel_id}")
+        # 构建两种可能的路径格式
+        novel_path = f'/books/{novel_id}/'
+        novel_path_alt = f'/books/{novel_id}'  # 用于匹配194971_1.html这种格式
+    # 特殊处理pjxdd.com网站
+    elif 'pjxdd.com' in catalog_url:
+        print("检测到pjxdd.com网站，使用专门的处理逻辑")
+        # 提取小说路径
+        novel_path_pattern = re.search(r'(/xiaoshuo/\d+/)', catalog_url)
+        novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
+        novel_path_alt = novel_path  # 对于pjxdd.com，两种路径格式相同
+    # 特殊处理ahxsw.com网站
+    elif 'ahxsw.com' in catalog_url:
+        print("检测到ahxsw.com网站，使用专门的处理逻辑")
+        # 提取小说ID路径，如 /book/143259/
+        novel_path_pattern = re.search(r'(/book/\d+/)', catalog_url)
+        novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
+        # ahxsw.com的章节链接格式为 /read/143/143259/xxx.html
+        # 提取/read/路径部分用于匹配
+        read_path_pattern = re.search(r'(/read/\d+/\d+/)', catalog_url)
+        novel_path_alt = read_path_pattern.group(1) if read_path_pattern else '/read/'
+        print(f"当前小说路径: {novel_path}, 读取路径: {novel_path_alt}")
+    elif '5hbook.net' in catalog_url:
+        print("检测到5hbook.net网站，使用专门的处理逻辑")
+        # 提取小说ID路径，如 /books/539.html → /books/539/
+        novel_path_pattern = re.search(r'(/books/\d+)\.html', catalog_url)
+        novel_path = (novel_path_pattern.group(1) + '/') if novel_path_pattern else ''
+        novel_path_alt = novel_path
+        print(f"当前小说路径: {novel_path}")
+    elif 'exotxt.net' in catalog_url:
+        print("检测到exotxt.net网站，使用专门的处理逻辑")
+        book_id_match = re.search(r'/infos/(\d+)', catalog_url)
+        book_id = book_id_match.group(1) if book_id_match else ''
+        novel_path = f"/infos/{book_id}/" if book_id_match else ''
+        novel_path_alt = novel_path
+        print(f"当前小说路径: {novel_path}")
+    else:
+        # 通用逻辑：尝试多种URL模式提取小说路径
+        novel_path = ''
+        novel_path_alt = ''
+
+        # 模式1: /97_97855/ (27xsw.cc格式)
+        novel_path_pattern = re.search(r'(/\d+_\d+/)', catalog_url)
+        if novel_path_pattern:
+            novel_path = novel_path_pattern.group(1)
+        else:
+            # 模式2: /books/301597.html → /books/301597/ (baoshuism.com格式)
+            novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)\.html?', catalog_url)
+            if novel_path_pattern:
+                prefix = novel_path_pattern.group(1)
+                book_id = novel_path_pattern.group(2)
+                novel_path = f"{prefix}{book_id}/"
+                print(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
+            else:
+                # 模式3: /infos/5523629.html → /infos/5523629/ (zhiruo.org格式)
+                novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)(?:\.html?|/)', catalog_url)
+                if novel_path_pattern:
+                    prefix = novel_path_pattern.group(1)
+                    book_id = novel_path_pattern.group(2)
+                    novel_path = f"{prefix}{book_id}/"
+                    print(f"[路径提取] 模式3: 从URL提取小说路径 {novel_path}")
+                else:
+                    # 模式4: 提取URL中的数字ID作为关键词
+                    id_match = re.search(r'/(\d{4,})', catalog_url)
+                    if id_match:
+                        novel_path = id_match.group(1)
+                        print(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
+                    else:
+                        # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
+                        # 字母数字书ID + index_分页目录)
+                        alt_match = re.search(r'/([a-z0-9]{2,12})/index(?:_\d+)?\.html?', catalog_url)
+                        if alt_match:
+                            novel_path = f"/{alt_match.group(1)}/"
+                            print(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
+                        else:
+                            # 模式6: /shu/OqWe.html → /shu/OqWe/ (ciyewk等字母数字书ID
+                            # 目录页, 章节链接 /shu/OqWe/{N}.html)
+                            path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
+                            if path6:
+                                novel_path = f"{path6.group(1)}/"
+                                print(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
+                            else:
+                                # 模式7: /163/163654/index.html → /163/163654/ (zhiruo等
+                                # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
+                                path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
+                                if path7:
+                                    novel_path = f"{path7.group(1)}/"
+                                    print(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
+
+        novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
+
+
+    return novel_path, novel_path_alt
+
+
 class NovelSpider:
     """
     通用小说爬虫主类。
@@ -1064,6 +1174,693 @@ class NovelSpider:
         # 如果所有尝试都失败，返回空的BeautifulSoup对象
         return BeautifulSoup('', 'lxml')
 
+    # 站点专属目录解析器登记表: (域名特征, 方法名)
+    # 顺序与原 if 链一致; 命中即返回, 未命中返回 None 走通用流程。
+    _CATALOG_PARSERS = (
+        ('zhiruo.org', '_parse_catalog_zhiruo'),
+        ('ciyewk.com', '_parse_catalog_ciyewk'),
+        ('630wang.cc', '_parse_catalog_630wang'),
+        ('ltbook.net', '_parse_catalog_ltbook'),
+        ('biquwx.cc', '_parse_catalog_biquwx'),
+        ('11bzw.org', '_parse_catalog_11bzw'),
+        ('yqyp.net', '_parse_catalog_yqyp'),
+        ('28zw.org', '_parse_catalog_yunquge'),
+        ('spscl.com', '_parse_catalog_yunquge'),
+        ('tanmixs.com', '_parse_catalog_tanmixs'),
+    )
+
+    def _parse_catalog_by_site(self, catalog_url, sort_chapters, soup=None):
+        """按域名分派站点专属目录解析器 (第 4 批重构)。
+
+        各站点目录页结构差异极大 (链接藏在 onclick 里 / 需链式追踪"下一页" /
+        目录分页需按规则拼接), 原实现是 9 段内联 if 分支共 ~660 行, 既无法单测
+        也难以定位。抽出为独立方法后, 每个解析器可用 测试样本/ 的页面快照离线验证。
+
+        Returns:
+            list[dict]: 命中站点时的章节列表; 无站点命中时返回 None
+        """
+        for token, method_name in self._CATALOG_PARSERS:
+            if token in catalog_url:
+                return getattr(self, method_name)(catalog_url, sort_chapters, soup)
+        return None
+
+    def _parse_catalog_zhiruo(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理zhiruo.org网站：目录页章节链接用 onclick="read_tz(章节ID)" 而非 href，
+
+        正文URL格式为 /infos/{小说ID}/{章节ID}.html 或 /{cat}/{小说ID}/{章节ID}.html；
+        目录可能分页 /infos/{id}/1/, /infos/{id}/2/ ... 或 /{cat}/{id}/1/ ...
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到zhiruo.org网站，使用onclick解析章节列表")
+        # 提取书路径前缀: 支持 /infos/{id} 和 /{cat}/{id} 两种格式
+        # 例: /infos/5523629.html → /infos/5523629
+        #     /163/163654/index.html → /163/163654
+        #     /163/163654/1/ (目录分页) → /163/163654
+        path_m = re.search(r'/((?:infos|[a-zA-Z0-9_]+)/\d+)', catalog_url)
+        if not path_m:
+            print("[zhiruo] 无法从URL提取小说路径")
+            return chapters
+        novel_path = path_m.group(1)
+        print(f"[zhiruo] 书路径前缀: {novel_path}")
+        # 详情页 (如 index.html 或书根目录) 无章节列表, 需先跳转到 "章节目录" 链接
+        if 'index.html' in catalog_url or catalog_url.rstrip('/').endswith(novel_path):
+            catalog_link_a = None
+            for a in soup.find_all('a', href=True):
+                txt = a.get_text(strip=True)
+                if '章节目录' in txt or '查看全部章节' in txt or '查看更多章节' in txt:
+                    catalog_link_a = a
+                    break
+            if catalog_link_a:
+                href = catalog_link_a.get('href', '')
+                if not href.startswith('http'):
+                    href = self.base_url + href
+                print(f"[zhiruo] 详情页, 跳转章节目录: {href}")
+                page_soup_first = self.inspect_page(href)
+                if page_soup_first:
+                    soup = page_soup_first
+        seen_ids = set()
+        page_no = 1
+        while True:
+            if page_no == 1:
+                page_soup = soup  # 第1页已由inspect_page抓取，直接复用
+            else:
+                catalog_page_url = f"{self.base_url}/{novel_path}/{page_no}/"
+                print(f"[zhiruo] 抓取目录第{page_no}页: {catalog_page_url}")
+                page_soup = self.inspect_page(catalog_page_url)
+            if not page_soup:
+                break
+            chap_as = page_soup.find_all('a', onclick=re.compile(r'read_tz\s*\('))
+            if not chap_as:
+                print(f"[zhiruo] 第{page_no}页未找到章节链接，结束分页提取")
+                break
+            new_count = 0
+            for a in chap_as:
+                onclick = a.get('onclick', '')
+                m = re.search(r'read_tz\s*\(\s*(\d+)\s*\)', onclick)
+                if not m:
+                    continue
+                chap_id = m.group(1)
+                if chap_id in seen_ids:
+                    continue
+                seen_ids.add(chap_id)
+                title = a.get_text(strip=True)
+                if not title:
+                    continue
+                chap_url = f"{self.base_url}/{novel_path}/{chap_id}.html"
+                chapters.append({'title': self.clean_chapter_title(title), 'url': chap_url})
+                new_count += 1
+            print(f"[zhiruo] 第{page_no}页: 新增 {new_count} 章，累计 {len(chapters)} 章")
+            if new_count == 0:
+                break
+            page_no += 1
+            if page_no > 50:  # 安全上限
+                break
+        print(f"[zhiruo] 共提取 {len(chapters)} 个章节")
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[zhiruo] 已按章节号排序")
+        for i, chap in enumerate(chapters):
+            print(f"  {i+1}. {chap['title']} -> {chap['url']}")
+        return chapters
+
+    def _parse_catalog_ciyewk(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理ciyewk.com网站 (词夜书屋):
+
+        目录 /shu/{bid}.html (bid 为字母数字如 OqWe), 容器 #list dl dd a;
+        章节URL /shu/{bid}/{N}.html; 正文由 initTxt 加载 .book 数据文件,
+        content_decoder 自动探测解码 (见 get_chapter_content 数据文件层)。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到ciyewk.com网站，使用专门的处理逻辑")
+        book_id_match = re.search(r'/shu/([A-Za-z0-9]+)', catalog_url)
+        if not book_id_match:
+            print("[ciyewk] 无法从URL提取小说ID")
+            return chapters
+        book_id = book_id_match.group(1)
+        print(f"[ciyewk] 小说ID: {book_id}")
+        # 若用户给的是章节页 (如 ml.html / N.html), 规范化到目录页
+        if not re.search(r'/shu/' + re.escape(book_id) + r'\.html$', catalog_url):
+            catalog_page_url = f"{self.base_url}/shu/{book_id}.html"
+            print(f"[ciyewk] 规范化目录URL: {catalog_page_url}")
+            soup = self.inspect_page(catalog_page_url)
+        seen_urls = set()
+        for a in soup.select('#list dl dd a[href]'):
+            href = a.get('href', '')
+            text = a.get_text(strip=True)
+            if not text or len(text) < 2:
+                continue
+            m = re.search(r'/shu/' + re.escape(book_id) + r'/(\d+)\.html$', href)
+            if not m:
+                continue
+            chap_url = href if href.startswith('http') else self.base_url + href
+            if chap_url in seen_urls:
+                continue
+            seen_urls.add(chap_url)
+            chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
+        print(f"[ciyewk] 共提取 {len(chapters)} 个章节")
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[ciyewk] 已按章节号排序")
+        for i, chap in enumerate(chapters[:10]):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        if len(chapters) > 10:
+            print(f"  ... (共 {len(chapters)} 章)")
+        return chapters
+
+    def _parse_catalog_630wang(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理630wang.cc网站 (恋上看书网):
+
+        目录详情页 /kan/{id}.html; 目录分页 /kan/{id}/{n}.html (n=1,2,3..., 分页按钮JS动态加载,
+        页面无 "下一页" 链接, 需按规则拼接); 章节URL /kan/{id}_{chapid}.html;
+        正文 div.word_read 的 <p> (数字被服务端替换为o, 有损替换无法还原, 保留原样)。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到630wang.cc网站，使用专门的处理逻辑")
+        book_id_match = re.search(r'/kan/(\d+)', catalog_url)
+        if not book_id_match:
+            print("[630wang] 无法从URL提取小说ID")
+            return chapters
+        book_id = book_id_match.group(1)
+        print(f"[630wang] 小说ID: {book_id}")
+        # 目录第1页: 用户给的若是章节页/详情页, 用 /kan/{id}/1.html
+        first_page = catalog_url
+        if not re.search(r'/kan/' + book_id + r'/(\d+)\.html$', catalog_url):
+            first_page = f"{self.base_url}/kan/{book_id}/1.html"
+            print(f"[630wang] 目录第1页: {first_page}")
+        catalog_pages = [first_page]
+        for page_no in range(2, 51):  # 最多50页
+            catalog_pages.append(f"{self.base_url}/kan/{book_id}/{page_no}.html")
+        seen_urls = set()
+        for page_url in catalog_pages:
+            print(f"[630wang] 抓取目录页: {page_url}")
+            page_soup = self.inspect_page(page_url)
+            if not page_soup:
+                continue
+            chap_list_ul = page_soup.select_one('ul.section-list')
+            new_on_page = 0
+            for a in (chap_list_ul.find_all('a', href=True) if chap_list_ul
+                      else page_soup.find_all('a', href=True)):
+                href = a.get('href', '')
+                text = a.get_text(strip=True)
+                if not text:
+                    continue
+                # 章节URL格式: /kan/{id}_{chapid}.html
+                m = re.search(r'/kan/' + book_id + r'_(\d+)\.html$', href)
+                if not m:
+                    continue
+                chap_url = href if href.startswith('http') else self.base_url + href
+                if chap_url in seen_urls:
+                    continue
+                if any(kw in text for kw in ['上一页', '下一页', '章节目录', '查看更多', '开始阅读',
+                                              '目录', '首页', '返回', '上一章', '下一章']):
+                    continue
+                seen_urls.add(chap_url)
+                chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
+                                 'url': chap_url})
+                new_on_page += 1
+            print(f"[630wang] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+            # 当前页没拿到任何新章节 → 后续分页已结束
+            if new_on_page == 0 and page_url != first_page:
+                break
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[630wang] 已按章节号排序")
+        print(f"[630wang] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters[:10]):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        if len(chapters) > 10:
+            print(f"  ... (共 {len(chapters)} 章)")
+        return chapters
+
+    def _parse_catalog_ltbook(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理ltbook.net网站 (龙腾小说网):
+
+        目录 /83663/ 简介页章节链接 /83663/{chapid}.html;
+        简介页章节少时, 从 "全文阅读" 连读页 (如 /83663/6.html) 链式追踪 "下一页" 补充完整目录。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到ltbook.net网站，使用专门的处理逻辑")
+        book_id_match = re.search(r'/(\d+)', catalog_url)
+        if not book_id_match:
+            print("[ltbook] 无法从URL提取小说ID")
+            return chapters
+        book_id = book_id_match.group(1)
+        print(f"[ltbook] 小说ID: {book_id}")
+        seen_urls = set()
+        # 1. 从简介页提取章节链接
+        for a in soup.find_all('a', href=True):
+            href = a.get('href', '')
+            text = a.get_text(strip=True)
+            if not text:
+                continue
+            m = re.search(r'/' + book_id + r'/(\d+)\.html$', href)
+            if not m:
+                continue
+            if any(kw in text for kw in ['全文阅读', '章节目录', '目录', '上一页', '下一页', '加入书架']):
+                continue
+            chap_url = href if href.startswith('http') else self.base_url + href
+            if chap_url in seen_urls:
+                continue
+            seen_urls.add(chap_url)
+            chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
+                             'url': chap_url})
+        print(f"[ltbook] 简介页提取 {len(chapters)} 个章节")
+        # 2. 若章节过少 (<10), 从连读页追踪补充 (连读页 "下一页" 指向下一章)
+        if len(chapters) < 10:
+            next_url = None
+            for a in soup.find_all('a', href=True):
+                text = a.get_text(strip=True)
+                if '全文阅读' in text or text.strip() == '全文':
+                    href = a.get('href', '')
+                    if not href.startswith('http'):
+                        href = self.base_url + href
+                    next_url = href
+                    break
+            if not next_url and chapters:
+                next_url = chapters[0]['url']
+            visited = set()
+            while next_url and len(chapters) < 300:
+                if next_url in visited:
+                    break
+                visited.add(next_url)
+                print(f"[ltbook] 连读追踪: {next_url}")
+                page_soup = self.inspect_page(next_url)
+                if not page_soup:
+                    break
+                if next_url not in seen_urls:
+                    title_el = page_soup.select_one('h1.readTitle') or page_soup.select_one('h1')
+                    chap_title = title_el.get_text(strip=True) if title_el else f'第{len(chapters)+1}章'
+                    chap_title = _format_range_chapter_title(self.clean_chapter_title(chap_title))
+                    seen_urls.add(next_url)
+                    # 标题重复或章节号重叠(如连读页与章节页内容相同)则跳过, 避免重复章节
+                    _dup = False
+                    for _c in chapters:
+                        if _c['title'] == chap_title:
+                            _dup = True
+                            break
+                        _cn = _title_chapter_nums(_c['title'])
+                        _tn = _title_chapter_nums(chap_title)
+                        if _cn and _tn and (_cn & _tn):
+                            _dup = True
+                            break
+                    if not _dup:
+                        chapters.append({'title': chap_title, 'url': next_url})
+                    else:
+                        print(f"[ltbook] 跳过重复章节: {chap_title}")
+                next_a = None
+                for a in page_soup.find_all('a', href=True):
+                    text = a.get_text(strip=True)
+                    if text.strip() == '下一页' or '下一章' in text:
+                        href = a.get('href', '')
+                        if not href.startswith('http'):
+                            href = self.base_url + href
+                        if re.search(r'/' + book_id + r'/(\d+)\.html$', href):
+                            next_a = href
+                            break
+                next_url = next_a
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[ltbook] 已按章节号排序")
+        print(f"[ltbook] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters[:10]):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        if len(chapters) > 10:
+            print(f"  ... (共 {len(chapters)} 章)")
+        return chapters
+
+    def _parse_catalog_biquwx(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理biquwx.cc网站:
+
+        目录URL可能是 /index/{id}/1/ (含最新章节) 或 /txt{id}.shtml (全文目录);
+        章节链接格式 /{cat_id}/{book_id}/{chap_id}.html, 容器在 #list dl 下;
+        正文用 qsbs.bb Base64 加密。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到biquwx.cc网站，使用专门的处理逻辑")
+        book_id_match = re.search(r'[/_](\d{5,})', catalog_url)
+        book_id = book_id_match.group(1) if book_id_match else ''
+        print(f"当前小说ID: {book_id}")
+        # 优先访问全文目录 /txt{id}.shtml，其次是原始catalog_url
+        pages_to_try = []
+        if book_id:
+            pages_to_try.append(f"{self.base_url}/txt{book_id}.shtml")
+        if catalog_url not in pages_to_try:
+            pages_to_try.append(catalog_url)
+        seen_urls = set()
+        for page_url in pages_to_try:
+            print(f"[biquwx] 抓取目录页: {page_url}")
+            page_soup = self.inspect_page(page_url)
+            if not page_soup:
+                continue
+            found_on_page = 0
+            # 按 #list dl a → #list a → 全文 a 递进查找
+            for sel in ['#list dl a[href]', '#list a[href]', 'a[href]']:
+                page_chaps = 0
+                for a in page_soup.select(sel):
+                    href = a.get('href', '')
+                    text = a.get_text(strip=True)
+                    if not text or len(text) < 2:
+                        continue
+                    if 'javascript' in href.lower():
+                        continue
+                    # 正文链接格式: /{cat_id}/{book_id}/{chap_id}.html 或 完整URL
+                    if not (f'/{book_id}/' in href and re.search(r'\d+\.html?$', href)):
+                        # 全文 a 扫描时更宽松：只要末尾含 /数字.html 且 文本含"第X章"
+                        if sel != 'a[href]':
+                            continue
+                        if not re.match(r'^第[一二三四五六七八九十百千0-9零]+[章节回话篇]', text):
+                            continue
+                        if not re.search(r'/\d+\.html?$', href):
+                            continue
+                    if not href.startswith('http'):
+                        href = self.base_url + href
+                    if href in seen_urls:
+                        continue
+                    seen_urls.add(href)
+                    chapters.append({'title': self.clean_chapter_title(text), 'url': href})
+                    page_chaps += 1
+                if page_chaps > 0:
+                    found_on_page += page_chaps
+                    print(f"[biquwx] 选择器 {sel} 提取 {page_chaps} 章")
+                    break  # 这个选择器命中了就不用下一个
+            if found_on_page:
+                print(f"[biquwx] 页面 {page_url} 共新增 {found_on_page} 章")
+        # 按章节号排序(biquwx常倒序显示，最新在前)
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[biquwx] 已按章节号排序")
+        print(f"[biquwx] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        return chapters
+
+    def _parse_catalog_11bzw(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理11bzw.org网站:
+
+        目录URL为 /index/{aid}/，章节链接格式 /read/{aid}/{cid}.html;
+        正文通过两步AJAX加载(签名+内容接口)，见get_chapter_content。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到11bzw.org网站，使用专门的处理逻辑")
+        aid_match = re.search(r'/(?:index|book)/(\d+)', catalog_url)
+        if not aid_match:
+            print("[11bzw] 无法从URL提取小说ID")
+            return chapters
+        aid = aid_match.group(1)
+        print(f"[11bzw] 小说ID: {aid}")
+        # 目录页可能含"开始阅读"等导航链接，对每个cid选最长文本作为章节名
+        cid_texts = {}
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            text = a.get_text(strip=True)
+            if not text:
+                continue
+            m = re.search(r'/read/' + aid + r'/(\d+)\.html', href)
+            if not m:
+                continue
+            cid = m.group(1)
+            # 选较长的文本(章节名通常比"开始阅读"等导航词长)
+            if cid not in cid_texts or len(text) > len(cid_texts[cid]):
+                cid_texts[cid] = text
+        # 按cid数字顺序排序
+        for cid in sorted(cid_texts.keys(), key=lambda x: int(x)):
+            title = self.clean_chapter_title(cid_texts[cid])
+            chap_url = f"{self.base_url}/read/{aid}/{cid}.html"
+            chapters.append({'title': title, 'url': chap_url})
+        print(f"[11bzw] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        return chapters
+
+    def _parse_catalog_yqyp(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理yqyp.net网站:
+
+        目录URL为 /book/{aid}.html, 章节链接格式 /book/{aid}/{cid}.html;
+        目录页章节倒序+正序重复, 需去重并按章节号排序;
+        正文在 div.info_dv1.ov 下第一个 div.read_btn 之后的 <p> 标签中。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到yqyp.net网站，使用专门的处理逻辑")
+        aid_match = re.search(r'/book/(\d+)', catalog_url)
+        if not aid_match:
+            print("[yqyp] 无法从URL提取小说ID")
+            return chapters
+        aid = aid_match.group(1)
+        print(f"[yqyp] 小说ID: {aid}")
+        # 目录页可能是 /book/{aid}.html (用户给的是章节页时需跳转)
+        catalog_page_url = f"{self.base_url}/book/{aid}.html"
+        if catalog_url.endswith(f"/{aid}.html"):
+            catalog_page_url = catalog_url
+        print(f"[yqyp] 目录页: {catalog_page_url}")
+        page_soup = self.inspect_page(catalog_page_url)
+        if not page_soup:
+            print("[yqyp] 目录页获取失败")
+            return chapters
+        # 提取 /book/{aid}/{cid}.html 链接, 去重(同一cid取第一次出现)
+        seen_cids = set()
+        for a in page_soup.find_all('a', href=True):
+            href = a['href']
+            text = a.get_text(strip=True)
+            if not text or '立即阅读' in text:
+                continue
+            m = re.search(r'/book/' + aid + r'/(\d+)\.html', href)
+            if not m:
+                continue
+            cid = m.group(1)
+            if cid in seen_cids:
+                continue
+            seen_cids.add(cid)
+            chapters.append({'title': self.clean_chapter_title(text), 'url': f"{self.base_url}/book/{aid}/{cid}.html"})
+        # 按章节号排序
+        chapters.sort(key=_chapter_sort_key)
+        print(f"[yqyp] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        return chapters
+
+    def _parse_catalog_yunquge(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理云趣阁 (28zw.org / spscl.com 等镜像):
+
+        目录URL可能是 /book/{aid}/ (小说详情页) 或 /book/{aid}/ml{N}.html (分页目录);
+        详情页含"最新章节"倒序列表 + "章节列表"正序, 需去重并按章节号排序;
+        章节链接格式 /book/{aid}/{cid}.html (spscl.com 用 /yue/{aid}/{cid}.html);
+        正文在 div.content / div.word_read 的 <p> 标签中, 见 get_chapter_content。
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到云趣阁(28zw.org/spscl.com)，使用专门的处理逻辑")
+        is_yue = '/yue/' in catalog_url
+        path_prefix = '/yue/' if is_yue else '/book/'
+        aid_match = re.search(path_prefix + r'(\d+)', catalog_url)
+        if not aid_match:
+            print("[云趣阁] 无法从URL提取小说ID")
+            return chapters
+        aid = aid_match.group(1)
+        print(f"[云趣阁] 小说ID: {aid}")
+
+        # 收集所有目录分页 URL (ml1.html, ml2.html, ...)
+        # 同时把详情页本身也作为一页(含"章节列表"区, 部分短篇只有详情页)
+        catalog_pages = [catalog_url]
+        for page_no in range(1, 30):
+            ml_url = f"{self.base_url}{path_prefix}{aid}/ml{page_no}.html"
+            if ml_url not in catalog_pages:
+                catalog_pages.append(ml_url)
+
+        seen_cids = set()
+        for page_url in catalog_pages:
+            print(f"[云趣阁] 抓取目录页: {page_url}")
+            page_soup = self.inspect_page(page_url)
+            if not page_soup:
+                continue
+            new_on_page = 0
+            for a in page_soup.find_all('a', href=True):
+                href = a['href']
+                text = a.get_text(strip=True)
+                if not text:
+                    continue
+                # 章节链接格式: /book/{aid}/{cid}.html 或 /yue/{aid}/{cid}.html
+                # 排除 ml{N}.html (目录分页本身) 和 {cid}_N.html (章节分页)
+                m = re.search(path_prefix + aid + r'/(\d+)\.html$', href)
+                if not m:
+                    continue
+                cid = m.group(1)
+                if cid in seen_cids:
+                    continue
+                # 过滤明显非章节链接 (如"查看更多章节..."、"开始阅读")
+                if any(kw in text for kw in ['查看更多', '更多章节', '开始阅读', '立即阅读',
+                                              '章节目录', '全部章节', '上一页', '下一页']):
+                    continue
+                seen_cids.add(cid)
+                chap_url = f"{self.base_url}{path_prefix}{aid}/{cid}.html"
+                chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
+                new_on_page += 1
+            print(f"[云趣阁] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+            # 当前页没拿到任何新章节 → 后续分页应已结束
+            if new_on_page == 0 and page_url != catalog_url:
+                break
+
+        # 按章节号/章节数字排序 (云趣阁目录常倒序+正序混合)
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[云趣阁] 已按章节号排序")
+        print(f"[云趣阁] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        return chapters
+
+    def _parse_catalog_tanmixs(self, catalog_url, sort_chapters, soup=None):
+        """特殊处理 tanmixs.com (探秘小说网移动版)
+
+        目录分页: /{book_id}/ml.html (第1页) → /{book_id}/ml_N.html (后续页, N=2,3,...)
+        注意: ml_1.html 与 ml.html 内容相同, 应跳过
+        章节链接: /{book_id}/{chapter_id}.html
+        目录页章节标题统一为 "分章阅读 N", 实际标题在章节页第一段
+
+        第 4 批重构: 从 get_chapter_list 的站点 if 链中抽出。
+        命中该域名时由 _parse_catalog_by_site 调用, 返回的章节列表
+        已按站点规则去重排序 (sort_chapters 控制是否排序)。
+
+        Returns:
+            list[dict]: [{title, url}], 解析失败时为 []
+        """
+        chapters = []
+        print("检测到tanmixs.com网站，使用专门的处理逻辑")
+        book_id_match = re.search(r'/([A-Za-z0-9]+)/', catalog_url)
+        if not book_id_match:
+            print("[tanmixs] 无法从URL提取小说ID")
+            return chapters
+        book_id = book_id_match.group(1)
+        novel_path = f'/{book_id}/'
+        novel_path_alt = novel_path
+        print(f"[tanmixs] 小说ID: {book_id}, 路径: {novel_path}")
+
+        # 收集所有目录分页 URL
+        # ml.html (第1页, 不带数字) + ml_2.html, ml_3.html, ... (后续页)
+        # ml_1.html 与 ml.html 内容重复, 跳过
+        catalog_pages = [catalog_url]
+        for page_no in range(2, 30):
+            ml_url = f"{self.base_url}/{book_id}/ml_{page_no}.html"
+            if ml_url not in catalog_pages:
+                catalog_pages.append(ml_url)
+
+        seen_cids = set()
+        for page_url in catalog_pages:
+            print(f"[tanmixs] 抓取目录页: {page_url}")
+            page_soup = self.inspect_page(page_url)
+            if not page_soup:
+                continue
+            new_on_page = 0
+            # 优先从 ul.chapter-list 提取, 避免匹配到推荐区
+            chap_list_ul = page_soup.find('ul', class_='chapter-list')
+            if chap_list_ul:
+                link_containers = [chap_list_ul]
+            else:
+                link_containers = None
+            for a in (chap_list_ul.find_all('a', href=True) if chap_list_ul else page_soup.find_all('a', href=True)):
+                href = a.get('href', '')
+                text = a.get_text(strip=True)
+                if not text:
+                    continue
+                # 章节链接格式: /{book_id}/{cid}.html
+                m = re.search(rf'/{book_id}/(\d+)\.html$', href)
+                if not m:
+                    continue
+                cid = m.group(1)
+                if cid in seen_cids:
+                    continue
+                # 过滤掉目录分页本身 (ml*.html) 和推荐区
+                if href.endswith('ml.html') or '/ml_' in href or '/ml' in href:
+                    continue
+                # 过滤非章节链接
+                if any(kw in text for kw in ['查看更多', '更多章节', '开始阅读', '立即阅读',
+                                              '章节目录', '全部章节', '上一页', '下一页',
+                                              '返回介绍', '下载作品', '分类', '排行', '完本',
+                                              '首页', '地图', '找小说', '简体', '繁体']):
+                    continue
+                seen_cids.add(cid)
+                chap_url = f"{self.base_url}/{book_id}/{cid}.html"
+                # 标题处理: 优先用章节页提取的真实标题
+                # 目录页常出现 "分章阅读 N" (快速跳转) 或 "[tanmixs.com]分章阅读 N" / "{探秘小说网}分章阅读 N" (站点水印+跳转) 等非真实标题
+                # 真实章节标题在章节页第一段, 此处统一用 "第N章" 作为占位符
+                if ('分章阅读' in text
+                        or re.match(r'^\s*[\[{].+?[\]}]', text)
+                        or not text):
+                    chap_title = f'第{cid}章'
+                else:
+                    chap_title = text
+                chapters.append({'title': self.clean_chapter_title(chap_title), 'url': chap_url})
+                new_on_page += 1
+            print(f"[tanmixs] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
+            # 当前页没拿到任何新章节 → 后续分页应已结束 (到末尾了)
+            if new_on_page == 0 and page_url != catalog_url:
+                break
+
+        # 按章节号排序
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+            print("[tanmixs] 已按章节号排序")
+        print(f"[tanmixs] 共提取 {len(chapters)} 个章节")
+        for i, chap in enumerate(chapters[:10]):
+            print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
+        if len(chapters) > 10:
+            print(f"  ... (共 {len(chapters)} 章)")
+        return chapters
+
     def get_chapter_list(self, catalog_url, sort_chapters=False):
         """
         从小说目录页提取章节列表。
@@ -1098,673 +1895,18 @@ class NovelSpider:
         # 先查看网页结构
         soup = self.inspect_page(catalog_url)
 
-        # 特殊处理zhiruo.org网站：目录页章节链接用 onclick="read_tz(章节ID)" 而非 href，
-        # 正文URL格式为 /infos/{小说ID}/{章节ID}.html 或 /{cat}/{小说ID}/{章节ID}.html；
-        # 目录可能分页 /infos/{id}/1/, /infos/{id}/2/ ... 或 /{cat}/{id}/1/ ...
-        if 'zhiruo.org' in catalog_url:
-            print("检测到zhiruo.org网站，使用onclick解析章节列表")
-            # 提取书路径前缀: 支持 /infos/{id} 和 /{cat}/{id} 两种格式
-            # 例: /infos/5523629.html → /infos/5523629
-            #     /163/163654/index.html → /163/163654
-            #     /163/163654/1/ (目录分页) → /163/163654
-            path_m = re.search(r'/((?:infos|[a-zA-Z0-9_]+)/\d+)', catalog_url)
-            if not path_m:
-                print("[zhiruo] 无法从URL提取小说路径")
-                return chapters
-            novel_path = path_m.group(1)
-            print(f"[zhiruo] 书路径前缀: {novel_path}")
-            # 详情页 (如 index.html 或书根目录) 无章节列表, 需先跳转到 "章节目录" 链接
-            if 'index.html' in catalog_url or catalog_url.rstrip('/').endswith(novel_path):
-                catalog_link_a = None
-                for a in soup.find_all('a', href=True):
-                    txt = a.get_text(strip=True)
-                    if '章节目录' in txt or '查看全部章节' in txt or '查看更多章节' in txt:
-                        catalog_link_a = a
-                        break
-                if catalog_link_a:
-                    href = catalog_link_a.get('href', '')
-                    if not href.startswith('http'):
-                        href = self.base_url + href
-                    print(f"[zhiruo] 详情页, 跳转章节目录: {href}")
-                    page_soup_first = self.inspect_page(href)
-                    if page_soup_first:
-                        soup = page_soup_first
-            seen_ids = set()
-            page_no = 1
-            while True:
-                if page_no == 1:
-                    page_soup = soup  # 第1页已由inspect_page抓取，直接复用
-                else:
-                    catalog_page_url = f"{self.base_url}/{novel_path}/{page_no}/"
-                    print(f"[zhiruo] 抓取目录第{page_no}页: {catalog_page_url}")
-                    page_soup = self.inspect_page(catalog_page_url)
-                if not page_soup:
-                    break
-                chap_as = page_soup.find_all('a', onclick=re.compile(r'read_tz\s*\('))
-                if not chap_as:
-                    print(f"[zhiruo] 第{page_no}页未找到章节链接，结束分页提取")
-                    break
-                new_count = 0
-                for a in chap_as:
-                    onclick = a.get('onclick', '')
-                    m = re.search(r'read_tz\s*\(\s*(\d+)\s*\)', onclick)
-                    if not m:
-                        continue
-                    chap_id = m.group(1)
-                    if chap_id in seen_ids:
-                        continue
-                    seen_ids.add(chap_id)
-                    title = a.get_text(strip=True)
-                    if not title:
-                        continue
-                    chap_url = f"{self.base_url}/{novel_path}/{chap_id}.html"
-                    chapters.append({'title': self.clean_chapter_title(title), 'url': chap_url})
-                    new_count += 1
-                print(f"[zhiruo] 第{page_no}页: 新增 {new_count} 章，累计 {len(chapters)} 章")
-                if new_count == 0:
-                    break
-                page_no += 1
-                if page_no > 50:  # 安全上限
-                    break
-            print(f"[zhiruo] 共提取 {len(chapters)} 个章节")
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[zhiruo] 已按章节号排序")
-            for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title']} -> {chap['url']}")
-            return chapters
+        # ===== 站点专属目录解析 (第 4 批重构: 原为内联的 ~660 行 if 链) =====
+        # 命中站点即返回其章节列表; 未命中返回 None, 继续走下方通用流程。
+        parsed = self._parse_catalog_by_site(catalog_url, sort_chapters, soup)
+        if parsed is not None:
+            return parsed
 
-        # 特殊处理ciyewk.com网站 (词夜书屋):
-        # 目录 /shu/{bid}.html (bid 为字母数字如 OqWe), 容器 #list dl dd a;
-        # 章节URL /shu/{bid}/{N}.html; 正文由 initTxt 加载 .book 数据文件,
-        # content_decoder 自动探测解码 (见 get_chapter_content 数据文件层)。
-        if 'ciyewk.com' in catalog_url:
-            print("检测到ciyewk.com网站，使用专门的处理逻辑")
-            book_id_match = re.search(r'/shu/([A-Za-z0-9]+)', catalog_url)
-            if not book_id_match:
-                print("[ciyewk] 无法从URL提取小说ID")
-                return chapters
-            book_id = book_id_match.group(1)
-            print(f"[ciyewk] 小说ID: {book_id}")
-            # 若用户给的是章节页 (如 ml.html / N.html), 规范化到目录页
-            if not re.search(r'/shu/' + re.escape(book_id) + r'\.html$', catalog_url):
-                catalog_page_url = f"{self.base_url}/shu/{book_id}.html"
-                print(f"[ciyewk] 规范化目录URL: {catalog_page_url}")
-                soup = self.inspect_page(catalog_page_url)
-            seen_urls = set()
-            for a in soup.select('#list dl dd a[href]'):
-                href = a.get('href', '')
-                text = a.get_text(strip=True)
-                if not text or len(text) < 2:
-                    continue
-                m = re.search(r'/shu/' + re.escape(book_id) + r'/(\d+)\.html$', href)
-                if not m:
-                    continue
-                chap_url = href if href.startswith('http') else self.base_url + href
-                if chap_url in seen_urls:
-                    continue
-                seen_urls.add(chap_url)
-                chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
-            print(f"[ciyewk] 共提取 {len(chapters)} 个章节")
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[ciyewk] 已按章节号排序")
-            for i, chap in enumerate(chapters[:10]):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            if len(chapters) > 10:
-                print(f"  ... (共 {len(chapters)} 章)")
-            return chapters
-
-        # 特殊处理630wang.cc网站 (恋上看书网):
-        # 目录详情页 /kan/{id}.html; 目录分页 /kan/{id}/{n}.html (n=1,2,3..., 分页按钮JS动态加载,
-        # 页面无 "下一页" 链接, 需按规则拼接); 章节URL /kan/{id}_{chapid}.html;
-        # 正文 div.word_read 的 <p> (数字被服务端替换为o, 有损替换无法还原, 保留原样)。
-        if '630wang.cc' in catalog_url:
-            print("检测到630wang.cc网站，使用专门的处理逻辑")
-            book_id_match = re.search(r'/kan/(\d+)', catalog_url)
-            if not book_id_match:
-                print("[630wang] 无法从URL提取小说ID")
-                return chapters
-            book_id = book_id_match.group(1)
-            print(f"[630wang] 小说ID: {book_id}")
-            # 目录第1页: 用户给的若是章节页/详情页, 用 /kan/{id}/1.html
-            first_page = catalog_url
-            if not re.search(r'/kan/' + book_id + r'/(\d+)\.html$', catalog_url):
-                first_page = f"{self.base_url}/kan/{book_id}/1.html"
-                print(f"[630wang] 目录第1页: {first_page}")
-            catalog_pages = [first_page]
-            for page_no in range(2, 51):  # 最多50页
-                catalog_pages.append(f"{self.base_url}/kan/{book_id}/{page_no}.html")
-            seen_urls = set()
-            for page_url in catalog_pages:
-                print(f"[630wang] 抓取目录页: {page_url}")
-                page_soup = self.inspect_page(page_url)
-                if not page_soup:
-                    continue
-                chap_list_ul = page_soup.select_one('ul.section-list')
-                new_on_page = 0
-                for a in (chap_list_ul.find_all('a', href=True) if chap_list_ul
-                          else page_soup.find_all('a', href=True)):
-                    href = a.get('href', '')
-                    text = a.get_text(strip=True)
-                    if not text:
-                        continue
-                    # 章节URL格式: /kan/{id}_{chapid}.html
-                    m = re.search(r'/kan/' + book_id + r'_(\d+)\.html$', href)
-                    if not m:
-                        continue
-                    chap_url = href if href.startswith('http') else self.base_url + href
-                    if chap_url in seen_urls:
-                        continue
-                    if any(kw in text for kw in ['上一页', '下一页', '章节目录', '查看更多', '开始阅读',
-                                                  '目录', '首页', '返回', '上一章', '下一章']):
-                        continue
-                    seen_urls.add(chap_url)
-                    chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
-                                     'url': chap_url})
-                    new_on_page += 1
-                print(f"[630wang] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
-                # 当前页没拿到任何新章节 → 后续分页已结束
-                if new_on_page == 0 and page_url != first_page:
-                    break
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[630wang] 已按章节号排序")
-            print(f"[630wang] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters[:10]):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            if len(chapters) > 10:
-                print(f"  ... (共 {len(chapters)} 章)")
-            return chapters
-
-        # 特殊处理ltbook.net网站 (龙腾小说网):
-        # 目录 /83663/ 简介页章节链接 /83663/{chapid}.html;
-        # 简介页章节少时, 从 "全文阅读" 连读页 (如 /83663/6.html) 链式追踪 "下一页" 补充完整目录。
-        if 'ltbook.net' in catalog_url:
-            print("检测到ltbook.net网站，使用专门的处理逻辑")
-            book_id_match = re.search(r'/(\d+)', catalog_url)
-            if not book_id_match:
-                print("[ltbook] 无法从URL提取小说ID")
-                return chapters
-            book_id = book_id_match.group(1)
-            print(f"[ltbook] 小说ID: {book_id}")
-            seen_urls = set()
-            # 1. 从简介页提取章节链接
-            for a in soup.find_all('a', href=True):
-                href = a.get('href', '')
-                text = a.get_text(strip=True)
-                if not text:
-                    continue
-                m = re.search(r'/' + book_id + r'/(\d+)\.html$', href)
-                if not m:
-                    continue
-                if any(kw in text for kw in ['全文阅读', '章节目录', '目录', '上一页', '下一页', '加入书架']):
-                    continue
-                chap_url = href if href.startswith('http') else self.base_url + href
-                if chap_url in seen_urls:
-                    continue
-                seen_urls.add(chap_url)
-                chapters.append({'title': _format_range_chapter_title(self.clean_chapter_title(text)),
-                                 'url': chap_url})
-            print(f"[ltbook] 简介页提取 {len(chapters)} 个章节")
-            # 2. 若章节过少 (<10), 从连读页追踪补充 (连读页 "下一页" 指向下一章)
-            if len(chapters) < 10:
-                next_url = None
-                for a in soup.find_all('a', href=True):
-                    text = a.get_text(strip=True)
-                    if '全文阅读' in text or text.strip() == '全文':
-                        href = a.get('href', '')
-                        if not href.startswith('http'):
-                            href = self.base_url + href
-                        next_url = href
-                        break
-                if not next_url and chapters:
-                    next_url = chapters[0]['url']
-                visited = set()
-                while next_url and len(chapters) < 300:
-                    if next_url in visited:
-                        break
-                    visited.add(next_url)
-                    print(f"[ltbook] 连读追踪: {next_url}")
-                    page_soup = self.inspect_page(next_url)
-                    if not page_soup:
-                        break
-                    if next_url not in seen_urls:
-                        title_el = page_soup.select_one('h1.readTitle') or page_soup.select_one('h1')
-                        chap_title = title_el.get_text(strip=True) if title_el else f'第{len(chapters)+1}章'
-                        chap_title = _format_range_chapter_title(self.clean_chapter_title(chap_title))
-                        seen_urls.add(next_url)
-                        # 标题重复或章节号重叠(如连读页与章节页内容相同)则跳过, 避免重复章节
-                        _dup = False
-                        for _c in chapters:
-                            if _c['title'] == chap_title:
-                                _dup = True
-                                break
-                            _cn = _title_chapter_nums(_c['title'])
-                            _tn = _title_chapter_nums(chap_title)
-                            if _cn and _tn and (_cn & _tn):
-                                _dup = True
-                                break
-                        if not _dup:
-                            chapters.append({'title': chap_title, 'url': next_url})
-                        else:
-                            print(f"[ltbook] 跳过重复章节: {chap_title}")
-                    next_a = None
-                    for a in page_soup.find_all('a', href=True):
-                        text = a.get_text(strip=True)
-                        if text.strip() == '下一页' or '下一章' in text:
-                            href = a.get('href', '')
-                            if not href.startswith('http'):
-                                href = self.base_url + href
-                            if re.search(r'/' + book_id + r'/(\d+)\.html$', href):
-                                next_a = href
-                                break
-                    next_url = next_a
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[ltbook] 已按章节号排序")
-            print(f"[ltbook] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters[:10]):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            if len(chapters) > 10:
-                print(f"  ... (共 {len(chapters)} 章)")
-            return chapters
-
-        # 特殊处理biquwx.cc网站:
-        # 目录URL可能是 /index/{id}/1/ (含最新章节) 或 /txt{id}.shtml (全文目录);
-        # 章节链接格式 /{cat_id}/{book_id}/{chap_id}.html, 容器在 #list dl 下;
-        # 正文用 qsbs.bb Base64 加密。
-        if 'biquwx.cc' in catalog_url:
-            print("检测到biquwx.cc网站，使用专门的处理逻辑")
-            book_id_match = re.search(r'[/_](\d{5,})', catalog_url)
-            book_id = book_id_match.group(1) if book_id_match else ''
-            print(f"当前小说ID: {book_id}")
-            # 优先访问全文目录 /txt{id}.shtml，其次是原始catalog_url
-            pages_to_try = []
-            if book_id:
-                pages_to_try.append(f"{self.base_url}/txt{book_id}.shtml")
-            if catalog_url not in pages_to_try:
-                pages_to_try.append(catalog_url)
-            seen_urls = set()
-            for page_url in pages_to_try:
-                print(f"[biquwx] 抓取目录页: {page_url}")
-                page_soup = self.inspect_page(page_url)
-                if not page_soup:
-                    continue
-                found_on_page = 0
-                # 按 #list dl a → #list a → 全文 a 递进查找
-                for sel in ['#list dl a[href]', '#list a[href]', 'a[href]']:
-                    page_chaps = 0
-                    for a in page_soup.select(sel):
-                        href = a.get('href', '')
-                        text = a.get_text(strip=True)
-                        if not text or len(text) < 2:
-                            continue
-                        if 'javascript' in href.lower():
-                            continue
-                        # 正文链接格式: /{cat_id}/{book_id}/{chap_id}.html 或 完整URL
-                        if not (f'/{book_id}/' in href and re.search(r'\d+\.html?$', href)):
-                            # 全文 a 扫描时更宽松：只要末尾含 /数字.html 且 文本含"第X章"
-                            if sel != 'a[href]':
-                                continue
-                            if not re.match(r'^第[一二三四五六七八九十百千0-9零]+[章节回话篇]', text):
-                                continue
-                            if not re.search(r'/\d+\.html?$', href):
-                                continue
-                        if not href.startswith('http'):
-                            href = self.base_url + href
-                        if href in seen_urls:
-                            continue
-                        seen_urls.add(href)
-                        chapters.append({'title': self.clean_chapter_title(text), 'url': href})
-                        page_chaps += 1
-                    if page_chaps > 0:
-                        found_on_page += page_chaps
-                        print(f"[biquwx] 选择器 {sel} 提取 {page_chaps} 章")
-                        break  # 这个选择器命中了就不用下一个
-                if found_on_page:
-                    print(f"[biquwx] 页面 {page_url} 共新增 {found_on_page} 章")
-            # 按章节号排序(biquwx常倒序显示，最新在前)
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[biquwx] 已按章节号排序")
-            print(f"[biquwx] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            return chapters
-
-        # 特殊处理11bzw.org网站:
-        # 目录URL为 /index/{aid}/，章节链接格式 /read/{aid}/{cid}.html;
-        # 正文通过两步AJAX加载(签名+内容接口)，见get_chapter_content。
-        if '11bzw.org' in catalog_url:
-            print("检测到11bzw.org网站，使用专门的处理逻辑")
-            aid_match = re.search(r'/(?:index|book)/(\d+)', catalog_url)
-            if not aid_match:
-                print("[11bzw] 无法从URL提取小说ID")
-                return chapters
-            aid = aid_match.group(1)
-            print(f"[11bzw] 小说ID: {aid}")
-            # 目录页可能含"开始阅读"等导航链接，对每个cid选最长文本作为章节名
-            cid_texts = {}
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                text = a.get_text(strip=True)
-                if not text:
-                    continue
-                m = re.search(r'/read/' + aid + r'/(\d+)\.html', href)
-                if not m:
-                    continue
-                cid = m.group(1)
-                # 选较长的文本(章节名通常比"开始阅读"等导航词长)
-                if cid not in cid_texts or len(text) > len(cid_texts[cid]):
-                    cid_texts[cid] = text
-            # 按cid数字顺序排序
-            for cid in sorted(cid_texts.keys(), key=lambda x: int(x)):
-                title = self.clean_chapter_title(cid_texts[cid])
-                chap_url = f"{self.base_url}/read/{aid}/{cid}.html"
-                chapters.append({'title': title, 'url': chap_url})
-            print(f"[11bzw] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            return chapters
-
-        # 特殊处理yqyp.net网站:
-        # 目录URL为 /book/{aid}.html, 章节链接格式 /book/{aid}/{cid}.html;
-        # 目录页章节倒序+正序重复, 需去重并按章节号排序;
-        # 正文在 div.info_dv1.ov 下第一个 div.read_btn 之后的 <p> 标签中。
-        if 'yqyp.net' in catalog_url:
-            print("检测到yqyp.net网站，使用专门的处理逻辑")
-            aid_match = re.search(r'/book/(\d+)', catalog_url)
-            if not aid_match:
-                print("[yqyp] 无法从URL提取小说ID")
-                return chapters
-            aid = aid_match.group(1)
-            print(f"[yqyp] 小说ID: {aid}")
-            # 目录页可能是 /book/{aid}.html (用户给的是章节页时需跳转)
-            catalog_page_url = f"{self.base_url}/book/{aid}.html"
-            if catalog_url.endswith(f"/{aid}.html"):
-                catalog_page_url = catalog_url
-            print(f"[yqyp] 目录页: {catalog_page_url}")
-            page_soup = self.inspect_page(catalog_page_url)
-            if not page_soup:
-                print("[yqyp] 目录页获取失败")
-                return chapters
-            # 提取 /book/{aid}/{cid}.html 链接, 去重(同一cid取第一次出现)
-            seen_cids = set()
-            for a in page_soup.find_all('a', href=True):
-                href = a['href']
-                text = a.get_text(strip=True)
-                if not text or '立即阅读' in text:
-                    continue
-                m = re.search(r'/book/' + aid + r'/(\d+)\.html', href)
-                if not m:
-                    continue
-                cid = m.group(1)
-                if cid in seen_cids:
-                    continue
-                seen_cids.add(cid)
-                chapters.append({'title': self.clean_chapter_title(text), 'url': f"{self.base_url}/book/{aid}/{cid}.html"})
-            # 按章节号排序
-            chapters.sort(key=_chapter_sort_key)
-            print(f"[yqyp] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            return chapters
-
-        # 特殊处理云趣阁 (28zw.org / spscl.com 等镜像):
-        # 目录URL可能是 /book/{aid}/ (小说详情页) 或 /book/{aid}/ml{N}.html (分页目录);
-        # 详情页含"最新章节"倒序列表 + "章节列表"正序, 需去重并按章节号排序;
-        # 章节链接格式 /book/{aid}/{cid}.html (spscl.com 用 /yue/{aid}/{cid}.html);
-        # 正文在 div.content / div.word_read 的 <p> 标签中, 见 get_chapter_content。
-        if '28zw.org' in catalog_url or 'spscl.com' in catalog_url:
-            print("检测到云趣阁(28zw.org/spscl.com)，使用专门的处理逻辑")
-            is_yue = '/yue/' in catalog_url
-            path_prefix = '/yue/' if is_yue else '/book/'
-            aid_match = re.search(path_prefix + r'(\d+)', catalog_url)
-            if not aid_match:
-                print("[云趣阁] 无法从URL提取小说ID")
-                return chapters
-            aid = aid_match.group(1)
-            print(f"[云趣阁] 小说ID: {aid}")
-
-            # 收集所有目录分页 URL (ml1.html, ml2.html, ...)
-            # 同时把详情页本身也作为一页(含"章节列表"区, 部分短篇只有详情页)
-            catalog_pages = [catalog_url]
-            for page_no in range(1, 30):
-                ml_url = f"{self.base_url}{path_prefix}{aid}/ml{page_no}.html"
-                if ml_url not in catalog_pages:
-                    catalog_pages.append(ml_url)
-
-            seen_cids = set()
-            for page_url in catalog_pages:
-                print(f"[云趣阁] 抓取目录页: {page_url}")
-                page_soup = self.inspect_page(page_url)
-                if not page_soup:
-                    continue
-                new_on_page = 0
-                for a in page_soup.find_all('a', href=True):
-                    href = a['href']
-                    text = a.get_text(strip=True)
-                    if not text:
-                        continue
-                    # 章节链接格式: /book/{aid}/{cid}.html 或 /yue/{aid}/{cid}.html
-                    # 排除 ml{N}.html (目录分页本身) 和 {cid}_N.html (章节分页)
-                    m = re.search(path_prefix + aid + r'/(\d+)\.html$', href)
-                    if not m:
-                        continue
-                    cid = m.group(1)
-                    if cid in seen_cids:
-                        continue
-                    # 过滤明显非章节链接 (如"查看更多章节..."、"开始阅读")
-                    if any(kw in text for kw in ['查看更多', '更多章节', '开始阅读', '立即阅读',
-                                                  '章节目录', '全部章节', '上一页', '下一页']):
-                        continue
-                    seen_cids.add(cid)
-                    chap_url = f"{self.base_url}{path_prefix}{aid}/{cid}.html"
-                    chapters.append({'title': self.clean_chapter_title(text), 'url': chap_url})
-                    new_on_page += 1
-                print(f"[云趣阁] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
-                # 当前页没拿到任何新章节 → 后续分页应已结束
-                if new_on_page == 0 and page_url != catalog_url:
-                    break
-
-            # 按章节号/章节数字排序 (云趣阁目录常倒序+正序混合)
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[云趣阁] 已按章节号排序")
-            print(f"[云趣阁] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            return chapters
-
-        # 特殊处理 tanmixs.com (探秘小说网移动版)
-        # 目录分页: /{book_id}/ml.html (第1页) → /{book_id}/ml_N.html (后续页, N=2,3,...)
-        # 注意: ml_1.html 与 ml.html 内容相同, 应跳过
-        # 章节链接: /{book_id}/{chapter_id}.html
-        # 目录页章节标题统一为 "分章阅读 N", 实际标题在章节页第一段
-        if 'tanmixs.com' in catalog_url:
-            print("检测到tanmixs.com网站，使用专门的处理逻辑")
-            book_id_match = re.search(r'/([A-Za-z0-9]+)/', catalog_url)
-            if not book_id_match:
-                print("[tanmixs] 无法从URL提取小说ID")
-                return chapters
-            book_id = book_id_match.group(1)
-            novel_path = f'/{book_id}/'
-            novel_path_alt = novel_path
-            print(f"[tanmixs] 小说ID: {book_id}, 路径: {novel_path}")
-
-            # 收集所有目录分页 URL
-            # ml.html (第1页, 不带数字) + ml_2.html, ml_3.html, ... (后续页)
-            # ml_1.html 与 ml.html 内容重复, 跳过
-            catalog_pages = [catalog_url]
-            for page_no in range(2, 30):
-                ml_url = f"{self.base_url}/{book_id}/ml_{page_no}.html"
-                if ml_url not in catalog_pages:
-                    catalog_pages.append(ml_url)
-
-            seen_cids = set()
-            for page_url in catalog_pages:
-                print(f"[tanmixs] 抓取目录页: {page_url}")
-                page_soup = self.inspect_page(page_url)
-                if not page_soup:
-                    continue
-                new_on_page = 0
-                # 优先从 ul.chapter-list 提取, 避免匹配到推荐区
-                chap_list_ul = page_soup.find('ul', class_='chapter-list')
-                if chap_list_ul:
-                    link_containers = [chap_list_ul]
-                else:
-                    link_containers = None
-                for a in (chap_list_ul.find_all('a', href=True) if chap_list_ul else page_soup.find_all('a', href=True)):
-                    href = a.get('href', '')
-                    text = a.get_text(strip=True)
-                    if not text:
-                        continue
-                    # 章节链接格式: /{book_id}/{cid}.html
-                    m = re.search(rf'/{book_id}/(\d+)\.html$', href)
-                    if not m:
-                        continue
-                    cid = m.group(1)
-                    if cid in seen_cids:
-                        continue
-                    # 过滤掉目录分页本身 (ml*.html) 和推荐区
-                    if href.endswith('ml.html') or '/ml_' in href or '/ml' in href:
-                        continue
-                    # 过滤非章节链接
-                    if any(kw in text for kw in ['查看更多', '更多章节', '开始阅读', '立即阅读',
-                                                  '章节目录', '全部章节', '上一页', '下一页',
-                                                  '返回介绍', '下载作品', '分类', '排行', '完本',
-                                                  '首页', '地图', '找小说', '简体', '繁体']):
-                        continue
-                    seen_cids.add(cid)
-                    chap_url = f"{self.base_url}/{book_id}/{cid}.html"
-                    # 标题处理: 优先用章节页提取的真实标题
-                    # 目录页常出现 "分章阅读 N" (快速跳转) 或 "[tanmixs.com]分章阅读 N" / "{探秘小说网}分章阅读 N" (站点水印+跳转) 等非真实标题
-                    # 真实章节标题在章节页第一段, 此处统一用 "第N章" 作为占位符
-                    if ('分章阅读' in text
-                            or re.match(r'^\s*[\[{].+?[\]}]', text)
-                            or not text):
-                        chap_title = f'第{cid}章'
-                    else:
-                        chap_title = text
-                    chapters.append({'title': self.clean_chapter_title(chap_title), 'url': chap_url})
-                    new_on_page += 1
-                print(f"[tanmixs] 页面 {page_url} 新增 {new_on_page} 章，累计 {len(chapters)} 章")
-                # 当前页没拿到任何新章节 → 后续分页应已结束 (到末尾了)
-                if new_on_page == 0 and page_url != catalog_url:
-                    break
-
-            # 按章节号排序
-            if sort_chapters and chapters:
-                chapters.sort(key=_chapter_sort_key)
-                print("[tanmixs] 已按章节号排序")
-            print(f"[tanmixs] 共提取 {len(chapters)} 个章节")
-            for i, chap in enumerate(chapters[:10]):
-                print(f"  {i+1}. {chap['title'][:60]} -> {chap['url']}")
-            if len(chapters) > 10:
-                print(f"  ... (共 {len(chapters)} 章)")
-            return chapters
-
-        # 特殊处理hatxt.cc网站
-        if 'hatxt.cc' in catalog_url:
-            print("检测到hatxt.cc网站，使用专门的处理逻辑")
-            # 提取小说ID
-            novel_id_pattern = re.search(r'/books/(\d+)', catalog_url)
-            novel_id = novel_id_pattern.group(1) if novel_id_pattern else ''
-            print(f"当前小说ID: {novel_id}")
-            # 构建两种可能的路径格式
-            novel_path = f'/books/{novel_id}/'
-            novel_path_alt = f'/books/{novel_id}'  # 用于匹配194971_1.html这种格式
-        # 特殊处理pjxdd.com网站
-        elif 'pjxdd.com' in catalog_url:
-            print("检测到pjxdd.com网站，使用专门的处理逻辑")
-            # 提取小说路径
-            novel_path_pattern = re.search(r'(/xiaoshuo/\d+/)', catalog_url)
-            novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
-            novel_path_alt = novel_path  # 对于pjxdd.com，两种路径格式相同
-        # 特殊处理ahxsw.com网站
-        elif 'ahxsw.com' in catalog_url:
-            print("检测到ahxsw.com网站，使用专门的处理逻辑")
-            # 提取小说ID路径，如 /book/143259/
-            novel_path_pattern = re.search(r'(/book/\d+/)', catalog_url)
-            novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
-            # ahxsw.com的章节链接格式为 /read/143/143259/xxx.html
-            # 提取/read/路径部分用于匹配
-            read_path_pattern = re.search(r'(/read/\d+/\d+/)', catalog_url)
-            novel_path_alt = read_path_pattern.group(1) if read_path_pattern else '/read/'
-            print(f"当前小说路径: {novel_path}, 读取路径: {novel_path_alt}")
-        elif '5hbook.net' in catalog_url:
-            print("检测到5hbook.net网站，使用专门的处理逻辑")
-            # 提取小说ID路径，如 /books/539.html → /books/539/
-            novel_path_pattern = re.search(r'(/books/\d+)\.html', catalog_url)
-            novel_path = (novel_path_pattern.group(1) + '/') if novel_path_pattern else ''
-            novel_path_alt = novel_path
-            print(f"当前小说路径: {novel_path}")
-        elif 'exotxt.net' in catalog_url:
-            print("检测到exotxt.net网站，使用专门的处理逻辑")
-            book_id_match = re.search(r'/infos/(\d+)', catalog_url)
-            book_id = book_id_match.group(1) if book_id_match else ''
-            novel_path = f"/infos/{book_id}/" if book_id_match else ''
-            novel_path_alt = novel_path
-            print(f"当前小说路径: {novel_path}")
-        else:
-            # 通用逻辑：尝试多种URL模式提取小说路径
-            novel_path = ''
-            novel_path_alt = ''
-
-            # 模式1: /97_97855/ (27xsw.cc格式)
-            novel_path_pattern = re.search(r'(/\d+_\d+/)', catalog_url)
-            if novel_path_pattern:
-                novel_path = novel_path_pattern.group(1)
-            else:
-                # 模式2: /books/301597.html → /books/301597/ (baoshuism.com格式)
-                novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)\.html?', catalog_url)
-                if novel_path_pattern:
-                    prefix = novel_path_pattern.group(1)
-                    book_id = novel_path_pattern.group(2)
-                    novel_path = f"{prefix}{book_id}/"
-                    print(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
-                else:
-                    # 模式3: /infos/5523629.html → /infos/5523629/ (zhiruo.org格式)
-                    novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)(?:\.html?|/)', catalog_url)
-                    if novel_path_pattern:
-                        prefix = novel_path_pattern.group(1)
-                        book_id = novel_path_pattern.group(2)
-                        novel_path = f"{prefix}{book_id}/"
-                        print(f"[路径提取] 模式3: 从URL提取小说路径 {novel_path}")
-                    else:
-                        # 模式4: 提取URL中的数字ID作为关键词
-                        id_match = re.search(r'/(\d{4,})', catalog_url)
-                        if id_match:
-                            novel_path = id_match.group(1)
-                            print(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
-                        else:
-                            # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
-                            # 字母数字书ID + index_分页目录)
-                            alt_match = re.search(r'/([a-z0-9]{2,12})/index(?:_\d+)?\.html?', catalog_url)
-                            if alt_match:
-                                novel_path = f"/{alt_match.group(1)}/"
-                                print(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
-                            else:
-                                # 模式6: /shu/OqWe.html → /shu/OqWe/ (ciyewk等字母数字书ID
-                                # 目录页, 章节链接 /shu/OqWe/{N}.html)
-                                path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
-                                if path6:
-                                    novel_path = f"{path6.group(1)}/"
-                                    print(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
-                                else:
-                                    # 模式7: /163/163654/index.html → /163/163654/ (zhiruo等
-                                    # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
-                                    path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
-                                    if path7:
-                                        novel_path = f"{path7.group(1)}/"
-                                        print(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
-
-            novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
-        
+        # 通用提取段 (第 4 批修复: 曾随路径计算误切进 _resolve_novel_paths, 迁回此处)
+        chapters = []
+        novel_path, novel_path_alt = _resolve_novel_paths(catalog_url)
         print(f"当前小说路径: {novel_path}")
         print(f"章节排序选项: {'启用' if sort_chapters else '禁用'}")
-        
+
         # 5hbook.net: 专用章节提取 (路径 + 正则双重验证)
         if '5hbook.net' in catalog_url and not chapters:
             print("[5hbook.net] 使用专用章节提取逻辑")
@@ -2447,7 +2589,6 @@ class NovelSpider:
             print(f"  {i+1}. {chap['title']} -> {chap['url']}")
 
         return chapters
-
     def clean_chapter_title(self, title):
         """清理章节标题，移除无意义字符并截断过长的标题"""
         if not title:
@@ -3070,6 +3211,736 @@ class NovelSpider:
             print(f"[段落去重] 移除 {removed} 个重复段落, 保留 {len([r for r in result if r])} 段")
         return '\n'.join(result)
 
+    # ================== 正文候选提取链 ==================
+    # 原为 get_chapter_content 内联的 695 行, 拆分后独立成方法 (第 4 批重构)。
+    # 不读写任何实例状态 (纯 soup/response -> 正文), 便于离线单测与复用。
+    def _extract_content_from_html(self, soup, response, current_url, chapter_url,
+                                   text=''):
+        """按候选链从已解析的章节页 HTML 中提取正文。
+
+        原为 get_chapter_content 内联的近 700 行, 该函数一度长达 1,346 行,
+        难以定位与测试, 故抽出为独立方法 (第 4 批重构)。本方法不读写任何
+        实例状态 (纯 soup/response -> 正文), 可离线单测。
+
+        提取链 (拿到足够长的内容即停止后续尝试):
+          方法1    script 标签 / 原始二进制中的 Base64 编码正文
+          方法1.2  script 正则模式
+          方法2    内联 JSON 数据 + 通用解密链 (decrypt_utils)
+          方法3    内容容器选择器 (含 hatxt/baoshuism/zhiruo/pjxdd/27xsw 站点专属分支)
+          方法4    正则长段落 / 引号长文本启发式
+        最后统一尝试 Base64 解码, 并按站点做专属清理。
+
+        Args:
+            soup: BeautifulSoup 解析结果
+            response: requests 响应对象 (用 .content 做二进制级 Base64 扫描)
+            current_url: 当前分页 URL (站点专属分支按域名判断)
+            chapter_url: 章节首页 URL
+            text: 已解码的页面源码文本。通用解密链 (decrypt_utils) 需要它 ——
+                抽出前该变量是外层函数的局部变量, 抽走后必须显式传入,
+                否则解密链会 NameError 并被 except Exception 静默吞掉,
+                变成永不生效的死代码。
+
+        Returns:
+            str: 提取到的正文; 全部候选均未命中时为空串
+        """
+        # 方法1: 尝试从script标签中提取Base64编码内容
+        content = ""
+
+        # 查找包含Base64编码内容的script标签
+        script_patterns = [
+            r'document\.writeln\(qsbs\.bb\(["\']([^"\']+)["\']\)\);',
+            r'base64\.decode\(["\']([^"\']+)["\']\)',
+            r'atob\(["\']([^"\']+)["\']\)',
+            r'"([A-Za-z0-9+/=]{100,})"'
+        ]
+
+        # 尝试在原始响应内容中查找
+        raw_content = response.content
+
+        # 方法1.1: 直接在二进制数据中查找Base64编码
+        try:
+            # 将二进制数据转换为字符串进行搜索
+            raw_str = raw_content.decode('latin1')
+
+            # 查找可能的Base64编码
+            import base64
+            # 改进的Base64模式，支持更多格式
+            base64_patterns = [
+                r'[A-Za-z0-9+/=]{150,}',  # 更长的Base64编码
+                r'base64\.decode\(["\']([A-Za-z0-9+/=]{100,})["\']\)',  # 明确的base64.decode调用
+                r'atob\(["\']([A-Za-z0-9+/=]{100,})["\']\)',  # atob调用
+                r'document\.writeln\([^)]*["\']([A-Za-z0-9+/=]{100,})["\'][^)]*\)'  # document.writeln中的Base64
+            ]
+
+            all_matches = []
+            for pattern in base64_patterns:
+                matches = re.findall(pattern, raw_str)
+                if matches:
+                    all_matches.extend(matches)
+
+            print(f"找到 {len(all_matches)} 个可能的Base64编码字符串")
+
+            # 去重
+            unique_matches = list(set(all_matches))
+            print(f"去重后剩余 {len(unique_matches)} 个唯一的Base64编码字符串")
+
+            for i, match in enumerate(unique_matches[:8]):  # 尝试前8个
+                try:
+                    # 清理匹配结果
+                    match = match.strip()
+                    if len(match) < 100:
+                        continue
+
+                    # 尝试添加填充并解码
+                    padding = '=' * ((4 - len(match) % 4) % 4)
+                    decoded_bytes = base64.b64decode(match + padding)
+
+                    # 尝试不同的编码解码
+                    decode_encodings = ['utf-8', 'gbk', 'gb2312', 'latin1', 'utf-16', 'utf-16le', 'utf-16be']
+                    encoding_found = False  # 标记是否已找到正确编码(避免latin1/utf-16乱码污染)
+                    for encoding in decode_encodings:
+                        try:
+                            decoded_text = decoded_bytes.decode(encoding)
+                            if decoded_text and len(decoded_text) > 80:
+                                # 校验解码质量:latin1/utf-16对任意字节都不抛异常,
+                                # 需检查是否含中文字符(UTF-8中文小说的标志)
+                                cjk_count = sum(1 for c in decoded_text if '\u4e00' <= c <= '\u9fff')
+                                # 非utf-8/gbk类编码,要求中文比例较高才算有效
+                                if encoding in ('latin1', 'utf-16', 'utf-16le', 'utf-16be'):
+                                    if cjk_count < len(decoded_text) * 0.15:
+                                        print(f"  匹配 {i+1} (使用{encoding}) 解码成功但中文占比过低({cjk_count}/{len(decoded_text)})，跳过")
+                                        continue
+                                print(f"  匹配 {i+1} (使用{encoding}) 解码成功，长度: {len(decoded_text)} 字符")
+                                print(f"  解码后前100个字符: {decoded_text[:100]}...")
+
+                                # 检查是否包含HTML或文本内容
+                                if '<' in decoded_text:
+                                    # 清理HTML标签
+                                    soup_decoded = BeautifulSoup(decoded_text, 'lxml')
+                                    # 移除脚本和样式
+                                    for script in soup_decoded(['script', 'style']):
+                                        script.decompose()
+                                    text = soup_decoded.get_text(strip=True)
+                                else:
+                                    text = decoded_text
+
+                                if text and len(text) > 80:
+                                    # 对于27xsw.cc网站，使用更严格的过滤
+                                    if '27xsw.cc' in chapter_url:
+                                        # 过滤广告和无关内容
+                                        filter_keywords = ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
+                                                           '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
+                                                           '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
+                                                           '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
+                                                           '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读']
+
+                                        # 按行过滤
+                                        filtered_lines = []
+                                        for line in text.split('\n'):
+                                            stripped_line = line.strip()
+                                            if stripped_line:
+                                                # 检查是否包含过滤关键词
+                                                if not any(keyword in stripped_line for keyword in filter_keywords):
+                                                    # 检查是否为有效的小说内容
+                                                    if len(stripped_line) > 15 or any(char in stripped_line for char in ['，', '。', '！', '？', '；', '：', '“', '”', '‘', '’']):
+                                                        filtered_lines.append(stripped_line)
+
+                                        filtered_text = '\n\n'.join(filtered_lines)
+                                        if len(filtered_text) > 100:
+                                            content += filtered_text + '\n\n'
+                                            print(f"  成功提取到内容，长度: {len(filtered_text)} 字符")
+                                            encoding_found = True
+                                            # 找到足够的内容后停止
+                                            if len(content) > 500:
+                                                break
+                                    else:
+                                        content += text + '\n\n'
+                                        print(f"  成功提取到内容，长度: {len(text)} 字符")
+                                        encoding_found = True
+                                        if len(content) > 500:
+                                            break
+                                # 找到有效编码后不再尝试其它编码(避免乱码污染)
+                                if encoding_found:
+                                    break
+                        except Exception as e:
+                            pass
+                except Exception as e:
+                    print(f"  匹配 {i+1} 解码失败: {e}")
+        except Exception as e:
+            print(f"  在二进制数据中查找Base64失败: {e}")
+                    
+        # 方法1.2: 在解码后的文本中查找
+        if not content:
+            for pattern in script_patterns:
+                try:
+                    matches = re.findall(pattern, raw_str)
+                    if matches:
+                        print(f"找到 {len(matches)} 个匹配的script标签")
+                        for match in matches:
+                            try:
+                                # 提取Base64编码内容
+                                base64_content = match
+                                print(f"提取到Base64编码内容，长度: {len(base64_content)}字符")
+                                            
+                                # 尝试直接解码
+                                padding = '=' * ((4 - len(base64_content) % 4) % 4)
+                                decoded_bytes = base64.b64decode(base64_content + padding)
+                                decoded_text = decoded_bytes.decode('utf-8', errors='ignore')
+                                # 从HTML中提取文本
+                                soup_decoded = BeautifulSoup(decoded_text, 'lxml')
+                                text = soup_decoded.get_text(strip=True)
+                                if text:
+                                    content += text + '\n\n'
+                                    print(f"成功提取到内容，长度: {len(text)} 字符")
+                                    break
+                            except Exception as e:
+                                print(f"解码失败: {e}")
+                        if content:
+                            break
+                except Exception as e:
+                    print(f"正则搜索失败: {e}")
+                    
+        if content:
+            print(f"从script标签提取到内容，长度: {len(content)} 字符")
+                    
+        # 方法2: 尝试查找可能的JSON数据
+        if not content or len(content) < 500:
+            # 查找包含小说内容的JSON
+            json_patterns = [
+                r'var\s+content\s*=\s*(\{[^}]+\})',
+                r'var\s+novel\s*=\s*(\{[^}]+\})',
+                r'var\s+chapter\s*=\s*(\{[^}]+\})',
+                r'var\s+data\s*=\s*(\{[^}]+\})',
+                r'content\s*:\s*(\"[^\"]+\")',
+                r'chapter_content\s*:\s*(\"[^\"]+\")',
+                r'novel_content\s*:\s*(\"[^\"]+\")'
+            ]
+                        
+            for pattern in json_patterns:
+                match = re.search(pattern, response.text)
+                if match:
+                    print(f"找到JSON数据: {pattern}")
+                    try:
+                        json_data = match.group(1)
+                        # 尝试解析JSON
+                        if json_data.startswith('{'):
+                            data = json.loads(json_data)
+                            # 查找可能的内容字段
+                            for key in ['content', 'chapter_content', 'novel_content', 'text', 'content_text', 'body']:
+                                if key in data:
+                                    content = data[key]
+                                    break
+                        else:
+                            # 可能是直接的字符串
+                            content = json_data.strip('\"\'')
+                        break
+                    except Exception as e:
+                        print(f"解析JSON失败: {e}")
+                    
+        if content:
+            print(f"从JSON提取到内容，长度: {len(content)} 字符")
+
+        # ===== 通用解密链 (decrypt_utils): 自定义Base64/XOR/字符替换/拼接混淆/eval =====
+        # 常规 Base64 匹配失败时, 自动识别并尝试多种站点加密变体
+        if not content or len(content) < 100:
+            try:
+                from decrypt_utils import decrypt_content
+                decrypted, method = decrypt_content(text)
+                if decrypted:
+                    dec_soup = BeautifulSoup(decrypted, 'lxml')
+                    for sc in dec_soup(['script', 'style']):
+                        sc.decompose()
+                    dec_text = dec_soup.get_text('\n', strip=True)
+                    if len(dec_text) > 100:
+                        print(f"[通用解密] 使用 {method} 解密成功, {len(dec_text)} 字符")
+                        content = dec_text
+            except ImportError:
+                pass  # decrypt_utils 未部署时跳过
+            except Exception as e:
+                print(f"[通用解密] 失败: {e}")
+
+        # 方法2: 尝试查找特定的内容容器
+        if not content or len(content) < 500:
+            # 尝试各种可能的内容容器选择器
+            # 根据网站添加不同的内容选择器
+            content_selectors = [
+                '#content',
+                '.content',
+                '.chapter_content',
+                '.article_content',
+                '.novel_content',
+                '.content_main',
+                '#chapter_content',
+                '.read_content',
+                '.content_text',
+                'div[id*="content"]',
+                'div[class*="content"]',
+                'div[class*="article"]',
+                'div[class*="novel"]',
+                'div[class*="read"]',
+                '.text',
+                '#text',
+                '.neirong',
+                '#neirong',
+                '.zhangjie_content',
+                '.post_content',
+                '.entry_content',
+                '.page-content',
+                '.single-content',
+                '.post-body',
+                '.article-body',
+                '.novel-body',
+                'div[itemprop="articleBody"]',
+                'article',
+                '.article',
+                '.chapter',
+                'div.chapter',
+                'div.content',
+                '.content-wrap',
+                '.main-content',
+                '.article-content',
+                '.story-content',
+                '.chapter-content',
+                '#chapterContent',
+                '#articleContent',
+                '#storyContent',
+                '.content_detail',
+                '.read_text',
+                '.novel_text',
+                '.chapter_text'
+            ]
+                        
+            # 针对hatxt.cc网站添加专门的选择器
+            if 'hatxt.cc' in chapter_url:
+                content_selectors.extend([
+                    '.content',
+                    '.read',
+                    '#read',
+                    '.chapter-content',
+                    '.content_detail',
+                    '.article',
+                    '#article',
+                    '.book-content',
+                    '.chapterContent',
+                    '.content-inner',
+                    '.article-content',
+                    '.post-content',
+                    '.page-content',
+                    'div[id*="content"]',
+                    'div[class*="content"]',
+                    'div[class*="read"]',
+                    'div[class*="article"]',
+                    'div[class*="novel"]',
+                    'div[class*="story"]',
+                    'article',
+                    'section',
+                    '.main',
+                    '.body',
+                    '.text',
+                    '#text'
+                ])
+            # 针对baoshuism.com网站添加专门的选择器
+            elif 'baoshuism.com' in chapter_url:
+                content_selectors.extend([
+                    '.word_read',
+                    '#content',
+                    '.content',
+                    '#bookcontent',
+                    '.bookcontent',
+                    '#booktxt',
+                    '.booktxt',
+                    '#nr1',
+                    '.nr1',
+                    'div.content',
+                    'div#content',
+                    'div.bookcontent',
+                    'div.text',
+                    'article',
+                    '.article',
+                    '.read-content',
+                    '.chapter-content'
+                ])
+            # 针对zhiruo.org网站添加专门的选择器
+            elif 'zhiruo.org' in chapter_url:
+                content_selectors.extend([
+                    '#content',
+                    '.content',
+                    '#bookcontent',
+                    '.bookcontent',
+                    '#nr1',
+                    '.nr1',
+                    'div.content',
+                    'div#content',
+                    'div.bookcontent',
+                    'article',
+                    '.article',
+                    '.read-content',
+                    '.chapter-content'
+                ])
+            # 针对pjxdd.com网站添加专门的选择器
+            elif 'pjxdd.com' in chapter_url:
+                content_selectors.extend([
+                    '.content',
+                    '#content',
+                    '.chapter_content',
+                    '.article_content',
+                    '.novel_content',
+                    '.read_content',
+                    '.content_text',
+                    '.neirong',
+                    '#neirong',
+                    '.zhangjie_content',
+                    '.post_content',
+                    '.entry_content',
+                    '.page-content',
+                    '.single-content',
+                    '.post-body',
+                    '.article-body',
+                    '.novel-body',
+                    'div[itemprop="articleBody"]',
+                    'article',
+                    '.article',
+                    '.chapter',
+                    'div.chapter',
+                    'div.content',
+                    '.content-wrap',
+                    '.main-content',
+                    '.article-content',
+                    '.story-content',
+                    '.chapter-content',
+                    '#chapterContent',
+                    '#articleContent',
+                    '#storyContent',
+                    '.content_detail',
+                    '.read_text',
+                    '.novel_text',
+                    '.chapter_text'
+                ])
+            # 针对27xsw.cc网站添加专门的选择器
+            elif '27xsw.cc' in chapter_url:
+                content_selectors.extend([
+                    '#content',
+                    '.content',
+                    '.read-content',
+                    '.chapter-content',
+                    '.article-content',
+                    '.novel-content',
+                    '.content-main',
+                    '.content_text',
+                    'div[id*="content"]',
+                    'div[class*="content"]',
+                    'div[class*="read"]',
+                    'div[class*="chapter"]',
+                    'div[class*="article"]',
+                    'div[class*="novel"]',
+                    'article',
+                    '.article',
+                    '.chapter',
+                    'div.chapter',
+                    '.content-wrap',
+                    '.main-content',
+                    '.article-content',
+                    '.story-content',
+                    '.chapter-content',
+                    '#chapterContent',
+                    '#articleContent',
+                    '#storyContent',
+                    '.content_detail',
+                    '.read_text',
+                    '.novel_text',
+                    '.chapter_text',
+                    '.text',
+                    '#text',
+                    '.neirong',
+                    '#neirong'
+                ])
+                        
+            for selector in content_selectors:
+                content_div = soup.select_one(selector)
+                if content_div:
+                    print(f"找到内容容器: {selector}")
+                    # 移除脚本和样式
+                    for script in content_div(['script', 'style']):
+                        script.decompose()
+                    # 移除导航元素
+                    for nav in content_div(['nav', 'footer', 'aside']):
+                        nav.decompose()
+                    # baoshuism.com: word_read 内剔除标题(h3)/导航/广告元素,
+                    # 避免 "第X部分（第1页）" 等标题混入正文
+                    if 'baoshuism.com' in chapter_url:
+                        for el in content_div(['h1', 'h2', 'h3', 'h4', 'div', 'a']):
+                            el.decompose()
+                    # 获取文本
+                    text = content_div.get_text(separator='\n\n', strip=True)
+                                
+                    # 针对hatxt.cc网站的特殊处理
+                    if 'hatxt.cc' in chapter_url:
+                        # 对hatxt.cc网站使用更严格的过滤条件
+                        print(f"原始内容长度: {len(text)} 字符")
+                        # 移除导航、版权、推荐等无关信息
+                        lines = text.split('\n')
+                        filtered_lines = []
+                                    
+                        # 定义更全面的过滤关键词
+                        nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
+                        copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
+                        recommend_keywords = ['《蜜母》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
+                        nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
+                                    
+                        # 标记是否进入小说正文
+                        in_content = False
+                                    
+                        for line in lines:
+                            stripped_line = line.strip()
+                            if stripped_line:
+                                # 检查是否为导航部分
+                                if any(keyword in stripped_line for keyword in nav_section_keywords):
+                                    continue
+                                            
+                                # 检查是否为其他无关信息
+                                if any(keyword in stripped_line for keyword in nav_keywords + copy_keywords + recommend_keywords):
+                                    continue
+                                            
+                                # 检查是否为章节标题
+                                if '第' in stripped_line and ('章' in stripped_line or '节' in stripped_line):
+                                    filtered_lines.append(stripped_line)
+                                    in_content = True
+                                    continue
+                                            
+                                # 检查是否为小说正文内容（长度大于50字符，且不包含网站相关信息）
+                                if len(stripped_line) > 50 and 'http' not in stripped_line and '.com' not in stripped_line:
+                                    filtered_lines.append(stripped_line)
+                                    in_content = True
+                                elif in_content and len(stripped_line) > 20:
+                                    # 如果已经进入正文，保留较短的段落
+                                    filtered_lines.append(stripped_line)
+                                    
+                        content = '\n\n'.join(filtered_lines)
+                        print(f"过滤后内容长度: {len(content)} 字符")
+                    else:
+                        # 其他网站使用更宽松的过滤条件
+                        lines = text.split('\n')
+                        filtered_lines = []
+                                    
+                        # 定义更全面的过滤关键词
+                        filter_keywords = [
+                            '上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
+                            '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
+                            '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
+                            '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
+                            '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读',
+                            '快穿：心机BOSS日日撩', '快穿成大佬的死对头', '穿成路人甲替深情男配挡箭后',
+                            '学长今天回家吗？', '敢吗？到我怀里来', '神话同人', '杨戬', '莲花千里不如君',
+                            '开朗少年奸淫记', '异世界一支枪', '农女天降', '娘子又又又乌鸦嘴了',
+                            '同人续写', '珠帘篇', '纳兰公瑾', 'z76488', '隨心', '孤牧栀笙'
+                        ]
+                                    
+                        # 定义广告模式
+                        ad_patterns = [
+                            r'第\d+章.*?一秒记住新域名',
+                            r'一秒记住新域名.*?27小说网',
+                            r'27小说网.*?[《》]',
+                            r'[《》].*?最新章节',
+                            r'[《》].*?全文阅读',
+                            r'[《》].*?免费阅读'
+                        ]
+                                    
+                        for line in lines:
+                            stripped_line = line.strip()
+                            if stripped_line:
+                                # 检查是否包含过滤关键词
+                                if any(keyword in stripped_line for keyword in filter_keywords):
+                                    continue
+                                            
+                                # 检查是否匹配广告模式
+                                ad_match = False
+                                for pattern in ad_patterns:
+                                    if re.search(pattern, stripped_line):
+                                        ad_match = True
+                                        break
+                                if ad_match:
+                                    continue
+                                            
+                                # 检查是否为有效的小说内容
+                                if len(stripped_line) > 15 or any(char in stripped_line for char in ['，', '。', '！', '？', '；', '：', '“', '”', '‘', '’', '（', '）']):
+                                    filtered_lines.append(stripped_line)
+                                    
+                        content = '\n\n'.join(filtered_lines)
+                                    
+                        # 对于27xsw.cc网站，进行额外的过滤
+                        if '27xsw.cc' in chapter_url:
+                            # 移除重复的空行
+                            content = re.sub(r'\n{3,}', '\n\n', content)
+                            # 移除行首行尾的空白
+                            content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
+                            # 移除明显的广告段落
+                            paragraphs = content.split('\n\n')
+                            filtered_paragraphs = []
+                            for para in paragraphs:
+                                if para and len(para) > 50 and not any(keyword in para for keyword in filter_keywords):
+                                    # 检查段落是否主要由广告组成
+                                    ad_count = sum(1 for keyword in filter_keywords if keyword in para)
+                                    if ad_count < 3:
+                                        filtered_paragraphs.append(para)
+                            content = '\n\n'.join(filtered_paragraphs)
+                                
+                    if content:
+                        print(f"从容器提取到内容，长度: {len(content)} 字符")
+                        break
+                        
+            # 如果仍然没有找到内容，对hatxt.cc网站尝试直接从整个页面提取
+            if not content and 'hatxt.cc' in chapter_url:
+                print("尝试直接从整个页面提取内容")
+                # 移除脚本和样式
+                for script in soup(['script', 'style']):
+                    script.decompose()
+                # 移除导航元素
+                for nav in soup(['nav', 'footer', 'aside']):
+                    nav.decompose()
+                # 获取整个页面的文本
+                full_text = soup.get_text(separator='\n\n', strip=True)
+                print(f"整个页面原始内容长度: {len(full_text)} 字符")
+                            
+                # 对hatxt.cc网站使用更严格的过滤条件
+                lines = full_text.split('\n')
+                filtered_lines = []
+                            
+                # 定义更全面的过滤关键词
+                nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
+                copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
+                recommend_keywords = ['《蜜母》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
+                nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
+                            
+                # 标记是否进入小说正文
+                in_content = False
+                            
+                for line in lines:
+                    stripped_line = line.strip()
+                    if stripped_line:
+                        # 检查是否为导航部分
+                        if any(keyword in stripped_line for keyword in nav_section_keywords):
+                            continue
+                                    
+                        # 检查是否为其他无关信息
+                        if any(keyword in stripped_line for keyword in nav_keywords + copy_keywords + recommend_keywords):
+                            continue
+                                    
+                        # 检查是否为章节标题
+                        if '第' in stripped_line and ('章' in stripped_line or '节' in stripped_line):
+                            filtered_lines.append(stripped_line)
+                            in_content = True
+                            continue
+                                    
+                        # 检查是否为小说正文内容（长度大于50字符，且不包含网站相关信息）
+                        if len(stripped_line) > 50 and 'http' not in stripped_line and '.com' not in stripped_line:
+                            filtered_lines.append(stripped_line)
+                            in_content = True
+                        elif in_content and len(stripped_line) > 20:
+                            # 如果已经进入正文，保留较短的段落
+                            filtered_lines.append(stripped_line)
+                content = '\n\n'.join(filtered_lines)
+                print(f"整个页面过滤后内容长度: {len(content)} 字符")
+                if content:
+                    print("成功从整个页面提取到内容")
+                    
+        # 方法3: 尝试使用正则表达式提取长段落
+        if not content or len(content) < 500:
+            # 移除HTML标签
+            clean_text = re.sub(r'<[^>]+>', '', response.text)
+            # 分割为段落
+            paragraphs = re.split(r'\n\s*\n', clean_text)
+            # 过滤段落
+            filtered_paragraphs = []
+                        
+            for para in paragraphs:
+                para = para.strip()
+                if (len(para) > 300 and 
+                    not any(keyword in para for keyword in ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式', '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册', '搜索', 'Copyright', '版权所有', '本站所有内容']) and
+                    'http' not in para and
+                    '.com' not in para):
+                    filtered_paragraphs.append(para)
+                        
+            if filtered_paragraphs:
+                content = '\n\n'.join(filtered_paragraphs)
+                print(f"使用正则表达式提取到 {len(filtered_paragraphs)} 个段落，总长度: {len(content)} 字符")
+                    
+        # 方法4: 尝试直接从页面中提取可能的小说内容特征
+        if not content or len(content) < 500:
+            # 查找包含引号的长文本（小说对话）
+            quote_pattern = r'\"\'[^\"\']{100,}\"\''
+            quotes = re.findall(quote_pattern, response.text)
+            if quotes:
+                content = '\n\n'.join(quotes)
+                print(f"找到 {len(quotes)} 个长引号，总长度: {len(content)} 字符")
+                    
+        # 最终处理
+        if content:
+            # 尝试Base64解码
+            decoded_content = ""
+            # 查找所有可能的Base64编码字符串（通常以'PHA+'开头）
+            base64_patterns = [
+                r'\'PHA\+([^\']+)\'',  # 单引号包围的Base64
+                r'\"PHA\+([^\"]+)\"',  # 双引号包围的Base64
+                r'PHA\+([^\s]+)',  # 直接的Base64
+            ]
+                        
+            for pattern in base64_patterns:
+                matches = re.findall(pattern, content)
+                if matches:
+                    print(f"找到 {len(matches)} 个Base64编码字符串")
+                    for match in matches:
+                        try:
+                            # 添加缺失的填充字符
+                            padding = '=' * ((4 - len(match) % 4) % 4)
+                            decoded_bytes = base64.b64decode(match + padding)
+                            decoded_text = decoded_bytes.decode('utf-8', errors='ignore')
+                            # 从HTML中提取文本
+                            soup_decoded = BeautifulSoup(decoded_text, 'lxml')
+                            text = soup_decoded.get_text(strip=True)
+                            if text:
+                                decoded_content += text + '\n\n'
+                        except Exception as e:
+                            print(f"Base64解码失败: {e}")
+                    break
+                        
+            # 如果解码成功，使用解码后的内容
+            if decoded_content:
+                content = decoded_content
+                print(f"Base64解码后内容长度: {len(content)} 字符")
+            else:
+                # 移除HTML实体
+                content = re.sub(r'&[a-zA-Z]+;', '', content)
+                # 移除多余的空白
+                content = '\n\n'.join([line.strip() for line in content.split('\n') if line.strip()])
+                # 移除可能的重复内容
+                lines = content.split('\n')
+                unique_lines = []
+                seen = set()
+                for line in lines:
+                    if line not in seen:
+                        seen.add(line)
+                        unique_lines.append(line)
+                content = '\n'.join(unique_lines)
+                # 清理乱码和特殊字符
+                content = re.sub(r'[\x00-\x1f\x7f-\xff]', '', content)
+                # 清理重复的标点符号
+                content = re.sub(r'([.!?,;])\1+', r'\1', content)
+                            
+                # 对于pjxdd.com网站，进行额外的清理
+                if 'pjxdd.com' in current_url:
+                    print("对pjxdd.com网站进行额外的内容清理")
+                    # 移除可能的乱码和特殊符号
+                    content = re.sub(r'[\u0000-\u001f\u007f-\u00ff]', '', content)
+                    # 移除多余的空白字符
+                    content = re.sub(r'\s+', ' ', content)
+                    # 移除行首行尾的空白
+                    content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
+                    print(f"清理后内容长度: {len(content)} 字符")
+                    
+        print(f"最终提取内容长度: {len(content) if content else 0} 字符")
+
+        return content
+
     def get_chapter_content(self, chapter_url, max_pages=None):
         """
         抓取单章正文，自动处理分页、合并、清洗、去重。
@@ -3570,6 +4441,10 @@ class NovelSpider:
                     self._记录请求(current_url, response, 0)
 
                     # 统一编码检测 (适用于所有网站)
+                    # text 必须无条件初始化: 上方 try 失败且 soup 仍有效时,
+                    # 下面的兜底分支不会执行, text 会处于未绑定状态
+                    # (后续提取链依赖它做通用解密, 直接传参会 NameError)。
+                    text = ''
                     try:
                         response.encoding = response.apparent_encoding
                         text = response.text
@@ -3597,701 +4472,9 @@ class NovelSpider:
                             text = response.content.decode('utf-8', errors='ignore')
                             soup = BeautifulSoup(text, 'lxml')
 
-                    # 方法1: 尝试从script标签中提取Base64编码内容
-                    content = ""
-
-                    # 查找包含Base64编码内容的script标签
-                    script_patterns = [
-                        r'document\.writeln\(qsbs\.bb\(["\']([^"\']+)["\']\)\);',
-                        r'base64\.decode\(["\']([^"\']+)["\']\)',
-                        r'atob\(["\']([^"\']+)["\']\)',
-                        r'"([A-Za-z0-9+/=]{100,})"'
-                    ]
-
-                    # 尝试在原始响应内容中查找
-                    raw_content = response.content
-
-                    # 方法1.1: 直接在二进制数据中查找Base64编码
-                    try:
-                        # 将二进制数据转换为字符串进行搜索
-                        raw_str = raw_content.decode('latin1')
-
-                        # 查找可能的Base64编码
-                        import base64
-                        # 改进的Base64模式，支持更多格式
-                        base64_patterns = [
-                            r'[A-Za-z0-9+/=]{150,}',  # 更长的Base64编码
-                            r'base64\.decode\(["\']([A-Za-z0-9+/=]{100,})["\']\)',  # 明确的base64.decode调用
-                            r'atob\(["\']([A-Za-z0-9+/=]{100,})["\']\)',  # atob调用
-                            r'document\.writeln\([^)]*["\']([A-Za-z0-9+/=]{100,})["\'][^)]*\)'  # document.writeln中的Base64
-                        ]
-
-                        all_matches = []
-                        for pattern in base64_patterns:
-                            matches = re.findall(pattern, raw_str)
-                            if matches:
-                                all_matches.extend(matches)
-
-                        print(f"找到 {len(all_matches)} 个可能的Base64编码字符串")
-
-                        # 去重
-                        unique_matches = list(set(all_matches))
-                        print(f"去重后剩余 {len(unique_matches)} 个唯一的Base64编码字符串")
-
-                        for i, match in enumerate(unique_matches[:8]):  # 尝试前8个
-                            try:
-                                # 清理匹配结果
-                                match = match.strip()
-                                if len(match) < 100:
-                                    continue
-
-                                # 尝试添加填充并解码
-                                padding = '=' * ((4 - len(match) % 4) % 4)
-                                decoded_bytes = base64.b64decode(match + padding)
-
-                                # 尝试不同的编码解码
-                                decode_encodings = ['utf-8', 'gbk', 'gb2312', 'latin1', 'utf-16', 'utf-16le', 'utf-16be']
-                                encoding_found = False  # 标记是否已找到正确编码(避免latin1/utf-16乱码污染)
-                                for encoding in decode_encodings:
-                                    try:
-                                        decoded_text = decoded_bytes.decode(encoding)
-                                        if decoded_text and len(decoded_text) > 80:
-                                            # 校验解码质量:latin1/utf-16对任意字节都不抛异常,
-                                            # 需检查是否含中文字符(UTF-8中文小说的标志)
-                                            cjk_count = sum(1 for c in decoded_text if '\u4e00' <= c <= '\u9fff')
-                                            # 非utf-8/gbk类编码,要求中文比例较高才算有效
-                                            if encoding in ('latin1', 'utf-16', 'utf-16le', 'utf-16be'):
-                                                if cjk_count < len(decoded_text) * 0.15:
-                                                    print(f"  匹配 {i+1} (使用{encoding}) 解码成功但中文占比过低({cjk_count}/{len(decoded_text)})，跳过")
-                                                    continue
-                                            print(f"  匹配 {i+1} (使用{encoding}) 解码成功，长度: {len(decoded_text)} 字符")
-                                            print(f"  解码后前100个字符: {decoded_text[:100]}...")
-
-                                            # 检查是否包含HTML或文本内容
-                                            if '<' in decoded_text:
-                                                # 清理HTML标签
-                                                soup_decoded = BeautifulSoup(decoded_text, 'lxml')
-                                                # 移除脚本和样式
-                                                for script in soup_decoded(['script', 'style']):
-                                                    script.decompose()
-                                                text = soup_decoded.get_text(strip=True)
-                                            else:
-                                                text = decoded_text
-
-                                            if text and len(text) > 80:
-                                                # 对于27xsw.cc网站，使用更严格的过滤
-                                                if '27xsw.cc' in chapter_url:
-                                                    # 过滤广告和无关内容
-                                                    filter_keywords = ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
-                                                                       '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
-                                                                       '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
-                                                                       '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
-                                                                       '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读']
-
-                                                    # 按行过滤
-                                                    filtered_lines = []
-                                                    for line in text.split('\n'):
-                                                        stripped_line = line.strip()
-                                                        if stripped_line:
-                                                            # 检查是否包含过滤关键词
-                                                            if not any(keyword in stripped_line for keyword in filter_keywords):
-                                                                # 检查是否为有效的小说内容
-                                                                if len(stripped_line) > 15 or any(char in stripped_line for char in ['，', '。', '！', '？', '；', '：', '“', '”', '‘', '’']):
-                                                                    filtered_lines.append(stripped_line)
-
-                                                    filtered_text = '\n\n'.join(filtered_lines)
-                                                    if len(filtered_text) > 100:
-                                                        content += filtered_text + '\n\n'
-                                                        print(f"  成功提取到内容，长度: {len(filtered_text)} 字符")
-                                                        encoding_found = True
-                                                        # 找到足够的内容后停止
-                                                        if len(content) > 500:
-                                                            break
-                                                else:
-                                                    content += text + '\n\n'
-                                                    print(f"  成功提取到内容，长度: {len(text)} 字符")
-                                                    encoding_found = True
-                                                    if len(content) > 500:
-                                                        break
-                                            # 找到有效编码后不再尝试其它编码(避免乱码污染)
-                                            if encoding_found:
-                                                break
-                                    except Exception as e:
-                                        pass
-                            except Exception as e:
-                                print(f"  匹配 {i+1} 解码失败: {e}")
-                    except Exception as e:
-                        print(f"  在二进制数据中查找Base64失败: {e}")
-                    
-                    # 方法1.2: 在解码后的文本中查找
-                    if not content:
-                        for pattern in script_patterns:
-                            try:
-                                matches = re.findall(pattern, raw_str)
-                                if matches:
-                                    print(f"找到 {len(matches)} 个匹配的script标签")
-                                    for match in matches:
-                                        try:
-                                            # 提取Base64编码内容
-                                            base64_content = match
-                                            print(f"提取到Base64编码内容，长度: {len(base64_content)}字符")
-                                            
-                                            # 尝试直接解码
-                                            padding = '=' * ((4 - len(base64_content) % 4) % 4)
-                                            decoded_bytes = base64.b64decode(base64_content + padding)
-                                            decoded_text = decoded_bytes.decode('utf-8', errors='ignore')
-                                            # 从HTML中提取文本
-                                            soup_decoded = BeautifulSoup(decoded_text, 'lxml')
-                                            text = soup_decoded.get_text(strip=True)
-                                            if text:
-                                                content += text + '\n\n'
-                                                print(f"成功提取到内容，长度: {len(text)} 字符")
-                                                break
-                                        except Exception as e:
-                                            print(f"解码失败: {e}")
-                                    if content:
-                                        break
-                            except Exception as e:
-                                print(f"正则搜索失败: {e}")
-                    
-                    if content:
-                        print(f"从script标签提取到内容，长度: {len(content)} 字符")
-                    
-                    # 方法2: 尝试查找可能的JSON数据
-                    if not content or len(content) < 500:
-                        # 查找包含小说内容的JSON
-                        json_patterns = [
-                            r'var\s+content\s*=\s*(\{[^}]+\})',
-                            r'var\s+novel\s*=\s*(\{[^}]+\})',
-                            r'var\s+chapter\s*=\s*(\{[^}]+\})',
-                            r'var\s+data\s*=\s*(\{[^}]+\})',
-                            r'content\s*:\s*(\"[^\"]+\")',
-                            r'chapter_content\s*:\s*(\"[^\"]+\")',
-                            r'novel_content\s*:\s*(\"[^\"]+\")'
-                        ]
-                        
-                        for pattern in json_patterns:
-                            match = re.search(pattern, response.text)
-                            if match:
-                                print(f"找到JSON数据: {pattern}")
-                                try:
-                                    json_data = match.group(1)
-                                    # 尝试解析JSON
-                                    if json_data.startswith('{'):
-                                        data = json.loads(json_data)
-                                        # 查找可能的内容字段
-                                        for key in ['content', 'chapter_content', 'novel_content', 'text', 'content_text', 'body']:
-                                            if key in data:
-                                                content = data[key]
-                                                break
-                                    else:
-                                        # 可能是直接的字符串
-                                        content = json_data.strip('\"\'')
-                                    break
-                                except Exception as e:
-                                    print(f"解析JSON失败: {e}")
-                    
-                    if content:
-                        print(f"从JSON提取到内容，长度: {len(content)} 字符")
-
-                    # ===== 通用解密链 (decrypt_utils): 自定义Base64/XOR/字符替换/拼接混淆/eval =====
-                    # 常规 Base64 匹配失败时, 自动识别并尝试多种站点加密变体
-                    if not content or len(content) < 100:
-                        try:
-                            from decrypt_utils import decrypt_content
-                            decrypted, method = decrypt_content(text)
-                            if decrypted:
-                                dec_soup = BeautifulSoup(decrypted, 'lxml')
-                                for sc in dec_soup(['script', 'style']):
-                                    sc.decompose()
-                                dec_text = dec_soup.get_text('\n', strip=True)
-                                if len(dec_text) > 100:
-                                    print(f"[通用解密] 使用 {method} 解密成功, {len(dec_text)} 字符")
-                                    content = dec_text
-                        except ImportError:
-                            pass  # decrypt_utils 未部署时跳过
-                        except Exception as e:
-                            print(f"[通用解密] 失败: {e}")
-
-                    # 方法2: 尝试查找特定的内容容器
-                    if not content or len(content) < 500:
-                        # 尝试各种可能的内容容器选择器
-                        # 根据网站添加不同的内容选择器
-                        content_selectors = [
-                            '#content',
-                            '.content',
-                            '.chapter_content',
-                            '.article_content',
-                            '.novel_content',
-                            '.content_main',
-                            '#chapter_content',
-                            '.read_content',
-                            '.content_text',
-                            'div[id*="content"]',
-                            'div[class*="content"]',
-                            'div[class*="article"]',
-                            'div[class*="novel"]',
-                            'div[class*="read"]',
-                            '.text',
-                            '#text',
-                            '.neirong',
-                            '#neirong',
-                            '.zhangjie_content',
-                            '.post_content',
-                            '.entry_content',
-                            '.page-content',
-                            '.single-content',
-                            '.post-body',
-                            '.article-body',
-                            '.novel-body',
-                            'div[itemprop="articleBody"]',
-                            'article',
-                            '.article',
-                            '.chapter',
-                            'div.chapter',
-                            'div.content',
-                            '.content-wrap',
-                            '.main-content',
-                            '.article-content',
-                            '.story-content',
-                            '.chapter-content',
-                            '#chapterContent',
-                            '#articleContent',
-                            '#storyContent',
-                            '.content_detail',
-                            '.read_text',
-                            '.novel_text',
-                            '.chapter_text'
-                        ]
-                        
-                        # 针对hatxt.cc网站添加专门的选择器
-                        if 'hatxt.cc' in chapter_url:
-                            content_selectors.extend([
-                                '.content',
-                                '.read',
-                                '#read',
-                                '.chapter-content',
-                                '.content_detail',
-                                '.article',
-                                '#article',
-                                '.book-content',
-                                '.chapterContent',
-                                '.content-inner',
-                                '.article-content',
-                                '.post-content',
-                                '.page-content',
-                                'div[id*="content"]',
-                                'div[class*="content"]',
-                                'div[class*="read"]',
-                                'div[class*="article"]',
-                                'div[class*="novel"]',
-                                'div[class*="story"]',
-                                'article',
-                                'section',
-                                '.main',
-                                '.body',
-                                '.text',
-                                '#text'
-                            ])
-                        # 针对baoshuism.com网站添加专门的选择器
-                        elif 'baoshuism.com' in chapter_url:
-                            content_selectors.extend([
-                                '.word_read',
-                                '#content',
-                                '.content',
-                                '#bookcontent',
-                                '.bookcontent',
-                                '#booktxt',
-                                '.booktxt',
-                                '#nr1',
-                                '.nr1',
-                                'div.content',
-                                'div#content',
-                                'div.bookcontent',
-                                'div.text',
-                                'article',
-                                '.article',
-                                '.read-content',
-                                '.chapter-content'
-                            ])
-                        # 针对zhiruo.org网站添加专门的选择器
-                        elif 'zhiruo.org' in chapter_url:
-                            content_selectors.extend([
-                                '#content',
-                                '.content',
-                                '#bookcontent',
-                                '.bookcontent',
-                                '#nr1',
-                                '.nr1',
-                                'div.content',
-                                'div#content',
-                                'div.bookcontent',
-                                'article',
-                                '.article',
-                                '.read-content',
-                                '.chapter-content'
-                            ])
-                        # 针对pjxdd.com网站添加专门的选择器
-                        elif 'pjxdd.com' in chapter_url:
-                            content_selectors.extend([
-                                '.content',
-                                '#content',
-                                '.chapter_content',
-                                '.article_content',
-                                '.novel_content',
-                                '.read_content',
-                                '.content_text',
-                                '.neirong',
-                                '#neirong',
-                                '.zhangjie_content',
-                                '.post_content',
-                                '.entry_content',
-                                '.page-content',
-                                '.single-content',
-                                '.post-body',
-                                '.article-body',
-                                '.novel-body',
-                                'div[itemprop="articleBody"]',
-                                'article',
-                                '.article',
-                                '.chapter',
-                                'div.chapter',
-                                'div.content',
-                                '.content-wrap',
-                                '.main-content',
-                                '.article-content',
-                                '.story-content',
-                                '.chapter-content',
-                                '#chapterContent',
-                                '#articleContent',
-                                '#storyContent',
-                                '.content_detail',
-                                '.read_text',
-                                '.novel_text',
-                                '.chapter_text'
-                            ])
-                        # 针对27xsw.cc网站添加专门的选择器
-                        elif '27xsw.cc' in chapter_url:
-                            content_selectors.extend([
-                                '#content',
-                                '.content',
-                                '.read-content',
-                                '.chapter-content',
-                                '.article-content',
-                                '.novel-content',
-                                '.content-main',
-                                '.content_text',
-                                'div[id*="content"]',
-                                'div[class*="content"]',
-                                'div[class*="read"]',
-                                'div[class*="chapter"]',
-                                'div[class*="article"]',
-                                'div[class*="novel"]',
-                                'article',
-                                '.article',
-                                '.chapter',
-                                'div.chapter',
-                                '.content-wrap',
-                                '.main-content',
-                                '.article-content',
-                                '.story-content',
-                                '.chapter-content',
-                                '#chapterContent',
-                                '#articleContent',
-                                '#storyContent',
-                                '.content_detail',
-                                '.read_text',
-                                '.novel_text',
-                                '.chapter_text',
-                                '.text',
-                                '#text',
-                                '.neirong',
-                                '#neirong'
-                            ])
-                        
-                        for selector in content_selectors:
-                            content_div = soup.select_one(selector)
-                            if content_div:
-                                print(f"找到内容容器: {selector}")
-                                # 移除脚本和样式
-                                for script in content_div(['script', 'style']):
-                                    script.decompose()
-                                # 移除导航元素
-                                for nav in content_div(['nav', 'footer', 'aside']):
-                                    nav.decompose()
-                                # baoshuism.com: word_read 内剔除标题(h3)/导航/广告元素,
-                                # 避免 "第X部分（第1页）" 等标题混入正文
-                                if 'baoshuism.com' in chapter_url:
-                                    for el in content_div(['h1', 'h2', 'h3', 'h4', 'div', 'a']):
-                                        el.decompose()
-                                # 获取文本
-                                text = content_div.get_text(separator='\n\n', strip=True)
-                                
-                                # 针对hatxt.cc网站的特殊处理
-                                if 'hatxt.cc' in chapter_url:
-                                    # 对hatxt.cc网站使用更严格的过滤条件
-                                    print(f"原始内容长度: {len(text)} 字符")
-                                    # 移除导航、版权、推荐等无关信息
-                                    lines = text.split('\n')
-                                    filtered_lines = []
-                                    
-                                    # 定义更全面的过滤关键词
-                                    nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
-                                    copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
-                                    recommend_keywords = ['《蜜母》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
-                                    nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
-                                    
-                                    # 标记是否进入小说正文
-                                    in_content = False
-                                    
-                                    for line in lines:
-                                        stripped_line = line.strip()
-                                        if stripped_line:
-                                            # 检查是否为导航部分
-                                            if any(keyword in stripped_line for keyword in nav_section_keywords):
-                                                continue
-                                            
-                                            # 检查是否为其他无关信息
-                                            if any(keyword in stripped_line for keyword in nav_keywords + copy_keywords + recommend_keywords):
-                                                continue
-                                            
-                                            # 检查是否为章节标题
-                                            if '第' in stripped_line and ('章' in stripped_line or '节' in stripped_line):
-                                                filtered_lines.append(stripped_line)
-                                                in_content = True
-                                                continue
-                                            
-                                            # 检查是否为小说正文内容（长度大于50字符，且不包含网站相关信息）
-                                            if len(stripped_line) > 50 and 'http' not in stripped_line and '.com' not in stripped_line:
-                                                filtered_lines.append(stripped_line)
-                                                in_content = True
-                                            elif in_content and len(stripped_line) > 20:
-                                                # 如果已经进入正文，保留较短的段落
-                                                filtered_lines.append(stripped_line)
-                                    
-                                    content = '\n\n'.join(filtered_lines)
-                                    print(f"过滤后内容长度: {len(content)} 字符")
-                                else:
-                                    # 其他网站使用更宽松的过滤条件
-                                    lines = text.split('\n')
-                                    filtered_lines = []
-                                    
-                                    # 定义更全面的过滤关键词
-                                    filter_keywords = [
-                                        '上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
-                                        '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
-                                        '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
-                                        '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
-                                        '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读',
-                                        '快穿：心机BOSS日日撩', '快穿成大佬的死对头', '穿成路人甲替深情男配挡箭后',
-                                        '学长今天回家吗？', '敢吗？到我怀里来', '神话同人', '杨戬', '莲花千里不如君',
-                                        '开朗少年奸淫记', '异世界一支枪', '农女天降', '娘子又又又乌鸦嘴了',
-                                        '同人续写', '珠帘篇', '纳兰公瑾', 'z76488', '隨心', '孤牧栀笙'
-                                    ]
-                                    
-                                    # 定义广告模式
-                                    ad_patterns = [
-                                        r'第\d+章.*?一秒记住新域名',
-                                        r'一秒记住新域名.*?27小说网',
-                                        r'27小说网.*?[《》]',
-                                        r'[《》].*?最新章节',
-                                        r'[《》].*?全文阅读',
-                                        r'[《》].*?免费阅读'
-                                    ]
-                                    
-                                    for line in lines:
-                                        stripped_line = line.strip()
-                                        if stripped_line:
-                                            # 检查是否包含过滤关键词
-                                            if any(keyword in stripped_line for keyword in filter_keywords):
-                                                continue
-                                            
-                                            # 检查是否匹配广告模式
-                                            ad_match = False
-                                            for pattern in ad_patterns:
-                                                if re.search(pattern, stripped_line):
-                                                    ad_match = True
-                                                    break
-                                            if ad_match:
-                                                continue
-                                            
-                                            # 检查是否为有效的小说内容
-                                            if len(stripped_line) > 15 or any(char in stripped_line for char in ['，', '。', '！', '？', '；', '：', '“', '”', '‘', '’', '（', '）']):
-                                                filtered_lines.append(stripped_line)
-                                    
-                                    content = '\n\n'.join(filtered_lines)
-                                    
-                                    # 对于27xsw.cc网站，进行额外的过滤
-                                    if '27xsw.cc' in chapter_url:
-                                        # 移除重复的空行
-                                        content = re.sub(r'\n{3,}', '\n\n', content)
-                                        # 移除行首行尾的空白
-                                        content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
-                                        # 移除明显的广告段落
-                                        paragraphs = content.split('\n\n')
-                                        filtered_paragraphs = []
-                                        for para in paragraphs:
-                                            if para and len(para) > 50 and not any(keyword in para for keyword in filter_keywords):
-                                                # 检查段落是否主要由广告组成
-                                                ad_count = sum(1 for keyword in filter_keywords if keyword in para)
-                                                if ad_count < 3:
-                                                    filtered_paragraphs.append(para)
-                                        content = '\n\n'.join(filtered_paragraphs)
-                                
-                                if content:
-                                    print(f"从容器提取到内容，长度: {len(content)} 字符")
-                                    break
-                        
-                        # 如果仍然没有找到内容，对hatxt.cc网站尝试直接从整个页面提取
-                        if not content and 'hatxt.cc' in chapter_url:
-                            print("尝试直接从整个页面提取内容")
-                            # 移除脚本和样式
-                            for script in soup(['script', 'style']):
-                                script.decompose()
-                            # 移除导航元素
-                            for nav in soup(['nav', 'footer', 'aside']):
-                                nav.decompose()
-                            # 获取整个页面的文本
-                            full_text = soup.get_text(separator='\n\n', strip=True)
-                            print(f"整个页面原始内容长度: {len(full_text)} 字符")
-                            
-                            # 对hatxt.cc网站使用更严格的过滤条件
-                            lines = full_text.split('\n')
-                            filtered_lines = []
-                            
-                            # 定义更全面的过滤关键词
-                            nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
-                            copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
-                            recommend_keywords = ['《蜜母》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
-                            nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
-                            
-                            # 标记是否进入小说正文
-                            in_content = False
-                            
-                            for line in lines:
-                                stripped_line = line.strip()
-                                if stripped_line:
-                                    # 检查是否为导航部分
-                                    if any(keyword in stripped_line for keyword in nav_section_keywords):
-                                        continue
-                                    
-                                    # 检查是否为其他无关信息
-                                    if any(keyword in stripped_line for keyword in nav_keywords + copy_keywords + recommend_keywords):
-                                        continue
-                                    
-                                    # 检查是否为章节标题
-                                    if '第' in stripped_line and ('章' in stripped_line or '节' in stripped_line):
-                                        filtered_lines.append(stripped_line)
-                                        in_content = True
-                                        continue
-                                    
-                                    # 检查是否为小说正文内容（长度大于50字符，且不包含网站相关信息）
-                                    if len(stripped_line) > 50 and 'http' not in stripped_line and '.com' not in stripped_line:
-                                        filtered_lines.append(stripped_line)
-                                        in_content = True
-                                    elif in_content and len(stripped_line) > 20:
-                                        # 如果已经进入正文，保留较短的段落
-                                        filtered_lines.append(stripped_line)
-                            content = '\n\n'.join(filtered_lines)
-                            print(f"整个页面过滤后内容长度: {len(content)} 字符")
-                            if content:
-                                print("成功从整个页面提取到内容")
-                    
-                    # 方法3: 尝试使用正则表达式提取长段落
-                    if not content or len(content) < 500:
-                        # 移除HTML标签
-                        clean_text = re.sub(r'<[^>]+>', '', response.text)
-                        # 分割为段落
-                        paragraphs = re.split(r'\n\s*\n', clean_text)
-                        # 过滤段落
-                        filtered_paragraphs = []
-                        
-                        for para in paragraphs:
-                            para = para.strip()
-                            if (len(para) > 300 and 
-                                not any(keyword in para for keyword in ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式', '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册', '搜索', 'Copyright', '版权所有', '本站所有内容']) and
-                                'http' not in para and
-                                '.com' not in para):
-                                filtered_paragraphs.append(para)
-                        
-                        if filtered_paragraphs:
-                            content = '\n\n'.join(filtered_paragraphs)
-                            print(f"使用正则表达式提取到 {len(filtered_paragraphs)} 个段落，总长度: {len(content)} 字符")
-                    
-                    # 方法4: 尝试直接从页面中提取可能的小说内容特征
-                    if not content or len(content) < 500:
-                        # 查找包含引号的长文本（小说对话）
-                        quote_pattern = r'\"\'[^\"\']{100,}\"\''
-                        quotes = re.findall(quote_pattern, response.text)
-                        if quotes:
-                            content = '\n\n'.join(quotes)
-                            print(f"找到 {len(quotes)} 个长引号，总长度: {len(content)} 字符")
-                    
-                    # 最终处理
-                    if content:
-                        # 尝试Base64解码
-                        decoded_content = ""
-                        # 查找所有可能的Base64编码字符串（通常以'PHA+'开头）
-                        base64_patterns = [
-                            r'\'PHA\+([^\']+)\'',  # 单引号包围的Base64
-                            r'\"PHA\+([^\"]+)\"',  # 双引号包围的Base64
-                            r'PHA\+([^\s]+)',  # 直接的Base64
-                        ]
-                        
-                        for pattern in base64_patterns:
-                            matches = re.findall(pattern, content)
-                            if matches:
-                                print(f"找到 {len(matches)} 个Base64编码字符串")
-                                for match in matches:
-                                    try:
-                                        # 添加缺失的填充字符
-                                        padding = '=' * ((4 - len(match) % 4) % 4)
-                                        decoded_bytes = base64.b64decode(match + padding)
-                                        decoded_text = decoded_bytes.decode('utf-8', errors='ignore')
-                                        # 从HTML中提取文本
-                                        soup_decoded = BeautifulSoup(decoded_text, 'lxml')
-                                        text = soup_decoded.get_text(strip=True)
-                                        if text:
-                                            decoded_content += text + '\n\n'
-                                    except Exception as e:
-                                        print(f"Base64解码失败: {e}")
-                                break
-                        
-                        # 如果解码成功，使用解码后的内容
-                        if decoded_content:
-                            content = decoded_content
-                            print(f"Base64解码后内容长度: {len(content)} 字符")
-                        else:
-                            # 移除HTML实体
-                            content = re.sub(r'&[a-zA-Z]+;', '', content)
-                            # 移除多余的空白
-                            content = '\n\n'.join([line.strip() for line in content.split('\n') if line.strip()])
-                            # 移除可能的重复内容
-                            lines = content.split('\n')
-                            unique_lines = []
-                            seen = set()
-                            for line in lines:
-                                if line not in seen:
-                                    seen.add(line)
-                                    unique_lines.append(line)
-                            content = '\n'.join(unique_lines)
-                            # 清理乱码和特殊字符
-                            content = re.sub(r'[\x00-\x1f\x7f-\xff]', '', content)
-                            # 清理重复的标点符号
-                            content = re.sub(r'([.!?,;])\1+', r'\1', content)
-                            
-                            # 对于pjxdd.com网站，进行额外的清理
-                            if 'pjxdd.com' in current_url:
-                                print("对pjxdd.com网站进行额外的内容清理")
-                                # 移除可能的乱码和特殊符号
-                                content = re.sub(r'[\u0000-\u001f\u007f-\u00ff]', '', content)
-                                # 移除多余的空白字符
-                                content = re.sub(r'\s+', ' ', content)
-                                # 移除行首行尾的空白
-                                content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
-                                print(f"清理后内容长度: {len(content)} 字符")
-                    
-                    print(f"最终提取内容长度: {len(content) if content else 0} 字符")
+                    # ===== 正文候选提取链 (第 4 批重构: 原为内联的 695 行) =====
+                    content = self._extract_content_from_html(
+                        soup, response, current_url, chapter_url, text=text)
 
                     # baoshuism.com: 站点占位提示("内容正在更新，请稍后查看")视为章节未发布
                     if content and 'baoshuism.com' in current_url and \
