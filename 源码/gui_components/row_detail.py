@@ -7,11 +7,9 @@ import flet as ft
 import time
 
 from .task_manager import TaskInfo
-from .ui_theme import status_color
-from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                         SIZE_BODY, WEIGHT_SUBTITLE, WEIGHT_BODY,
-                         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_WARNING,
-                         MORANDI_INFO)
+from .ui_morandi import (FONT_STACK, SIZE_TINY,
+                         WEIGHT_SUBTITLE, WEIGHT_BODY,
+                         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_WARNING)
 
 
 def _fmt_elapsed(task: TaskInfo) -> str:

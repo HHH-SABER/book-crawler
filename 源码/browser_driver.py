@@ -154,7 +154,6 @@ class PlaywrightDriver:
         """懒启动浏览器 (首次 get 时)"""
         if self._started:
             return
-        from playwright.sync_api import sync_playwright as _sp  # noqa: F401
         launch_args = [
             '--disable-blink-features=AutomationControlled',
             '--disable-gpu',

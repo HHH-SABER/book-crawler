@@ -17,10 +17,10 @@ _HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from ..ui_theme import make_card, filled_btn, tonal_btn, outline_btn, text_btn
+from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn
 from ..ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY, MORANDI_PRIMARY,
+                          WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
                           MORANDI_WARNING, MORANDI_ACCENT)
 from . import history_data
