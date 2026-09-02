@@ -807,6 +807,17 @@ class NovelSpider:
                     等待 = self._反爬检测器.计算退避秒数(
                         self._限频连续次数, 结果.建议策略.get('retry_after', 0))
                     self._限频最大退避 = max(self._限频最大退避, 等待)
+                    # P2-3: 连续 2 次限频说明短退避无效, 给该域写长冷却(300s),
+                    # 让下一次 run_crawl 开始前直接礼貌等待 (跨 run 自动退避)
+                    if self._限频连续次数 >= 2:
+                        try:
+                            import re as _re
+                            import 风控事件 as _event
+                            _m = _re.match(r'https?://([^/:]+)', getattr(self, 'base_url', '') or '')
+                            if _m:
+                                _event.set_domain_cooldown(_m.group(1), 300, 'rate_limit')
+                        except Exception:
+                            pass
                     _log.info(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
                           f"(第{self._限频连续次数}次连续限频)")
                     time.sleep(等待)
@@ -5431,6 +5442,19 @@ class NovelSpider:
             _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
         else:
             _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
+        # P2-1 打点: 任务级风控事件 (成功/失败/新增由爬取历史统计, 此处给监控聚合口径)
+        try:
+            import re as _re
+            import 风控事件 as _event
+            _m = _re.match(r'https?://([^/:]+)', catalog_url)
+            _event.add('task_result', {
+                '域名': _m.group(1) if _m else '',
+                '完成': total - len(failed), '失败': len(failed),
+                '目标': total, '模式': mode,
+            })
+            _event.flush()
+        except Exception:
+            pass
         return output_file
 
 
@@ -5669,6 +5693,19 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
     try:
         _app_log.enable_console()
+    except Exception:
+        pass
+    # P2-3: 跨 run 域级冷却 —— 上次任务被限频/封禁时礼貌等待再开工
+    try:
+        import re as _re_cd
+        import 风控事件 as _event_cd
+        _m_cd = _re_cd.match(r'https?://([^/:]+)', catalog_url)
+        if _m_cd:
+            _cd = _event_cd.get_domain_cooldown(_m_cd.group(1))
+            if _cd > 0:
+                等待秒 = min(_cd, 300)
+                _log.info(f"⚠️ {_m_cd.group(1)} 处于风控冷却中, 礼貌等待 {等待秒:.0f} 秒后开始 (P2-3)")
+                time.sleep(等待秒)
     except Exception:
         pass
     # 统一输出目录 -> 绝对路径, 避免多套结果目录

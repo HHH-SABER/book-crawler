@@ -57,6 +57,8 @@ class SiteManagePage:
         # 探测结果缓存 {域名: probe dict}
         self._probe_results = {}
         self._probing = set()
+        # P2-4: 近24h 风控事件聚合缓存 (懒加载, _refresh 时失效)
+        self._risk_summary_cache = None
         # UI 引用
         self._table_view = None
         self._edit_card = None
@@ -206,6 +208,19 @@ class SiteManagePage:
             return ""
         return f"{(total - fail) * 100 // total}%"
 
+    def _domain_risk(self, domain: str) -> dict:
+        """P2-4: 近 24h 该域风控事件 {total, types:{type:n}} (读 风控事件 JSONL, 懒缓存)。"""
+        if self._risk_summary_cache is None:
+            try:
+                import 风控事件 as _risk_ev
+                self._risk_summary_cache = _risk_ev.summary_by_domain(24)
+            except Exception:
+                self._risk_summary_cache = {}
+        agg = (self._risk_summary_cache or {}).get(domain)
+        if not agg or not agg.get("anti"):
+            return {"total": 0, "types": {}}
+        return {"total": sum(agg["anti"].values()), "types": agg["anti"]}
+
     @property
     def _site_stats(self) -> dict:
         """{域名: 统计dict} (爬取历史)"""
@@ -222,6 +237,7 @@ class SiteManagePage:
     def _refresh_table(self):
         """重建站点表格 (主线程)"""
         self._site_stats_cache = None  # 清缓存
+        self._risk_summary_cache = None  # P2-4: 风控聚合缓存失效 (刷新即重读)
         if self._table_view is None:
             return
         self._table_view.controls.clear()
@@ -272,7 +288,13 @@ class SiteManagePage:
             parts.append((health, hcolor))
         prior = history_data.site_prior(domain)
         anti_seen = prior.get('反爬统计', {}) if isinstance(prior, dict) else {}
-        if anti_seen:
+        # P2-4: 近 24h 风控事件优先展示 (rate_limit/blocked 用错误色)
+        risk = self._domain_risk(domain)
+        if risk["total"]:
+            top = max(risk["types"], key=risk["types"].get)
+            rcolor = MORANDI_ERROR if top in ("rate_limit", "blocked") else MORANDI_WARNING
+            parts.append((f"风控24h:{top}×{risk['types'][top]}", rcolor))
+        elif anti_seen:
             top_anti = max(anti_seen, key=anti_seen.get)
             parts.append((f"反爬:{top_anti}", MORANDI_WARNING))
         probe = self._probe_results.get(domain)
