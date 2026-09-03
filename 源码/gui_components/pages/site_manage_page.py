@@ -26,10 +26,13 @@ from ..ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
 from . import history_data
 
 try:
-    from _path_utils import resolve_data_file
+    from _path_utils import resolve_data_file, get_app_base_dir
 except Exception:
     def resolve_data_file(filename, **kw):
         return os.path.join(_HERE, filename)
+
+    def get_app_base_dir():
+        return _HERE
 
 try:
     import 日志 as app_log
@@ -43,6 +46,37 @@ def _log(source: str, message: str):
             app_log.info(source, message)
         except Exception:
             pass
+
+
+def _is_jsonable(v) -> bool:
+    """判断值能否被 json.dumps 序列化 (函数/类型/自定义对象 → False)"""
+    if isinstance(v, (str, int, float, bool)) or v is None:
+        return True
+    if isinstance(v, dict):
+        return all(_is_jsonable(k) and _is_jsonable(x) for k, x in v.items())
+    if isinstance(v, (list, tuple)):
+        return all(_is_jsonable(x) for x in v)
+    return False
+
+
+def _json_clean(obj):
+    """递归过滤不可 JSON 序列化的字段 (如内置 SITE_PATTERNS 的自定义分页函数)
+
+    - dict: 保留可序列化字段, 丢弃含函数/对象等的字段
+    - list: 逐项清理, 清理后为空的 dict 整体丢弃, 避免条目因个别函数字段被误删
+    """
+    if isinstance(obj, dict):
+        return {k: _json_clean(v) for k, v in obj.items() if _is_jsonable(v)}
+    if isinstance(obj, (list, tuple)):
+        out = []
+        for v in obj:
+            cleaned = _json_clean(v)
+            if isinstance(cleaned, dict) and not cleaned:
+                continue  # 清理后空 dict → 丢弃
+            if cleaned is not None:
+                out.append(cleaned)
+        return out
+    return obj
 
 
 class SiteManagePage:
@@ -70,6 +104,7 @@ class SiteManagePage:
         self._selectors_field = None
         self._anti_field = None
         self._save_btn = None
+        self.file_picker = None  # Flet 0.86 FilePicker 是 Service, 页面构建时实例化
 
     # ------------------------------------------------------------- 配置读写
     def _load_configs(self) -> list:
@@ -88,11 +123,12 @@ class SiteManagePage:
             return []
 
     def _save_configs(self) -> bool:
-        """保存配置到 JSON"""
+        """保存配置到 JSON (先过滤不可序列化的内置函数字段)"""
         try:
             from pathlib import Path
+            cleaned = _json_clean(self.configs)
             Path(self.config_file).write_text(
-                json.dumps(self.configs, ensure_ascii=False, indent=2),
+                json.dumps(cleaned, ensure_ascii=False, indent=2),
                 encoding='utf-8')
             return True
         except Exception as e:
@@ -103,6 +139,9 @@ class SiteManagePage:
     def build(self) -> ft.Control:
         """构建站点管理页"""
         self.configs = self._load_configs()
+        # Flet 0.86: FilePicker 是 Service (非 Control), 页面上下文中实例化即可,
+        # 不能 overlay.append (会报 "Unknown control: FilePicker"), 通过 await pick_files 调用
+        self.file_picker = ft.FilePicker()
 
         # 工具栏
         add_btn = filled_btn("新增站点", icon=ft.Icons.ADD,
@@ -160,8 +199,7 @@ class SiteManagePage:
             import 风控事件 as _ev
             # 1) 漂移/改版告警 (content_issue 事件最近 3 条)
             import os, json, time as _t
-            d = os.path.join(_path_utils.get_app_base_dir(), "数据") \
-                if 'get_app_base_dir' in dir(_path_utils) else os.path.dirname(os.path.abspath(__file__))
+            d = os.path.join(get_app_base_dir(), "数据")
             files = sorted([os.path.join(d, f) for f in os.listdir(d)
                             if f.startswith("风控事件-")]) if os.path.isdir(d) else []
             cutoff = _t.time() - 24 * 3600
@@ -336,8 +374,10 @@ class SiteManagePage:
         parts = []
         health = self._health_of(cfg)
         if health:
-            hcolor = (MORANDI_SUCCESS if health >= '80%'
-                      else MORANDI_WARNING if health >= '50%'
+            # 健康度为 "NN%" 字符串, 需转数值比较 (字符串比较会使 100% < 80%)
+            hval = int(health.rstrip('%')) if health.rstrip('%').isdigit() else 0
+            hcolor = (MORANDI_SUCCESS if hval >= 80
+                      else MORANDI_WARNING if hval >= 50
                       else MORANDI_ERROR)
             parts.append((health, hcolor))
         prior = history_data.site_prior(domain)
@@ -603,47 +643,148 @@ class SiteManagePage:
         except Exception:
             pass
 
-    def _on_import_click(self, e):
-        """导入 JSON 配置文件"""
-        if self.page is None:
+    async def _on_import_click(self, e):
+        """导入站点配置: 支持 JSON 配置文件 或 txt 网址清单 (每行一个URL)"""
+        if self.page is None or self.file_picker is None:
+            self._info_text.value = "文件选择器未就绪"
             return
-        picker = ft.FilePicker()
-        self.page.overlay.append(picker)
-
-        def _on_result(ev):
+        try:
+            files = await self.file_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["json", "txt"],
+                dialog_title="选择站点配置 JSON 或网址清单 txt (每行一个URL)",
+            )
+        except Exception as ex:
+            self._info_text.value = f"打开文件选择器失败: {ex}"
             try:
-                if not ev.files:
-                    return
-                path = ev.files[0].path
+                self.page.update()
+            except Exception:
+                pass
+            return
+        if not files:
+            return  # 用户取消
+        path = files[0].path
+        try:
+            ext = os.path.splitext(path)[1].lower()
+            if ext == '.json':
                 with open(path, 'r', encoding='utf-8') as f:
                     items = json.load(f)
                 if not isinstance(items, list):
                     raise ValueError("格式错误: 期望 JSON 数组")
-                # 按域名合并导入
-                existing = {c.get('domain') for c in self.configs}
-                added = 0
-                for item in items:
-                    if isinstance(item, dict) and item.get('domain') \
-                            and item['domain'] not in existing:
-                        self.configs.append(item)
-                        existing.add(item['domain'])
-                        added += 1
-                if self._save_configs():
-                    self._info_text.value = f"导入完成: 新增 {added} 条, 跳过已存在"
-                    self._refresh_table()
-                    self.page.update()
-            except Exception as ex:
-                self._info_text.value = f"导入失败: {ex}"
-                self.page.update()
-
-        picker.on_result = _on_result
+                added = self._merge_configs(items)
+            else:
+                added = self._import_from_urls_file(path)
+            if self._save_configs():
+                self._info_text.value = f"导入完成: 新增 {added} 条, 跳过已存在"
+                self._refresh_table()
+            else:
+                self._info_text.value = "保存失败, 请检查权限"
+        except Exception as ex:
+            self._info_text.value = f"导入失败: {ex}"
         try:
             self.page.update()
-            picker.pick_files(allow_multiple=False,
-                              allowed_extensions=["json"],
-                              dialog_title="选择站点配置 JSON 文件")
-        except Exception as ex:
-            self._info_text.value = f"打开文件选择器失败: {ex}"
+        except Exception:
+            pass
+
+    def _merge_configs(self, items: list) -> int:
+        """按域名合并导入配置条目, 返回新增数"""
+        existing = {c.get('domain') for c in self.configs}
+        added = 0
+        for item in items:
+            if isinstance(item, dict) and item.get('domain') \
+                    and item['domain'] not in existing:
+                self.configs.append(item)
+                existing.add(item['domain'])
+                added += 1
+        return added
+
+    def _import_from_urls_file(self, path: str) -> int:
+        """从 txt 网址清单导入: 每行一个 URL, 提取域名生成站点配置
+
+        去重/物化规则:
+        - 已被当前配置覆盖 (自身或子域, 如 m.banlvzw.com 命中 banlvzw.com) → 跳过
+        - 命中内置 SITE_PATTERNS 但配置里还没有 → 复制内置可序列化字段进配置
+          (使该站点在站点管理页可见; 函数型字段如自定义分页由运行时合并保留)
+        - 全新域名 → 生成默认 html_selector 配置
+        """
+        from urllib.parse import urlparse
+        raw = None
+        for enc in ('utf-8', 'gbk'):
+            try:
+                with open(path, encoding=enc) as f:
+                    raw = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+        if raw is None:
+            return 0
+
+        # 当前配置已有域名 (自身/子域覆盖判断)
+        existing = {c.get('domain') for c in self.configs if c.get('domain')}
+        # 内置 SITE_PATTERNS 按域名索引 (用于把内置站点物化进配置)
+        builtin_by_domain = {}
+        try:
+            from sites_config import SITE_PATTERNS
+            builtin_by_domain = {p.get('domain'): p for p in SITE_PATTERNS
+                                 if p.get('domain')}
+        except Exception:
+            pass
+
+        def _covered_by(host: str, domains) -> bool:
+            """host 是否已被某域名覆盖 (自身或主域子域)"""
+            for d in domains:
+                if not d:
+                    continue
+                if host == d or host.endswith('.' + d):
+                    return True
+            return False
+
+        def _serializable(pattern: dict) -> dict:
+            """从内置模式提取可 JSON 序列化字段 (丢弃函数型字段如自定义分页)"""
+            out = {k: v for k, v in pattern.items() if _is_jsonable(v)}
+            return out
+
+        added = 0
+        for line in (raw or '').splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            url = line if '://' in line else 'https://' + line
+            try:
+                host = (urlparse(url).hostname or '').lower()
+            except Exception:
+                host = ''
+            # 去掉 www. 前缀 (与内置站点 domain 规范一致)
+            if host.startswith('www.'):
+                host = host[4:]
+            if not host:
+                continue
+            # 已被当前配置覆盖 (自身或子域) → 跳过
+            if _covered_by(host, existing):
+                continue
+            # 内置站点子域 (如 m.xx.com 命中内置 xx.com) 且配置未收录 → 跳过
+            if host not in builtin_by_domain and _covered_by(host, builtin_by_domain):
+                continue
+            # 命中内置站点 (精确) 但配置里还没有 → 物化内置可序列化字段
+            if host in builtin_by_domain:
+                entry = _serializable(builtin_by_domain[host])
+                entry['domain'] = host
+                entry.setdefault('enabled', True)
+                self.configs.append(entry)
+                existing.add(host)
+                added += 1
+                continue
+            # 全新域名 → 生成默认配置
+            existing.add(host)
+            self.configs.append({
+                'domain': host,
+                'pattern': 'html_selector',
+                'content_selectors': ['#content'],
+                'anti_spider': {'type': 'auto'},
+                'enabled': True,
+            })
+            added += 1
+        return added
 
     def _on_export_click(self, e):
         """导出全部配置为 JSON"""

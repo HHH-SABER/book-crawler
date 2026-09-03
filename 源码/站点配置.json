@@ -1,0 +1,421 @@
+[
+  {
+    "domain": "zhiruo.org",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "zhiruo",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "js_cookie",
+      "cookie_name": "ge_js_validator_20"
+    }
+  },
+  {
+    "domain": "biquwx.cc",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "biquwx",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "js_cookie",
+      "cookie_name": "ge_js_validator_20"
+    }
+  },
+  {
+    "domain": "ahxsw.com",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "js_cookie",
+      "cookie_name": "ge_js_validator_20"
+    }
+  },
+  {
+    "domain": "11bzw.org",
+    "pattern": "ajax_two_step",
+    "catalog_parser": "11bzw",
+    "chapter_url_regex": "/read/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 2,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#content"
+    ],
+    "anti_spider": {
+      "type": "session_cookie"
+    }
+  },
+  {
+    "domain": "yqyp.net",
+    "pattern": "html_selector",
+    "catalog_parser": "yqyp",
+    "chapter_url_regex": "/book/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 2,
+      "max_pages": 5
+    },
+    "content_selectors": [
+      "div.info_dv1.ov"
+    ],
+    "content_extractor": "yqyp_nav_strip",
+    "anti_spider": {
+      "type": "js_cookie",
+      "cookie_name": "ge_js_validator_20"
+    }
+  },
+  {
+    "domain": "28zw.org",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "yunquge",
+    "chapter_url_regex": "/book/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "div.content",
+      "div#txt",
+      "#content",
+      ".content"
+    ],
+    "content_extractor": "yunquge_p_filter",
+    "anti_spider": {
+      "type": "js_cookie",
+      "cookie_name": "ge_js_validator_20"
+    }
+  },
+  {
+    "domain": "spscl.com",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "yunquge",
+    "chapter_url_regex": "/yue/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "div.word_read",
+      "div.content",
+      "div#txt",
+      "#content",
+      ".content"
+    ],
+    "content_extractor": "yunquge_p_filter",
+    "anti_spider": {
+      "type": "js_cookie",
+      "cookie_name": "ge_js_validator_20"
+    }
+  },
+  {
+    "domain": "pjxdd.com",
+    "pattern": "selenium",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 10
+    },
+    "content_selectors": [
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "challenge_page"
+    }
+  },
+  {
+    "domain": "qingheks.com",
+    "pattern": "selenium",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 10
+    },
+    "content_selectors": [
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "challenge_page"
+    }
+  },
+  {
+    "domain": "27xsw.cc",
+    "pattern": "selenium",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 10
+    },
+    "content_selectors": [
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "challenge_page"
+    }
+  },
+  {
+    "domain": "5hbook.net",
+    "pattern": "str_decode_bb",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/books/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 2,
+      "max_pages": 10
+    },
+    "content_selectors": [
+      "#content",
+      ".content",
+      "#htmlContent"
+    ],
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "exotxt.net",
+    "pattern": "html_selector",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/infos/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 1
+    },
+    "content_selectors": [
+      "div.content",
+      ".content",
+      "#content"
+    ],
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "tanmixs.com",
+    "pattern": "selenium",
+    "catalog_parser": "tanmixs",
+    "chapter_url_regex": "/([A-Za-z0-9]+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "?page={N}",
+      "start": 2,
+      "max_pages": 10
+    },
+    "content_selectors": [
+      "div#chapter-content",
+      "div.chapter-content",
+      "#content",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "selenium_required"
+    }
+  },
+  {
+    "domain": "oldtimeswx.net",
+    "pattern": "html_selector",
+    "catalog_parser": "generic",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#content",
+      "#BookText",
+      "#booktxt",
+      ".content",
+      "div.content"
+    ],
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "banlvzw.com",
+    "pattern": "html_selector",
+    "catalog_parser": "banlvzw",
+    "content_pagination": {
+      "suffix": "?page={N}",
+      "start": 2,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#BookText",
+      "#booktxt",
+      "#content",
+      ".content",
+      "#articlecontent"
+    ],
+    "anti_spider": {
+      "type": "waf_js"
+    }
+  },
+  {
+    "domain": "yipinzongshi.com",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "generic",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      ".word_read",
+      "#content",
+      ".content",
+      "div.content"
+    ],
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "630wang.cc",
+    "pattern": "html_selector",
+    "catalog_parser": "630wang",
+    "chapter_url_regex": "/kan/(\\d+)_(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "div.word_read",
+      ".word_read",
+      "#content",
+      ".content"
+    ],
+    "content_extractor": "word_read_p_filter",
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "xingguangks.com",
+    "pattern": "html_selector",
+    "catalog_parser": "xingguang",
+    "chapter_url_regex": "/list/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "max_pages": 1
+    },
+    "content_selectors": [
+      "div.content",
+      ".content",
+      "#content"
+    ],
+    "content_extractor": "xingguang_filter",
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "ciyewk.com",
+    "pattern": "datafile",
+    "catalog_parser": "ciyewk",
+    "chapter_url_regex": "/shu/[A-Za-z0-9]+/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 5
+    },
+    "anti_spider": {
+      "type": "waf_js"
+    }
+  },
+  {
+    "domain": "ltbook.net",
+    "pattern": "html_selector",
+    "catalog_parser": "ltbook",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 3
+    },
+    "content_selectors": [
+      "#rtext",
+      "#content",
+      "div#content"
+    ],
+    "content_extractor": "ltbook_junk_filter",
+    "anti_spider": {
+      "type": "none"
+    }
+  },
+  {
+    "domain": "shubaoks.net",
+    "pattern": "html_selector",
+    "content_selectors": [
+      "#content"
+    ],
+    "anti_spider": {
+      "type": "auto"
+    },
+    "enabled": true
+  },
+  {
+    "domain": "322zw.com",
+    "pattern": "html_selector",
+    "content_selectors": [
+      "#content"
+    ],
+    "anti_spider": {
+      "type": "auto"
+    },
+    "enabled": true
+  },
+  {
+    "domain": "orion34g.com",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "generic",
+    "content_selectors": [
+      ".word_read",
+      "#content",
+      ".content",
+      "div.content"
+    ],
+    "anti_spider": {
+      "type": "none"
+    },
+    "enabled": true
+  }
+]

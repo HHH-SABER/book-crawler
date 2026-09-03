@@ -11,6 +11,7 @@
 import json
 import os
 import threading
+from pathlib import Path
 
 _LOCK = threading.Lock()
 
@@ -47,8 +48,10 @@ def _load():
 
 def _save(st):
     try:
-        with open(_path(), "w", encoding="utf-8") as f:
-            json.dump(st, f, ensure_ascii=False, indent=1)
+        p = Path(_path()).resolve()   # pathlib 锚定, 防路径穿越
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(st, ensure_ascii=False, indent=1),
+                     encoding="utf-8")
     except Exception:
         pass
 

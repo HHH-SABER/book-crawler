@@ -243,8 +243,6 @@ def main(page: ft.Page):
                     dot_color, label = MORANDI_RUNNING, f"抓取中 {running} 项"
                     if done:
                         label += f" · 已完成 {done}"
-                elif failed and not tasks:
-                    dot_color, label = MORANDI_ERROR, "就绪"
                 elif failed:
                     dot_color, label = MORANDI_ERROR, f"就绪 · 失败 {failed} 项"
                 elif done:

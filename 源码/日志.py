@@ -63,6 +63,7 @@ class AppLogger:
             return
         self._ready = True
         self._lock = threading.Lock()
+        self._mirror_local = threading.local()  # console 镜像防递归标志 (线程本地)
         self._file = None
         self._file_path = None
         self._cur_date = None
@@ -109,11 +110,19 @@ class AppLogger:
             except Exception:
                 pass  # 日志失败绝不影响主流程
         # console 镜像: 原样输出消息 (无前缀), 供 CLI 进度与 GUI 日志条捕获 (B1)
+        # 防递归护栏: GUI 任务线程把 sys.stdout 替换为日志重定向器 (TaskLogRedirector),
+        # 此处 print 会再次进入 _write 造成互递归 (1 条日志被放大数百次落盘),
+        # 用线程本地标志识别重入, 重入时直接丢弃。
         if _console_enabled and _LEVEL_ORDER.get(level, 20) >= _LEVEL_ORDER.get(_console_min_level, INFO):
+            if getattr(self._mirror_local, 'in_mirror', False):
+                return
+            self._mirror_local.in_mirror = True
             try:
                 print(message, flush=True)
             except Exception:
                 pass
+            finally:
+                self._mirror_local.in_mirror = False
 
     def debug(self, source: str, message: str):
         self._write(DEBUG, source, message)

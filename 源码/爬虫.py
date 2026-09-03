@@ -503,6 +503,22 @@ def _resolve_novel_paths(catalog_url):
     return novel_path, novel_path_alt
 
 
+# fake_useragent 初始化较重 (内置数据加载, 部分版本首用需联网拉取),
+# 且 GUI 并发任务会创建多个 spider 实例 → 进程内复用单例, 避免重复初始化开销
+_UA单例 = None
+_UA单例锁 = threading.Lock()
+
+
+def _取UA引擎():
+    """进程级 fake_useragent 单例 (线程安全懒加载)"""
+    global _UA单例
+    if _UA单例 is None:
+        with _UA单例锁:
+            if _UA单例 is None:
+                _UA单例 = UserAgent()
+    return _UA单例
+
+
 class NovelSpider:
     """
     通用小说爬虫主类。
@@ -536,6 +552,8 @@ class NovelSpider:
         # Session 当成自己的"旧值"保存, 最终还原出错 —— Session 错配并泄漏。
         self._session_local = threading.local()
         self._main_session = requests.Session()
+        self._temp_sessions = []             # 并发 worker 的线程级 Session (close 时统一释放)
+        self._temp_sessions_lock = threading.Lock()
         self.session = self._main_session
         # 默认直连: 忽略系统/环境代理。Windows 系统代理若指向已关闭的代理软件
         # (如 127.0.0.1:12334) 会导致所有请求 ProxyError; 小说站国内直连即可。
@@ -590,7 +608,7 @@ class NovelSpider:
                 _app_log.debug('爬虫', f'captcha_config.json 读取/解析失败, 使用默认直连+校验: {e}')
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        self.ua = UserAgent()
+        self.ua = _取UA引擎()
         # 固定 UA (会话内不变): ① WAF 验证码放行 cookie 与 UA 绑定, 每次随机 UA
         # 会导致验证码白过; ② 固定 UA 更接近真实浏览器, 降低反爬触发率
         try:
@@ -862,6 +880,10 @@ class NovelSpider:
             if 结果.机制 != 'none':
                 _log.info(_反爬日志(结果))
                 self._反爬统计[结果.机制] = self._反爬统计.get(结果.机制, 0) + 1
+                # 速度自适应: 反爬事件反馈给控制器, 触发即时降档 (限频/WAF等)
+                _spd = getattr(self, '_speed_ctrl', None)
+                if _spd is not None:
+                    _spd.note_risk(结果.机制)
                 if 结果.机制 == 'rate_limit':
                     # 指数退避: Retry-After 优先, 否则 5s→10s→20s→60s
                     self._限频连续次数 += 1
@@ -2810,7 +2832,6 @@ class NovelSpider:
         }
         for entity, char in html_entities.items():
             content = content.replace(f'&{entity};', char)
-            content = content.replace(entity, char) if len(entity) > 3 else content
 
         # 移除站点内嵌水印 (段落内部/段尾, 非整行): 连同前后空白一起删,
         # 保证 "句号。 W阿木战恋雪 新段落" 清洗后自然衔接为 "句号。 新段落"
@@ -5148,9 +5169,9 @@ class NovelSpider:
         文本 = '\n'.join(lines)
         _log.info(f"\n{文本}")
         try:
-            报告路径 = str(output_file) + '.质检报告.txt'
-            with open(报告路径, 'w', encoding='utf-8') as f:
-                f.write(文本 + '\n')
+            # pathlib 锚定输出文件同目录, 防路径穿越
+            报告路径 = Path(str(output_file) + '.质检报告.txt').resolve()
+            报告路径.write_text(文本 + '\n', encoding='utf-8')
             _log.info(f"[质检] 汇总报告已保存: {报告路径}")
         except OSError as e:
             _log.info(f"[质检] 汇总报告保存失败: {e}")
@@ -5180,9 +5201,9 @@ class NovelSpider:
             统计 = ', '.join(f'{k}×{v}' for k, v in sorted(反爬.items())) or '无'
             _log.info(f"[站点历史] {信息['域名']}: 累计 {信息['任务数']} 个任务, "
                   f"最近抓取 {信息.get('最近抓取', '未知')}, 历史反爬: {统计}")
-            if ('rate_limit' in 反爬 or 'ua_block' in 反爬) and delay < 2:
-                _log.info(f"[站点历史] ⚠️ 该站点历史存在频率/UA类反爬, 建议将章节间隔 "
-                      f"从 {delay} 秒提高到 2 秒以上")
+            if ('rate_limit' in 反爬 or 'ua_block' in 反爬) and (delay is None or delay < 2):
+                _log.info(f"[站点历史] ⚠️ 该站点历史存在频率/UA类反爬, 建议章节间隔 "
+                      f"{'由速度自适应档位动态调节' if delay is None else f'从 {delay} 秒提高到 2 秒以上'}")
         except Exception as e:
             _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         return delay
@@ -5195,28 +5216,52 @@ class NovelSpider:
         if stop_event is not None and stop_event.is_set():
             return ''
         main_session = self._main_session
-        new_session = requests.Session()
-        try:
-            # 继承主 Session 的全部配置, 只隔离 cookie / 连接池
+        # 速度自适应控制器 (run() 中构建; 不可用时走原路径)
+        spd = getattr(self, '_speed_ctrl', None)
+        # 线程级临时 Session 复用: 线程池复用线程, 每个 worker 只建一次,
+        # 避免每章一次 TCP/TLS 握手 (旧实现每章新建 Session)。
+        # cookie 仍按线程隔离 (P1-8): 首建时从主 Session 快照, 每章再同步
+        # 主 Session 新获得的放行 cookie (WAF cookie 可能由其他线程解出)。
+        new_session = getattr(self._session_local, 'temp_session', None)
+        if new_session is None:
+            new_session = requests.Session()
             new_session.headers.update(main_session.headers)
             new_session.cookies.update(main_session.cookies)  # 带上 WAF 放行 cookie
             new_session.proxies.update(main_session.proxies)
             new_session.trust_env = False          # 与主 Session 一致: 直连忽略系统代理
             new_session.verify = main_session.verify  # 继承 TLS 校验开关 (P1-1)
             new_session.keep_alive = True
-            # 线程本地赋值, 其它线程不受影响 (P1-8)
-            self.session = new_session
-            try:
-                return self._fetch_with_qc(chap)
-            finally:
-                # 复位本线程槽位: 线程池会复用线程, 避免后续误用已关闭的 Session
-                self.session = main_session
+            self._session_local.temp_session = new_session
+            with self._temp_sessions_lock:
+                self._temp_sessions.append(new_session)
+        else:
+            # 同步主 Session 中途新获得的 cookie (合并式更新, 不清线程已有 cookie)
+            new_session.cookies.update(main_session.cookies)
+        # 线程本地赋值, 其它线程不受影响 (P1-8)
+        self.session = new_session
+        try:
+            if spd is not None:
+                # 动态并发闸门: 降档时多余 worker 在此等待, 回升时立即恢复
+                with spd.gate():
+                    # 复查停止信号: 排队在闸门上的 worker 若等到停止已置位,
+                    # 直接返回空串, 不再发起无谓请求
+                    if stop_event is not None and stop_event.is_set():
+                        return ''
+                    _t0 = time.perf_counter()
+                    content = self._fetch_with_qc(chap)
+                    spd.record_chapter(bool(content),
+                                       time.perf_counter() - _t0)
+                # 章节间隔按当前档位实时取值 (降档立即放大, 回升立即缩短)
+                _d = spd.current_delay()
+                if _d > 0:
+                    time.sleep(_d)
+            else:
+                content = self._fetch_with_qc(chap)
+            return content
         finally:
-            # 关闭临时 Session 释放连接池 (旧实现从未关闭, 长任务会累积句柄)
-            try:
-                new_session.close()
-            except Exception as e:
-                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+            # 复位本线程槽位: 线程池会复用线程, 避免后续误用已关闭的 Session
+            self.session = main_session
+        # 线程级 Session 不再每章关闭, 统一由 close() 释放
 
     # ================== Session 线程隔离 (P1-8 修复) ==================
     @property
@@ -5256,8 +5301,13 @@ class NovelSpider:
                     cleanup()
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        # 关闭 requests Session 连接池: 主 Session + 本线程可能残留的临时 Session
-        for _s in (self._main_session, getattr(self._session_local, 'session', None)):
+        # 关闭 requests Session 连接池: 主 Session + 并发 worker 的线程级 Session
+        # (线程池收尾后 close 在主线程执行, 此时 worker 已退出, 竞态风险低)
+        with self._temp_sessions_lock:
+            temp_sessions = list(self._temp_sessions)
+            self._temp_sessions.clear()
+        for _s in [self._main_session, getattr(self._session_local, 'session', None),
+                   getattr(self._session_local, 'temp_session', None)] + temp_sessions:
             if _s is None:
                 continue
             try:
@@ -5273,15 +5323,16 @@ class NovelSpider:
         return False
 
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
-            resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
+            resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
             stop_event=None, unique_title=False, novel_title=None,
             incremental=False, incremental_max_age_hours=24):
         """完整抓取小说。
         resume=True 时自动检测检查点，从上次中断处继续（追加写入）。
         show_progress=True 时每章更新下载进度条。
         chapter_range: (start, end) 1-based 章节索引区间，None 表示抓取全部。
-        threads: 并发抓取线程数 (1=串行)。并发时按章节顺序写入, 断点续传不受影响。
-        delay: 章节间请求间隔秒数 (越小越快, 但可能触发站点反爬)。
+    threads: 并发抓取线程数 (1=串行)。并发时按章节顺序写入, 断点续传不受影响。
+    delay: 章节间请求间隔秒数 (越小越快, 但可能触发站点反爬)。
+        两者为 None (默认) 时由速度自适应模块自动选档并动态调节。
         unique_title=True 时, 若输出目录已存在同名文件/任务, 自动为小说标题和
         输出文件名加上 (1)/(2) 等序号 (供 GUI 新任务使用; CLI 默认关闭以保留
         断点续传行为)。
@@ -5416,9 +5467,24 @@ class NovelSpider:
         if start > 0:
             _log.info(f"[断点续传] 以追加模式写入: {output_file}")
 
+        # ===== 速度自适应: 依据设备画像/任务规模/站点约束选档, 运行中动态升降 =====
+        # threads=None (GUI/CLI 默认) 时全自动选档; 显式指定线程数则手动直通。
+        try:
+            from 速度自适应 import build_controller
+            self._speed_ctrl = build_controller(
+                catalog_url, total_chapters=total,
+                manual_threads=threads, manual_delay=delay)
+            threads, delay = self._speed_ctrl.initial_params()
+        except Exception as e:
+            self._speed_ctrl = None
+            if threads is None or delay is None:
+                threads, delay = 1, 1.0   # 兜底: 控制器不可用时回到最稳妥的串行
+            _log.info(f"[速度自适应] 控制器构建失败, 沿用指定速度: {e}")
+
         # tanmixs 的 WAF 按 IP 限流: 多浏览器并发会更容易触发验证码(实测并发3线程反而更慢)
         # 强制串行 + 持久化 driver 复用是最优策略
-        if 'tanmixs.com' in catalog_url and threads > 1:
+        # (速度自适应站点约束已把 tanmixs 压到标准档, 此处兜底)
+        if 'tanmixs.com' in catalog_url and (threads or 0) > 1:
             _log.info("[并发] ⚠️ tanmixs.com WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
             threads = 1
 
@@ -5503,7 +5569,12 @@ class NovelSpider:
                                 print_progress_bar(i + 1, total, extra=chap['title'][:20])
                             continue
                         _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
+                        _spd = getattr(self, '_speed_ctrl', None)
+                        _t0 = time.perf_counter() if _spd is not None else 0.0
                         content = self._fetch_with_retry(chap)
+                        if _spd is not None:
+                            _spd.record_chapter(bool(content),
+                                                time.perf_counter() - _t0)
                         # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
                         f.write(f"## {chap['title']}\n\n")
                         f.write(content + "\n\n")
@@ -5517,8 +5588,14 @@ class NovelSpider:
                                               i + 1, total, file_handle=f)
                         if show_progress:
                             print_progress_bar(i + 1, total, extra=chap['title'][:20])
-                        if delay > 0:
-                            time.sleep(delay * getattr(self, '_延迟因子', 1.0))  # 请求间隔, 尊重服务器 (P0-2 自适应)
+                        if _spd is not None:
+                            _cur_delay = _spd.current_delay()
+                        else:
+                            _cur_delay = delay
+                        if _cur_delay > 0:
+                            # 章节间隔: 自适应模式下按当前档位实时取值 (降档立即放大;
+                            # 尊重风控延迟因子, P0-2 自适应)
+                            time.sleep(_cur_delay * getattr(self, '_延迟因子', 1.0))
         except KeyboardInterrupt:
             _log.info(f"\n⚠️ 用户中断! 进度检查点已保存，下次运行将自动从断点继续 (输出: {output_file})")
             return output_file
@@ -5657,8 +5734,8 @@ def interactive_menu():
 
     resume = True
     show_progress = True
-    threads = 1
-    delay = 1.0
+    threads = None   # None = 速度自适应 (默认)
+    delay = None
     if mode in ("full", "range"):
         # 断点续传选项
         _log.info("\n断点续传选项 (中断后可继续抓取):")
@@ -5672,16 +5749,21 @@ def interactive_menu():
         _log.info("2. 禁用")
         show_progress = input("请选择 (1/2，默认1): ").strip() != "2"
 
-        # 抓取速度选项
+        # 抓取速度选项 (默认自适应: 依据设备能力与站点状况自动选档升降)
         _log.info("\n抓取速度选项:")
-        _log.info("1. 标准 (串行，每章间隔1秒，最稳妥)")
-        _log.info("2. 快速 (3线程并发，间隔0.3秒，约3倍速)")
-        _log.info("3. 极速 (6线程并发，间隔0.1秒，最快，可能触发站点反爬)")
-        speed_choice = input("请选择 (1/2/3，默认1): ").strip() or "1"
+        _log.info("1. 自动 (推荐: 程序评估设备与站点后自动选最快可用速度,"
+                  "运行中随稳定性动态升降)")
+        _log.info("2. 标准 (1线程, 间隔1秒, 最稳妥)")
+        _log.info("3. 快速 (3线程并发, 间隔0.5秒)")
+        _log.info("4. 极速 (6线程并发, 间隔0.2秒, 可能触发站点反爬)")
+        speed_choice = input("请选择 (1/2/3/4，默认1): ").strip() or "1"
+        threads, delay = None, None   # 默认: 速度自适应
         if speed_choice == "2":
-            threads, delay = 3, 0.3
+            threads, delay = 1, 1.0
         elif speed_choice == "3":
-            threads, delay = 6, 0.1
+            threads, delay = 3, 0.5
+        elif speed_choice == "4":
+            threads, delay = 6, 0.2
 
     return catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay
 
@@ -5787,7 +5869,7 @@ def _resolve_unique_title(novel_title: str, output_dir: str,
 
 
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
-              resume=True, show_progress=True, chapter_range=None, threads=1, delay=1.0,
+              resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
               stop_event=None, unique_title=False):
     """根据模式执行抓取任务，供命令行与交互式共用
 
@@ -5799,8 +5881,9 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         resume: 是否断点续传
         show_progress: 是否显示进度条
         chapter_range: (start, end) 1-based 章节索引区间，仅 range 模式使用
-        threads: 并发抓取线程数 (1=串行)
-        delay: 章节间请求间隔秒数
+        threads: 并发抓取线程数。None (默认) = 速度自适应全自动选档 (依据设备
+                 画像/任务规模/站点约束动态升降); >0 = 手动固定线程数
+        delay: 章节间请求间隔秒数。None (默认) = 由速度自适应档位决定; >0 = 手动固定
         stop_event: threading.Event，GUI 停止按钮设置后中断抓取
         unique_title: 为 True 时, 新任务遇到同名小说自动加 (1)/(2) 序号
     """
@@ -5828,8 +5911,10 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     output_dir = _resolve_output_dir(output_dir)
     _log.info(f"[输出目录] {output_dir}")
     # 调试日志: 抓取入口 (供事后排查)
+    _spd_str = f"{threads}线程" if threads is not None else "自适应"
+    _delay_str = f"{delay}s" if delay is not None else "自适应"
     _log.info(f"[调试] 抓取开始: {catalog_url} 模式={mode} 区间={chapter_range} "
-          f"线程={threads} 延迟={delay} 续传={resume} 输出={output_dir}")
+          f"速度={_spd_str}/{_delay_str} 续传={resume} 输出={output_dir}")
 
     # 安全校验: 仅允许公网 http/https URL
     try:
@@ -5852,6 +5937,11 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             _log.info(f"[去重标题] {raw_title} -> {unique_novel_title}")
         except Exception as e:
             _log.info(f"[去重标题] 标题预取失败, 降级到单源内去重: {e}")
+        finally:
+            # full/range 的实际抓取由下方 src_spider 承担, 预取用的 spider
+            # 用完立即释放 (Session 连接池 / 懒创建的验证码浏览器), 防泄漏
+            spider.close()
+            spider = None
 
     if mode == "list":
         chapters = spider.get_chapter_list(catalog_url, sort_chapters)
@@ -5887,7 +5977,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     # 或指向一个 JSON 文件路径
     sources = [catalog_url]
     try:
-        if spider._captcha_manager is not None:
+        if spider is not None and spider._captcha_manager is not None:
             fs = spider._captcha_manager.config.data.get('fallback_sources', {})
             if isinstance(fs, str) and os.path.exists(fs):
                 fs = json.loads(Path(fs).read_text(encoding='utf-8'))
@@ -5897,6 +5987,12 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                         sources.append(alt)
     except Exception as e:
         _log.info(f"[多源回退] 配置读取失败: {e}")
+    finally:
+        # 外层 spider 只承担标题预取/备用源查询, 实际抓取由 src_spider 执行;
+        # 释放其 Session 与验证码浏览器资源 (unique_title=False 时它完全未用过)
+        if spider is not None:
+            spider.close()
+            spider = None
 
     if len(sources) > 1:
         _log.info(f"[多源回退] 共 {len(sources)} 个数据源 (主源 + {len(sources)-1} 个备用)")
@@ -5941,21 +6037,22 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
               + ("尝试下一个备用源..." if src_idx < len(sources) - 1 else "无更多备用源"))
 
 
-def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
-              show_progress=True, output_dir=None, delay=1.0, stop_event=None,
+def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
+              show_progress=True, output_dir=None, delay=None, stop_event=None,
               unique_title=False):
     """批量抓取多本书 (书级并行)。
 
     方案说明:
       - 每本书独立抓取任务 (独立 spider/输出文件), 互不干扰
-      - 书级并发: 多本书并行抓取 (默认2本), 速度随书数线性提升
+      - 书级并发: 多本书并行抓取, 速度随书数线性提升
       - 同域限流保护: 同一站点的书最多 1 本并行, 避免触发站点验证码/限流
       - 结束输出汇总报告: 每本书 状态/章节数/耗时
       - stop_event: threading.Event, 置位时不再提交新任务 (已运行任务自然结束)
 
     Args:
         url_list: 目录页 URL 列表
-        threads: 同时抓取的书数 (1=串行)
+        threads: 同时抓取的书数。None (默认) = 自适应: 依据 CPU 核数取
+                 min(3, max(1, 核数//4)), 并受书数封顶; >0 = 手动指定
         output_dir: 输出目录 (None=默认 抓取结果/)
         stop_event: 停止事件 (GUI 停止按钮使用)
         unique_title: 为 True 时, 同名小说自动加序号
@@ -5963,6 +6060,13 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from collections import defaultdict
     from urllib.parse import urlparse
+
+    # 书级并发自适应: None 时按设备核数推导 (2~3 本并行已接近 IO 瓶颈收益)
+    if threads is None:
+        threads = min(3, max(1, (os.cpu_count() or 4) // 4))
+        threads = min(threads, max(1, len(url_list)))
+    if delay is None:
+        delay = 1.0
 
     # 调试日志: 批量入口
     _log.info(f"[调试] 批量抓取开始: {len(url_list)} 本书, 并发 {threads}, 延迟 {delay}")
@@ -5978,9 +6082,10 @@ def run_batch(url_list, threads=2, sort_chapters=True, resume=True,
         t0 = time.time()
         try:
             # 输出到独立文件: 书级并发各自写文件, 无冲突
+            # 章级 threads=None: 每本书内部再走速度自适应 (书级并发已按设备推导)
             run_crawl(url, mode="full", sort_chapters=sort_chapters,
                       output_dir=output_dir, resume=resume,
-                      show_progress=show_progress, threads=1, delay=delay,
+                      show_progress=show_progress, threads=None, delay=delay,
                       stop_event=stop_event, unique_title=unique_title)
             return url, '✅ 完成', time.time() - t0, None
         except Exception as e:
@@ -6027,8 +6132,8 @@ def _parse_batch_opts(argv, start_idx):
     Returns:
         dict: {threads, resume, show_progress, output_dir, delay}
     """
-    opts = {'threads': 2, 'resume': True, 'show_progress': True,
-            'output_dir': None, 'delay': 1.0}
+    opts = {'threads': None, 'resume': True, 'show_progress': True,
+            'output_dir': None, 'delay': None}   # None = 速度自适应默认
     i = start_idx
     while i < len(argv):
         arg = argv[i]
@@ -6111,8 +6216,8 @@ if __name__ == "__main__":
     #   python 爬虫.py <URL> --no-progress           # 禁用进度条
     #   python 爬虫.py <URL> --output-dir <目录>      # 自定义输出目录
     #   python 爬虫.py <URL> --start 10 --end 20     # 自定义章节区间
-    #   python 爬虫.py <URL> --threads N              # 并发线程数 (1=串行, 3=3线程)
-    #   python 爬虫.py <URL> --delay N                # 章节间间隔秒数 (如 0.2)
+    #   python 爬虫.py <URL> --threads N              # 并发线程数 (默认自适应自动选档)
+    #   python 爬虫.py <URL> --delay N                # 章节间间隔秒数 (默认随自适应档位)
     #   python 爬虫.py <URL> --fast                   # 快速模式 (4线程+0.2秒间隔)
     #   python 爬虫.py <URL> --no-sort --test        # 组合使用
     #   python 爬虫.py --batch books.txt [--threads 2]  # 批量抓取 (每行一个URL)
@@ -6128,8 +6233,14 @@ if __name__ == "__main__":
                 _log.info(f"⚠️ 批量清单文件不存在: {batch_file}")
                 exit(2)
             opts = _parse_batch_opts(sys.argv, 3)
-            urls = [ln.strip() for ln in open(batch_file, encoding='utf-8')
-                    if ln.strip() and not ln.strip().startswith('#')]
+            # pathlib 解析为规范化绝对路径再打开 (防路径穿越)
+            _batch_path = Path(batch_file).resolve()
+            if not _batch_path.is_file():
+                _log.info(f"⚠️ 批量清单文件不存在: {batch_file}")
+                exit(2)
+            with _batch_path.open(encoding='utf-8') as _bf:
+                urls = [ln.strip() for ln in _bf
+                        if ln.strip() and not ln.strip().startswith('#')]
             _log.info(f"[批量] 从 {batch_file} 加载 {len(urls)} 个小说URL")
             if urls:
                 run_batch(urls, threads=opts['threads'], resume=opts['resume'],
@@ -6170,8 +6281,8 @@ if __name__ == "__main__":
         show_progress = True
         output_dir_arg = None
         chapter_range_arg = None
-        threads_arg = 1
-        delay_arg = 1.0
+        threads_arg = None   # None = 速度自适应 (默认)
+        delay_arg = None
         i = 2
         argv = sys.argv
         while i < len(argv):
@@ -6274,8 +6385,8 @@ if __name__ == "__main__":
             _log.info("  python 爬虫.py <URL> --output-dir <目录>")
             _log.info("                                         自定义输出目录 (默认: 项目根/抓取结果)")
             _log.info("  python 爬虫.py <URL> --start N --end M 自定义章节区间 (如 --start 10 --end 20)")
-            _log.info("  python 爬虫.py <URL> --threads N       并发抓取线程数 (1=串行, 建议2~6)")
-            _log.info("  python 爬虫.py <URL> --delay N         章节间间隔秒数 (如 0.2)")
+            _log.info("  python 爬虫.py <URL> --threads N       并发抓取线程数 (默认: 自适应自动选档)")
+            _log.info("  python 爬虫.py <URL> --delay N         章节间间隔秒数 (默认: 随自适应档位)")
             _log.info("  python 爬虫.py <URL> --fast            快速模式 (4线程+0.2秒间隔)")
             _log.info("  python 爬虫.py -h / --help             显示帮助")
             exit(0)

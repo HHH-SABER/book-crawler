@@ -338,23 +338,14 @@ class TestSessionThreadIsolation(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(len(set(seen.values())), 4, '各线程应持有互不相同的 Session')
 
-    def test_worker_restores_and_closes_session(self):
-        """_fetch_chapter_worker 用独立 Session 执行, 结束后复位并关闭。"""
+    def test_worker_restores_and_reuses_session(self):
+        """_fetch_chapter_worker 用线程级独立 Session 执行, 结束复位,
+        同线程复用同一 Session (连接保活), close() 时统一关闭。"""
         from unittest import mock
-        import requests
         from 爬虫 import NovelSpider
         spider = NovelSpider('https://www.example.com')
         main = spider._main_session
         captured = {}
-        closed_ids = []
-
-        class SpySession(requests.Session):
-            """记录 close() 调用 —— requests 的 Session.close() 不会清空
-            adapters 字典, 无法从外部观测, 只能靠间谍子类。"""
-
-            def close(self):
-                closed_ids.append(id(self))
-                super().close()
 
         # 用假实现替换 _fetch_with_qc, 只验证 Session 生命周期, 不触网
         def fake_qc(chap):
@@ -364,14 +355,21 @@ class TestSessionThreadIsolation(unittest.TestCase):
 
         spider._fetch_with_qc = fake_qc
         try:
-            with mock.patch.object(requests, 'Session', SpySession):
-                spider._fetch_chapter_worker({'title': '第一章', 'url': '/1.html'})
-
+            spider._fetch_chapter_worker({'title': '第一章', 'url': '/1.html'})
             self.assertIsNotNone(captured.get('session'))
             self.assertFalse(captured['is_main'], 'worker 内应拿到独立 Session')
             self.assertIs(spider.session, main, 'worker 结束后本线程应复位为主 Session')
-            self.assertIn(id(captured['session']), closed_ids,
-                          '临时 Session 未关闭, 连接池泄漏 (旧实现从不关闭)')
+            first = captured['session']
+
+            # 同线程第二次执行: 应复用同一 Session (线程级保活, 免每章 TLS 握手)
+            spider._fetch_chapter_worker({'title': '第二章', 'url': '/2.html'})
+            self.assertIs(captured['session'], first, '同线程应复用临时 Session')
+
+            # close() 应统一关闭线程级 Session (防止连接池泄漏)
+            with mock.patch.object(type(first), 'close',
+                                   side_effect=first.close) as m:
+                spider.close()
+            self.assertTrue(m.called, 'close() 应关闭线程级临时 Session')
         finally:
             spider.close()
 

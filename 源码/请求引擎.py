@@ -26,6 +26,7 @@ _log = _app_log.get('请求引擎')
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 from urllib.parse import urlparse
+import threading
 
 # ------------------------------------------------------------------
 # 引擎可用性探测 (惰性, 不强制依赖)
@@ -125,7 +126,23 @@ class 请求引擎管理器:
         self._降级阈值 = 3                          # 连续失败 N 次 → 降级到更高一级引擎
         self._curl_sessions: Dict[str, object] = {}        # host → curl_cffi.Session
         self._cloudscraper_sessions: Dict[str, object] = {}  # host → CloudScraper
+        self._requests_sessions: Dict[str, object] = {}  # host → requests.Session
+        # 共享 Session 的 CookieJar 非线程安全: 并发 worker 同时走引擎路径时
+        # 可能丢 cookie (破坏 P1-8 的会话隔离)。引擎路径本身低频 (仅反爬机制命中),
+        # 用进程级锁串行化, 保留连接复用同时消除竞态
+        self._requests_lock = threading.Lock()
         self._统计: Dict[str, int] = {}            # {引擎: 成功请求次数}
+
+    def close(self):
+        """释放全部缓存会话 (进程收尾/测试用; 管理器为进程级单例, 任务运行中勿调)"""
+        for d in (self._requests_sessions, self._curl_sessions,
+                  self._cloudscraper_sessions):
+            for s in list(d.values()):
+                try:
+                    s.close()
+                except Exception:
+                    pass
+            d.clear()
 
     # ------------------------------------------------------------------
     # 对外 API
@@ -198,12 +215,15 @@ class 请求引擎管理器:
                        proxies=None, 支持重定向=True) -> Optional[引擎响应]:
         try:
             import requests
-            会话 = requests.Session()
-            会话.trust_env = False
-            if proxies:
-                会话.proxies.update(proxies)
-            resp = 会话.get(url, headers=headers, timeout=timeout, cookies=cookies,
-                            allow_redirects=支持重定向)
+            host = self._取host(url)
+            会话 = self._requests_sessions.get(host)
+            if 会话 is None:
+                会话 = requests.Session()
+                会话.trust_env = False
+                self._requests_sessions[host] = 会话
+            with self._requests_lock:
+                resp = 会话.get(url, headers=headers, timeout=timeout, cookies=cookies,
+                                proxies=proxies, allow_redirects=支持重定向)
             return 引擎响应(
                 status_code=resp.status_code, headers=dict(resp.headers),
                 text=resp.text, content=resp.content, url=resp.url, 引擎='requests')
