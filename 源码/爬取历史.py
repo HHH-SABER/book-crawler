@@ -53,6 +53,7 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 # 每站点最多保留的 URL 条数 (LRU 截断, 避免长期运行后文件无限增长)
@@ -115,10 +116,11 @@ class 爬取历史:
     def _保存(self):
         """原子写入 (临时文件 + os.replace); 失败只打印日志, 不抛异常"""
         try:
-            tmp = self._file + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(self._数据, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self._file)
+            fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
+            tmp = fobj.with_name(fobj.name + '.tmp')
+            tmp.write_text(json.dumps(self._数据, ensure_ascii=False, indent=2),
+                           encoding='utf-8')
+            os.replace(tmp, fobj)
         except OSError as e:
             _log.info(f"[爬取历史] 保存失败: {e}")
 

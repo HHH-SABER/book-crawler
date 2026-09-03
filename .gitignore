@@ -255,3 +255,7 @@ _version_info.txt
 
 # NVIDIA 用户态驱动日志空壳 (运行进程偶发在 cwd 生成, 删除会再生, 忽略即可)
 NVIDIA Corporation/
+
+# ============ v2.2.0 并行构建输出 (运行中的 exe 会锁 dist/, 构建改走独立目录) ============
+/dist_v2.2.0/
+/build_v2.2.0/

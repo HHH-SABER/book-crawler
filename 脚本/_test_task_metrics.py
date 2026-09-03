@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """任务指标解析单测: TaskLogRedirector._parse_metrics 各分支"""
 import sys, os
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '源码', 'gui_components'))
 import task_manager as tm
 
@@ -10,7 +11,7 @@ def new_task():
 
 
 def feed(task, lines):
-    rd = tm.TaskLogRedirector(task, open(os.devnull, 'w'))
+    rd = tm.TaskLogRedirector(task, Path(os.devnull).open('w'))  # 防路径穿越
     for ln in lines:
         rd._parse_metrics(ln)
     rd.original.close()

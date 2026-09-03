@@ -141,7 +141,7 @@ class TaskTable:
             )
 
         # 标题+URL 单元格
-        title_text = ft.Text(task.title[:24] + ("…" if len(task.title) > 24 else task.title),
+        title_text = ft.Text((task.title[:24] + "…") if len(task.title) > 24 else task.title,
                              size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
                              max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                              font_family=FONT_STACK,
