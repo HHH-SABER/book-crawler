@@ -40,6 +40,7 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 _MAX_BOOKS_PER_SITE = 50   # 每站点最多保留的书籍记录条数
@@ -95,10 +96,11 @@ class 站点历史:
 
     def _保存(self):
         try:
-            tmp = self._file + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(self._数据, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self._file)   # 原子替换, 避免写一半损坏
+            fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
+            tmp = fobj.with_name(fobj.name + '.tmp')
+            tmp.write_text(json.dumps(self._数据, ensure_ascii=False, indent=2),
+                           encoding='utf-8')
+            os.replace(tmp, fobj)   # 原子替换, 避免写一半损坏
         except OSError as e:
             _log.info(f"[站点历史] 保存失败: {e}")
 

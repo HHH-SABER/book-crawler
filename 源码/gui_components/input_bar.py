@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""单行紧凑输入条：URL + 模式 + 速度 + 开始/停止 + 批量 + 输出目录
+"""单行紧凑输入条：URL + 模式 + 开始/停止 + 批量 + 输出目录
 
 从原 crawl_tab 的输入区 (多行卡片) 压缩为两行:
-  第一行: URL 输入(自适应拉伸) | 抓取模式 | 速度 | 开始 | 停止
+  第一行: URL 输入(自适应拉伸) | 抓取模式 | 开始 | 停止
   第二行: 批量导入 | 粘贴网址 | 章节区间(range时) | 断点续传 | 输出目录 | 打开文件夹
 批量导入面板按需在下方展开 (沿用原交互逻辑)。
+
+速度不提供手动选项: 由 速度自适应 模块依据设备能力/任务规模/站点状况
+自动选档并在运行中动态升降 (threads/delay 传 None 即全自动)。
 """
 import flet as ft
 import os
@@ -61,7 +64,6 @@ class InputBar:
         self.mode_dropdown = None
         self.start_chapter = None
         self.end_chapter = None
-        self.speed_dropdown = None
         self.resume_switch = None
         self.output_dir_input = None
         self.stop_btn = None
@@ -96,18 +98,6 @@ class InputBar:
                 ft.dropdown.Option("range", "章节区间"),
             ],
             on_select=self._on_mode_change,
-        )
-
-        self.speed_dropdown = ft.Dropdown(
-            label="速度",
-            width=150, dense=True,
-            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
-            value="standard",
-            options=[
-                ft.dropdown.Option("standard", "标准 (1线程)"),
-                ft.dropdown.Option("fast", "快速 (3线程)"),
-                ft.dropdown.Option("turbo", "极速 (6线程)"),
-            ],
         )
 
         self.start_chapter = ft.TextField(
@@ -181,9 +171,9 @@ class InputBar:
 
         return make_card(
             ft.Column([
-                # 第一行: 主操作 (URL 拉伸填充)
+                # 第一行: 主操作 (URL 拉伸填充; 速度由程序自适应, 无手动选项)
                 ft.Row([self.url_input, self.mode_dropdown,
-                        self.speed_dropdown, start_btn, self.stop_btn],
+                        start_btn, self.stop_btn],
                        spacing=6),
                 # 第二行: 次操作 (自动换行)
                 ft.Row([import_btn, paste_btn, self.start_chapter,
@@ -236,8 +226,8 @@ class InputBar:
                 self._notify("请输入有效的章节号")
                 return
 
-        speed_map = {"standard": (1, 1.0), "fast": (3, 0.5), "turbo": (6, 0.2)}
-        threads, delay = speed_map.get(self.speed_dropdown.value, (1, 1.0))
+        # 速度自适应: 不传线程/间隔, 由程序评估设备与站点后自动选档
+        threads, delay = None, None
         output_dir = (self.output_dir_input.value or '').strip() or None
 
         err = _validate_url(url)
@@ -254,7 +244,7 @@ class InputBar:
         self.task_manager.select_task(task_id)
         self.stop_btn.disabled = False
         _log("GUI", f"开始抓取: {url} 模式={mode} 区间={chapter_range} "
-                    f"线程={threads} 延迟={delay} 续传={self.resume_switch.value} → {task_id}")
+                    f"速度=自适应 续传={self.resume_switch.value} → {task_id}")
         self._notify(f"任务已创建: {task_id}")
         if self.page is None and getattr(e, 'page', None) is not None:
             self.page = e.page
@@ -302,7 +292,7 @@ class InputBar:
             return
         path = files[0].path
         raw = None
-        for enc in ('utf-8', 'gbk'):
+        for enc in ('utf-8-sig', 'gbk'):   # utf-8-sig 兼容记事本带 BOM 的 UTF-8
             try:
                 with open(path, encoding=enc) as f:
                     raw = f.read()
@@ -395,9 +385,7 @@ class InputBar:
             pass
 
     def _start_batch(self, urls, ev=None):
-        """批量创建抓取任务: 每个 URL 一个独立任务"""
-        speed_map = {"standard": (1, 1.0), "fast": (3, 0.5), "turbo": (6, 0.2)}
-        threads, delay = speed_map.get(self.speed_dropdown.value, (1, 1.0))
+        """批量创建抓取任务: 每个 URL 一个独立任务 (速度自适应, 无手动选项)"""
         output_dir = (self.output_dir_input.value or '').strip() or None
         resume = self.resume_switch.value
 
@@ -417,15 +405,15 @@ class InputBar:
         created = 0
         for url in urls:
             self.task_manager.create_task(
-                url=url, mode="full", threads=threads, delay=delay,
+                url=url, mode="full", threads=None, delay=None,
                 resume=resume, output_dir=output_dir,
             )
             created += 1
 
         self.stop_btn.disabled = False
         self._hide_batch_panel()
-        _log("GUI", f"批量抓取启动: {created} 个网址 (线程={threads} "
-                    f"延迟={delay} 续传={resume})\n  网址列表: {urls}")
+        _log("GUI", f"批量抓取启动: {created} 个网址 (速度=自适应 "
+                    f"续传={resume})\n  网址列表: {urls}")
         self._notify(f"已创建 {created} 个抓取任务 (每本书独立进度)")
         if self.on_task_created:
             self.on_task_created()

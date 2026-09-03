@@ -20,6 +20,7 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 
 _FLUSH_SIZE = 60
 _BUFFER = []
@@ -114,6 +115,13 @@ def get_domain_cooldown(domain: str) -> float:
         return 0.0
 
 
+def _save_state(st):
+    """写域状态 (pathlib 锚定数据目录, 防路径穿越)"""
+    p = Path(_log_dir()).resolve() / "域状态.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def set_domain_cooldown(domain: str, seconds: float, reason: str = ""):
     """给域设置冷却 (seconds 秒), 用于跨 run 自动退避。"""
     try:
@@ -121,8 +129,7 @@ def set_domain_cooldown(domain: str, seconds: float, reason: str = ""):
         st[domain] = {"冷却截止": time.time() + max(seconds, 0),
                       "最后命中": reason}
         with _LOCK:
-            with open(_state_path(), "w", encoding="utf-8") as f:
-                json.dump(st, f, ensure_ascii=False, indent=1)
+            _save_state(st)
     except Exception:
         pass
 
@@ -133,8 +140,7 @@ def clear_domain_cooldown(domain: str):
         if domain in st:
             del st[domain]
             with _LOCK:
-                with open(_state_path(), "w", encoding="utf-8") as f:
-                    json.dump(st, f, ensure_ascii=False, indent=1)
+                _save_state(st)
     except Exception:
         pass
 

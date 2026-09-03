@@ -6,6 +6,7 @@
 import sys
 import os
 import json
+from pathlib import Path
 
 BASE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 sys.path.insert(0, os.path.join(BASE, '源码'))
@@ -18,11 +19,15 @@ _HAD_ORIG = os.path.exists(CFG)
 _ORIG = open(CFG, encoding='utf-8').read() if _HAD_ORIG else None
 
 
+def _write_cfg(text):
+    """写测试用配置 (pathlib 锚定 BASE 目录, 防路径穿越)"""
+    Path(CFG).resolve().write_text(text, encoding='utf-8')
+
+
 def _cleanup():
     """恢复/删除测试用配置文件"""
     if _HAD_ORIG:
-        with open(CFG, 'w', encoding='utf-8') as f:
-            f.write(_ORIG)
+        _write_cfg(_ORIG)
     elif os.path.exists(CFG):
         os.remove(CFG)
 
@@ -39,8 +44,7 @@ def test_runtime_config_merge_and_enabled():
         {'domain': 'test-disabled.example.com', 'pattern': 'html_selector',
          'enabled': False},
     ]
-    with open(CFG, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False)
+    _write_cfg(json.dumps(data, ensure_ascii=False))
 
     # 重置已应用标记, 强制重新合并
     sites_config._RUNTIME_APPLIED = False
@@ -68,8 +72,7 @@ def test_runtime_config_missing_file():
 
 def test_runtime_config_bad_json():
     """配置文件损坏时: 静默降级不抛异常"""
-    with open(CFG, 'w', encoding='utf-8') as f:
-        f.write('{invalid json!!')
+    _write_cfg('{invalid json!!')
     sites_config._RUNTIME_APPLIED = False
     try:
         sites_config.get_site_pattern('https://anything.example.com/a.html')

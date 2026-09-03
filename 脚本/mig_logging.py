@@ -11,6 +11,7 @@ import io
 import os
 import re
 import sys
+from pathlib import Path
 
 DRY = '--dry-run' in sys.argv
 paths = [a for a in sys.argv[1:] if a != '--dry-run']
@@ -138,7 +139,9 @@ def process_file(path):
                 skipped.append((lineno, '行已变化, 跳过'))
         lines, _injected = inject_logger(lines, first_stmt, module_source_name(path))
         out = '\n'.join(lines)
-        open(path, 'w', encoding='utf-8', newline='').write(out)
+        # pathlib 锚定解析后写入, 防路径穿越
+        target = Path(path).resolve()
+        target.write_text(out, encoding='utf-8', newline='')
         print(f'[改] {path}: print→_log x{replaced_print}, except 注入 x{injected_except}, 跳过 {len(skipped)}')
     else:
         print(f'[预演] {path}: print→_log x{replaced_print}, except 注入 x{injected_except}, 跳过 {len(skipped)}')

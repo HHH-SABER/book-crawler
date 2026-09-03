@@ -48,8 +48,8 @@ class TaskInfo:
     stop_flag: threading.Event = dataclasses.field(default_factory=threading.Event)
     # 创建参数 (供"重新下载"复用)
     chapter_range: tuple = None
-    threads: int = 1
-    delay: float = 1.0
+    threads: int = None    # None = 速度自适应 (程序自动选档)
+    delay: float = None
     resume: bool = True
     output_dir: str = None
     # 运行时指标 (GUI 表格列数据源)
@@ -323,10 +323,13 @@ class TaskManager:
                     setattr(task.metrics, k, v)
 
     def create_task(self, url: str, mode: str = "full",
-                    chapter_range: tuple = None, threads: int = 1,
-                    delay: float = 1.0, resume: bool = True,
+                    chapter_range: tuple = None, threads: int = None,
+                    delay: float = None, resume: bool = True,
                     output_dir: str = None) -> str:
-        """创建并启动一个新爬虫任务，返回 task_id"""
+        """创建并启动一个新爬虫任务，返回 task_id
+
+        threads/delay 为 None (默认) 时由速度自适应模块自动选档。
+        """
         with self._lock:
             self._counter += 1
             task_id = f"task_{self._counter}"
@@ -356,12 +359,12 @@ class TaskManager:
         t.start()
         return task_id
 
-    def create_batch_task(self, urls: list, threads: int = 2,
-                          delay: float = 1.0, resume: bool = True,
+    def create_batch_task(self, urls: list, threads: int = None,
+                          delay: float = None, resume: bool = True,
                           output_dir: str = None) -> str:
         """创建并启动一个批量任务 (一次抓取多本书), 返回 task_id
 
-        内部调用 run_batch: 书级并行 + 同域限流保护 + 汇总报告。
+        内部调用 run_batch: 书级并行 (None=自适应) + 同域限流保护 + 汇总报告。
         """
         with self._lock:
             self._counter += 1
@@ -402,7 +405,7 @@ class TaskManager:
                 app_log.info(f"任务{task.task_id}", f"批量任务启动: {len(urls)} 个网址")
             run_batch(
                 url_list=urls,
-                threads=max(1, threads),
+                threads=threads,
                 sort_chapters=True,
                 resume=resume,
                 show_progress=True,

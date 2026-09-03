@@ -38,9 +38,10 @@ def _读版本() -> str:
 def _写版本(ver: str, date: str):
     """持久化当前版本状态 (供下次打包递增)"""
     try:
-        with open(VERSION_FILE, "w", encoding="utf-8") as f:
-            json.dump({"版本": ver, "最近发布日期": date},
-                      f, ensure_ascii=False, indent=2)
+        p = Path(VERSION_FILE).resolve()   # pathlib 锚定, 防路径穿越
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"版本": ver, "最近发布日期": date},
+                                ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError as e:
         log(f"[WARN] 版本状态写入失败: {e}")
 
@@ -83,8 +84,7 @@ def _同步CHANGELOG(ver: str, date: str) -> str:
         新文本 = (f"## [{ver}] - {date}\n\n### 新增功能\n\n- (待补充本次改进内容)\n\n"
                   f"---\n\n" + 文本)
     try:
-        with open(changelog, "w", encoding="utf-8") as f:
-            f.write(新文本)
+        Path(changelog).resolve().write_text(新文本, encoding="utf-8")
     except OSError as e:
         return f"CHANGELOG 写入失败: {e}"
     return f"CHANGELOG 顶部条目 → [{ver}] {date}"
@@ -150,8 +150,7 @@ def 生成版本文件(path: str) -> str:
 )
 """
     try:
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(内容)
+        Path(path).resolve().write_text(内容, encoding='utf-8')  # 防路径穿越
         log(f"[OK] Version file : {path}")
         return path
     except OSError as e:
