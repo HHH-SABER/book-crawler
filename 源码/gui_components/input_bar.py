@@ -28,7 +28,7 @@ except Exception:
 from .ui_theme import (make_card, filled_btn, tonal_btn, outline_btn,
                        text_btn, danger_btn)
 from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_BODY, SIZE_SMALL,
-                          WEIGHT_BODY)
+                          WEIGHT_BODY, open_dialog)
 
 
 def _log(source: str, message: str):
@@ -200,7 +200,7 @@ class InputBar:
         """轻提示 (通过日志系统 + 控制台, 无 snackbar 依赖)"""
         _log("GUI", msg)
         try:
-            self.page.open(ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
+            open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
         except Exception:
             pass
 
@@ -235,6 +235,23 @@ class InputBar:
             _log("GUI", f"URL 校验失败: {url} 原因: {err}")
             self._notify(f"网址无效: {err}")
             return
+
+        # 同 URL 已有任务: 复用重启而非新建 (避免重复创建任务; range 模式因区间可
+        # 变不查重, 其余模式重跑同一网址时直接在原任务内重新开始)
+        if mode != "range":
+            existing = self.task_manager.find_task_by_url(url, mode)
+            if existing is not None:
+                if existing.status == "running":
+                    self._notify("该网址已有任务在运行")
+                    return
+                if self.task_manager.restart_task(existing.task_id):
+                    self.task_manager.select_task(existing.task_id)
+                    self.stop_btn.disabled = False
+                    _log("GUI", f"重新开始 (复用原任务 {existing.task_id}): {url}")
+                    self._notify(f"已重新开始原任务: {existing.task_id}")
+                    if self.on_task_created:
+                        self.on_task_created()
+                    return
 
         task_id = self.task_manager.create_task(
             url=url, mode=mode, chapter_range=chapter_range,

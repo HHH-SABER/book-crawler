@@ -7,13 +7,14 @@
 刷新策略: 签名比对, 数据无变化跳过重建 (防止高频 update 丢点击事件)。
 """
 import flet as ft
+import os
 
 from .task_manager import TaskManager
 from .ui_theme import make_card, status_chip, status_color
 from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE,
                          WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR,
-                         MORANDI_WARNING)
+                         MORANDI_WARNING, open_dialog, close_dialog)
 from .row_detail import build_row_detail, _fmt_elapsed
 
 try:
@@ -311,11 +312,46 @@ class TaskTable:
             self.refresh()
 
     def _on_delete(self, task_id: str):
-        """删除任务 (优先走外部注入的对话框流程)"""
+        """删除任务: 有本地输出文件时弹确认框, 可选同时删除文件"""
         if self.on_delete_task:
             self.on_delete_task(task_id)
             return
-        if self.task_manager.delete_task(task_id):
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return
+        # 无本地文件或页面不可用: 直接删除任务
+        if not task.output_file or self.page is None:
+            self._do_delete(task_id, False)
+            return
+        # 有输出文件: 确认框 (仅删任务 / 同时删文件 / 取消)
+        fname = os.path.basename(task.output_file)
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("删除任务"),
+            content=ft.Text(f"任务输出文件:\n{fname}\n\n是否同时删除本地文件?",
+                            size=SIZE_SMALL, font_family=FONT_STACK),
+            actions=[
+                ft.TextButton("取消",
+                              on_click=lambda _: close_dialog(self.page, dialog)),
+                ft.TextButton("仅删任务",
+                              on_click=lambda _: self._confirm_delete(dialog, task_id, False)),
+                ft.TextButton("同时删文件",
+                              on_click=lambda _: self._confirm_delete(dialog, task_id, True)),
+            ],
+        )
+        open_dialog(self.page, dialog)
+
+    def _confirm_delete(self, dialog, task_id: str, delete_file: bool):
+        """确认框回调: 关闭对话框后执行删除"""
+        try:
+            close_dialog(self.page, dialog)
+        except Exception:
+            pass
+        self._do_delete(task_id, delete_file)
+
+    def _do_delete(self, task_id: str, delete_file: bool):
+        """真正执行删除任务 (delete_file=True 时连同输出文件删除)"""
+        if self.task_manager.delete_task(task_id, delete_file=delete_file):
             if self._expanded_id == task_id:
                 self._expanded_id = ""
             self._sig = None
@@ -323,7 +359,7 @@ class TaskTable:
 
     def _notify(self, msg: str):
         try:
-            self.page.open(ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
+            open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
         except Exception:
             pass
 

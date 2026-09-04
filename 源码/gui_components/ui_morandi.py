@@ -273,3 +273,25 @@ def make_morandi_card(content, **kwargs) -> ft.Container:
     """莫兰迪风格卡片 (复用 ui_theme.make_card, M3 语义色自动适配主题)"""
     from .ui_theme import make_card as _make_card
     return _make_card(content, **kwargs)
+
+
+def open_dialog(page, ctrl):
+    """打开对话框/SnackBar (flet 0.86 兼容: Page 无 .open, 用 show_dialog)"""
+    try:
+        page.show_dialog(ctrl)
+    except Exception:
+        try:
+            page.overlay.append(ctrl)
+            ctrl.open = True
+            page.update()
+        except Exception:
+            pass
+
+
+def close_dialog(page, ctrl):
+    """关闭对话框 (flet 0.86 兼容: Page 无 .close)"""
+    try:
+        ctrl.open = False
+        page.update()
+    except Exception:
+        pass
