@@ -334,6 +334,10 @@ def main():
     ]
     for hi in selenium_hidden_imports:
         cmd.extend(["--hidden-import", hi])
+    # ebooklib (EPUB 导出) 在 epub_exporter.py 中 try/except 引入, 显式收集确保
+    # onefile EXE 内可用; 其依赖 lxml 由 PyInstaller 自带 hook 处理
+    for hi in ("ebooklib",):
+        cmd.extend(["--hidden-import", hi])
 
     log(f"[INFO] script = {script_path}")
     log(f"[INFO] exe    = {exe_name}")
@@ -379,6 +383,26 @@ def main():
         log("[CLEAN] Removed temp version file")
     except OSError:
         pass
+    # 自动清理 PyInstaller 编译中间产物 build/ (打包过程中重新生成, 无保留价值)
+    if os.path.isdir(build_dir) and not os.environ.get("WBC_SKIP_CLEAN"):
+        try:
+            shutil.rmtree(build_dir, ignore_errors=True)
+            log("[CLEAN] Removed build/ (PyInstaller temp artifacts)")
+        except OSError as e:
+            log(f"[WARN] 清理 build/ 失败: {e}")
+    # 把 站点适配/ 插件目录 (外部适配器, 免重新打包扩展新站) 复制进便携目录
+    adapters_src = os.path.join(ROOT, "站点适配")
+    adapters_dst = os.path.join(dist, "站点适配")
+    if os.path.isdir(adapters_src):
+        try:
+            if os.path.isdir(adapters_dst):
+                shutil.rmtree(adapters_dst, ignore_errors=True)
+            shutil.copytree(adapters_src, adapters_dst)
+            log(f"[OK] Copied 站点适配/ → {adapters_dst}")
+        except OSError as e:
+            log(f"[WARN] 复制 站点适配/ 失败: {e}")
+    else:
+        log("[INFO] 站点适配/ 不存在, 跳过 (可选外部适配器目录)")
     # PyInstaller 可能 --onefile 或 onedir, 两处都查一下，把真实产物挑出来给用户看
     onedir_exe = os.path.join(dist, exe_name, f"{exe_name}.exe")
     onefile_exe = os.path.join(dist, f"{exe_name}.exe")

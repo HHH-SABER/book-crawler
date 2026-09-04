@@ -34,6 +34,7 @@ class HistoryPage:
 
     def __init__(self):
         self.page = None
+        self.task_manager = None   # 由 gui_app 注入 (一键更新书架创建任务用)
         self._view_mode = "urls"     # urls: URL明细 / sites: 站点汇总
         self._filter_domain = None
         self._filter_days = 0        # 0=全部时间
@@ -45,6 +46,7 @@ class HistoryPage:
         self._stat_row = None
         self._table_view = None
         self._mode_seg = None
+        self._shelf_info = None
 
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
@@ -78,6 +80,13 @@ class HistoryPage:
 
         refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self.refresh())
+        # P2: 一键更新书架 (对已抓取小说增量抓取)
+        update_btn = tonal_btn("一键更新书架", icon=ft.Icons.SYNC,
+                               on_click=self._on_update_shelf,
+                               tooltip="对书架中已抓取小说做增量抓取 (跳过未变化章节)")
+        self._shelf_info = ft.Text("", size=SIZE_TINY,
+                                   color=ft.Colors.ON_SURFACE_VARIANT,
+                                   font_family=FONT_STACK)
 
         # 视图切换: URL 明细 / 站点汇总 (两个互斥按钮)
         self._urls_mode_btn = tonal_btn(
@@ -104,8 +113,9 @@ class HistoryPage:
                 ], spacing=6),
                 self._stat_row,
                 ft.Row([self._domain_dd, self._days_dd,
-                        self._result_chips_row, refresh_btn],
+                        self._result_chips_row, refresh_btn, update_btn],
                        spacing=6, wrap=True),
+                self._shelf_info,
             ], spacing=10),
             padding=10,
         )
@@ -119,6 +129,47 @@ class HistoryPage:
         return ft.Column([header_card, table_card], expand=True, spacing=10)
 
     # ------------------------------------------------------------- 过滤交互
+    def _on_update_shelf(self, e):
+        """一键更新书架: 遍历书架清单, 每本以 增量+续写原文件 方式创建更新任务"""
+        if self.task_manager is None:
+            if self._shelf_info:
+                self._shelf_info.value = "任务管理器未就绪"
+            return
+        try:
+            from 书架 import 列出 as _书架列出
+            books = _书架列出()
+        except Exception as ex:
+            if self._shelf_info:
+                self._shelf_info.value = f"书架读取失败: {ex}"
+            try:
+                self.page.update()
+            except Exception:
+                pass
+            return
+        if not books:
+            if self._shelf_info:
+                self._shelf_info.value = "书架为空 (尚无已抓取小说); 抓取成功后自动登记"
+            try:
+                self.page.update()
+            except Exception:
+                pass
+            return
+        created = 0
+        for it in books:
+            url = it.get('目录URL', '')
+            if not url:
+                continue
+            self.task_manager.create_task(url, mode="full", resume=True,
+                                          output_dir=None, unique_title=False,
+                                          incremental=True)
+            created += 1
+        if self._shelf_info:
+            self._shelf_info.value = f"已为 {created} 本书创建更新任务 (增量抓取, 见任务列表)"
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
     def _rebuild_result_chips(self):
         """重建结果类型过滤 chips"""
         self._result_chips_row.controls.clear()

@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-"""莫兰迪主题系统：低饱和度柔和配色 + 统一字体规范
+"""苹果风格主题系统：Apple Human Interface Guidelines 配色 + 统一字体规范
 
-莫兰迪配色特点：低饱和度、中亮度、暖调，给人柔和高级的感觉。
-适用于小说阅读器类应用，长时间阅读不刺眼。
+设计原则:
+  1. 日间模式: 洁净明亮的浅灰白底 + 系统蓝主色 + 高饱和强调色
+  2. 夜间模式: 纯黑底 + 提亮强调色 (OLED 友好, 对比度更高)
+  3. 语义色映射到 Flet Material3 ColorScheme 槽位, 自动适配深浅主题
+  4. 字体栈优先系统原生中文字体, 逐级回退
 
-本版改进：
-  1. 字体规范体系：统一字体族 + 六级字号层级 + 四级字重规范,
-     所有页签控件一律引用本模块常量, 禁止散落硬编码
-  2. 配色丰富化：在原灰粉/灰绿/陶土/灰蓝四主色基础上,
-     新增藕荷紫/芥末金/雾霾青/陶土棕四个扩展色, 并为任务状态、
-     功能区域、日志级别分配各自独立的莫兰迪色相,
-     在保持低饱和的前提下显著提升色彩区分度
+本文件替换原莫兰迪主题 (ui_morandi.py), 保持所有常量名/函数名兼容,
+其他 GUI 组件直接 import 即可生效, 无需修改引用。
 """
 import flet as ft
 
@@ -19,17 +17,17 @@ import flet as ft
 # ====================================================================
 
 # 字体栈：优先系统原生中文字体, 逐级回退
-FONT_STACK = 'Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif'
+FONT_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif'
 # 终端/日志等宽字体
-FONT_TERMINAL = 'Consolas, monospace'
+FONT_TERMINAL = '"SF Mono", Consolas, "JetBrains Mono", monospace'
 
 # ---- 字号层级 (六级, 从大到小) ----
-SIZE_TITLE = 17        # 应用标题 / 页签卡片标题
-SIZE_SUBTITLE = 14     # 对话框标题 / 分组小标题
-SIZE_LABEL = 13        # 输入框 / 下拉框 / 列表主标题
-SIZE_BODY = 12         # 正文内容 / 预览区 / 说明文字
-SIZE_SMALL = 11        # 辅助文字 / 日志说明
-SIZE_TINY = 10         # 进度数值 / 状态微字 / 时间戳
+SIZE_TITLE = 22        # 应用标题 / 页签卡片标题
+SIZE_SUBTITLE = 17     # 对话框标题 / 分组小标题
+SIZE_LABEL = 15        # 输入框 / 下拉框 / 列表主标题
+SIZE_BODY = 14         # 正文内容 / 预览区 / 说明文字
+SIZE_SMALL = 13        # 辅助文字 / 日志说明
+SIZE_TINY = 12         # 进度数值 / 状态微字 / 时间戳
 
 # ---- 字重规范 (四级, 同层级必须一致) ----
 WEIGHT_TITLE = ft.FontWeight.BOLD      # 标题层: 加粗
@@ -46,34 +44,46 @@ def txt(value, size=SIZE_BODY, weight=WEIGHT_BODY, color=None,
     除 font_family 显式传入 (如日志区用等宽字体) 外一律用 FONT_STACK。
     kwargs 透传 ft.Text 其余参数 (max_lines / overflow / tooltip 等)。
     """
-    return ft.Text(
-        value, size=size, weight=weight,
-        color=color, italic=italic, opacity=opacity,
+    # 只在有值时传 opacity, 避免 flet 校验报错
+    text_kwargs = dict(
+        value=value, size=size, weight=weight,
+        color=color, italic=italic,
         selectable=selectable,
         font_family=font_family or FONT_STACK,
-        **kwargs,
     )
+    if opacity is not None:
+        text_kwargs['opacity'] = opacity
+    text_kwargs.update(kwargs)
+    return ft.Text(**text_kwargs)
 
 
 # ====================================================================
-# 二、莫兰迪色板 (低饱和度、中亮度、暖调)
+# 二、苹果风格色板 (语义色别名)
 # ====================================================================
 
 # ---- 主色/语义色: 主题感知别名 ----
 # 直接映射到 Flet 语义色槽位 (ft.Colors.*), 由 ColorScheme 按当前 theme_mode 解析:
-#   白天 (LIGHT)  → 渲染图风格 (紫/蓝青/琥珀/红, 见 make_morandi_theme)
-#   夜间 (DARK)   → 莫兰迪深色主题 (make_morandi_dark_theme), 保持夜间观感不变
+#   白天 (LIGHT)  → 洁净明亮的浅灰白底 + 系统蓝主色
+#   夜间 (DARK)   → 纯黑底 + 提亮强调色
 MORANDI_PRIMARY = ft.Colors.PRIMARY
 MORANDI_SECONDARY = ft.Colors.SECONDARY
 MORANDI_TERTIARY = ft.Colors.TERTIARY
-MORANDI_ACCENT = ft.Colors.TERTIARY          # 配置/强调区: 琥珀橙
-MORANDI_SUCCESS = ft.Colors.SECONDARY        # 成功/完成: 蓝青
+MORANDI_ACCENT = ft.Colors.TERTIARY          # 配置/强调区: 橙
+MORANDI_SUCCESS = ft.Colors.SECONDARY        # 成功/完成: 绿
 MORANDI_ERROR = ft.Colors.ERROR              # 失败/错误: 红
-MORANDI_WARNING = ft.Colors.TERTIARY         # 警告: 琥珀
-MORANDI_INFO = ft.Colors.SECONDARY           # 信息: 蓝青
-MORANDI_RUNNING = ft.Colors.PRIMARY          # 进行中: 紫
+MORANDI_WARNING = ft.Colors.TERTIARY         # 警告: 橙
+MORANDI_INFO = ft.Colors.SECONDARY           # 信息: 绿
+MORANDI_RUNNING = ft.Colors.PRIMARY          # 进行中: 蓝
 MORANDI_STOPPED = ft.Colors.ON_SURFACE_VARIANT
 MORANDI_PENDING = ft.Colors.ON_SURFACE_VARIANT
+
+# ---- 侧边栏专用色 (精确匹配 HTML 预览) ----
+# 日间: #F0F0F3, 夜间: #161617
+MORANDI_SIDEBAR_BG = ft.Colors.SURFACE_CONTAINER_LOW
+# 侧边栏 hover: 日间 #E5E5EA, 夜间 #2C2C2E
+MORANDI_SIDEBAR_HOVER = ft.Colors.SURFACE_CONTAINER_HIGH
+# 侧边栏选中: 日间 #D1D1D6, 夜间 #3A3A3C
+MORANDI_SIDEBAR_ACTIVE = ft.Colors.SURFACE_CONTAINER_HIGHEST
 
 # ---- 表面/文字/边框: 主题感知别名 (旧常量名保持兼容) ----
 MORANDI_BACKGROUND = ft.Colors.SURFACE
@@ -95,18 +105,18 @@ MORANDI_TEAL = ft.Colors.SECONDARY
 MORANDI_CLAY = ft.Colors.TERTIARY
 MORANDI_LILAC = ft.Colors.ON_SURFACE_VARIANT
 
-# ---- 终端背景 (日志区深底, 深暖灰黑比纯黑柔和) ----
-MORANDI_TERMINAL_BG = '#2C2825'
+# ---- 终端背景 (日志区深底) ----
+MORANDI_TERMINAL_BG = '#1C1C1E'
 
-# ---- 日志级别色 (终端深底上可读的低饱和色) ----
-LOG_COLOR_INFO = '#D6CDC4'           # 暖浅灰 (默认)
-LOG_COLOR_ERROR = '#D49090'          # 柔和珊瑚红
-LOG_COLOR_WARN = '#D4B87E'           # 柔和芥末金
-LOG_COLOR_DEBUG = '#A89FB0'          # 灰丁香 (调试)
+# ---- 日志级别色 (终端深底上可读) ----
+LOG_COLOR_INFO = '#F5F5F7'           # 浅灰白 (默认)
+LOG_COLOR_ERROR = '#FF453A'          # 系统红
+LOG_COLOR_WARN = '#FFD60A'           # 系统黄
+LOG_COLOR_DEBUG = '#8E8E93'          # 系统灰 (调试)
 
 
 # ====================================================================
-# 三、主题生成 (Material3 ColorScheme)
+# 三、主题生成 (Material3 ColorScheme — 苹果风格)
 # ====================================================================
 
 def _build_theme(cs_kwargs: dict) -> ft.Theme:
@@ -120,7 +130,7 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
     # 统一按钮圆角
     _btn_shape = ft.RoundedRectangleBorder(radius=10)
 
-    # 导航栏标签统一字体规范：未选中常规，选中半粗；强制深色保证浅色底可读
+    # 导航栏标签统一字体规范
     nav_rail_style = ft.NavigationRailTheme(
         indicator_color=cs_kwargs.get('primary_container', MORANDI_PRIMARY),
         selected_label_text_style=ft.TextStyle(
@@ -159,7 +169,7 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
         content_text_style=_body_ts,
     )
 
-    # 分割线: 用 outline_variant, 比默认更细腻
+    # 分割线: 用 outline_variant
     divider_theme = ft.DividerTheme(
         color=cs_kwargs.get('outline_variant', MORANDI_OUTLINE_VARIANT))
 
@@ -178,75 +188,81 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
 
 
 def make_morandi_theme() -> ft.Theme:
-    """白天主题: 渲染图风格 (紫色品牌 + 蓝青次级 + 琥珀强调 + 明亮中性面)"""
+    """日间主题: 苹果风格 — 洁净浅灰白底 + 系统蓝主色 + 绿/橙/红强调色
+
+    替换原莫兰迪日间主题 (渲染图风格), 保持函数名兼容。
+    """
     return _build_theme({
-        # 品牌紫 (导航/高亮/主按钮)
-        'primary': '#7C5CFF',
+        # 系统蓝 (主按钮 / 高亮 / 进行中)
+        'primary': '#007AFF',
         'on_primary': '#FFFFFF',
-        'primary_container': '#EBE7FF',                  # 淡紫容器
-        'on_primary_container': '#3C2F86',
-        # 蓝青 (次级/成功/信息)
-        'secondary': '#3AA6B9',
+        'primary_container': '#E8F1FF',                  # 淡蓝容器
+        'on_primary_container': '#0040A0',
+        # 系统绿 (成功 / 完成 / 质检通过)
+        'secondary': '#34C759',
         'on_secondary': '#FFFFFF',
-        'secondary_container': '#DEF4F8',                # 淡青容器
-        'on_secondary_container': '#13505C',
-        # 琥珀橙 (强调/警告)
-        'tertiary': '#E8A33D',
+        'secondary_container': '#E8F9ED',                # 淡绿容器
+        'on_secondary_container': '#0B6E25',
+        # 系统橙 (警告 / 强调 / 配置区)
+        'tertiary': '#FF9500',
         'on_tertiary': '#FFFFFF',
-        'tertiary_container': '#FCEDDA',                 # 淡橙容器
-        'on_tertiary_container': '#67430A',
-        # 红 (失败/错误)
-        'error': '#E0625F',
-        'error_container': '#FCE5E3',
+        'tertiary_container': '#FFF4E5',                 # 淡橙容器
+        'on_tertiary_container': '#7A3D00',
+        # 系统红 (失败 / 错误)
+        'error': '#FF3B30',
+        'error_container': '#FFE5E3',
         'on_error': '#FFFFFF',
-        'on_error_container': '#7C2220',
-        # 明亮中性面 (渲染图 surface 体系)
-        'background': '#F8F9FC',                         # 极浅蓝灰白
-        'on_background': '#1F2330',
+        'on_error_container': '#B3261E',
+        # 明亮中性面 (苹果风格: 浅灰白背景 + 纯白卡片)
+        'background': '#F5F5F7',                         # 系统灰6组背景
+        'on_background': '#1D1D1F',                      # 近乎纯黑文字
         'surface': '#FFFFFF',                            # 卡片纯白
-        'on_surface': '#1F2330',
-        'surface_variant': '#ECEFF2',
-        'on_surface_variant': '#6B7280',
+        'on_surface': '#1D1D1F',
+        'surface_variant': '#E5E5EA',
+        'on_surface_variant': '#6E6E73',                 # 系统灰
         'outline': '#C6CCD4',
-        'outline_variant': '#DCE1E8',
-        'surface_container_low': '#F6F7F9',              # 导航/工具栏底
-        'surface_container': '#F1F3F6',                  # 卡片底
-        'surface_container_high': '#ECEEF2',
-        'surface_container_highest': '#E4E7EC',
+        'outline_variant': '#E5E5EA',                    # 细分隔线
+        'surface_container_low': '#F0F0F3',              # 侧边栏背景 (匹配 --bg-sidebar)
+        'surface_container': '#F2F2F7',                  # 标准容器
+        'surface_container_high': '#E5E5EA',             # 高强调容器
+        'surface_container_highest': '#D1D1D6',          # 最高强调容器
     })
 
 
 def make_morandi_dark_theme() -> ft.Theme:
-    """莫兰迪深色主题: 深暖灰底 + 提亮四主色 (低饱和不刺眼)"""
+    """夜间主题: 苹果风格 — 纯黑底 + 高饱和强调色 (OLED 友好)
+
+    替换原莫兰迪深色主题, 保持函数名兼容。
+    """
     return _build_theme({
-        'primary': '#B8A0A0',                             # 浅灰粉
-        'on_primary': '#2C2020',
-        'primary_container': '#4A3A3A',                   # 深灰粉容器
-        'on_primary_container': '#E8D5D2',
-        'secondary': '#9EB8AE',                           # 浅灰绿
-        'on_secondary': '#1E2A24',
-        'secondary_container': '#38473F',                 # 深灰绿容器
-        'on_secondary_container': '#D4E0D6',
-        'tertiary': '#D4AA8C',                            # 浅陶土
-        'on_tertiary': '#301F14',
-        'tertiary_container': '#4C3A2C',                  # 深陶土容器
-        'on_tertiary_container': '#EBD9C8',
-        'error': '#C08484',
-        'error_container': '#4A302E',
-        'on_error': '#2C1414',
-        'on_error_container': '#EBCFCB',
-        'background': '#1E1A17',
-        'on_background': '#E0D8D0',
-        'surface': '#262220',
-        'on_surface': '#E0D8D0',
-        'surface_variant': '#3D3530',
-        'on_surface_variant': '#A89E95',
-        'outline': '#5A5048',
-        'outline_variant': '#453D37',
-        'surface_container_low': '#2C2825',               # 导航/工具栏底
-        'surface_container': '#332E2A',                   # 卡片底
-        'surface_container_high': '#3A342F',
-        'surface_container_highest': '#453D37',
+        'primary': '#0A84FF',                             # 亮蓝
+        'on_primary': '#FFFFFF',
+        'primary_container': '#1C2A44',                   # 深蓝灰容器
+        'on_primary_container': '#9EC8FF',
+        'secondary': '#30D158',                           # 亮绿
+        'on_secondary': '#FFFFFF',
+        'secondary_container': '#1C3B25',                 # 深绿容器
+        'on_secondary_container': '#A0E5B0',
+        'tertiary': '#FF9F0A',                            # 亮橙
+        'on_tertiary': '#FFFFFF',
+        'tertiary_container': '#3D2A0E',                  # 深橙容器
+        'on_tertiary_container': '#FFD7A0',
+        'error': '#FF453A',
+        'error_container': '#3D1C1A',
+        'on_error': '#FFFFFF',
+        'on_error_container': '#FFB4AF',
+        'background': '#000000',                          # 纯黑背景
+        'on_background': '#F5F5F7',
+        'surface': '#1C1C1E',                             # 深灰卡片
+        'on_surface': '#F5F5F7',
+        'surface_variant': '#2C2C2E',
+        'on_surface_variant': '#8E8E93',                  # 系统灰
+        'outline': '#48484A',
+        'outline_variant': '#38383A',
+        'surface_container_low': '#161617',               # 侧边栏背景 (匹配 --bg-sidebar dark)
+        'surface_container': '#1C1C1E',                   # 标准容器
+        'surface_container_high': '#2C2C2E',              # 高强调容器
+        'surface_container_highest': '#3A3A3C',           # 最高强调容器
     })
 
 
@@ -270,7 +286,7 @@ def get_terminal_bg() -> str:
 
 
 def make_morandi_card(content, **kwargs) -> ft.Container:
-    """莫兰迪风格卡片 (复用 ui_theme.make_card, M3 语义色自动适配主题)"""
+    """卡片 (复用 ui_theme.make_card, M3 语义色自动适配主题)"""
     from .ui_theme import make_card as _make_card
     return _make_card(content, **kwargs)
 

@@ -417,5 +417,25 @@
       "type": "none"
     },
     "enabled": true
+  },
+  {
+    "domain": "uuwxw.cc",
+    "pattern": "qsbs_bb",
+    "catalog_parser": "uuwxw",
+    "chapter_url_regex": "/book/[a-z0-9]+/[a-z0-9]+\\.html",
+    "content_pagination": {
+      "suffix": "_{N}.html",
+      "start": 1,
+      "max_pages": 30
+    },
+    "content_selectors": [
+      "#content",
+      "#booktxt",
+      ".content"
+    ],
+    "anti_spider": {
+      "type": "auto"
+    },
+    "enabled": true
   }
 ]

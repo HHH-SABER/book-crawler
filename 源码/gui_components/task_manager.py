@@ -54,6 +54,8 @@ class TaskInfo:
     delay: float = None
     resume: bool = True
     output_dir: str = None
+    export_epub: bool = False   # 抓取完成后是否同时导出 EPUB
+    incremental: bool = False   # 增量抓取 (跳过已抓取且未变化的章节, 一键更新用)
     # 运行时指标 (GUI 表格列数据源)
     metrics: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
     selected: bool = False  # 当前是否被选中 (供抽屉/表格高亮)
@@ -408,10 +410,13 @@ class TaskManager:
     def create_task(self, url: str, mode: str = "full",
                     chapter_range: tuple = None, threads: int = None,
                     delay: float = None, resume: bool = True,
-                    output_dir: str = None) -> str:
+                    output_dir: str = None, export_epub: bool = False,
+                    incremental: bool = False, unique_title: bool = True) -> str:
         """创建并启动一个新爬虫任务，返回 task_id
 
         threads/delay 为 None (默认) 时由速度自适应模块自动选档。
+        incremental=True 时启用增量抓取 (一键更新书架用, 建议 unique_title=False
+        以续写原文件而非另存带序号的新文件)。
         """
         with self._lock:
             self._counter += 1
@@ -427,15 +432,18 @@ class TaskManager:
             delay=delay,
             resume=resume,
             output_dir=output_dir,
+            export_epub=export_epub,
+            incremental=incremental,
         )
         task.metrics.start_time = time.time()
         with self._lock:
             self.tasks[task_id] = task
 
-        # 启动子线程执行抓取 (新任务启用同名去重序号)
+        # 启动子线程执行抓取
         t = threading.Thread(
             target=self._run_task,
-            args=(task, url, mode, chapter_range, threads, delay, resume, output_dir, True),
+            args=(task, url, mode, chapter_range, threads, delay, resume, output_dir,
+                  unique_title, incremental),
             daemon=True
         )
         task.thread = t
@@ -444,7 +452,7 @@ class TaskManager:
 
     def create_batch_task(self, urls: list, threads: int = None,
                           delay: float = None, resume: bool = True,
-                          output_dir: str = None) -> str:
+                          output_dir: str = None, export_epub: bool = False) -> str:
         """创建并启动一个批量任务 (一次抓取多本书), 返回 task_id
 
         内部调用 run_batch: 书级并行 (None=自适应) + 同域限流保护 + 汇总报告。
@@ -458,7 +466,8 @@ class TaskManager:
             url=f"[批量] {len(urls)} 本书",
             title=f"批量{len(urls)}本",
             mode="batch",
-            status="running"
+            status="running",
+            export_epub=export_epub,
         )
         task.metrics.start_time = time.time()
         with self._lock:
@@ -467,7 +476,7 @@ class TaskManager:
         # 启动子线程执行批量抓取
         t = threading.Thread(
             target=self._run_batch_task,
-            args=(task, urls, threads, delay, resume, output_dir),
+            args=(task, urls, threads, delay, resume, output_dir, export_epub),
             daemon=True
         )
         task.thread = t
@@ -482,7 +491,8 @@ class TaskManager:
             task.metrics.end_time = time.time()
 
     def _run_batch_task(self, task: TaskInfo, urls: list, threads: int,
-                        delay: float, resume: bool, output_dir: str):
+                        delay: float, resume: bool, output_dir: str,
+                        export_epub: bool = False):
         """在子线程中执行 run_batch，重定向 print 到任务日志"""
         # 注册到线程感知 stdout 调度器 (不再直接替换全局 sys.stdout, 避免多任务互踩)
         _THREAD_STDOUT.register(TaskLogRedirector(task, sys.__stdout__))
@@ -502,7 +512,8 @@ class TaskManager:
                 output_dir=output_dir,
                 delay=delay,
                 stop_event=task.stop_flag,
-                unique_title=True
+                unique_title=True,
+                export_epub=export_epub,
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":
@@ -521,7 +532,8 @@ class TaskManager:
 
     def _run_task(self, task: TaskInfo, url: str, mode: str,
                   chapter_range: tuple, threads: int, delay: float,
-                  resume: bool, output_dir: str, unique_title: bool = False):
+                  resume: bool, output_dir: str, unique_title: bool = False,
+                  incremental: bool = False):
         """在子线程中执行 run_crawl，重定向 print 到任务日志"""
         # 注册到线程感知 stdout 调度器 (不再直接替换全局 sys.stdout, 避免多任务互踩)
         _THREAD_STDOUT.register(TaskLogRedirector(task, sys.__stdout__))
@@ -532,7 +544,8 @@ class TaskManager:
 
             if app_log is not None:
                 app_log.info(f"任务{task.task_id}",
-                             f"任务启动: {url} 模式={mode} 线程={threads} 延迟={delay} 续传={resume}")
+                             f"任务启动: {url} 模式={mode} 线程={threads} 延迟={delay} 续传={resume}"
+                             + (" 增量=开" if incremental else ""))
             run_crawl(
                 catalog_url=url,
                 mode=mode,
@@ -544,7 +557,9 @@ class TaskManager:
                 threads=threads,
                 delay=delay,
                 stop_event=task.stop_flag,
-                unique_title=unique_title
+                unique_title=unique_title,
+                export_epub=task.export_epub,
+                incremental=incremental or task.incremental,
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":
@@ -629,6 +644,7 @@ class TaskManager:
                 'delay': task.delay,
                 'resume': task.resume,
                 'output_dir': task.output_dir,
+                'export_epub': task.export_epub,
             }
 
     def restart_task(self, task_id: str) -> bool:

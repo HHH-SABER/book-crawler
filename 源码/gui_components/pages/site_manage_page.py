@@ -81,6 +81,43 @@ def _json_clean(obj):
     return obj
 
 
+def _fmt_num(v):
+    """站点级延时/线程回填编辑框: 数字转字符串, 空/非法返回空串"""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return ''
+    return str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)
+
+
+def _parse_speed_fields(delay_str, threads_str):
+    """解析编辑卡的延时/线程输入, 返回 (delay, threads, err)
+
+    - 留空 → None (表示未设置, 回退速度自适应)
+    - 非法输入 → 返回非空 err
+    - delay: 非负数字 (可为小数); threads: ≥1 整数
+    """
+    delay, err = None, ''
+    s = (delay_str or '').strip()
+    if s:
+        try:
+            d = float(s)
+            if d < 0 or d != d:  # 负数 / NaN
+                raise ValueError
+            delay = d
+        except Exception:
+            return None, None, "延时需为非负数字"
+    threads, err = None, ''
+    s = (threads_str or '').strip()
+    if s:
+        try:
+            t = float(s)
+            if t < 1 or t != int(t):
+                raise ValueError
+            threads = int(t)
+        except Exception:
+            return None, None, "线程需为 ≥1 的整数"
+    return delay, threads, ''
+
+
 # 站点适配器模板 (新建适配器时生成)
 _ADAPTER_TEMPLATE = '''# -*- coding: utf-8 -*-
 """{domain} 站点适配器 —— 外部插件模板
@@ -151,6 +188,8 @@ class SiteManagePage:
         self._chapter_regex_field = None
         self._selectors_field = None
         self._anti_field = None
+        self._delay_field = None     # 站点级抓取延时(秒), 空=速度自适应
+        self._threads_field = None   # 站点级并发线程数, 空=速度自适应
         self._save_btn = None
         self.file_picker = None  # Flet 0.86 FilePicker 是 Service, 页面构建时实例化
 
@@ -316,6 +355,15 @@ class SiteManagePage:
         self._anti_field = ft.TextField(
             label="反爬类型 (auto=自动识别)", width=200, dense=True,
             text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK))
+        # P2: 站点级速度配置 (空=由速度自适应自动选档)
+        self._delay_field = ft.TextField(
+            label="抓取延时(秒)", width=120, dense=True,
+            tooltip="章节间固定间隔秒数; 留空 = 速度自适应自动调节",
+            text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK))
+        self._threads_field = ft.TextField(
+            label="并发线程", width=110, dense=True,
+            tooltip="并发抓取线程数(1=串行); 留空 = 速度自适应自动选档",
+            text_style=ft.TextStyle(size=SIZE_BODY, font_family=FONT_STACK))
 
         self._save_btn = filled_btn("保存", icon=ft.Icons.SAVE,
                                     on_click=self._on_save_edit)
@@ -333,6 +381,10 @@ class SiteManagePage:
                         self._anti_field], wrap=True, spacing=6),
                 ft.Row([self._chapter_regex_field, self._selectors_field],
                        wrap=True, spacing=6),
+                ft.Row([self._delay_field, self._threads_field,
+                        ft.Text("留空 = 速度自适应自动调节", size=SIZE_TINY,
+                                color=ft.Colors.ON_SURFACE_VARIANT,
+                                font_family=FONT_STACK)], wrap=True, spacing=6),
                 ft.Row([self._save_btn, cancel_btn], spacing=6),
             ], spacing=8),
             padding=10, visible=False,
@@ -634,6 +686,14 @@ class SiteManagePage:
 
         # 状态列: 健康度 · 反爬 · 探测结果 (合并为一个单元)
         parts = []
+        # 站点级速度配置标记 (P2): 仅设置了延时/线程时显示
+        _speed_tags = []
+        if cfg.get('delay') is not None:
+            _speed_tags.append(f"延时{cfg.get('delay')}s")
+        if cfg.get('threads') is not None:
+            _speed_tags.append(f"{cfg.get('threads')}线程")
+        if _speed_tags:
+            parts.append(("/".join(_speed_tags), MORANDI_SECONDARY))
         health = self._health_of(cfg)
         if health:
             # 健康度为 "NN%" 字符串, 需转数值比较 (字符串比较会使 100% < 80%)
@@ -820,6 +880,8 @@ class SiteManagePage:
         anti = cfg.get('anti_spider', {})
         self._anti_field.value = (anti.get('type', '') if isinstance(anti, dict)
                                   else str(anti))
+        self._delay_field.value = _fmt_num(cfg.get('delay'))
+        self._threads_field.value = _fmt_num(cfg.get('threads'))
         self._edit_card.visible = True
         try:
             self.page.update()
@@ -834,6 +896,8 @@ class SiteManagePage:
         self._chapter_regex_field.value = ""
         self._selectors_field.value = "#content"
         self._anti_field.value = "auto"
+        self._delay_field.value = ""
+        self._threads_field.value = ""
         self._edit_card.visible = True
         self._info_text.value = "新增站点: 填写后点击保存"
         try:
@@ -870,11 +934,30 @@ class SiteManagePage:
         anti = (self._anti_field.value or '').strip()
         if anti:
             entry['anti_spider'] = {'type': anti}
+        # 站点级延时/线程: 非法输入拒绝保存; 留空 = 移除字段回退速度自适应
+        delay, threads, speed_err = _parse_speed_fields(self._delay_field.value,
+                                                        self._threads_field.value)
+        if speed_err:
+            self._info_text.value = speed_err + " (留空 = 自适应)"
+            try:
+                self.page.update()
+            except Exception:
+                pass
+            return
+        if delay is not None:
+            entry['delay'] = delay
+        if threads is not None:
+            entry['threads'] = threads
 
         if 0 <= self.selected_index < len(self.configs):
             # 更新: 保留原有其他字段 (分页/enabled 等)
             old = self.configs[self.selected_index]
             old.update(entry)
+            # 延时/线程留空时显式移除旧字段 (避免残留旧站点级限速)
+            if delay is None:
+                old.pop('delay', None)
+            if threads is None:
+                old.pop('threads', None)
             self._info_text.value = f"已更新: {domain}"
         else:
             self.configs.append(entry)

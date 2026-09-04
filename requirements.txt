@@ -7,6 +7,9 @@ fake-useragent>=1.4.0
 urllib3>=2.0.0
 certifi>=2023.7.22
 
+# EPUB 导出（抓取完成后可选生成 .epub，依赖 lxml）
+ebooklib>=0.19
+
 # 浏览器渲染（tanmixs.com 等强反爬站点必须）
 selenium>=4.15.0
 playwright>=1.40.0

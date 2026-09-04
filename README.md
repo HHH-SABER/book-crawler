@@ -5,6 +5,13 @@
 多引擎自动降级（requests → cloudscraper → curl_cffi），
 内容语义质检过滤无意义数据，按 URL 维度记录爬取历史并支持增量爬取。
 
+> ## ⚠️ 合规声明
+>
+> 本项目**仅供个人学习与技术研究使用，请勿用于任何商业用途**。
+> 抓取的小说内容版权归原作者 / 原网站所有，请在下载后 **24 小时内删除**。
+> 使用前请遵守相关法律法规及目标网站的 robots.txt 与服务条款，合理控制抓取频率，
+> 避免对目标网站服务器造成压力；因使用本项目产生的任何法律风险由使用者自行承担。
+
 ## 项目结构
 
 ```
@@ -18,6 +25,7 @@
 │   ├── 站点历史.py              # 站点抓取历史 (跨会话先验知识)
 │   ├── site_probe.py            # 站点探测 (站点管理页"测试连接")
 │   ├── sites_config.py          # 站点适配配置 (运行时合并 站点配置.json)
+│   ├── epub_exporter.py         # EPUB 导出器 (txt→EPUB, ebooklib)
 │   ├── _path_utils.py           # 路径解析工具 (源码/打包双模式兼容)
 │   ├── browser_driver.py        # Selenium 浏览器驱动封装
 │   ├── captcha_module.py        # 验证码识别模块 (可插拔)
@@ -30,7 +38,7 @@
 │   └── gui_components/          # GUI 组件包 (导入路径依赖)
 │       ├── task_manager.py      # 多任务管理器 (指标日志解析)
 │       ├── icon_rail.py         # 图标导航栏
-│       ├── input_bar.py         # 单行紧凑输入条
+│       ├── input_bar.py         # 单行紧凑输入条 (含导出EPUB开关)
 │       ├── task_table.py        # 全宽任务表格 (引擎/反爬/质检指标列)
 │       ├── row_detail.py        # 任务行内展开详情
 │       ├── log_strip.py         # 可折叠日志条
@@ -42,6 +50,7 @@
 │       │   ├── site_manage_page.py    # 站点管理页 (健康度/启停/测试连接)
 │       │   └── history_data.py        # 历史数据源封装
 │       └── crawl_tab.py 等      # 旧版页签 (GUI v2 遗留, 已废弃保留)
+├── 站点适配/                    # 外部站点适配器插件目录 (免重新打包扩展新站)
 ├── 测试样本/                    # 站点适配测试样本 (各站 HTML/JS 抓取样本)
 ├── 脚本/                        # 构建与工具脚本目录
 │   ├── build_exe.py             # EXE 打包脚本 (自动版本号 + CHANGELOG 同步)
@@ -115,6 +124,9 @@ pip install -r requirements.txt
 
 # 测试模式（只抓前3章）
 启动爬虫.bat <URL> --test
+
+# 抓取完成后同时导出 EPUB 电子书
+启动爬虫.bat <URL> --epub
 ```
 
 ### 打包 EXE
