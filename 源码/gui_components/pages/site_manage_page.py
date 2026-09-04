@@ -9,6 +9,7 @@
 import flet as ft
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -18,7 +19,8 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn
-from ..ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
+from ..ui_morandi import (open_dialog, close_dialog,
+                          FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
@@ -79,6 +81,47 @@ def _json_clean(obj):
     return obj
 
 
+# 站点适配器模板 (新建适配器时生成)
+_ADAPTER_TEMPLATE = '''# -*- coding: utf-8 -*-
+"""{domain} 站点适配器 —— 外部插件模板
+
+把本文件放进程序目录下的 `站点适配/` 文件夹即自动生效，无需重新打包。
+按需实现下面的函数；返回 None 表示走程序内置/通用流程。
+"""
+
+try:
+    import 日志 as _app_log
+    _log = _app_log.get('adapter.{logname}')
+except Exception:
+    import logging
+    _log = logging.getLogger('adapter.{logname}')
+
+SITE = {{
+    "domain": "{domain}",
+    "pattern": "html_selector",
+    "chapter_url_regex": "",
+    "content_pagination": {{"suffix": "_{{N}}.html", "start": 1, "max_pages": 30}},
+    "content_selectors": ["#content"],
+    "anti_spider": {{"type": "auto"}},
+}}
+
+
+def parse_catalog(soup, catalog_url, base_url, **kw):
+    """目录解析: 返回 [{{'title':..., 'url':...}}] 或 None (走通用/内置)"""
+    return None
+
+
+def extract_content(soup, page_url, base_url, **kw):
+    """正文提取: 返回正文字符串 或 None (走通用/内置)"""
+    return None
+
+
+def paginate(current_url, page_index, **kw):
+    """分页: 返回下一页 URL 或 None (停止分页)"""
+    return None
+'''
+
+
 class SiteManagePage:
     """站点管理独立页"""
 
@@ -97,6 +140,11 @@ class SiteManagePage:
         self._table_view = None
         self._edit_card = None
         self._info_text = None
+        # 适配器插件区 UI
+        self._adapter_view = None
+        self._adapter_info = None
+        self._adapter_card = None
+        self._adapter_sig = None
         # 编辑表单字段
         self._domain_field = None
         self._pattern_field = None
@@ -174,6 +222,9 @@ class SiteManagePage:
             padding=10,
         )
 
+        # 站点适配插件卡 (免重新打包扩展新站)
+        adapter_card = self._build_adapter_card()
+
         # 站点表格 (4 主列 + 操作列)
         self._table_view = ft.ListView(expand=True, spacing=3, auto_scroll=True)
         table_card = make_card(
@@ -186,7 +237,7 @@ class SiteManagePage:
 
         self._refresh_table()
         banner = self._build_alarm_banner()
-        return ft.Column([banner, toolbar, table_card, self._edit_card],
+        return ft.Column([banner, toolbar, adapter_card, table_card, self._edit_card],
                          expand=True, spacing=10)
 
     def _build_alarm_banner(self):
@@ -286,6 +337,217 @@ class SiteManagePage:
             ], spacing=8),
             padding=10, visible=False,
         )
+
+    # ------------------------------------------------------------ 适配器插件区
+    def _build_adapter_card(self) -> ft.Control:
+        """站点适配插件卡: 列表 + 新建/打开目录/刷新"""
+        new_btn = filled_btn("新建适配器", icon=ft.Icons.ADD_BOX_OUTLINED,
+                             on_click=self._on_new_adapter_click,
+                             tooltip="生成一个适配器模板 .py (免重新打包)")
+        open_btn = tonal_btn("打开目录", icon=ft.Icons.FOLDER_OPEN,
+                             on_click=self._on_open_adapter_dir,
+                             tooltip="打开 站点适配/ 文件夹")
+        refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
+                                on_click=self._on_refresh_adapters,
+                                tooltip="重新加载插件列表")
+        self._adapter_info = ft.Text("", size=SIZE_SMALL,
+                                     color=ft.Colors.ON_SURFACE_VARIANT,
+                                     font_family=FONT_STACK)
+        self._adapter_view = ft.Column(spacing=4)
+        self._adapter_card = make_card(
+            ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.EXTENSION_OUTLINED, size=18,
+                            color=MORANDI_ACCENT),
+                    ft.Text("站点适配插件 (免重新打包)", size=SIZE_TITLE,
+                            weight=WEIGHT_TITLE, font_family=FONT_STACK),
+                ], spacing=6),
+                ft.Row([new_btn, open_btn, refresh_btn], spacing=6, wrap=True),
+                self._adapter_info,
+                self._adapter_view,
+            ], spacing=8),
+            padding=10,
+        )
+        self._render_adapters()
+        return self._adapter_card
+
+    def _adapter_status(self) -> list:
+        """返回适配器状态列表 [{file, domain, catalog, content, paginate, error}]"""
+        out = []
+        adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
+        if not os.path.isdir(adapter_dir):
+            return out
+        try:
+            from sites_config import load_adapters, ADAPTERS
+            load_adapters()
+            files = sorted(f for f in os.listdir(adapter_dir)
+                           if f.endswith('.py') and not f.startswith('_'))
+            for fn in files:
+                domain, catalog, content, paginate, error = '', False, False, False, ''
+                for d, entry in ADAPTERS.items():
+                    if entry.get('source', '').replace('\\', '/').endswith('/' + fn):
+                        domain = d
+                        catalog = bool(entry.get('parse_catalog'))
+                        content = bool(entry.get('extract_content'))
+                        paginate = bool(entry.get('paginate'))
+                        break
+                if not domain:
+                    error = '加载失败或未注册'
+                out.append({'file': fn, 'domain': domain, 'catalog': catalog,
+                            'content': content, 'paginate': paginate, 'error': error})
+        except Exception as ex:
+            _log("站点管理", f"读取插件状态失败: {ex}")
+        return out
+
+    def _render_adapters(self, force: bool = False):
+        """重建插件列表 (签名比对跳过无变化重建)"""
+        if self._adapter_view is None:
+            return
+        statuses = self._adapter_status()
+        sig = tuple((s['file'], s['domain'], s['catalog'], s['content'],
+                     s['paginate']) for s in statuses)
+        if not force and sig == getattr(self, '_adapter_sig', None):
+            return
+        self._adapter_sig = sig
+        self._adapter_view.controls.clear()
+        if not statuses:
+            self._adapter_view.controls.append(
+                ft.Text("无插件 · 目录为空 (点“新建适配器”或“打开目录”)",
+                        size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                        font_family=FONT_STACK))
+            return
+        for st in statuses:
+            caps = []
+            if st['catalog']:
+                caps.append("目录")
+            if st['content']:
+                caps.append("正文")
+            if st['paginate']:
+                caps.append("分页")
+            cap_text = '/'.join(caps) if caps else "仅配置"
+            ok = bool(st['domain'])
+            del_btn = ft.IconButton(
+                icon=ft.Icons.DELETE_OUTLINE, icon_size=14,
+                tooltip=f"删除 {st['file']}",
+                on_click=lambda e, f=st['file']: self._on_delete_adapter(f),
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                    bgcolor=ft.Colors.ERROR_CONTAINER,
+                    color=ft.Colors.ON_ERROR_CONTAINER))
+            self._adapter_view.controls.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.TERMINAL if ok else ft.Icons.ERROR_OUTLINE,
+                            size=14,
+                            color=MORANDI_SUCCESS if ok else MORANDI_ERROR),
+                    ft.Text(st['file'], size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                            color=(MORANDI_SECONDARY if ok else MORANDI_ERROR),
+                            font_family=FONT_STACK, max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(st['domain'] or (st['error'] or '—'),
+                            size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                            font_family=FONT_STACK),
+                    ft.Text(cap_text, size=SIZE_TINY, color=MORANDI_ACCENT,
+                            font_family=FONT_STACK),
+                    ft.Container(expand=True),
+                    del_btn,
+                ], spacing=6),
+                padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                border_radius=6,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            ))
+
+    def _page_update(self):
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:
+                pass
+
+    def _on_new_adapter_click(self, e):
+        """新建适配器: 弹窗输入域名, 生成模板 .py"""
+        if self.page is None:
+            return
+        domain_field = ft.TextField(label="域名 (如 example.com)", dense=True, width=280,
+                                    text_style=ft.TextStyle(size=SIZE_BODY,
+                                                            font_family=FONT_STACK))
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("新建适配器模板"),
+            content=ft.Column([domain_field], spacing=6, tight=True, width=320),
+            actions=[
+                ft.TextButton("取消",
+                              on_click=lambda _: close_dialog(self.page, dialog)),
+                ft.TextButton("生成",
+                              on_click=lambda _: self._do_create_adapter(dialog, domain_field)),
+            ],
+        )
+        open_dialog(self.page, dialog)
+
+    def _do_create_adapter(self, dialog, field):
+        """生成适配器模板文件 (按域名命名)"""
+        if self.page is not None:
+            try:
+                close_dialog(self.page, dialog)
+            except Exception:
+                pass
+        domain = (field.value or '').strip().lower()
+        if not domain:
+            self._adapter_info.value = "域名不能为空"
+            self._page_update()
+            return
+        fname = re.sub(r'[^\w.-]', '_', domain) + '.py'
+        adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
+        try:
+            os.makedirs(adapter_dir, exist_ok=True)
+            path = os.path.join(adapter_dir, fname)
+            if os.path.exists(path):
+                self._adapter_info.value = f"已存在: {fname}"
+                self._page_update()
+                return
+            logname = domain.replace('.', '_')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(_ADAPTER_TEMPLATE.format(domain=domain, logname=logname))
+            self._adapter_info.value = f"已生成 {fname} (请编辑函数, 点“刷新”生效)"
+            _log("站点管理", f"新建适配器: {path}")
+        except Exception as ex:
+            self._adapter_info.value = f"生成失败: {ex}"
+        self._render_adapters(force=True)
+        self._page_update()
+
+    def _on_open_adapter_dir(self, e):
+        """打开 站点适配/ 文件夹 (Windows 资源管理器)"""
+        adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
+        try:
+            os.makedirs(adapter_dir, exist_ok=True)
+            os.startfile(adapter_dir)
+        except Exception as ex:
+            self._info_text.value = f"打开目录失败: {ex}"
+            self._page_update()
+
+    def _on_refresh_adapters(self, e):
+        """重新加载插件 (清缓存 + 重扫目录)"""
+        try:
+            from sites_config import reload_adapters
+            reload_adapters()
+            self._adapter_info.value = "插件已刷新"
+        except Exception as ex:
+            self._adapter_info.value = f"刷新失败: {ex}"
+        self._render_adapters(force=True)
+        self._page_update()
+
+    def _on_delete_adapter(self, fname: str):
+        """删除适配器文件"""
+        path = os.path.join(get_app_base_dir(), "站点适配", fname)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+                self._adapter_info.value = f"已删除 {fname}"
+            else:
+                self._adapter_info.value = f"文件不存在: {fname}"
+        except Exception as ex:
+            self._adapter_info.value = f"删除失败: {ex}"
+        self._render_adapters(force=True)
+        self._page_update()
 
     # ------------------------------------------------------------ 表格渲染
     def _health_of(self, cfg: dict) -> str:
@@ -810,6 +1072,7 @@ class SiteManagePage:
     # 对外刷新入口
     def refresh(self):
         self._refresh_table()
+        self._render_adapters()  # 签名比对, 有变化才重建
         if self.page is not None:
             try:
                 self.page.update()

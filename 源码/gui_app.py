@@ -74,10 +74,26 @@ except Exception:
 def main(page: ft.Page):
     """Flet 应用入口"""
     page.title = "小说爬虫"
-    page.window.width = 1280
-    page.window.height = 800
-    page.window.min_width = 960
-    page.window.min_height = 640
+    # 窗口尺寸按屏幕自适应 (修复: 写死 1280x800 在小屏/高DPI缩放下内容截断)
+    try:
+        import ctypes
+        _user32 = ctypes.windll.user32
+        try:
+            _user32.SetProcessDPIAware()
+        except Exception:
+            pass
+        _sw, _sh = _user32.GetSystemMetrics(0), _user32.GetSystemMetrics(1)
+    except Exception:
+        _sw, _sh = 1920, 1080
+    page.window.width = min(1280, max(860, _sw - 40))
+    page.window.height = min(800, max(600, _sh - 90))
+    page.window.min_width = 860
+    page.window.min_height = 600
+    try:
+        page.window.left = max(0, (_sw - page.window.width) // 2)
+        page.window.top = max(0, (_sh - page.window.height) // 2 - 20)
+    except Exception:
+        pass
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼

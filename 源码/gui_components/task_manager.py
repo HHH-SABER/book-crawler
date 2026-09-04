@@ -9,6 +9,7 @@ import sys
 import time
 import re
 import os
+import contextvars
 from typing import Optional
 
 # 统一日志模块 (位于上级目录 源码/)
@@ -22,13 +23,14 @@ except Exception:
 @dataclasses.dataclass
 class TaskMetrics:
     """任务运行时指标 (由爬虫结构化日志解析回填, 见 TaskLogRedirector)"""
-    engine: str = ""              # 当前引擎: requests/cloudscraper/curl_cffi
+    engine: str = "requests"      # 当前引擎: 默认 requests; 反爬降级后为 cloudscraper/curl_cffi
     anti_spider_type: str = ""    # 最近命中的反爬类型: js_challenge/rate_limit/...
     quality_score: float = -1.0   # 最近一次内容质检得分 0-100 (-1=尚未质检)
     quality_passed: bool = False  # 最近一次质检是否通过
     incremental_skipped: int = 0  # 增量模式累计跳过章节数
     engine_fallback_chain: list = dataclasses.field(default_factory=list)  # 引擎降级尝试记录
     start_time: float = 0.0       # 任务启动时间戳 (计算耗时用)
+    end_time: float = 0.0         # 任务结束时间戳 (完成后冻结耗时; 0=仍在运行)
 
 
 @dataclasses.dataclass
@@ -98,6 +100,11 @@ class TaskLogRedirector:
                     if m:
                         self.task.progress_current = self.task.progress_total
                         self.task.status = "completed"
+                        if self.task.metrics:
+                            self.task.metrics.end_time = time.time()
+                        # 质检列兜底回填 (修复质检列空白): 逐行解析可能漏检,
+                        # 完成时从 站点历史.json 取该书最近质检摘要回填
+                        self._backfill_quality(self.task)
             # 保留最近500条日志
             if len(self.task.logs) > 500:
                 self.task.logs = self.task.logs[-500:]
@@ -189,7 +196,8 @@ class TaskLogRedirector:
             return
 
         # 质检得分: "[质检] {章节} 得分{分} 通过" / "得分{分} 失败(...)"
-        m = re.search(r'\[质检\].*?得分(\d+(?:\.\d+)?)\s*(通过|失败)', line)
+        # (容错: "得分 92" 允许冒号后带空格)
+        m = re.search(r'\[质检\].*?得分\s*(\d+(?:\.\d+)?)\s*(通过|失败)', line)
         if m:
             mt.quality_score = float(m.group(1))
             mt.quality_passed = (m.group(2) == '通过')
@@ -200,6 +208,59 @@ class TaskLogRedirector:
             mt.incremental_skipped += 1
             return
 
+    def _backfill_quality(self, task):
+        """任务完成时, 从 站点历史.json 回填质检得分 (逐行解析的可靠兜底)。
+
+        数据源: 数据/站点历史.json → {域名: {书籍: [{质检摘要: {平均分,通过,未通过}}]}}
+        逐行已解析到得分时不覆盖。
+        """
+        try:
+            mt = task.metrics
+            if mt is None or mt.quality_score >= 0:
+                return
+            import re as _re
+            from pathlib import Path as _Path
+            # 数据源候选 (按优先级): 程序统一解析 → 项目根/数据/ → 项目根/
+            _hist = None
+            _cands = []
+            try:
+                import _path_utils
+                _cands.append(_Path(_path_utils.resolve_data_file('站点历史.json')))
+            except Exception:
+                pass
+            _root = _Path(__file__).resolve().parents[2]
+            _cands.append(_root / '数据' / '站点历史.json')
+            _cands.append(_root / '站点历史.json')
+            for _c in _cands:
+                if _c.is_file():
+                    _hist = _c
+                    break
+            if _hist is None:
+                return
+            m = _re.match(r'https?://([^/:]+)', task.url or '')
+            if not m:
+                return
+            domain = m.group(1).lower()
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            import json as _json
+            d = _json.loads(_hist.read_text(encoding='utf-8'))
+            rec = d.get(domain)
+            if not rec or not rec.get('书籍'):
+                return
+            摘要 = rec['书籍'][-1].get('质检摘要') or {}
+            平均分 = 摘要.get('平均分')
+            if 平均分 is None:
+                return
+            mt.quality_score = float(平均分)
+            mt.quality_passed = (摘要.get('通过', 0) >= 摘要.get('未通过', 0))
+        except Exception:
+            pass
+
+
+# 任务 writer 的 contextvar: register() 时写入, worker 线程经 copy_context 继承
+_WRITER_CTX = contextvars.ContextVar('_task_stdout_writer', default=None)
+
 
 class _ThreadAwareStdout:
     """线程感知的 stdout 调度器（多任务日志隔离）
@@ -209,6 +270,11 @@ class _ThreadAwareStdout:
     print 输出全部灌入最后一个任务, 标题/进度/日志互相串。
     方案: 用单一调度器替代 sys.stdout, 按"当前线程ID"分发到
     各线程注册的 writer, 实现真正的日志隔离。
+
+    并行抓取的 worker 线程 (ThreadPoolExecutor) 不会单独注册,
+    通过 contextvars 把任务 writer 随 copy_context() 传播给 worker
+    (爬虫.py 提交任务时用 copy_context().run 包裹), 使质检/引擎等
+    worker 内日志也能被 _parse_metrics 解析回填。
     """
 
     def __init__(self):
@@ -220,15 +286,32 @@ class _ThreadAwareStdout:
         """当前线程注册日志 writer (爬虫线程启动时调用)"""
         with self._lock:
             self._writers[threading.get_ident()] = writer
+        # 同步写入 contextvars, 供 ThreadPoolExecutor worker 经 copy_context 继承
+        try:
+            _WRITER_CTX.set(writer)
+        except Exception:
+            pass
 
     def unregister(self):
         """当前线程注销 writer (爬虫线程结束时调用)"""
         with self._lock:
             self._writers.pop(threading.get_ident(), None)
+        try:
+            _WRITER_CTX.set(None)
+        except Exception:
+            pass
 
     def _get_writer(self):
         with self._lock:
-            return self._writers.get(threading.get_ident())
+            w = self._writers.get(threading.get_ident())
+        if w is not None:
+            return w
+        # 兜底: worker 线程无独立注册, 取上下文中的任务 writer
+        try:
+            w = _WRITER_CTX.get()
+        except Exception:
+            w = None
+        return w
 
     def write(self, text):
         w = self._get_writer()
@@ -391,6 +474,13 @@ class TaskManager:
         t.start()
         return task_id
 
+    @staticmethod
+    def _set_terminal(task: TaskInfo, status: str):
+        """置为终态 (completed/failed/stopped) 并冻结耗时 end_time"""
+        task.status = status
+        if task.metrics:
+            task.metrics.end_time = time.time()
+
     def _run_batch_task(self, task: TaskInfo, urls: list, threads: int,
                         delay: float, resume: bool, output_dir: str):
         """在子线程中执行 run_batch，重定向 print 到任务日志"""
@@ -416,9 +506,9 @@ class TaskManager:
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":
-                task.status = "completed"
+                self._set_terminal(task, "completed")
         except Exception as e:
-            task.status = "failed"
+            self._set_terminal(task, "failed")
             task.error = str(e)
             task.logs.append({
                 'time': time.strftime('%H:%M:%S'),
@@ -458,9 +548,9 @@ class TaskManager:
             )
             # 如果状态还是running且没有标记completed，标记为completed
             if task.status == "running":
-                task.status = "completed"
+                self._set_terminal(task, "completed")
         except Exception as e:
-            task.status = "failed"
+            self._set_terminal(task, "failed")
             task.error = str(e)
             task.logs.append({
                 'time': time.strftime('%H:%M:%S'),
@@ -477,7 +567,7 @@ class TaskManager:
             task = self.tasks.get(task_id)
             if task:
                 task.stop_flag.set()
-                task.status = "stopped"
+                self._set_terminal(task, "stopped")
                 task.logs.append({
                     'time': time.strftime('%H:%M:%S'),
                     'msg': "[用户停止] 任务已被用户手动停止"
@@ -502,7 +592,7 @@ class TaskManager:
             # 停止仍在运行的任务
             task.stop_flag.set()
             if task.status == "running":
-                task.status = "stopped"
+                self._set_terminal(task, "stopped")
             self.tasks.pop(task_id, None)
         if delete_file and task.output_file:
             try:
@@ -586,6 +676,14 @@ class TaskManager:
         """获取任务信息"""
         with self._lock:
             return self.tasks.get(task_id)
+
+    def find_task_by_url(self, url: str, mode: str = None) -> Optional[TaskInfo]:
+        """查找与给定 URL 相同的任务 (可选限定模式); 无则返回 None"""
+        with self._lock:
+            for t in self.tasks.values():
+                if t.url == url and (mode is None or t.mode == mode):
+                    return t
+        return None
 
     def get_all_tasks(self) -> list:
         """获取所有任务列表（按创建时间排序）"""
