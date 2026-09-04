@@ -16,6 +16,13 @@ Double-click 打包EXE.bat  (or:  .venv\\Scripts\\python.exe build_exe.py)
 import os, sys, subprocess, shutil, time, re, json, argparse
 from pathlib import Path
 
+# CI (GitHub Actions) 下 stdout 可能落到 cp1252 导致中文 print 崩溃, 强制 UTF-8
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # 安全: 使用 Path.resolve() 规范化脚本所在目录, 再上溯到项目根,
 # 保证 ROOT/LOG 均为规范化绝对路径, 不含 ../ 穿越
 ROOT = str(Path(__file__).resolve().parent.parent)  # 脚本/ 的上级 = 项目根
