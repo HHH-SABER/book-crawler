@@ -17,10 +17,12 @@ def _fmt_elapsed(task: TaskInfo) -> str:
     st = task.metrics.start_time
     if not st:
         return "—"
-    end = time.time()
-    if task.status in ("completed", "failed", "stopped"):
-        # 结束时间不可得, 以当前计 (近似)
-        pass
+    # 已完成/失败/停止: 用结束时间冻结耗时, 不再随当前时间增长
+    et = task.metrics.end_time
+    if task.status in ("completed", "failed", "stopped") and et:
+        end = et
+    else:
+        end = time.time()
     secs = max(0, end - st)
     if secs < 60:
         return f"{secs:.0f}s"

@@ -1,0 +1,31 @@
+[
+  {
+    "domain": "示例-纯选择器站.com",
+    "pattern": "html_selector",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+    "content_pagination": { "suffix": "_{N}.html", "start": 1, "max_pages": 30 },
+    "content_selectors": ["#content", ".content", "#bookcontent"],
+    "anti_spider": { "type": "auto" }
+  },
+  {
+    "domain": "示例-带反爬站.com",
+    "pattern": "html_selector",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/book/([a-z0-9]+)/([a-z0-9]+)\\.html",
+    "content_pagination": { "suffix": "_{N}.html", "start": 1, "max_pages": 30 },
+    "content_selectors": ["div.content"],
+    "anti_spider": { "type": "js_cookie", "cookie_name": "ge_js_validator_20" },
+    "delay": 1.5,
+    "threads": 1
+  },
+  {
+    "domain": "示例-分页正文站.com",
+    "pattern": "html_selector",
+    "catalog_parser": "generic",
+    "chapter_url_regex": "/read/(\\d+)/(\\d+)(_\\d+)?\\.html",
+    "content_pagination": { "suffix": "_{N}.html", "start": 1, "max_pages": 30 },
+    "content_selectors": ["#nr1", "#bookcontent"],
+    "anti_spider": { "type": "auto" }
+  }
+]

@@ -1,118 +1,359 @@
 # -*- coding: utf-8 -*-
-"""图标导航栏：64px 窄栏, 4 个页面入口 + 主题切换
+"""苹果风格 220px 宽侧边导航栏 — 精确还原 HTML 预览设计
 
-替代原 200px 文字侧边栏, 释放横向空间给主内容区。
-悬停显示 tooltip (Flet 原生), 选中态用主色容器高亮。
+布局结构 (与 index.html 完全一致):
+  ┌────────────────────────┐
+  │  主功能                  │  ← 分区标题 (11px 大写灰色)
+  │  ⬇️  抓取工作台          │  ← 选中态: 灰底 + 蓝色图标
+  │  📊  爬取历史            │
+  │  🌐  站点管理            │
+  │  📝  运行日志            │
+  │                        │
+  │  (弹性留白)              │
+  │                        │
+  │  ──────────────────     │  ← 分割线
+  │  🟢 抓取中 · 2 项        │  ← 底部状态指示器
+  └────────────────────────┘
+
+宽度 220px, 背景色 #F0F0F3 (日间) / #161617 (夜间)
+导航项: icon(18px) + 文字(14px), 圆角 10px, 选中态灰色背景
 """
 import flet as ft
 
-from .ui_morandi import MORANDI_PRIMARY
+from .ui_morandi import (
+    txt, SIZE_TINY, SIZE_BODY, SIZE_SMALL,
+    WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
+    MORANDI_SIDEBAR_BG, MORANDI_SIDEBAR_HOVER, MORANDI_SIDEBAR_ACTIVE,
+)
 
-# 页面定义: (key, 图标, 选中图标, 标题)
+
+# ====================================================================
+# 一、导航页定义
+# ====================================================================
 NAV_PAGES = [
-    ("crawl",   ft.Icons.DOWNLOAD_OUTLINED,   ft.Icons.DOWNLOAD,   "抓取工作台"),
-    ("history", ft.Icons.HISTORY_OUTLINED,    ft.Icons.HISTORY,    "爬取历史"),
-    ("sites",   ft.Icons.DNS_OUTLINED,        ft.Icons.DNS,        "站点管理"),
-    ("log",     ft.Icons.TERMINAL_OUTLINED,   ft.Icons.TERMINAL,   "运行日志"),
+    ('crawl',   ft.Icons.DOWNLOADING_OUTLINED,   '抓取工作台', 0),
+    ('history', ft.Icons.HISTORY,                '爬取历史',   1),
+    ('sites',   ft.Icons.LANGUAGE,               '站点管理',   2),
+    ('log',     ft.Icons.SPEED,                  '运行日志',   3),
 ]
 
+PAGE_TITLES = {
+    'crawl':   '抓取工作台',
+    'history': '爬取历史',
+    'sites':   '站点管理',
+    'log':     '运行日志',
+}
+
+PAGE_SUBTITLES = {
+    'crawl':   '输入小说目录页URL，自动识别站点并开始抓取',
+    'history': '查看历史抓取记录与统计',
+    'sites':   '管理站点适配器与风控策略',
+    'log':     '查看实时运行日志与错误信息',
+}
+
+
+# ====================================================================
+# 二、主题切换按钮 (顶栏用 — 胶囊形 + 图标 + 文字)
+# ====================================================================
+
+def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
+    """构建醒目的主题切换按钮 (胶囊形, 精确还原预览样式)
+
+    样式: padding 6×12, 圆角 999px, 背景 terciary, 边框 subtle
+    """
+    is_dark = current_mode == 'dark'
+    icon_name = ft.Icons.DARK_MODE_ROUNDED if is_dark else ft.Icons.LIGHT_MODE_ROUNDED
+    label = '夜间' if is_dark else '日间'
+
+    icon = ft.Icon(icon_name, size=16, color=ft.Colors.ON_SURFACE_VARIANT)
+    label_text = txt(label, size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                     weight=WEIGHT_EMPHASIS)
+
+    btn = ft.Container(
+        content=ft.Row(
+            [icon, label_text],
+            spacing=8,
+            alignment=ft.MainAxisAlignment.CENTER,
+        ),
+        padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+        border_radius=999,
+        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+        on_click=lambda e: on_toggle(),
+        tooltip='切换日间/夜间模式',
+        ink=True,
+    )
+
+    btn._icon_ref = icon
+    btn._label_ref = label_text
+
+    def update_theme_state(is_dark_now: bool):
+        btn._icon_ref.icon = ft.Icons.DARK_MODE_ROUNDED if is_dark_now else ft.Icons.LIGHT_MODE_ROUNDED
+        btn._label_ref.value = '夜间' if is_dark_now else '日间'
+        try:
+            btn.update()
+        except Exception:
+            pass
+
+    btn.update_theme_state = update_theme_state
+    return btn
+
+
+# ====================================================================
+# 三、顶栏 (macOS 交通灯 + 居中标题 + 右侧主题切换)
+# ====================================================================
+
+def build_top_bar(page, title_text: str, theme_toggle_btn) -> ft.Container:
+    """构建苹果风格顶栏 (52px 高, 精确还原预览)
+
+    布局: [红黄绿交通灯] --- [📖 小说爬虫] --- [🌙 夜间]
+    """
+    # 左侧: macOS 交通灯 (红黄绿三个圆点)
+    traffic_lights = ft.Row(
+        [
+            ft.Container(width=12, height=12, border_radius=6,
+                         bgcolor='#FF5F57', opacity=0.85),
+            ft.Container(width=12, height=12, border_radius=6,
+                         bgcolor='#FEBC2E', opacity=0.85),
+            ft.Container(width=12, height=12, border_radius=6,
+                         bgcolor='#28C840', opacity=0.85),
+        ],
+        spacing=8,
+        width=64,
+    )
+
+    # 居中: 应用图标 + 名称
+    app_icon = ft.Container(
+        content=ft.Icon(ft.Icons.BOOK_OUTLINED, size=12, color=ft.Colors.WHITE),
+        width=20, height=20,
+        border_radius=5,
+        gradient=ft.LinearGradient(
+            begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+            colors=[ft.Colors.PRIMARY, '#AF52DE'],
+        ),
+        alignment=ft.Alignment.CENTER,
+    )
+    app_title = txt(title_text, size=SIZE_BODY, weight=WEIGHT_EMPHASIS,
+                    color=ft.Colors.ON_SURFACE)
+    center_part = ft.Row(
+        [app_icon, app_title],
+        spacing=8,
+        alignment=ft.MainAxisAlignment.CENTER,
+    )
+
+    # 右侧: 主题切换按钮
+    right_part = ft.Row(
+        [theme_toggle_btn],
+        width=64,
+        alignment=ft.MainAxisAlignment.END,
+    )
+
+    bar = ft.Container(
+        content=ft.Row(
+            [traffic_lights, ft.Container(expand=True, content=center_part,
+                                          alignment=ft.Alignment.CENTER),
+             right_part],
+            spacing=0,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=52,
+        padding=ft.Padding.symmetric(horizontal=16, vertical=0),
+        bgcolor=ft.Colors.SURFACE,
+        border=ft.Border.only(
+            bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)
+        ),
+    )
+    return bar
+
+
+# ====================================================================
+# 四、IconRail 类 (220px 宽侧边栏 — 精确还原预览)
+# ====================================================================
 
 class IconRail:
-    """图标导航栏组件"""
+    """220px 宽侧边导航栏 — 苹果风格, 自定义按钮
 
-    def __init__(self, on_nav: callable, on_theme_toggle: callable):
-        """
-        Args:
-            on_nav: 页面切换回调, 签名 callback(page_key: str)
-            on_theme_toggle: 主题切换回调, 签名 callback()
-        """
+    兼容旧 API:
+      - IconRail(on_nav=..., on_theme_toggle=...)
+      - .toggle_theme_icon(is_dark)
+      - .set_active(key)
+      - .build()
+    """
+
+    def __init__(self, on_nav=None, on_theme_toggle=None):
         self._on_nav = on_nav
         self._on_theme_toggle = on_theme_toggle
-        self._current = "crawl"
-        self._items: dict[str, ft.Container] = {}
-        self._theme_icon = ft.IconButton(
-            icon=ft.Icons.DARK_MODE_OUTLINED,
-            icon_size=18,
-            tooltip="切换深色/浅色主题",
-            on_click=lambda e: self._on_theme_toggle(),
-            style=ft.ButtonStyle(
-                shape=ft.RoundedRectangleBorder(radius=8),
-                color=ft.Colors.ON_SURFACE_VARIANT,
+        self._active_key = 'crawl'
+        self._is_dark = False
+        self._nav_buttons = {}
+        self._control = None
+        self._status_text = '就绪'
+        self._status_color = '#34C759'  # 绿色
+
+    def set_active(self, key: str):
+        self._active_key = key
+        for k, btn in self._nav_buttons.items():
+            self._update_btn_style(btn, k == key)
+        try:
+            if self._control:
+                self._control.update()
+        except Exception:
+            pass
+
+    def toggle_theme_icon(self, is_dark: bool):
+        self._is_dark = is_dark
+
+    def update_status(self, text: str, running: bool = False):
+        """更新底部状态指示器"""
+        self._status_text = text
+        self._status_color = '#007AFF' if running else '#34C759'
+        try:
+            if self._control:
+                self._control.update()
+        except Exception:
+            pass
+
+    def _update_btn_style(self, btn, is_active: bool):
+        """更新导航按钮选中/未选中样式"""
+        icon_ctrl = btn.content.controls[0]
+        label_ctrl = btn.content.controls[1]
+
+        if is_active:
+            btn.bgcolor = MORANDI_SIDEBAR_ACTIVE
+            icon_ctrl.color = ft.Colors.PRIMARY
+            label_ctrl.color = ft.Colors.ON_SURFACE
+            label_ctrl.weight = WEIGHT_EMPHASIS
+        else:
+            btn.bgcolor = None
+            icon_ctrl.color = ft.Colors.ON_SURFACE_VARIANT
+            label_ctrl.color = ft.Colors.ON_SURFACE_VARIANT
+            label_ctrl.weight = WEIGHT_BODY
+
+    def _make_nav_btn(self, key, icon, label):
+        """构建单个导航按钮 (220px 宽, icon + 文字)"""
+        icon_ctrl = ft.Icon(icon, size=18, color=ft.Colors.ON_SURFACE_VARIANT)
+        label_ctrl = txt(label, size=SIZE_BODY, color=ft.Colors.ON_SURFACE_VARIANT)
+
+        btn = ft.Container(
+            content=ft.Row(
+                [icon_ctrl, label_ctrl],
+                spacing=12,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            border_radius=10,
+            on_click=lambda e, k=key: self._on_btn_click(k),
+            on_hover=self._on_nav_hover,
+            tooltip=label,
         )
+        btn._key = key
+        btn._icon_ref = icon_ctrl
+        btn._label_ref = label_ctrl
+        self._nav_buttons[key] = btn
+
+        self._update_btn_style(btn, key == self._active_key)
+        return btn
+
+    def _on_btn_click(self, key: str):
+        self._active_key = key
+        # 更新所有按钮样式
+        for k, btn in self._nav_buttons.items():
+            self._update_btn_style(btn, k == key)
+        try:
+            if self._control:
+                self._control.update()
+        except Exception:
+            pass
+        if self._on_nav:
+            self._on_nav(key)
+
+    def _on_nav_hover(self, e):
+        try:
+            btn = e.control
+            is_active = btn._key == self._active_key
+            if e.data == 'true' and not is_active:
+                btn.bgcolor = MORANDI_SIDEBAR_HOVER
+            else:
+                self._update_btn_style(btn, is_active)
+            btn.update()
+        except Exception:
+            pass
 
     def build(self) -> ft.Control:
-        """构建图标栏 (宽 56px)"""
-        for key, icon, icon_sel, title in NAV_PAGES:
-            self._items[key] = self._make_item(key, icon, title)
-        self._apply_active()
+        """构建 220px 宽侧边栏"""
+        # 分区标题
+        section_title = txt('主功能', size=11, weight=WEIGHT_SUBTITLE,
+                            color=ft.Colors.ON_SURFACE_VARIANT)
 
-        return ft.Container(
-            content=ft.Column(
-                [
-                    # 应用图标 (顶部品牌位)
-                    ft.Container(
-                        content=ft.Icon(ft.Icons.AUTO_STORIES,
-                                        size=22, color=MORANDI_PRIMARY),
-                        width=36, height=36,
-                        alignment=ft.Alignment(0, 0),
-                        bgcolor=ft.Colors.PRIMARY_CONTAINER,
-                        border_radius=10,
-                    ),
-                    ft.Container(height=8),
-                    *[self._items[k] for k, _, _, _ in NAV_PAGES],
-                    ft.Container(expand=True),
-                    ft.Divider(height=1),
-                    self._theme_icon,
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=4,
+        # 导航按钮列表
+        nav_btns = [self._make_nav_btn(k, ic, lb) for k, ic, lb, _ in NAV_PAGES]
+
+        # 底部状态指示器
+        status_dot = ft.Container(
+            width=8, height=8, border_radius=4,
+            bgcolor=self._status_color,
+        )
+        status_label = txt(self._status_text, size=SIZE_TINY,
+                           color=ft.Colors.ON_SURFACE_VARIANT)
+        self._status_dot = status_dot
+        self._status_label = status_label
+
+        status_box = ft.Container(
+            content=ft.Row(
+                [status_dot, status_label],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            width=56,
-            padding=ft.Padding.symmetric(horizontal=6, vertical=10),
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-            border=ft.Border(right=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
-        )
-
-    def _make_item(self, key: str, icon: str, title: str) -> ft.Container:
-        """单个导航图标项"""
-        return ft.Container(
-            content=ft.Icon(icon, size=20, color=ft.Colors.ON_SURFACE_VARIANT),
-            width=40, height=40,
-            alignment=ft.Alignment(0, 0),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=8),
             border_radius=10,
-            ink=True,
-            tooltip=title,
-            on_click=lambda e, k=key: self._on_nav(k),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
         )
 
-    def _apply_active(self):
-        """按当前页面高亮对应图标"""
-        for key, item in self._items.items():
-            if key == self._current:
-                item.bgcolor = ft.Colors.PRIMARY_CONTAINER
-                if item.content is not None:
-                    item.content.color = MORANDI_PRIMARY
-            else:
-                item.bgcolor = None
-                if item.content is not None:
-                    item.content.color = ft.Colors.ON_SURFACE_VARIANT
+        # 组合: 分区标题 + 导航按钮 + 弹性留白 + 分割线 + 状态
+        body = ft.Column(
+            [
+                ft.Container(
+                    content=section_title,
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+                ),
+                *nav_btns,
+                ft.Container(expand=True),
+                ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
+                ft.Container(
+                    content=status_box,
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                ),
+            ],
+            spacing=2,
+            expand=True,
+        )
 
-    def set_active(self, key: str, page=None):
-        """切换高亮页面 (主线程调用; 传 page 则立即刷新)"""
-        if key not in dict((k, 1) for k, *_ in NAV_PAGES):
-            return
-        if key == self._current:
-            return
-        self._current = key
-        self._apply_active()
-        if page is not None:
-            try:
-                page.update()
-            except Exception:
-                pass
+        self._control = ft.Container(
+            content=body,
+            width=220,
+            bgcolor=MORANDI_SIDEBAR_BG,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=12),
+            expand=True,
+        )
+        return self._control
 
-    def toggle_theme_icon(self, dark: bool):
-        """切换主题图标形态"""
-        self._theme_icon.icon = (ft.Icons.LIGHT_MODE_OUTLINED if dark
-                                 else ft.Icons.DARK_MODE_OUTLINED)
+
+# ====================================================================
+# 五、便捷引用
+# ====================================================================
+
+def build_icon_rail(page, selected_index, on_select,
+                    on_settings=None, theme_mode='light',
+                    theme_controller=None):
+    """函数式构建导航栏 (旧 API 兼容)"""
+    def _on_nav(key):
+        idx = next((i for i, (k, _, _, _) in enumerate(NAV_PAGES) if k == key), 0)
+        on_select(idx)
+
+    rail = IconRail(on_nav=_on_nav, on_theme_toggle=theme_controller)
+    if 0 <= selected_index < len(NAV_PAGES):
+        rail.set_active(NAV_PAGES[selected_index][0])
+    return rail.build()
+
+
+build_rail = build_icon_rail
