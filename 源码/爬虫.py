@@ -5481,7 +5481,7 @@ class NovelSpider:
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
             stop_event=None, unique_title=False, novel_title=None,
-            incremental=False, incremental_max_age_hours=24):
+            incremental=False, incremental_max_age_hours=24, export_epub=False):
         """完整抓取小说。
         resume=True 时自动检测检查点，从上次中断处继续（追加写入）。
         show_progress=True 时每章更新下载进度条。
@@ -6206,13 +6206,14 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                                resume=resume, show_progress=show_progress,
                                chapter_range=chapter_range, threads=threads, delay=delay,
                                stop_event=stop_event, unique_title=unique_title,
-                               novel_title=unique_novel_title, incremental=incremental)
+                               novel_title=unique_novel_title, incremental=incremental,
+                               export_epub=export_epub)
             else:
                 src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                                resume=resume, show_progress=show_progress,
                                threads=threads, delay=delay, stop_event=stop_event,
                                unique_title=unique_title, novel_title=unique_novel_title,
-                               incremental=incremental)
+                               incremental=incremental, export_epub=export_epub)
         finally:
             # 每个源抓完(含异常/停止)立即释放浏览器与连接资源, 防止 Chrome 进程泄漏 (P1-3)
             src_spider.close()
