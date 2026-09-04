@@ -61,11 +61,17 @@ jobs:
 
       - name: Compute SHA256 & package adapters
         run: |
-          $sha = (Get-FileHash 'dist\小说爬虫.exe' -Algorithm SHA256).Hash.ToLower()
-          "$sha  dist\小说爬虫.exe" | Set-Content -Path 'dist\小说爬虫.exe.sha256' -Encoding ascii
+          # GitHub 会把含中文的资产名重命名成 default.*, 故统一改用 ASCII 文件名再上传
+          $ver = "${{ steps.ver.outputs.VER }}"
+          $exe = "dist\novel-crawler-v$ver.exe"
+          $shaFile = "dist\novel-crawler-v$ver.exe.sha256"
+          $adp = "dist\site-adapters-v$ver.zip"
+          Move-Item -Path 'dist\小说爬虫.exe' -Destination $exe -Force
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$sha  $exe" | Set-Content -Path $shaFile -Encoding ascii
           # 站点适配/ 存在时才打包 (仓库未收录时跳过, 不影响 EXE 主产物)
           if (Test-Path '站点适配') {
-            Compress-Archive -Path '站点适配' -DestinationPath 'dist\站点适配.zip' -Force
+            Compress-Archive -Path '站点适配' -DestinationPath $adp -Force
           } else {
             Write-Host "[WARN] 站点适配/ 未入库, 跳过 zip (适配器不影响 EXE 主产物)"
           }
@@ -75,19 +81,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/小说爬虫.exe
-            dist/小说爬虫.exe.sha256
-            dist/站点适配.zip
+            dist/novel-crawler-v${{ steps.ver.outputs.VER }}.exe
+            dist/novel-crawler-v${{ steps.ver.outputs.VER }}.exe.sha256
+            dist/site-adapters-v${{ steps.ver.outputs.VER }}.zip
           name: 小说爬虫 v${{ steps.ver.outputs.VER }}
           body: |
             ## 小说爬虫 v${{ steps.ver.outputs.VER }}
 
-            - **EXE** (onefile 单文件便携版): `小说爬虫.exe`
-            - **SHA256**: `小说爬虫.exe.sha256` (用于校验下载完整性)
-            - **站点适配器**: `站点适配.zip` (免重新打包扩展新站, 解压到 EXE 同目录)
+            - **EXE** (onefile 单文件便携版): `novel-crawler-v${{ steps.ver.outputs.VER }}.exe`
+            - **SHA256**: `novel-crawler-v${{ steps.ver.outputs.VER }}.exe.sha256` (用于校验下载完整性)
+            - **站点适配器**: `site-adapters-v${{ steps.ver.outputs.VER }}.zip` (免重新打包扩展新站, 解压到 EXE 同目录)
 
             ### 使用说明
-            - 双击 `小说爬虫.exe` 启动 GUI; 首次运行会在 EXE 同目录生成 `站点配置.json`、`抓取结果/` 等
+            - 双击 `novel-crawler-v${{ steps.ver.outputs.VER }}.exe` 启动 GUI; 首次运行会在 EXE 同目录生成 `站点配置.json`、`抓取结果/` 等
             - 目标机需安装 Chrome (Selenium 反爬兜底) 与 ddddocr 可选识别模型
             - 扩展新站: 把适配器 .py 放入 EXE 同目录 `站点适配/` 即可 (详见 文档/SITE_ADAPTER.md)
 
