@@ -1,0 +1,90 @@
+name: Build & Release EXE
+
+# 触发条件:
+#  - push 形如 v2.3.0 的 git tag 时自动构建并发布 Release (附 SHA256)
+#  - 也可在 GitHub Actions 页面手动触发 (workflow_dispatch) 调试
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# 需要写权限才能创建 Release 并上传资产
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      # build_exe.py 依赖 .venv/ 路径 (找 pyinstaller 与 ddddocr 模型目录),
+      # 因此 CI 必须建虚拟环境, 不能直接用系统 python
+      - name: Create venv & install deps
+        shell: bash
+        run: |
+          python -m venv .venv
+          .venv/Scripts/python.exe -m pip install --upgrade pip
+          .venv/Scripts/pip.exe install -r requirements.txt
+          .venv/Scripts/pip.exe install pyinstaller
+
+      - name: Extract version from tag
+        id: ver
+        shell: bash
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          VER="${REF#v}"
+          if [ "${VER}" = "${REF}" ]; then
+            VER="0.0.0-ci"
+          fi
+          echo "VER=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build EXE
+        shell: bash
+        run: |
+          .venv/Scripts/python.exe 脚本/build_exe.py --version="${{ steps.ver.outputs.VER }}"
+          ls -lh dist/
+
+      - name: Compute SHA256 & package adapters
+        shell: bash
+        run: |
+          sha256sum 'dist/小说爬虫.exe' | tee 'dist/小说爬虫.exe.sha256'
+          # 站点适配/ 存在时才打包 (仓库未收录时跳过, 不影响 EXE 主产物)
+          if [ -d "站点适配" ]; then
+            powershell -NoProfile -Command "Compress-Archive -Path '站点适配' -DestinationPath 'dist/站点适配.zip' -Force"
+          else
+            echo "[WARN] 站点适配/ 未入库, 跳过 zip (适配器不影响 EXE 主产物)"
+          fi
+          ls -lh dist/
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/小说爬虫.exe
+            dist/小说爬虫.exe.sha256
+            dist/站点适配.zip
+          name: 小说爬虫 v${{ steps.ver.outputs.VER }}
+          body: |
+            ## 小说爬虫 v${{ steps.ver.outputs.VER }}
+
+            - **EXE** (onefile 单文件便携版): `小说爬虫.exe`
+            - **SHA256**: `小说爬虫.exe.sha256` (用于校验下载完整性)
+            - **站点适配器**: `站点适配.zip` (免重新打包扩展新站, 解压到 EXE 同目录)
+
+            ### 使用说明
+            - 双击 `小说爬虫.exe` 启动 GUI; 首次运行会在 EXE 同目录生成 `站点配置.json`、`抓取结果/` 等
+            - 目标机需安装 Chrome (Selenium 反爬兜底) 与 ddddocr 可选识别模型
+            - 扩展新站: 把适配器 .py 放入 EXE 同目录 `站点适配/` 即可 (详见 文档/SITE_ADAPTER.md)
+
+            > 仅供个人学习与研究使用, 请遵守相关法律法规及目标网站服务条款。

@@ -200,6 +200,21 @@ SITE_PATTERNS = [
         'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
     },
     {
+        # 悠悠书城 (uuwxw.cc): 目录页 /book/{bid}/list{N}.html (每页100章)
+        # 章节链接: <div id="list"><dl> 下 <a href="/book/{bid}/{cid}.html"
+        #   rel="chapter"><dd>第N章...</dd></a> (注意 <dd> 在 <a> 内部)
+        # 正文用 document.writeln(kfiwawn.akxa('BASE64')) 加密, akxa 即标准 Base64
+        #   解码 (通用检测 1c 识别 document.writeln(obj.func('BASE64')) → qsbs_bb 路径)
+        # 章节分页: 第2页 = {cid}_1.html
+        'domain': 'uuwxw.cc',
+        'pattern': PATTERN_QSBS_BB,
+        'catalog_parser': 'uuwxw',
+        'chapter_url_regex': r'/book/[a-z0-9]+/[a-z0-9]+\.html',
+        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
+        'content_selectors': ['#content', '#booktxt', '.content'],
+        'anti_spider': {'type': 'auto'},
+    },
+    {
         'domain': 'pjxdd.com',
         'pattern': PATTERN_SELENIUM,
         'catalog_parser': 'generic',
@@ -382,6 +397,7 @@ SITE_PATTERNS = [
 def get_site_pattern(url):
     """根据 URL 返回匹配的站点配置, 未匹配返回 None"""
     _apply_runtime_config()  # 首次调用时合并 站点配置.json (幂等)
+    load_adapters()          # 首次调用时加载 站点适配/ 插件 (幂等)
     url_lower = url.lower()
     for pat in SITE_PATTERNS:
         if pat['domain'] in url_lower:
@@ -441,6 +457,123 @@ def _apply_runtime_config():
             _log.info(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
         except Exception:
             pass
+
+
+# ============================================================
+# 外部站点适配器插件: BASE_DIR/站点适配/*.py (免重新打包扩展新站)
+# ============================================================
+ADAPTERS = {}          # domain -> {'source', 'parse_catalog', 'extract_content', 'paginate'}
+_ADAPTERS_LOADED = False
+
+
+def load_adapters():
+    """扫描 BASE_DIR/站点适配/*.py, 逐个 import 并注册。
+
+    每个适配器文件（一个站点一个 .py）可暴露:
+      - SITE (dict, 可选): 站点配置，字段同 站点配置.json
+          (domain/pattern/catalog_parser/chapter_url_regex/content_pagination/
+           content_selectors/content_extractor/anti_spider 等)。
+          按域名 upsert 进 SITE_PATTERNS（仅内存使用，不写入 站点配置.json）。
+      - parse_catalog(soup, catalog_url, base_url, **kw) -> list[dict] | None
+          返回 [{'title':..., 'url':...}]；返回 None 表示走通用/内置解析。
+          kw 提供 sort_chapters / fetch(抓取额外目录页的回调)。
+      - extract_content(soup, page_url, base_url, **kw) -> str | None
+          返回正文字符串；返回 None 表示走通用/内置提取。
+          kw 提供 page_index。
+      - paginate(current_url, page_index, **kw) -> str | None
+          返回下一页 URL（相对路径自动补全）；返回 None 表示停止分页。
+
+    安全提示: 这些 .py 文件会被 import 执行，等同直接运行代码，
+    请只放入可信来源的适配器（信任级别与修改主程序代码一致）。
+    """
+    global _ADAPTERS_LOADED
+    if _ADAPTERS_LOADED:
+        return
+    _ADAPTERS_LOADED = True
+    try:
+        from _path_utils import get_app_base_dir
+        adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
+        if not os.path.isdir(adapter_dir):
+            return
+        files = sorted(f for f in os.listdir(adapter_dir)
+                       if f.endswith('.py') and not f.startswith('_'))
+        for fname in files:
+            path = os.path.join(adapter_dir, fname)
+            try:
+                mod = _import_adapter_module(path, fname[:-3])
+                site = getattr(mod, 'SITE', None)
+                domain = ''
+                if isinstance(site, dict) and site.get('domain'):
+                    domain = str(site['domain']).strip()
+                    _merge_site_pattern(site)
+                if not domain:
+                    _log.info(f"[适配器] 跳过 {fname}: 未定义 SITE['domain']")
+                    continue
+                entry = ADAPTERS.setdefault(domain, {
+                    'source': path, 'parse_catalog': None,
+                    'extract_content': None, 'paginate': None,
+                })
+                for attr in ('parse_catalog', 'extract_content', 'paginate', 'get_title'):
+                    fn = getattr(mod, attr, None)
+                    if callable(fn):
+                        entry[attr] = fn
+                _log.info(f"[适配器] 已加载 {fname} → {domain} "
+                          f"(目录={'✓' if entry['parse_catalog'] else '✗'} "
+                          f"正文={'✓' if entry['extract_content'] else '✗'} "
+                          f"分页={'✓' if entry['paginate'] else '✗'} "
+                          f"书名={'✓' if entry['get_title'] else '✗'})")
+            except Exception as e:
+                _log.info(f"[适配器] 加载 {fname} 失败: {e}")
+    except Exception as e:
+        _log.info(f"[适配器] 扫描目录失败: {e}")
+
+
+def _import_adapter_module(path, mod_name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(f"site_adapter_{mod_name}", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载 {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _merge_site_pattern(site):
+    """把适配器 SITE 按域名 upsert 进 SITE_PATTERNS, 返回合并后的条目"""
+    domain = site.get('domain')
+    for p in SITE_PATTERNS:
+        if p.get('domain') == domain:
+            for k, v in site.items():
+                p[k] = v
+            return p
+    SITE_PATTERNS.append(dict(site))
+    return SITE_PATTERNS[-1]
+
+
+def get_adapter(url_or_domain):
+    """按域名匹配外部适配器登记 (先精确后子串), 未命中返回 None"""
+    load_adapters()
+    key = (url_or_domain or '').lower()
+    if key in ADAPTERS:
+        return ADAPTERS[key]
+    for d, entry in ADAPTERS.items():
+        if d and d in key:
+            return entry
+    return None
+
+
+def reload_adapters():
+    """重置并重新加载 站点适配/ 插件 (GUI 刷新 / 新增文件后用)。
+
+    会清空 sys.modules 中已加载的适配器模块缓存, 再重新扫描目录注册。
+    """
+    global _ADAPTERS_LOADED, ADAPTERS
+    import sys as _sys
+    for _k in [k for k in list(_sys.modules) if k.startswith('site_adapter_')]:
+        _sys.modules.pop(_k, None)
+    ADAPTERS = {}
+    _ADAPTERS_LOADED = False
+    load_adapters()
 
 
 def build_paged_url(base_url, page_index, pagination):

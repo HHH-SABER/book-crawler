@@ -129,6 +129,11 @@ class InputBar:
             label="断点续传", value=True,
             label_position=ft.LabelPosition.LEFT,
         )
+        self.epub_switch = ft.Switch(
+            label="导出EPUB", value=False,
+            label_position=ft.LabelPosition.LEFT,
+            tooltip="抓取完成后同时生成 .epub 电子书 (可选)",
+        )
         self.output_dir_input = ft.TextField(
             label="输出目录", width=170, dense=True,
             text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
@@ -177,7 +182,7 @@ class InputBar:
                        spacing=6),
                 # 第二行: 次操作 (自动换行)
                 ft.Row([import_btn, paste_btn, self.start_chapter,
-                        self.end_chapter, self.resume_switch,
+                        self.end_chapter, self.resume_switch, self.epub_switch,
                         self.output_dir_input, open_folder_btn],
                        wrap=True, spacing=6),
                 self.batch_panel,
@@ -257,6 +262,7 @@ class InputBar:
             url=url, mode=mode, chapter_range=chapter_range,
             threads=threads, delay=delay,
             resume=self.resume_switch.value, output_dir=output_dir,
+            export_epub=self.epub_switch.value,
         )
         self.task_manager.select_task(task_id)
         self.stop_btn.disabled = False
@@ -424,6 +430,7 @@ class InputBar:
             self.task_manager.create_task(
                 url=url, mode="full", threads=None, delay=None,
                 resume=resume, output_dir=output_dir,
+                export_epub=self.epub_switch.value,
             )
             created += 1
 

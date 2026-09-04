@@ -1303,6 +1303,7 @@ class NovelSpider:
         ('28zw.org', '_parse_catalog_yunquge'),
         ('spscl.com', '_parse_catalog_yunquge'),
         ('tanmixs.com', '_parse_catalog_tanmixs'),
+        ('uuwxw.cc', '_parse_catalog_uuwxw'),
     )
 
     def _parse_catalog_by_site(self, catalog_url, sort_chapters, soup=None):
@@ -1312,13 +1313,104 @@ class NovelSpider:
         目录分页需按规则拼接), 原实现是 9 段内联 if 分支共 ~660 行, 既无法单测
         也难以定位。抽出为独立方法后, 每个解析器可用 测试样本/ 的页面快照离线验证。
 
+        外部适配器插件 (站点适配/ 目录) 优先于内置解析器, 命中即返回其章节列表;
+        未命中或返回 None 时按内置 _CATALOG_PARSERS 表分派; 仍无命中返回 None 走通用流程。
+
         Returns:
             list[dict]: 命中站点时的章节列表; 无站点命中时返回 None
         """
+        # 外部适配器插件优先 (免重新打包扩展新站)
+        try:
+            from sites_config import get_adapter
+            adapter = get_adapter(catalog_url)
+            if adapter and adapter.get('parse_catalog'):
+                _log.info(f"[适配器] 自定义目录解析: {adapter['source']}")
+                result = adapter['parse_catalog'](
+                    soup, catalog_url, self.base_url,
+                    sort_chapters=sort_chapters, fetch=self.inspect_page,
+                )
+                if result is not None:
+                    return result
+        except Exception as e:
+            _log.info(f"[适配器] 目录解析调用失败: {e}")
+
         for token, method_name in self._CATALOG_PARSERS:
             if token in catalog_url:
                 return getattr(self, method_name)(catalog_url, sort_chapters, soup)
         return None
+
+    def _parse_catalog_uuwxw(self, catalog_url, sort_chapters, soup=None):
+        """悠悠书城 (uuwxw.cc): 目录页 /book/{bid}/list{N}.html, 每页 100 章
+
+        章节链接藏在 <div id="list"><dl> 下:
+            <a href="/book/{bid}/{cid}.html" rel="chapter"><dd>第N章...</dd></a>
+        注意 <dd> 在 <a> 内部, 直接取 a 的文本即章节名。
+        目录分页: 从 <select> 的 option 值 (/book/{bid}/list{N}.html) 收集全部页码,
+        无 select 时回退为仅当前页。
+        """
+        chapters = []
+        _log.info("检测到uuwxw.cc网站，使用专用目录解析")
+        base = self.base_url.rstrip('/')
+        path_m = re.search(r'(/book/[a-z0-9]+/)', catalog_url)
+        if not path_m:
+            _log.info("[uuwxw] 无法从URL提取书路径")
+            return chapters
+        book_prefix = path_m.group(1)
+        _log.info(f"[uuwxw] 书路径前缀: {book_prefix}")
+
+        # 收集全部目录页码 (select 的 option, 如 list1.html 第1-100章 / list2.html ...)
+        page_urls = []
+        if soup is not None:
+            for opt in soup.select('select option[value]'):
+                v = opt.get('value', '')
+                if re.fullmatch(rf'{re.escape(book_prefix)}list\d+\.html', v) and v not in page_urls:
+                    page_urls.append(v)
+        if not page_urls:
+            # 兜底: 仅当前目录页
+            if catalog_url.startswith(base):
+                page_urls = [catalog_url[len(base):]]
+            else:
+                page_urls = [catalog_url]
+        _log.info(f"[uuwxw] 目录页数: {len(page_urls)}")
+
+        seen = set()
+        for i, rel in enumerate(page_urls):
+            if i == 0:
+                page_soup = soup
+            else:
+                page_url = base + rel
+                _log.info(f"[uuwxw] 抓取目录第{i+1}页: {page_url}")
+                page_soup = self.inspect_page(page_url)
+            if page_soup is None:
+                continue
+            found = 0
+            for a in page_soup.find_all('a', href=True):
+                rels = a.get('rel') or []
+                if 'chapter' not in rels:
+                    continue
+                href = a.get('href', '')
+                if not (href.startswith(book_prefix) and href.endswith('.html')):
+                    continue
+                if re.search(r'list\d+\.html$', href):
+                    continue  # 目录分页链接
+                if href in seen:
+                    continue
+                title = a.get_text(strip=True)
+                if not title:
+                    continue
+                seen.add(href)
+                url = href if href.startswith('http') else base + href
+                chapters.append({'title': self.clean_chapter_title(title), 'url': url})
+                found += 1
+            _log.info(f"[uuwxw] 第{i+1}页: 新增 {found} 章, 累计 {len(chapters)} 章")
+
+        if sort_chapters and chapters:
+            chapters.sort(key=_chapter_sort_key)
+        for i, chap in enumerate(chapters[:5]):
+            _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
+        if len(chapters) > 5:
+            _log.info(f"  ... 共 {len(chapters)} 章")
+        return chapters
 
     def _parse_catalog_zhiruo(self, catalog_url, sort_chapters, soup=None):
         """特殊处理zhiruo.org网站：目录页章节链接用 onclick="read_tz(章节ID)" 而非 href，
@@ -4182,8 +4274,25 @@ class NovelSpider:
             if page_index == 0:
                 current_url = chapter_url
             else:
-                # ===== 优先使用 sites_config 生成分页 URL =====
-                if site_pattern and 'content_pagination' in site_pattern:
+                # ===== 外部适配器插件分页 (站点适配/, 优先) =====
+                try:
+                    from sites_config import get_adapter
+                    _adapter = get_adapter(chapter_url)
+                except Exception:
+                    _adapter = None
+                if _adapter and _adapter.get('paginate'):
+                    try:
+                        next_url = _adapter['paginate'](current_url, page_index, base_url=self.base_url)
+                    except Exception as e:
+                        _log.info(f"[分页] 适配器分页异常, 回退内置规则: {e}")
+                        next_url = None
+                    if next_url:
+                        current_url = next_url if next_url.startswith('http') else self.base_url.rstrip('/') + next_url
+                    else:
+                        _log.info("[分页] 适配器返回 None, 停止")
+                        break
+                elif site_pattern and 'content_pagination' in site_pattern:
+                    # ===== 优先使用 sites_config 生成分页 URL =====
                     current_url = build_paged_url(chapter_url, page_index, site_pattern['content_pagination'])
                     if current_url is None:
                         _log.info("[分页] 已达到最大页数限制，停止")
@@ -4271,6 +4380,41 @@ class NovelSpider:
                 except Exception as e:
                     _log.info(f"[数据文件] 解码失败, 走常规流程: {e}")
                     self._datafile_mode = False
+
+            # ===== 外部适配器插件正文提取 (站点适配/, 优先于内置提取器/通用检测) =====
+            try:
+                from sites_config import get_adapter
+                _adapter = get_adapter(current_url)
+            except Exception:
+                _adapter = None
+            if _adapter and _adapter.get('extract_content'):
+                try:
+                    _log.info(f"[适配器] {_adapter['source']} 自定义正文提取 (第{page_index+1}页)")
+                    _adapter_soup = self.inspect_page(current_url)
+                    _adapter_content = _adapter['extract_content'](
+                        _adapter_soup, current_url, self.base_url, page_index=page_index)
+                except Exception as e:
+                    _log.info(f"[适配器] 正文提取异常, 回退通用流程: {e}")
+                    _adapter_content = None
+                if _adapter_content:
+                    _log.info(f"[适配器] 提取成功: {len(_adapter_content)} 字符")
+                    page_text = self.clean_content(_adapter_content)
+                    _log.info(f"[适配器] 第{page_index+1}页清洗后: {len(page_text)} 字符")
+                    if len(page_text) < 50:
+                        _log.info("[适配器] 正文过短, 可能已到末页, 结束分页")
+                        break
+                    # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
+                    import hashlib
+                    fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                    if fingerprint == self._last_page_fingerprint:
+                        _log.info(f"[适配器] 第{page_index+1}页与上一页指纹相同, 停止抓取")
+                        break
+                    self._last_page_fingerprint = fingerprint
+                    total_content += page_text + '\n\n'
+                    _log.info(f"[适配器] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
+                    success = True
+                    page_index += 1
+                    continue
 
             # ===== sites_config 站点专属正文提取 (优先于通用检测) =====
             # 站点配置声明了专用 content_extractor 时, 用配置的精准选择器提取,
@@ -4817,6 +4961,18 @@ class NovelSpider:
                     text = response.content.decode('utf-8', errors='ignore')
                     soup = BeautifulSoup(text, 'html.parser')
             
+            # 外部适配器插件书名钩子 (站点适配/, 免重新打包)
+            try:
+                from sites_config import get_adapter
+                _adapter = get_adapter(catalog_url)
+                if _adapter and _adapter.get('get_title'):
+                    _adapter_title = _adapter['get_title'](soup, catalog_url, self.base_url)
+                    if _adapter_title and _adapter_title.strip():
+                        _log.info(f"[适配器] 自定义书名: {_adapter_title.strip()}")
+                        return _adapter_title.strip()
+            except Exception as e:
+                _log.info(f"[适配器] 书名提取异常: {e}")
+
             # 尝试从标题标签提取
             if soup.title:
                 title = soup.title.string.strip() if soup.title.string else ""
@@ -5410,6 +5566,24 @@ class NovelSpider:
             _log.info(f"[爬取历史] 增量模式已启用: 跳过 {self._增量最大年龄小时} 小时内"
                   f"已成功抓取且未变化的章节 (跳过章节不写入输出, 需配合 resume=True 复用旧文件)")
 
+        # 站点级速度配置 (P2): 站点编辑卡设置了 延时/线程 时作为该站默认值。
+        # 仅覆盖调用方未显式指定的 None; 显式传入的 delay/threads 参数优先。
+        try:
+            _site_pat = get_site_pattern(catalog_url)
+            if _site_pat:
+                _sd = _site_pat.get('delay')
+                _st = _site_pat.get('threads')
+                if delay is None and isinstance(_sd, (int, float)) \
+                        and not isinstance(_sd, bool) and _sd >= 0:
+                    delay = float(_sd)
+                    _log.info(f"[站点级配置] {_site_pat.get('domain', '')} 固定延时: {delay}s")
+                if threads is None and isinstance(_st, int) \
+                        and not isinstance(_st, bool) and _st >= 1:
+                    threads = _st
+                    _log.info(f"[站点级配置] {_site_pat.get('domain', '')} 固定线程: {threads}")
+        except Exception:
+            pass
+
         # 站点历史先验: 打印该站点历史反爬情况, 给出延迟建议
         delay = self._打印站点历史先验(catalog_url, delay)
 
@@ -5496,7 +5670,12 @@ class NovelSpider:
                     # 保证文件顺序和断点续传正确性; 抓取完成顺序无关紧要
                     _log.info(f"[并发] 启用 {threads} 线程并发抓取 (按章节顺序写入)")
                     from concurrent.futures import ThreadPoolExecutor
+                    import contextvars as _ctx_mod
                     worker = self._fetch_chapter_worker
+                    # 复制当前上下文 (含任务 stdout writer), 让 worker 内 print
+                    # 经 _ThreadAwareStdout 路由回本任务, 质检/引擎等日志可被解析。
+                    # 注意: 每个任务必须用独立 copy_context() —— Context.run 同一时刻
+                    # 只允许一个线程进入, 共享同一 Context 会报 "already entered"。
                     with ThreadPoolExecutor(max_workers=threads) as pool:
                         futures = {}
                         for i in range(start, total):
@@ -5506,7 +5685,8 @@ class NovelSpider:
                                 _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
                                       f"{chapters[i]['title']}")
                                 continue
-                            futures[i] = pool.submit(worker, chapters[i], stop_event)
+                            futures[i] = pool.submit(_ctx_mod.copy_context().run,
+                                                     worker, chapters[i], stop_event)
                         for i in range(start, total):
                             if i not in futures:
                                 # 被增量跳过的章节: 仅更新检查点, 不写入
@@ -5624,6 +5804,14 @@ class NovelSpider:
             _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
         else:
             _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
+        # EPUB 导出 (可选): 有内容且开启时, 把结果 txt 一并转为 .epub
+        if export_epub and output_file and os.path.isfile(output_file) \
+                and (total - len(failed)) > 0:
+            try:
+                from epub_exporter import txt_to_epub
+                txt_to_epub(output_file, title=novel_title)
+            except Exception as e:
+                _log.info(f"[epub] 导出异常(不影响抓取结果): {e}")
         # P2-1 打点: 任务级风控事件 (成功/失败/新增由爬取历史统计, 此处给监控聚合口径)
         try:
             import re as _re
@@ -5683,10 +5871,10 @@ def print_progress_bar(current, total, width=40, extra=""):
         sys.stdout.flush()
 
 def interactive_menu():
-    """交互式菜单，返回 (url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay)。
+    """交互式菜单，返回 (url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay, export_epub)。
     mode: 'list' 只看章节列表 / 'full' 完整抓取 / 'test' 快速测试(提取第1章前2页) / 'range' 自定义区间
     chapter_range: (start, end) 1-based 章节索引区间，或 None 表示不限制
-    threads: 并发线程数 / delay: 章节间间隔秒数"""
+    threads: 并发线程数 / delay: 章节间间隔秒数 / export_epub: 是否同时导出 EPUB"""
     _log.info("=== 小说爬虫 ===")
     _log.info("请输入小说网站的目录页面URL:")
     _log.info("例如: https://www.shubaoxs.net/book/391625/")
@@ -5696,7 +5884,7 @@ def interactive_menu():
     catalog_url = input("\nURL: ").strip()
     if not catalog_url:
         _log.info("错误: 请输入有效的URL")
-        return None, None, False, True, True, None, 1, 1.0
+        return None, None, False, True, True, None, 1, 1.0, False
 
     # 章节排序选项
     _log.info("\n章节排序选项:")
@@ -5725,12 +5913,12 @@ def interactive_menu():
             end_ch = int(end_str)
             if start_ch < 1 or end_ch < start_ch:
                 _log.info("错误: 起始章节必须 >= 1，结束章节必须 >= 起始章节")
-                return None, None, False, True, True, None, 1, 1.0
+                return None, None, False, True, True, None, 1, 1.0, False
             chapter_range = (start_ch, end_ch)
             _log.info(f"已选择: 第 {start_ch} 章 ~ 第 {end_ch} 章 (共 {end_ch - start_ch + 1} 章)")
         except ValueError:
             _log.info("错误: 请输入有效的数字")
-            return None, None, False, True, True, None, 1, 1.0
+            return None, None, False, True, True, None, 1, 1.0, False
 
     resume = True
     show_progress = True
@@ -5765,7 +5953,16 @@ def interactive_menu():
         elif speed_choice == "4":
             threads, delay = 6, 0.2
 
-    return catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay
+    export_epub = False
+    if mode in ("full", "range"):
+        # EPUB 导出选项 (可选)
+        _log.info("\nEPUB 导出选项 (抓取完成后同时生成 .epub 电子书):")
+        _log.info("1. 不导出 (默认, 仅 txt)")
+        _log.info("2. 同时导出 EPUB")
+        export_epub = input("请选择 (1/2，默认1): ").strip() == "2"
+
+    return (catalog_url, mode, sort_chapters, resume, show_progress,
+            chapter_range, threads, delay, export_epub)
 
 
 # 计算默认输出目录:
@@ -5870,7 +6067,7 @@ def _resolve_unique_title(novel_title: str, output_dir: str,
 
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
               resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
-              stop_event=None, unique_title=False):
+              stop_event=None, unique_title=False, export_epub=False, incremental=False):
     """根据模式执行抓取任务，供命令行与交互式共用
 
     Args:
@@ -5886,6 +6083,8 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         delay: 章节间请求间隔秒数。None (默认) = 由速度自适应档位决定; >0 = 手动固定
         stop_event: threading.Event，GUI 停止按钮设置后中断抓取
         unique_title: 为 True 时, 新任务遇到同名小说自动加 (1)/(2) 序号
+        export_epub: 为 True 时, 抓取完成后把结果 txt 同时导出为 EPUB
+        incremental: 为 True 时启用增量抓取 (24h 内已抓取且未变化的章节跳过)
     """
     # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
     try:
@@ -6007,12 +6206,13 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                                resume=resume, show_progress=show_progress,
                                chapter_range=chapter_range, threads=threads, delay=delay,
                                stop_event=stop_event, unique_title=unique_title,
-                               novel_title=unique_novel_title)
+                               novel_title=unique_novel_title, incremental=incremental)
             else:
                 src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                                resume=resume, show_progress=show_progress,
                                threads=threads, delay=delay, stop_event=stop_event,
-                               unique_title=unique_title, novel_title=unique_novel_title)
+                               unique_title=unique_title, novel_title=unique_novel_title,
+                               incremental=incremental)
         finally:
             # 每个源抓完(含异常/停止)立即释放浏览器与连接资源, 防止 Chrome 进程泄漏 (P1-3)
             src_spider.close()
@@ -6031,6 +6231,14 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         if fail_ratio < 0.2 and rate < 0.5:
             _log.info(f"[多源回退] ✅ 源 {src_idx+1}/{len(sources)} 抓取成功 "
                   f"(失败率 {fail_ratio:.0%}, 验证码触发率 {rate:.0%})")
+            # 登记书架 (供"一键更新"增量复用): 仅 full/range 抓取成功时记录
+            if mode in ("full", "range") and not incremental:
+                try:
+                    from 书架 import 记录 as _shelf记录
+                    _bt = unique_novel_title or src_spider.get_novel_title(src)
+                    _shelf记录(_bt or '', src, '')
+                except Exception as _e_shelf:
+                    _log.info(f"[书架] 登记失败(不影响抓取): {_e_shelf}")
             return
         _log.info(f"[多源回退] 源 {src_idx+1}/{len(sources)} 未达标 "
               f"(失败率 {fail_ratio:.0%}, 验证码触发率 {rate:.0%}), "
@@ -6039,7 +6247,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
 
 def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
               show_progress=True, output_dir=None, delay=None, stop_event=None,
-              unique_title=False):
+              unique_title=False, export_epub=False):
     """批量抓取多本书 (书级并行)。
 
     方案说明:
@@ -6086,13 +6294,15 @@ def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
             run_crawl(url, mode="full", sort_chapters=sort_chapters,
                       output_dir=output_dir, resume=resume,
                       show_progress=show_progress, threads=None, delay=delay,
-                      stop_event=stop_event, unique_title=unique_title)
+                      stop_event=stop_event, unique_title=unique_title,
+                      export_epub=export_epub)
             return url, '✅ 完成', time.time() - t0, None
         except Exception as e:
             return url, f'❌ 失败: {str(e)[:80]}', time.time() - t0, None
 
     # 同域信号量: 每个域名最多1个并发任务
     semaphores = {host: __import__('threading').Semaphore(1) for host in domain_map}
+    import contextvars as _ctx_mod
     results = []
     with ThreadPoolExecutor(max_workers=max(1, threads)) as pool:
         futures = {}
@@ -6105,7 +6315,8 @@ def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
                 def _guarded(u=u, host=host):
                     with semaphores[host]:
                         return _crawl_one(u)
-                futures[pool.submit(_guarded)] = u
+                # 传播任务 stdout writer 到书级 worker 线程 (每任务独立 copy_context)
+                futures[pool.submit(_ctx_mod.copy_context().run, _guarded)] = u
         for fut in as_completed(futures):
             try:
                 results.append(fut.result())
@@ -6133,7 +6344,7 @@ def _parse_batch_opts(argv, start_idx):
         dict: {threads, resume, show_progress, output_dir, delay}
     """
     opts = {'threads': None, 'resume': True, 'show_progress': True,
-            'output_dir': None, 'delay': None}   # None = 速度自适应默认
+            'output_dir': None, 'delay': None, 'export_epub': False}   # None = 速度自适应默认
     i = start_idx
     while i < len(argv):
         arg = argv[i]
@@ -6148,6 +6359,8 @@ def _parse_batch_opts(argv, start_idx):
             opts['resume'] = False
         elif arg == "--no-progress":
             opts['show_progress'] = False
+        elif arg == "--epub":
+            opts['export_epub'] = True
         elif arg == "--output-dir":
             if i + 1 < len(argv):
                 opts['output_dir'] = argv[i + 1]
@@ -6222,7 +6435,39 @@ if __name__ == "__main__":
     #   python 爬虫.py <URL> --no-sort --test        # 组合使用
     #   python 爬虫.py --batch books.txt [--threads 2]  # 批量抓取 (每行一个URL)
     #   python 爬虫.py <URL1> <URL2> <URL3> [--threads 2]  # 多本书批量抓取
+    #   python 爬虫.py --update [--delay 1]          # 一键更新书架 (增量抓取已抓小说)
     if len(sys.argv) > 1 and sys.argv[1] not in ("-h", "--help"):
+        # ===== 一键更新书架: 遍历书架清单增量抓取已抓取小说 =====
+        if sys.argv[1] == "--update":
+            try:
+                _app_log.enable_console()   # CLI 屏幕镜像
+            except Exception:
+                pass
+            opts = _parse_batch_opts(sys.argv, 2)
+            try:
+                from 书架 import 列出 as _书架列出
+                books = _书架列出()
+            except Exception as _e:
+                _log.info(f"[书架] 加载失败: {_e}")
+                exit(2)
+            if not books:
+                _log.info("[书架] 书架为空 (尚无已抓取小说); 抓取成功后自动登记")
+                exit(0)
+            _log.info(f"[书架] 一键更新 {len(books)} 本书 (增量+断点续传)")
+            for _it in books:
+                _url = _it.get('目录URL', '')
+                _title = _it.get('标题', '')
+                if not _url:
+                    continue
+                _log.info(f"\n===== 更新: {_title or _url} =====")
+                run_crawl(_url, mode="full", sort_chapters=True,
+                          output_dir=opts['output_dir'], resume=True,
+                          show_progress=opts['show_progress'],
+                          threads=opts['threads'], delay=opts['delay'],
+                          unique_title=False, export_epub=opts['export_epub'],
+                          incremental=True)
+            exit(0)
+
         # ===== 批量模式: --batch 清单文件 或 多个 URL 参数 =====
         if sys.argv[1] == "--batch":
             if len(sys.argv) < 3:
@@ -6246,7 +6491,7 @@ if __name__ == "__main__":
                 run_batch(urls, threads=opts['threads'], resume=opts['resume'],
                           show_progress=opts['show_progress'],
                           output_dir=opts['output_dir'], delay=opts['delay'],
-                          unique_title=True)
+                          unique_title=True, export_epub=opts['export_epub'])
             exit(0)
 
         # 收集所有非选项参数作为 URL (支持一次抓多本)
@@ -6271,7 +6516,7 @@ if __name__ == "__main__":
             run_batch(url_args, threads=opts['threads'], resume=opts['resume'],
                       show_progress=opts['show_progress'],
                       output_dir=opts['output_dir'], delay=opts['delay'],
-                      unique_title=True)
+                      unique_title=True, export_epub=opts['export_epub'])
             exit(0)
 
         catalog_url = sys.argv[1].strip()
@@ -6283,6 +6528,7 @@ if __name__ == "__main__":
         chapter_range_arg = None
         threads_arg = None   # None = 速度自适应 (默认)
         delay_arg = None
+        export_epub = False   # --epub: 抓取后同时导出 EPUB
         i = 2
         argv = sys.argv
         while i < len(argv):
@@ -6303,6 +6549,8 @@ if __name__ == "__main__":
                 show_progress = False
             elif arg == "--progress":
                 show_progress = True
+            elif arg == "--epub":
+                export_epub = True
             elif arg == "--fast":
                 threads_arg = 4
                 delay_arg = 0.2
@@ -6370,7 +6618,8 @@ if __name__ == "__main__":
                   output_dir=output_dir_arg,
                   resume=resume, show_progress=show_progress,
                   chapter_range=chapter_range_arg,
-                  threads=threads_arg, delay=delay_arg)
+                  threads=threads_arg, delay=delay_arg,
+                  export_epub=export_epub)
     else:
         # 帮助信息
         if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
@@ -6388,12 +6637,14 @@ if __name__ == "__main__":
             _log.info("  python 爬虫.py <URL> --threads N       并发抓取线程数 (默认: 自适应自动选档)")
             _log.info("  python 爬虫.py <URL> --delay N         章节间间隔秒数 (默认: 随自适应档位)")
             _log.info("  python 爬虫.py <URL> --fast            快速模式 (4线程+0.2秒间隔)")
+            _log.info("  python 爬虫.py <URL> --epub            抓取完成后同时导出 EPUB")
             _log.info("  python 爬虫.py -h / --help             显示帮助")
             exit(0)
         # 交互式菜单
-        catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay = interactive_menu()
+        catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay, export_epub = interactive_menu()
         if catalog_url:
             run_crawl(catalog_url, mode=mode, sort_chapters=sort_chapters,
                       resume=resume, show_progress=show_progress,
                       chapter_range=chapter_range,
-                      threads=threads, delay=delay)
+                      threads=threads, delay=delay,
+                      export_epub=export_epub)

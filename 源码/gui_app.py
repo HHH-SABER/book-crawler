@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""小说爬虫 GUI 主程序 (v3 紧凑信息密度布局)
+"""小说爬虫 GUI 主程序 (苹果风格界面)
 
 基于 Flet 框架。布局:
-  左侧 56px 图标导航栏 (抓取 / 历史 / 站点管理 / 日志)
+  顶栏 (52px): macOS 交通灯 + 居中应用标题 + 右侧主题切换
+  + 侧边栏 (220px): 图标+文字导航 + 底部状态指示器
   + 主内容区 (抓取工作台: 输入条 + 任务表格 + 可折叠日志条 + 右侧上下文抽屉)
   + 底部状态栏 (实时任务汇总)
-支持深色/浅色双主题切换。
+支持日间/夜间双主题切换。
 """
 import flet as ft
 import sys
@@ -24,7 +25,7 @@ if getattr(sys, "frozen", False):
         os.environ["FLET_VIEW_PATH"] = _bundled_flet_client
 
 from gui_components.task_manager import TaskManager
-from gui_components.icon_rail import IconRail, NAV_PAGES
+from gui_components.icon_rail import IconRail, NAV_PAGES, build_theme_toggle, build_top_bar
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
 from gui_components.log_strip import LogStrip
@@ -54,6 +55,8 @@ try:
     import content_decoder  # noqa: F401
     import decrypt_utils  # noqa: F401
     import waf_captcha  # noqa: F401  (WAF 验证码自动解决, banlvzw 等)
+    import epub_exporter  # noqa: F401  (EPUB 导出, ebooklib 依赖收集)
+    import ebooklib  # noqa: F401
     import gui_components.task_manager  # noqa: F401
     import gui_components.icon_rail  # noqa: F401
     import gui_components.input_bar  # noqa: F401
@@ -119,11 +122,15 @@ def main(page: ft.Page):
 
     # ---- 主题切换 ----
     _theme_dark = [False]
+    _theme_toggle_btn = [None]  # 顶栏主题切换按钮引用
 
     def toggle_theme():
         _theme_dark[0] = not _theme_dark[0]
         page.theme_mode = ft.ThemeMode.DARK if _theme_dark[0] else ft.ThemeMode.LIGHT
         rail.toggle_theme_icon(_theme_dark[0])
+        # 同步更新顶栏主题切换按钮
+        if _theme_toggle_btn[0] and hasattr(_theme_toggle_btn[0], 'update_theme_state'):
+            _theme_toggle_btn[0].update_theme_state(_theme_dark[0])
         app_log.info("系统", f"主题切换为: {'深色' if _theme_dark[0] else '浅色'}")
         page.update()
 
@@ -168,6 +175,7 @@ def main(page: ft.Page):
     site_page = SiteManagePage()
     log_tab = LogTab()
     history_page.page = page
+    history_page.task_manager = task_manager   # 一键更新书架需创建任务
     site_page.page = page
     log_tab.page = page
 
@@ -277,24 +285,33 @@ def main(page: ft.Page):
     page.run_task(_refresh_loop)
     page.run_task(_status_loop)
 
-    # ---- 整体布局 ----
-    page.add(
-        ft.Row([
-            rail.build(),
-            # 主内容区: 极淡暖色渐变背景 (左上→右下), 提升层次感
-            ft.Container(
-                content=ft.Container(
-                    content=content_stack, expand=True,
-                    padding=ft.Padding.symmetric(horizontal=10, vertical=10),
-                ),
-                expand=True,
-                gradient=ft.LinearGradient(
-                    begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
-                    colors=[ft.Colors.SURFACE, ft.Colors.SURFACE_CONTAINER_LOW],
-                ),
+    # ---- 顶栏 (苹果风格: 标题 + 醒目主题切换按钮) ----
+    _theme_toggle_btn[0] = build_theme_toggle(page, 'light', toggle_theme)
+    top_bar = build_top_bar(page, '小说爬虫', _theme_toggle_btn[0])
+
+    # ---- 整体布局 (苹果风格三段式: 顶栏 + 侧边导航 + 主内容) ----
+    main_row = ft.Row([
+        rail.build(),
+        # 主内容区: 洁净浅灰白底 + 柔和渐变
+        ft.Container(
+            content=ft.Container(
+                content=content_stack, expand=True,
+                padding=ft.Padding.symmetric(horizontal=20, vertical=20),
             ),
-        ], expand=True, spacing=0),
-        status_bar,
+            expand=True,
+            gradient=ft.LinearGradient(
+                begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
+                colors=[ft.Colors.SURFACE, ft.Colors.SURFACE_CONTAINER_LOW],
+            ),
+        ),
+    ], expand=True, spacing=0, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+
+    page.add(
+        ft.Column(
+            [top_bar, main_row, status_bar],
+            spacing=0,
+            expand=True,
+        ),
     )
 
     # 退出时关闭日志文件

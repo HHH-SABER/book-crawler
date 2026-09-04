@@ -1,0 +1,14 @@
+# ===== 小说爬虫 Termux (安卓) 依赖子集 =====
+# 仅含 CLI 核心所需; 桌面/浏览器/OCR 重依赖在 Termux 上难以安装,
+# 缺失时对应能力自动降级 (requests 兜底 / 无浏览器渲染 / 无验证码OCR)。
+requests>=2.31.0
+urllib3>=2.0.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+fake-useragent>=1.4.0
+cloudscraper>=1.2.0
+ebooklib>=0.19
+
+# 可选: TLS 指纹模拟 (绕过基于 TLS 指纹的反爬)。
+# Termux 无官方 wheel, 需先 `pkg install rust` 再装 (编译耗时较长)。
+# curl_cffi>=0.6.0

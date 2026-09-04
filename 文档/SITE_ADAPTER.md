@@ -86,6 +86,54 @@ if detect_ajax_pattern(html):
 
 ## 为新站点添加适配
 
+**两种方式**（从简到繁，优先方式 A）：
+
+- **方式 A：JSON 规则** — 纯选择器型站点首选，只加一条 JSON 规则，**无需改代码**
+- **方式 B：代码适配** — 加密 / 动态加载 / 特殊分页站点，在 `sites_config.py` 加条目或新增提取函数
+- **外部适配器插件** — 最灵活，放 `站点适配/*.py` 即生效，**无需重新打包 EXE**
+
+### 方式 A: JSON 规则（纯选择器型站点，推荐首选）
+
+站点规则已数据化到 `站点配置.json`（程序根目录，GUI"站点管理"页可可视编辑）。
+纯 HTML 选择器型站点**只需加一条 JSON 规则**：
+
+```json
+{
+  "domain": "新站点.com",
+  "pattern": "html_selector",
+  "catalog_parser": "generic",
+  "chapter_url_regex": "/(\\d+)/(\\d+)\\.html",
+  "content_pagination": {"suffix": "_{N}.html", "start": 1, "max_pages": 30},
+  "content_selectors": ["#content", ".content"]
+}
+```
+
+**字段说明**:
+
+| 字段 | 说明 |
+|---|---|
+| `domain` | 域名（不含 `www.`，子串匹配） |
+| `pattern` | `qsbs_bb` / `ajax_two_step` / `html_selector` / `selenium` / `str_decode_bb` |
+| `catalog_parser` | 目录解析器：`generic` / `biquwx` / `11bzw` / `zhiruo` / `yunquge` 等 |
+| `chapter_url_regex` | 从目录页 href 提取章节链接的正则（含小说ID/章节ID分组） |
+| `content_pagination` | 分页规则：`suffix` 含 `{N}` 页码占位、`start` 起始页、`max_pages` 上限 |
+| `content_selectors` | 正文选择器列表（按优先级依次尝试） |
+| `anti_spider` | 反爬类型；一般填 `{"type": "auto"}` 自动识别 |
+| `delay` / `threads` | 可选，站点级延时(秒) / 并发线程数，留空走速度自适应 |
+
+**添加方式**:
+1. GUI"站点管理"页 → "新增站点" → 填表保存（自动写入 `站点配置.json`）
+2. 或直接编辑 `站点配置.json`（参考模板见 [站点规则模板.json](站点规则模板.json)）
+
+**测试**: `python 爬虫.py "https://新站点.com/..." --test`
+
+> 若 JSON 规则无法覆盖（加密 / 动态加载 / 特殊分页 / 书名提取异常），才需要方式 B 或适配器插件。
+> 纯 JSON 规则可直接作为社区贡献（见下方"社区贡献"）。
+
+### 方式 B: 代码适配（复杂站点）
+
+以下步骤在 `sites_config.py` 的 `SITE_PATTERNS` 中配置:
+
 ### 步骤 1: 探测站点特征
 
 运行 `_site_probe.py` (需自行创建) 或手动检查:
@@ -237,3 +285,23 @@ pattern = auto_detect_pattern(session, url, headers, base_url)
 1. 配置项加在 `sites_config.py` 的 `SITE_PATTERNS`(统一字典)
 2. 目录页结构特殊 → 在 `_CATALOG_PARSERS` 注册 `_parse_catalog_<site>` 方法
 3. 正文提取特殊 → 用 `content_extractor` 标记 + `sites_config` 内专用过滤器, 勿散落进 `爬虫.py`
+
+---
+
+## 社区贡献 (源规则共建)
+
+站点规则已数据化，欢迎社区共建新站规则。按成本从低到高三档：
+
+| 档位 | 适用 | 交付物 |
+|---|---|---|
+| 1. JSON 规则 | 纯选择器型站点 | `站点配置.json` 一条规则（参照"方式 A"）+ 可访问目录页 URL |
+| 2. 适配器插件 | 加密/动态加载/特殊分页 | `站点适配/<域名>.py`（参照模板）+ 抓取样本 |
+| 3. 内置适配 | 需要新提取逻辑 | 改 `sites_config.py` / `爬虫.py`（遵守"模块命名约定"） |
+
+**验收标准**（提交前自查）:
+- 提供可访问的目录页 URL
+- `python 爬虫.py <URL> --test` 能输出 ≥1 章完整正文
+- 程序自动质检得分 ≥80
+- 不含成人 / 违法违规内容源
+
+参考模板: [站点规则模板.json](站点规则模板.json)（JSON 档）；适配器模板见站点管理页"新建适配器"。
