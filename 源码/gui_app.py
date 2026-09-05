@@ -251,13 +251,15 @@ def main(page: ft.Page):
     def _status_refresh_loop():
         while True:
             try:
-                tasks = getattr(task_manager, 'tasks', []) or []
+                # 注意: tasks 是 {task_id: TaskInfo} 字典, 必须取 values()
+                # (旧实现直接遍历字典得到的是 key 字符串, 永远统计为 0 运行)
+                tasks = list(getattr(task_manager, 'tasks', {}).values())
                 running = sum(1 for t in tasks
                               if (getattr(t, 'status', '') or '') in
                               ('running', 'queued', 'crawling'))
                 total = len(tasks)
                 if running > 0:
-                    status_text.value = f"运行 {running} · 共 {total}"
+                    status_text.value = f"抓取中 {running} 项 · 共 {total}"
                     status_dot.color = MORANDI_RUNNING
                 else:
                     status_text.value = (f"就绪 · 共 {total}" if total else "就绪")
