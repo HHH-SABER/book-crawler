@@ -107,6 +107,13 @@ class DetailDrawer:
         )
         self._preview_view.visible = False
         self._detail_view.visible = True
+        # 默认展开"任务详情"卡 (与设计预览一致: 右侧常驻任务详情/文件预览两卡)
+        self.container.width = _WIDTH_OPEN
+        self._drawer_body.visible = True
+        try:
+            self.refresh()   # 立即填充 detail 视图 (无任务显示占位文本)
+        except Exception:
+            pass
         return self.container
 
     def _title_text(self) -> ft.Text:
