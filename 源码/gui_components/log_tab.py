@@ -19,7 +19,7 @@ if _HERE not in sys.path:
 from _path_utils import get_app_base_dir  # noqa: E402
 
 # UI 主题系统
-from .ui_theme import (make_card, tonal_btn, filled_btn, BTN_TEXT_STYLE,
+from .ui_theme import (make_card, tonal_btn,
                        LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color,
                        page_header)
 

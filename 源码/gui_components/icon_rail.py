@@ -17,10 +17,9 @@
 导航项: icon(18px) + 文字(14px), 圆角 4px, 选中态浅蓝底蓝字
 """
 import flet as ft
-import threading
 
 from .ui_morandi import (
-    txt, SIZE_TINY, SIZE_BODY, SIZE_SMALL,
+    txt, SIZE_TINY, SIZE_BODY,
     WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
     MORANDI_SIDEBAR_BG, MORANDI_SIDEBAR_HOVER, MORANDI_SIDEBAR_ACTIVE,
 )

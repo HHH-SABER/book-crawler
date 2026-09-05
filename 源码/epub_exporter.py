@@ -9,7 +9,6 @@
     epub_path = txt_to_epub('小说.txt', title='小说名', author='')
 """
 import os
-import re
 import html
 import uuid
 
