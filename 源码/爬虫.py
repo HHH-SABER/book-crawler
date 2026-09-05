@@ -598,8 +598,16 @@ class NovelSpider:
                         _pd = _px.get(_host)
                         if _pd:
                             self.session.proxies.update(_pd)
+                            # M10: 记录池内原始代理串, 请求失败时反馈
+                            # mark_failed (降权/冷却/解除域绑定)
+                            _pool_proxy = _pd.get('http', '')
+                            self._代理池 = _px
+                            self._当前代理 = _pool_proxy.replace('http://', '') \
+                                .replace('https://', '')
                             _log.debug(f'[代理池] 使用代理 {_pd["http"]} (池内 {len(_px)} 个)')
                         else:
+                            self._代理池 = None
+                            self._当前代理 = ''
                             _log.debug('[代理池] 无健康代理, 直连')
                     else:
                         _rp = _cfg.get('request_proxy') or ''
@@ -673,6 +681,9 @@ class NovelSpider:
         self._chapter_tls = threading.local()
         # 通用数据文件解码模式 (每章第1页探测, 命中后整章走数据文件)
         self._datafile_mode = False
+        # 代理池反馈 (M10): 初始化默认无代理
+        self._代理池 = None
+        self._当前代理 = ''
         # 请求/页面短时缓存 (固定初始化, 消除懒初始化竞态; H3+M2+M3)
         self._resp_cache = {}
         self._resp_cache_lock = threading.Lock()
@@ -921,7 +932,14 @@ class NovelSpider:
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
         _t0 = time.time()
         challenge_markers = ['ge_js_validator', 'window.location.reload']
-        response = self.session.get(url, headers=headers, timeout=timeout)
+        try:
+            response = self.session.get(url, headers=headers, timeout=timeout)
+        except (requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as _conn_err:
+            # M10: 走代理时连接级失败 → 反馈代理池 (降权/冷却/解除域绑定),
+            # 旧实现 mark_failed 全项目零调用, 坏代理永久"健康"
+            self._代理失败反馈()
+            raise
         # ---- 反爬机制自动识别 (限频退避 / UA轮换; WAF验证码/JS挑战交给下方执行器) ----
         # 检测器基于状态码+响应头+body特征通用识别, 命中即打印结构化日志并动态调整策略
         if self._反爬检测器 is not None:
@@ -2982,11 +3000,20 @@ class NovelSpider:
     ran ren rang reng ri ru rua ruo rui ruan run rong er
     """.split())
 
-    # 常见英文缩写/词白名单 (夹在汉字间也不删)
+    # 常见英文缩写/词白名单 (夹在汉字间也不删)。L5 修复: 补充可被音节
+    # 切分误伤的常用英文词 (game/name/time 等恰好能切成合法音节组合)
     _ALPHA_WHITELIST = frozenset({
         'app', 'api', 'vip', 'svip', 'ok', 'id', 'ip', 'cpu', 'gpu', 'kpi',
         'k歌', '3d', '2d', '4k', '8k', 'hd', 'ai', 'ar', 'vr', 'hr', 'ceo',
         'cba', 'nba', 'gdp', 'dna', 'mba', 'pdf', 'wifi', 'qq', 'kpi',
+        # 常见英文词 (可被误切为音节组合)
+        'game', 'name', 'time', 'like', 'make', 'take', 'side', 'line',
+        'nine', 'home', 'come', 'gave', 'live', 'wine', 'huge', 'page',
+        'sale', 'same', 'some', 'code', 'date', 'face', 'gate', 'hate',
+        'late', 'lake', 'mine', 'nine', 'none', 'note', 'pine', 'race',
+        'rise', 'rose', 'site', 'size', 'tale', 'tile', 'tune', 'type',
+        'wide', 'wife', 'wine', 'wipe', 'bone', 'case', 'dose', 'dove',
+        'five', 'four', 'gave', 'here', 'hire', 'hope', 'joke', 'lone',
     })
 
     _TONE_MAP = str.maketrans('āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ',
@@ -5399,6 +5426,21 @@ class NovelSpider:
         except Exception as e:
             _log.debug(f'裸 except 吞异常: {type(e).__name__}')
 
+    # ================== 代理池失败反馈 (M10) ==================
+    def _代理失败反馈(self):
+        """连接级失败 → 代理池 mark_failed (降权/冷却/解除域绑定)。
+
+        仅在使用代理池时生效; request_proxy 单点与直连不受影响。
+        """
+        proxy = getattr(self, '_当前代理', '')
+        pool = getattr(self, '_代理池', None)
+        if proxy and pool is not None:
+            try:
+                pool.mark_failed(proxy)
+                _log.debug(f'[代理池] 失败反馈: {proxy}')
+            except Exception as e:
+                _log.debug(f'[代理池] 失败反馈异常: {type(e).__name__}: {e}')
+
     def _fetch_with_retry(self, chap, max_retries=2):
         """P1-2: 章节抓取外层兜底重试。
 
@@ -6090,6 +6132,12 @@ class NovelSpider:
             _log.info(f"[质检] 汇总报告生成异常: {e}")
         self._记录站点历史(catalog_url, novel_title, total, failed,
                             output_file, 质检摘要=质检摘要)
+        # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史不丢失)
+        if self._爬取历史 is not None:
+            try:
+                self._爬取历史.flush()
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         # 验证码监控报告 (类型/耗时/成功率/成本) 与告警
         if self._captcha_manager is not None:
             try:
