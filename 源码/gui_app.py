@@ -11,6 +11,7 @@
 import flet as ft
 import sys
 import os
+import time
 
 # 添加当前目录到 path，确保能 import GUI 组件和爬虫模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,6 +27,7 @@ if getattr(sys, "frozen", False):
 
 from gui_components.task_manager import TaskManager
 from gui_components.icon_rail import IconRail, NAV_PAGES, build_theme_toggle, build_top_bar
+import threading
 from gui_components.ui_theme import page_header
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
@@ -226,10 +228,15 @@ def main(page: ft.Page):
     # - PyInstaller onefile (小说爬虫.exe)   : EXE 所在目录/抓取结果
     output_dir = get_default_output_dir()
 
-    # 底部状态条: 状态摘要已由侧边栏底部指示器承担 (实时"运行 N · 共 M"),
-    # 此处仅保留输出目录信息, 避免两处重复"就绪" (P-去重)
+    # 底部状态条: 实时任务摘要 (唯一状态显示处; 侧边栏不再重复渲染)
+    status_dot = ft.Icon(ft.Icons.CIRCLE, color=MORANDI_SUCCESS, size=8)
+    status_text = ft.Text("就绪", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                          font_family=FONT_STACK)
     status_bar = ft.Container(
         content=ft.Row([
+            status_dot,
+            status_text,
+            ft.VerticalDivider(width=1),
             ft.Text(f"输出目录: {output_dir}", size=SIZE_SMALL,
                     weight=WEIGHT_BODY,
                     color=ft.Colors.ON_SURFACE_VARIANT,
@@ -239,6 +246,29 @@ def main(page: ft.Page):
         bgcolor=ft.Colors.SURFACE_CONTAINER,
         border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
     )
+
+    # 守护线程每 2s 刷新状态摘要: "运行 N · 共 M" / "就绪 · 共 M"
+    def _status_refresh_loop():
+        while True:
+            try:
+                tasks = getattr(task_manager, 'tasks', []) or []
+                running = sum(1 for t in tasks
+                              if (getattr(t, 'status', '') or '') in
+                              ('running', 'queued', 'crawling'))
+                total = len(tasks)
+                if running > 0:
+                    status_text.value = f"运行 {running} · 共 {total}"
+                    status_dot.color = MORANDI_RUNNING
+                else:
+                    status_text.value = (f"就绪 · 共 {total}" if total else "就绪")
+                    status_dot.color = MORANDI_SUCCESS
+                page.update()
+            except Exception:
+                pass
+            time.sleep(2)
+
+    threading.Thread(target=_status_refresh_loop, daemon=True,
+                     name='status_bar_refresh').start()
 
     # ---- 主刷新循环 (主线程 async, 1s 周期) ----
     # 抓取工作台的表格/日志条/抽屉统一在此刷新 (仅 crawl 页可见时刷新, 省资源)
