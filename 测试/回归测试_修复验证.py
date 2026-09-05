@@ -313,6 +313,50 @@ if __name__ == "__main__":
     print("=" * 60)
     print("回归测试: 7 组修复点无副作用验证")
     print("=" * 60)
+# ==================================================================
+# 测试8: 增量模式从头重抓不得丢失旧正文 (T1 致命 Bug 回归)
+# ==================================================================
+def test_incremental_rewrite_preserves_old_chapters():
+    print("\n[测试8] 增量模式从头重抓保留旧正文")
+    import tempfile
+    import shutil
+    from unittest import mock
+    from pathlib import Path
+    from 爬虫 import NovelSpider
+
+    out_dir = Path(tempfile.mkdtemp(prefix="nc_t1_")).resolve()
+    spider = NovelSpider("https://example.com")
+    old_body = {i: f"第{i}章的旧正文内容{i * 111}" for i in range(1, 4)}
+    # 预置"上次完整抓取"的输出文件 (无检查点 → resume 走章节数兜底判从头重抓)
+    out_file = out_dir / "测试书.txt"
+    out_file.write_text(
+        "".join(f"## 第{i}章\n\n{old_body[i]}\n\n" for i in range(1, 4)),
+        encoding="utf-8")
+
+    spider.get_novel_title = lambda url: "测试书"
+    spider.get_chapter_list = lambda url, sort=False: [
+        {"title": f"第{i}章", "url": f"https://example.com/{i}"} for i in range(1, 4)]
+    spider._是否应跳过章节 = lambda url: True          # 模拟: 全部章节 24h 内未变化
+    spider._记录站点历史 = lambda *a, **k: None        # 不写用户站点历史
+
+    try:
+        with mock.patch("风控事件.add"), mock.patch("风控事件.flush"):
+            spider.run(str(out_file), output_file=str(out_file),
+                       output_dir=str(out_dir), resume=True, show_progress=False,
+                       incremental=True, incremental_max_age_hours=24)
+        text = out_file.read_text(encoding="utf-8")
+        ok("3 章标题全部保留", all(f"## 第{i}章" in text for i in range(1, 4)))
+        ok("3 章旧正文全部保留", all(old_body[i] in text for i in range(1, 4)))
+        ok("增量跳过计数 = 3", spider._增量跳过数 == 3, str(spider._增量跳过数))
+    finally:
+        spider.close()
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("回归测试: 8 组修复点无副作用验证")
+    print("=" * 60)
     test_batch_parse()
     test_site_manage_import()
     test_clean_content_entities()
@@ -320,6 +364,7 @@ if __name__ == "__main__":
     test_log_mirror_recursion_guard()
     test_site_prior_delay_none()
     test_speed_adaptive()
+    test_incremental_rewrite_preserves_old_chapters()
     print("\n" + "=" * 60)
     print(f"结果: {PASS} 通过, {FAIL} 失败")
     print("=" * 60)

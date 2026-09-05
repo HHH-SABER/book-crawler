@@ -508,6 +508,18 @@ def _resolve_novel_paths(catalog_url):
 _UA单例 = None
 _UA单例锁 = threading.Lock()
 
+# 请求/页面缓存参数 (H3+M2+M3 治理)
+_RESP_CACHE_TTL = 20      # 响应缓存有效期 (秒)
+_RESP_CACHE_MAX = 64      # 响应缓存条目上限 (防长书运行期内存无界增长)
+# 命中这些特征的 200 响应是反爬挑战/校验页, 一律不缓存
+# (缓存它们会让 TTL 内的重试拿到同一脏页面, 本可恢复的瞬时失败变确定性失败)
+_CHALLENGE_MARKERS = ('ge_js_validator', 'window.location.reload',
+                      '__wafcaptcha', '_waform', '访问频率太高')
+
+
+def _含挑战特征(text_head: str) -> bool:
+    return any(mk in text_head for mk in _CHALLENGE_MARKERS)
+
 
 def _取UA引擎():
     """进程级 fake_useragent 单例 (线程安全懒加载)"""
@@ -655,8 +667,17 @@ class NovelSpider:
         self._tanmixs_user_data = os.path.join(tempfile.gettempdir(), 'tanmixs_chrome_profile')
         # 并发模式: 每个线程独立 driver + 独立 profile (Selenium driver 非线程安全)
         self._tanmixs_concurrent = False
+        # 并发章节状态隔离: 以下四项原为实例属性, 多 worker 并发时互相踩踏
+        # (指纹被清→重复正文/误判截断; datafile HTML 串章)。改为线程本地存储,
+        # 每个抓取线程独立一份 (经属性读写, 调用点零改动)
+        self._chapter_tls = threading.local()
         # 通用数据文件解码模式 (每章第1页探测, 命中后整章走数据文件)
         self._datafile_mode = False
+        # 请求/页面短时缓存 (固定初始化, 消除懒初始化竞态; H3+M2+M3)
+        self._resp_cache = {}
+        self._resp_cache_lock = threading.Lock()
+        self._inspect_cache = {}
+        self._inspect_cache_lock = threading.Lock()
         # ===== 反爬机制自动检测 + 内容语义质检 =====
         # _get_with_js_challenge 每次请求先过检测器: 限频退避/UA轮换自动处理,
         # WAF验证码/JS挑战仍由下方分级循环作为执行器解决
@@ -873,21 +894,24 @@ class NovelSpider:
         # 同一章节页会被 数据文件探测 → 通用检测 → 通用解码 连续抓取 2~3 次,
         # 旧实现每页重复请求 2 次网络 (千章书多花 ~1 小时)。此处为全部请求的
         # 咽喉, 包装一层短 TTL 缓存即可覆盖所有调用路径与返回点。
-        cache = getattr(self, '_resp_cache', None)
-        if cache is None:
-            self._resp_cache = {}
-            self._resp_cache_lock = threading.Lock()
-            cache = self._resp_cache
+        # (缓存已在 __init__ 固定初始化; 挑战页不缓存; 条目有上限淘汰)
+        cache = self._resp_cache
         with self._resp_cache_lock:
             hit = cache.get(url)
-        if hit is not None and time.time() - hit[0] < 20:
+        if hit is not None and time.time() - hit[0] < _RESP_CACHE_TTL:
             _log.debug(f"[请求缓存] 复用 {time.time() - hit[0]:.1f}s 前的响应: {url}")
             return hit[1]
         response = self._get_with_js_challenge_impl(url, headers, timeout)
         try:
             if response is not None and getattr(response, 'status_code', 0) == 200:
-                with self._resp_cache_lock:
-                    cache[url] = (time.time(), response)
+                text_head = response.text[:2000]
+                if not _含挑战特征(text_head):
+                    with self._resp_cache_lock:
+                        # 条目上限: 超限淘汰最旧 (M2: 防长书运行期内存无界增长)
+                        while len(cache) >= _RESP_CACHE_MAX:
+                            oldest = min(cache, key=lambda k: cache[k][0])
+                            cache.pop(oldest, None)
+                        cache[url] = (time.time(), response)
         except Exception as e:
             _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         return response
@@ -1220,11 +1244,8 @@ class NovelSpider:
         # 同一 URL 在数秒内常被抓取多次: 每章第 1 页会先经数据文件探测抓取,
         # 随后通用检测再抓同一 URL; 适配器路径亦然。旧实现每章重复请求一次
         # 并各自 sleep(3), 千章书浪费近 1 小时。命中缓存时跳过 sleep 与网络。
-        cache = getattr(self, '_inspect_cache', None)
-        if cache is None:
-            self._inspect_cache = {}
-            self._inspect_cache_lock = threading.Lock()
-            cache = self._inspect_cache
+        # (已在 __init__ 固定初始化; 挑战页不缓存 — 与 _resp_cache 同一守卫)
+        cache = self._inspect_cache
         with self._inspect_cache_lock:
             hit = cache.get(url)
         if hit is not None and time.time() - hit[0] < 20:
@@ -1313,8 +1334,14 @@ class NovelSpider:
                 if '<html' in text.lower() or '<body' in text.lower():
                     _log.info(f"成功获取到HTML内容，长度: {len(text)} 字符")
                     response.encoding = 'utf-8'
-                    with self._inspect_cache_lock:
-                        self._inspect_cache[url] = (time.time(), text)
+                    if not _含挑战特征(text[:2000]):
+                        with self._inspect_cache_lock:
+                            # 条目上限淘汰 (M2)
+                            while len(self._inspect_cache) >= _RESP_CACHE_MAX:
+                                oldest = min(self._inspect_cache,
+                                             key=lambda k: self._inspect_cache[k][0])
+                                self._inspect_cache.pop(oldest, None)
+                            self._inspect_cache[url] = (time.time(), text)
                     soup = BeautifulSoup(text, 'lxml')
                     return soup
                 else:
@@ -5361,6 +5388,17 @@ class NovelSpider:
         except Exception:
             return False
 
+    def _清请求缓存(self, url):
+        """使指定 URL 的请求/页面缓存失效 (重试前调用, 防止 20s TTL 内
+        重试拿到同一份脏响应 —— UA 轮换/限频退避重试的核心前提)"""
+        try:
+            with self._resp_cache_lock:
+                self._resp_cache.pop(url, None)
+            with self._inspect_cache_lock:
+                self._inspect_cache.pop(url, None)
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+
     def _fetch_with_retry(self, chap, max_retries=2):
         """P1-2: 章节抓取外层兜底重试。
 
@@ -5375,6 +5413,7 @@ class NovelSpider:
                 break
             _t.sleep(3 * (attempt + 1))
             _log.info(f"[重试] 第{attempt + 1}次补试: {chap.get('title', '')[:30]}")
+            self._清请求缓存(chap.get('url', ''))
             try:
                 content = self._fetch_with_qc(chap)
             except Exception as e:
@@ -5417,6 +5456,7 @@ class NovelSpider:
             if attempt < max_retries:
                 _log.info(f"[质检] 未通过, 清除模式缓存并轮换UA后重试 ({attempt+1}/{max_retries})...")
                 self._detected_pattern = None  # 强制下次重新检测内容模式
+                self._清请求缓存(chap['url'])   # 使旧 UA 的缓存响应失效 (H3)
                 self._轮换UA()
         # 全部重试仍未通过
         if 报告 is not None:
@@ -5574,6 +5614,43 @@ class NovelSpider:
             self.session = main_session
         # 线程级 Session 不再每章关闭, 统一由 close() 释放
 
+    # ================== 并发章节状态 (H2: 实例属性 → 线程本地) ==================
+    # _last_page_fingerprint / _detected_pattern / _datafile_mode /
+    # _datafile_page_html 四项为"每章/每页"状态, 多 worker 并发时实例属性
+    # 会互相踩踏 (指纹清零→重复正文、误判重复→章节截断、HTML 串章)。
+    # 属性化到 threading.local, 全部调用点零改动。
+    @property
+    def _last_page_fingerprint(self):
+        return getattr(self._chapter_tls, 'last_page_fingerprint', None)
+
+    @_last_page_fingerprint.setter
+    def _last_page_fingerprint(self, value):
+        self._chapter_tls.last_page_fingerprint = value
+
+    @property
+    def _detected_pattern(self):
+        return getattr(self._chapter_tls, 'detected_pattern', None)
+
+    @_detected_pattern.setter
+    def _detected_pattern(self, value):
+        self._chapter_tls.detected_pattern = value
+
+    @property
+    def _datafile_mode(self):
+        return getattr(self._chapter_tls, 'datafile_mode', False)
+
+    @_datafile_mode.setter
+    def _datafile_mode(self, value):
+        self._chapter_tls.datafile_mode = value
+
+    @property
+    def _datafile_page_html(self):
+        return getattr(self._chapter_tls, 'datafile_page_html', None)
+
+    @_datafile_page_html.setter
+    def _datafile_page_html(self, value):
+        self._chapter_tls.datafile_page_html = value
+
     # ================== Session 线程隔离 (P1-8 修复) ==================
     @property
     def session(self):
@@ -5612,6 +5689,12 @@ class NovelSpider:
                     cleanup()
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        # 释放请求/页面缓存 (M2: 含完整 Response 与解码文本, 不清空会滞留至 GC)
+        try:
+            self._resp_cache.clear()
+            self._inspect_cache.clear()
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         # 关闭 requests Session 连接池: 主 Session + 并发 worker 的线程级 Session
         # (线程池收尾后 close 在主线程执行, 此时 worker 已退出, 竞态风险低)
         with self._temp_sessions_lock:
@@ -5632,6 +5715,31 @@ class NovelSpider:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False
+
+    @staticmethod
+    def _旧章节内容索引(output_file) -> dict:
+        """解析已有输出文件 → {章节标题: 正文} (增量重抓时搬运旧正文用)
+
+        输出格式为每章 "## 标题\\n\\n正文", 按标题行切块; 同名标题保留最后一份。
+        """
+        try:
+            text = Path(output_file).read_text(encoding='utf-8')
+        except OSError:
+            return {}
+        idx = {}
+        cur_title = None
+        buf = []
+        for line in text.splitlines():
+            if line.startswith('## '):
+                if cur_title is not None:
+                    idx[cur_title] = '\n'.join(buf).strip()
+                cur_title = line[3:].strip()
+                buf = []
+            elif cur_title is not None:
+                buf.append(line)
+        if cur_title is not None:
+            idx[cur_title] = '\n'.join(buf).strip()
+        return idx
 
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
@@ -5796,6 +5904,15 @@ class NovelSpider:
         if start > 0:
             _log.info(f"[断点续传] 以追加模式写入: {output_file}")
 
+        # 增量模式 + 从头重抓: open_mode='w' 会截断旧文件, 被增量跳过的章节
+        # 必须把旧正文搬运进新文件, 否则 "截断 + 跳过不写入" = 旧正文全部丢失
+        增量旧内容 = {}
+        if self._增量模式 and start == 0 and Path(output_file).exists():
+            增量旧内容 = self._旧章节内容索引(output_file)
+            if 增量旧内容:
+                _log.info(f"[增量] 已索引旧文件 {len(增量旧内容)} 章正文, "
+                          f"跳过章节将保留原文")
+
         # ===== 速度自适应: 依据设备画像/任务规模/站点约束选档, 运行中动态升降 =====
         # threads=None (GUI/CLI 默认) 时全自动选档; 显式指定线程数则手动直通。
         try:
@@ -5834,12 +5951,17 @@ class NovelSpider:
                     with ThreadPoolExecutor(max_workers=threads) as pool:
                         futures = {}
                         for i in range(start, total):
-                            # 增量模式: 跳过未变更章节 (不提交到线程池, 不写入)
+                            # 增量模式: 跳过未变更章节 (不提交到线程池)。
+                            # 从头重抓(start==0)时仅当旧正文已索引(可搬运)才允许跳过,
+                            # 否则章节会因 'w' 截断而永久丢失
                             if self._是否应跳过章节(chapters[i]['url']):
-                                self._增量跳过数 += 1
-                                _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
+                                if start > 0 or chapters[i]['title'] in 增量旧内容:
+                                    self._增量跳过数 += 1
+                                    _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
+                                          f"{chapters[i]['title']}")
+                                    continue
+                                _log.info(f"[增量] 第 {i+1}/{total} 章旧正文缺失, 改为重抓: "
                                       f"{chapters[i]['title']}")
-                                continue
                             if stop_event is not None and stop_event.is_set():
                                 _log.info("\n⚠️ 停止信号, 不再提交新章节")
                                 break
@@ -5854,7 +5976,12 @@ class NovelSpider:
                                 return output_file
                         for i in range(start, total):
                             if i not in futures:
-                                # 被增量跳过的章节: 仅更新检查点, 不写入
+                                # 被增量跳过的章节: 从头重抓时搬运旧正文到新文件
+                                # (追加模式 start>0 时旧正文已在文件中, 无需写)
+                                旧正文 = 增量旧内容.get(chapters[i]['title'])
+                                if start == 0 and 旧正文 is not None:
+                                    f.write(f"## {chapters[i]['title']}\n\n")
+                                    f.write(旧正文 + "\n\n")
                                 self._save_checkpoint(output_file, catalog_url,
                                                       i + 1, total, file_handle=f)
                                 if show_progress:
@@ -5903,16 +6030,22 @@ class NovelSpider:
                             _log.info(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
                             return output_file
                         chap = chapters[i]
-                        # 增量模式: 跳过未变更章节 (不请求, 不写入; 需配合
-                        # resume=True 复用旧输出文件中已抓取的正文)
+                        # 增量模式: 跳过未变更章节 (不请求)。
+                        # 追加模式(start>0): 旧正文已在文件中, 直接跳过;
+                        # 从头重抓(start==0): 搬运旧正文到新文件, 索引缺失则重抓
                         if self._是否应跳过章节(chap['url']):
-                            self._增量跳过数 += 1
-                            _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
-                            self._save_checkpoint(output_file, catalog_url,
-                                                  i + 1, total, file_handle=f)
-                            if show_progress:
-                                print_progress_bar(i + 1, total, extra=chap['title'][:20])
-                            continue
+                            if start > 0 or chap['title'] in 增量旧内容:
+                                self._增量跳过数 += 1
+                                _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
+                                if start == 0:
+                                    f.write(f"## {chap['title']}\n\n")
+                                    f.write(增量旧内容[chap['title']] + "\n\n")
+                                self._save_checkpoint(output_file, catalog_url,
+                                                      i + 1, total, file_handle=f)
+                                if show_progress:
+                                    print_progress_bar(i + 1, total, extra=chap['title'][:20])
+                                continue
+                            _log.info(f"[增量] 第 {i+1}/{total} 章旧正文缺失, 改为重抓: {chap['title']}")
                         _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                         _spd = getattr(self, '_speed_ctrl', None)
                         _t0 = time.perf_counter() if _spd is not None else 0.0
@@ -5985,20 +6118,24 @@ class NovelSpider:
             _event.add('task_result', {
                 '域名': _m.group(1) if _m else '',
                 '完成': total - len(failed), '失败': len(failed),
-                '目标': total, '模式': mode,
+                '目标': total,
+                # run() 无 mode 参数 (历史遗留 NameError 曾令本块整体失效:
+                # 风控打点/flush/漂移检测全部被吞), 按增量开关派生
+                '模式': 'incremental' if getattr(self, '_增量模式', False) else 'full',
             })
             _event.flush()
             # P2-2 站点改版漂移检测: 空章=失败未提取内容数, 短章=质检未通过数
             try:
                 import 站点漂移检测 as _drift
-                _empty = sum(1 for i in failed if True)  # failed 即未提取到内容的章
+                _empty = len(failed)   # failed 即未提取到内容的章
                 _short = (质检摘要 or {}).get('未通过', 0) if 质检摘要 else 0
                 _drift.report_task(_m.group(1) if _m else '', total,
                                    empty=_empty, short=_short, failed=len(failed))
-            except Exception:
-                pass
-        except Exception:
-            pass
+            except Exception as e:
+                _log.debug(f'[漂移检测] 上报异常: {type(e).__name__}: {e}')
+        except Exception as e:
+            # 风控打点失效曾无任何痕迹 (NameError 被静默吞掉), 至少留 debug 线索
+            _log.debug(f'[风控打点] task_result 记录异常: {type(e).__name__}: {e}')
         return output_file
 
 

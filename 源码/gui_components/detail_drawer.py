@@ -35,6 +35,7 @@ class DetailDrawer:
         self.task_manager = task_manager
         self.page = None
         self._view = "log"        # log (默认) / detail / preview
+        self._log_sig = None      # 日志视图渲染签名 (task_id, len(logs))
         self._files = []
         self._selected_file = None
         # UI 引用
@@ -191,40 +192,77 @@ class DetailDrawer:
     ]
 
     def refresh_log(self):
-        """刷新实时日志视图 (主线程, 由刷新循环驱动; 仅日志视图可见时渲染)"""
+        """刷新实时日志视图 (主线程, 由刷新循环驱动; 仅日志视图可见时渲染)
+
+        H5 修复: 旧实现每秒 clear + 重建 100 条控件, 导致 selectable 文本
+        永远无法选中复制 + 每秒全量 patch。改为签名比对 + 增量追加
+        (task.logs 只追加; 换任务/截断/堆积超限时回退全量重建)。
+        """
         if self._log_list is None or not self._log_view.visible:
             return
         tid = self.task_manager.selected_task_id
         if not tid:
             if self._title_text.value != "实时日志":
                 self._title_text.value = "实时日志"
+            self._log_sig = None
             return
         task = self.task_manager.get_task(tid)
         if not task:
             return
         self._title_text.value = f"实时日志 · {task.title[:24]}"
 
-        # 只显示最近 100 条, 级别色 + 语义前缀色
-        self._log_list.controls.clear()
-        for log in task.logs[-100:]:
-            msg = log['msg']
-            text_color = log_line_color(msg)
-            if '[错误]' in msg or '失败' in msg:
-                text_color = MORANDI_ERROR
-            elif '成功' in msg or '完成' in msg:
-                text_color = MORANDI_SUCCESS
-            else:
-                for prefix, color in self._SEMANTIC_COLORS:
-                    if prefix in msg:
-                        text_color = color
-                        break
-            self._log_list.controls.append(
-                ft.Text(f"[{log['time']}] {msg}",
-                        size=SIZE_TINY,
-                        font_family=LOG_TERMINAL_FONT,
-                        color=text_color,
-                        selectable=True)
-            )
+        logs = task.logs
+        sig = (tid, len(logs))
+        if getattr(self, '_log_sig', None) == sig:
+            return  # 无变化: 保留控件树 (选中文本不失效)
+        prev_task, prev_count = getattr(self, '_log_sig', (None, 0)) or (None, 0)
+        if self._log_sig is None or prev_task != tid or len(logs) < prev_count \
+                or len(logs) - prev_count > 60:
+            # 全量重建: 换任务 / 日志被截断 / 新行堆积过多
+            self._log_list.controls.clear()
+            for log in logs[-100:]:
+                self._log_list.controls.append(self._log_line(log))
+        else:
+            # 增量追加 (logs 只追加不重写)
+            for log in logs[prev_count:]:
+                self._log_list.controls.append(self._log_line(log))
+            # 显示有界: 超过 120 条收敛到最近 100 条
+            if len(self._log_list.controls) > 120:
+                self._log_list.controls = self._log_list.controls[-100:]
+        self._log_sig = sig
+
+    @staticmethod
+    def _log_line(log):
+        """单条日志控件 (级别色 + 设计稿语义前缀色)"""
+        msg = log['msg']
+        text_color = log_line_color(msg)
+        if '[错误]' in msg or '失败' in msg:
+            text_color = MORANDI_ERROR
+        elif '成功' in msg or '完成' in msg:
+            text_color = MORANDI_SUCCESS
+        else:
+            for prefix, color in DetailDrawer._SEMANTIC_COLORS:
+                if prefix in msg:
+                    text_color = color
+                    break
+        return ft.Text(f"[{log['time']}] {msg}",
+                       size=SIZE_TINY,
+                       font_family=LOG_TERMINAL_FONT,
+                       color=text_color,
+                       selectable=True)
+
+    def update_views(self):
+        """子树级刷新收口 (H6: 仅更新面板内当前可见视图, 替代整页 update)"""
+        try:
+            if self._log_view.visible:
+                self._log_list.update()
+            elif self._view == "detail":
+                self._detail_view.update()
+            elif self._view == "preview":
+                self._file_list.update()
+                self._file_content.update()
+        except Exception:
+            pass
 
     # ----------------------------------------------------------- 详情刷新
     def refresh(self):

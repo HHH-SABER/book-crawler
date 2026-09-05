@@ -702,6 +702,11 @@ class TaskManager:
         return None
 
     def get_all_tasks(self) -> list:
-        """获取所有任务列表（按创建时间排序）"""
+        """获取所有任务列表（按创建序号排序）
+
+        M5 修复: task_id 为 "task_N" 字符串, 字典序会使 task_10 排在 task_2
+        之前 (批量导入必现); 改按数字序号排序。
+        """
         with self._lock:
-            return sorted(self.tasks.values(), key=lambda t: t.task_id)
+            return sorted(self.tasks.values(),
+                          key=lambda t: int(t.task_id.split('_')[-1]))

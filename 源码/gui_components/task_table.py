@@ -8,6 +8,7 @@
 """
 import flet as ft
 import os
+import time
 
 from .task_manager import TaskManager
 from .ui_theme import make_card, status_chip, status_color
@@ -122,7 +123,11 @@ class TaskTable:
              t.metrics.anti_spider_type, round(t.metrics.quality_score),
              t.metrics.quality_passed, t.metrics.incremental_skipped,
              t.output_file, bool(t.error),
-             t.task_id == self._expanded_id)
+             t.task_id == self._expanded_id,
+             # M6 修复: 运行中任务的耗时按 5 秒桶纳入签名, 否则进度停滞时
+             # 耗时列冻结、跳变
+             (int((time.time() - t.metrics.start_time) // 5)
+              if (t.status == "running" and t.metrics.start_time) else 0))
             for t in tasks
         )
         if sig == self._sig:
@@ -406,3 +411,12 @@ class TaskTable:
                 self.page.update()
             except Exception:
                 pass
+
+    # 子树级刷新入口 (gui_app 刷新循环用, H6: 避免 page.update() 整页 diff)
+    def refresh_ui(self):
+        self._refresh()
+        try:
+            self._list_view.update()
+            self._count_text.update()
+        except Exception:
+            pass
