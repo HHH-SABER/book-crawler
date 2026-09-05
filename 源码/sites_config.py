@@ -638,7 +638,9 @@ def build_paged_url(base_url, page_index, pagination):
         num = int(m.group(1)) + page_index
         return re.sub(r'\d+\.html$', f'{num}.html', base_url)
 
-    page_num = pagination['start'] + page_index - 1
+    # L2 修复: start 用 .get 兜底 (GUI 新增/JSON 导入的配置可能缺该键,
+    # 旧实现直接 ['start'] 会 KeyError 使整章分页失败)
+    page_num = pagination.get('start', 1) + page_index - 1
     if page_num > pagination.get('max_pages', 30):
         return None
     suffix = pagination['suffix']

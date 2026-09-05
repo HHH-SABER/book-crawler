@@ -171,17 +171,9 @@ class IconRail:
             pass
 
     def toggle_theme_icon(self, is_dark: bool):
+        # 兼容保留: 主题按钮的实际刷新由 build_theme_toggle.update_theme_state
+        # 负责 (gui_app toggle_theme 中调用), 此处仅同步内部状态标记
         self._is_dark = is_dark
-
-    def update_status(self, text: str, running: bool = False):
-        """更新底部状态指示器"""
-        self._status_text = text
-        self._status_color = ft.Colors.PRIMARY if running else ft.Colors.SECONDARY
-        try:
-            if self._control:
-                self._control.update()
-        except Exception:
-            pass
 
     def _update_btn_style(self, btn, is_active: bool):
         """更新导航按钮选中/未选中样式 (Fluent: 选中=浅蓝底蓝字)"""

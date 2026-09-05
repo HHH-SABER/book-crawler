@@ -662,27 +662,28 @@ class TaskManager:
                 return False
             if task.status == "running":
                 return False
-        # 重置任务状态 (保留原创建参数 url/mode/threads 等)
-        task.progress_current = 0
-        task.progress_total = 0
-        task.status = "running"
-        task.logs = []
-        task.error = ""
-        task.output_file = ""
-        task.metrics = TaskMetrics(start_time=time.time())  # 重置运行时指标
-        task.stop_flag = threading.Event()  # 新建停止标记 (旧标记可能已被置位)
-        task.logs.append({
-            'time': time.strftime('%H:%M:%S'),
-            'msg': "[重新下载] 任务在原任务内重新开始 (从头抓取)"
-        })
-        # 重新启动抓取线程 (同一 task_id, 任务列表不新增条目)
-        t = threading.Thread(
-            target=self._run_task,
-            args=(task, task.url, task.mode, task.chapter_range,
-                  task.threads, task.delay, False, task.output_dir),
-            daemon=True
-        )
-        task.thread = t
+            # L1 修复: 重置/登记线程的整段移入锁内 (旧实现检查与重置分离,
+            # 并发的 delete_task/stop_task 可插入造成僵尸线程)
+            task.progress_current = 0
+            task.progress_total = 0
+            task.status = "running"
+            task.logs = []
+            task.error = ""
+            task.output_file = ""
+            task.metrics = TaskMetrics(start_time=time.time())  # 重置运行时指标
+            task.stop_flag = threading.Event()  # 新建停止标记 (旧标记可能已被置位)
+            task.logs.append({
+                'time': time.strftime('%H:%M:%S'),
+                'msg': "[重新下载] 任务在原任务内重新开始 (从头抓取)"
+            })
+            # 重新启动抓取线程 (同一 task_id, 任务列表不新增条目)
+            t = threading.Thread(
+                target=self._run_task,
+                args=(task, task.url, task.mode, task.chapter_range,
+                      task.threads, task.delay, False, task.output_dir),
+                daemon=True
+            )
+            task.thread = t
         t.start()
         if app_log is not None:
             app_log.info(f"任务{task_id}", f"任务重新下载 (原任务重启): {task.url}")

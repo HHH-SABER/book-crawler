@@ -419,7 +419,11 @@ class DetailDrawer:
         self._update()
 
     def _on_file_selected(self, idx: int):
-        """选中文件 → 预览内容"""
+        """选中文件 → 预览内容
+
+        M11 修复: 旧实现全量 read() 后才截断, 几十 MB 的书会冻结 UI 数秒;
+        改为只读前 20 万字符。
+        """
         if not (0 <= idx < len(self._files)):
             return
         fp = self._files[idx]
@@ -428,7 +432,7 @@ class DetailDrawer:
         for enc in ('utf-8', 'gbk', 'gb2312', 'utf-16'):
             try:
                 with open(fp, 'r', encoding=enc) as f:
-                    content = f.read()
+                    content = f.read(200000)   # 只读前 20 万字符 (预览上限的 4 倍)
                 break
             except Exception:
                 continue
