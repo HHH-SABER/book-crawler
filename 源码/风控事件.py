@@ -23,10 +23,10 @@ import time
 from pathlib import Path
 
 _FLUSH_SIZE = 60
+_MAX_BUFFER = 600     # 落盘失败时缓冲保留上限 (防无限积压)
 _BUFFER = []
 _LOCK = threading.Lock()
-_PATH = None
-_ENABLED = True
+_ENABLED = True       # 全局开关 (占位: 当前无置 False 的入口, 保留作紧急停用点)
 
 
 def _log_dir():
@@ -71,17 +71,24 @@ def flush():
 
 
 def _flush_locked():
-    global _PATH, _BUFFER
+    """落盘缓冲 (须持 _LOCK)。
+
+    L8 修复: 写盘失败时保留缓冲 (截断到上限防积压), 旧实现无条件清空,
+    最多 60 条事件在磁盘故障时无痕蒸发。
+    """
+    global _BUFFER
     if not _BUFFER:
         return
     path = _daily_path()
     try:
+        # L12 缓解: 一行一 write, O_APPEND 下天然行级原子 (跨进程安全)
         with open(path, "a", encoding="utf-8") as f:
             for rec in _BUFFER:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        _BUFFER = []
     except Exception:
-        pass
-    _BUFFER = []
+        # 保留缓冲, 只留最近 _MAX_BUFFER 条防止无限积压
+        del _BUFFER[:-_MAX_BUFFER]
 
 
 atexit.register(flush)
@@ -116,19 +123,24 @@ def get_domain_cooldown(domain: str) -> float:
 
 
 def _save_state(st):
-    """写域状态 (pathlib 锚定数据目录, 防路径穿越)"""
+    """写域状态 (pathlib 锚定数据目录 + tmp 原子替换, 防路径穿越与写坏文件)"""
     p = Path(_log_dir()).resolve() / "域状态.json"
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp = p.with_name(p.name + '.tmp')
+    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(tmp, p)
 
 
 def set_domain_cooldown(domain: str, seconds: float, reason: str = ""):
-    """给域设置冷却 (seconds 秒), 用于跨 run 自动退避。"""
+    """给域设置冷却 (seconds 秒), 用于跨 run 自动退避。
+
+    M8 修复: 读-改-写全程持 _LOCK (旧实现读在锁外, 并发限频时互相覆盖冷却)。
+    """
     try:
-        st = _load_state()
-        st[domain] = {"冷却截止": time.time() + max(seconds, 0),
-                      "最后命中": reason}
         with _LOCK:
+            st = _load_state()
+            st[domain] = {"冷却截止": time.time() + max(seconds, 0),
+                          "最后命中": reason}
             _save_state(st)
     except Exception:
         pass
@@ -136,10 +148,10 @@ def set_domain_cooldown(domain: str, seconds: float, reason: str = ""):
 
 def clear_domain_cooldown(domain: str):
     try:
-        st = _load_state()
-        if domain in st:
-            del st[domain]
-            with _LOCK:
+        with _LOCK:
+            st = _load_state()
+            if domain in st:
+                del st[domain]
                 _save_state(st)
     except Exception:
         pass

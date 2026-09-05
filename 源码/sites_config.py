@@ -411,6 +411,7 @@ def get_site_pattern(url):
 # 运行时配置合并: 站点配置.json (GUI 站点管理页写入) 覆盖/追加内置配置
 # ============================================================
 _RUNTIME_APPLIED = False
+_RUNTIME_APPENDED = set()   # 由 JSON 追加 (非内置) 的域名, 重载时先移除防重复
 
 
 def _apply_runtime_config():
@@ -420,10 +421,18 @@ def _apply_runtime_config():
     - 新域名: 追加到列表末尾
     - enabled=False: 保留条目但 get_site_pattern 跳过 (可随时重新启用)
     - 任何异常静默降级 (仅用内置配置), 不影响爬虫主流程
+
+    H7 修复: 支持 reload_runtime_config() 强制重放 —— 旧实现 _RUNTIME_APPLIED
+    一次性置位后, GUI 站点管理页的启用/禁用与新增在当前进程内永不生效。
     """
-    global _RUNTIME_APPLIED
+    global _RUNTIME_APPLIED, _RUNTIME_APPENDED
     if _RUNTIME_APPLIED:
         return
+    # 重放前先移除上次由 JSON 追加的域名条目 (覆盖型条目会被再次覆盖, 无需移除)
+    if _RUNTIME_APPENDED:
+        SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
+                            if p.get('domain') not in _RUNTIME_APPENDED]
+        _RUNTIME_APPENDED = set()
     _RUNTIME_APPLIED = True
     try:
         import json as _json
@@ -451,12 +460,24 @@ def _apply_runtime_config():
             else:
                 SITE_PATTERNS.append(dict(item))
                 by_domain[domain] = item
+                _RUNTIME_APPENDED.add(domain)
     except Exception as _e:
         # 运行时配置加载失败 → 静默使用内置配置
         try:
             _log.info(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
         except Exception:
             pass
+
+
+def reload_runtime_config():
+    """强制重放 站点配置.json 运行时合并 (H7)。
+
+    GUI 站点管理页保存/切换启用开关后调用, 使改动在当前进程内立即生效
+    (无需重启程序)。
+    """
+    global _RUNTIME_APPLIED
+    _RUNTIME_APPLIED = False
+    _apply_runtime_config()
 
 
 # ============================================================
@@ -509,10 +530,17 @@ def load_adapters():
                 if not domain:
                     _log.info(f"[适配器] 跳过 {fname}: 未定义 SITE['domain']")
                     continue
-                entry = ADAPTERS.setdefault(domain, {
+                # L3 修复: 同域名第二个插件文件会产生"B 的配置 + A 的函数"缝合体,
+                # 显式拒绝并告警 (提示改插件文件里的 SITE['domain'])
+                if domain in ADAPTERS:
+                    _log.info(f"[适配器] 跳过 {fname}: 域名 {domain} 已由其他插件注册, "
+                              f"请修改该插件的 SITE['domain']")
+                    continue
+                entry = {
                     'source': path, 'parse_catalog': None,
                     'extract_content': None, 'paginate': None,
-                })
+                    'get_title': None,
+                }
                 for attr in ('parse_catalog', 'extract_content', 'paginate', 'get_title'):
                     fn = getattr(mod, attr, None)
                     if callable(fn):
@@ -568,12 +596,10 @@ def get_adapter(url_or_domain):
 def reload_adapters():
     """重置并重新加载 站点适配/ 插件 (GUI 刷新 / 新增文件后用)。
 
-    会清空 sys.modules 中已加载的适配器模块缓存, 再重新扫描目录注册。
+    适配器模块经 module_from_spec 加载且从不注册 sys.modules (L3: 清理
+    sys.modules 的旧逻辑是死代码, 已移除), 直接重扫目录即可。
     """
     global _ADAPTERS_LOADED, ADAPTERS
-    import sys as _sys
-    for _k in [k for k in list(_sys.modules) if k.startswith('site_adapter_')]:
-        _sys.modules.pop(_k, None)
     ADAPTERS = {}
     _ADAPTERS_LOADED = False
     load_adapters()
