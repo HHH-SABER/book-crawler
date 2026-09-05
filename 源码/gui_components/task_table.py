@@ -170,7 +170,7 @@ class TaskTable:
                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                            font_family=FONT_STACK)
         title_cell = _cell(ft.Column([title_text, url_text],
-                                     spacing=1, tight=True), flex=42)
+                                     spacing=1, tight=True), flex=36)
 
         # 进度单元格 (迷你条 + 数值)
         if task.progress_total > 0:
@@ -268,13 +268,14 @@ class TaskTable:
         ops_cell = _cell(ft.Row([expand_btn, preview_btn, redl_btn, del_btn],
                                 spacing=2,
                                 alignment=ft.MainAxisAlignment.CENTER),
-                         flex=12, center=True)
+                         flex=15, center=True)
 
         # 主行
         main_row = ft.Row([
             title_cell, progress_cell, status_cell, engine_cell,
             anti_cell, elapsed_cell, quality_cell, ops_cell,
-        ], spacing=6)
+        ], spacing=6, wrap=False, alignment=ft.MainAxisAlignment.START,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
         # 行容器 (选中态高亮)
         body_controls = [main_row]
