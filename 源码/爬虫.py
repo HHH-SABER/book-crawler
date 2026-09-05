@@ -3000,12 +3000,13 @@ class NovelSpider:
         """
         try:
             # 1) 带声调字母段 (夹在汉字或中文标点间, 允许空格)
+            # 注意: 声调字符检查必须用原文 (m.group(0)) —— 若先 translate 成
+            # 普通字母再检查, 声调字符已被转换, 纯声调段 (如 āáǎà) 永远漏删
             content = re.sub(
                 r'(?<=[\u4e00-\u9fff，。！？；：、])\s*'
                 r'[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]{2,8}'
                 r'(?=\s*[\u4e00-\u9fff，。！？；：、])',
-                lambda m: '' if any(ch in m.group(0).translate(
-                    NovelSpider._TONE_MAP) for ch in 'āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ')
+                lambda m: '' if any(ch in m.group(0) for ch in 'āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ')
                 or NovelSpider._is_pinyin_noise(m.group(0).translate(
                     NovelSpider._TONE_MAP)) else m.group(0),
                 content)
