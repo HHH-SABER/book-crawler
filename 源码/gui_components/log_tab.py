@@ -223,7 +223,8 @@ class LogTab:
             pass
 
     def _load_file(self, filename: str):
-        """读取单个日志文件 (大文件只显示尾部 _MAX_DISPLAY_LINES 行) 并渲染"""
+        """读取单个日志文件 (M11: 只读尾部 2MB, 避免大文件冻结 UI; 超出部分
+        只显示尾部 _MAX_DISPLAY_LINES 行) 并渲染"""
         path = os.path.join(get_log_dir(), filename)
         self._all_lines = []
         self.log_list.controls.clear()
@@ -233,8 +234,17 @@ class LogTab:
                         color=MORANDI_ERROR, font_family=FONT_STACK))
             return
         try:
-            with open(path, encoding='utf-8', errors='replace') as f:
-                lines = f.read().splitlines()
+            # 尾部读取: seek 到 (文件大小 - 2MB) 处, 丢弃首个可能截断的半行
+            _TAIL_BYTES = 2 * 1024 * 1024
+            size = os.path.getsize(path)
+            with open(path, 'rb') as f:
+                if size > _TAIL_BYTES:
+                    f.seek(size - _TAIL_BYTES)
+                raw = f.read()
+            text = raw.decode('utf-8', errors='replace')
+            if size > _TAIL_BYTES and '\n' in text:
+                text = text.split('\n', 1)[1]
+            lines = text.splitlines()
         except OSError as ex:
             self.log_list.controls.append(
                 ft.Text(f"读取失败: {ex}", size=SIZE_BODY,

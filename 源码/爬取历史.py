@@ -49,6 +49,7 @@ _log = _app_log.get('爬取历史')
 """
 
 import hashlib
+import atexit
 import json
 import os
 import threading
@@ -85,6 +86,27 @@ class 爬取历史:
         self._file = self._取存储路径()
         self._io_lock = threading.Lock()
         self._数据 = self._加载()
+        # M1 防抖: 每请求全量序列化重写整个 JSON 会让抓取吞吐随历史库增大
+        # 线性劣化 (千章书 = 千次 dumps+写盘)。改为脏标记 + 最小落盘间隔,
+        # 任务收尾/atexit 时强制刷盘
+        self._脏 = False
+        self._上次落盘 = 0.0
+        atexit.register(self._atexit_flush)
+
+    def _atexit_flush(self):
+        """进程退出时强制刷盘 (防抖期间未落盘的记录不丢失)"""
+        try:
+            with self._io_lock:
+                if self._脏:
+                    self._写入()
+        except Exception:
+            pass
+
+    def flush(self):
+        """对外强制刷盘入口 (任务收尾调用)"""
+        with self._io_lock:
+            if self._脏:
+                self._写入()
 
     # ------------------------------------------------------------------
     # 存储层
@@ -113,14 +135,27 @@ class 爬取历史:
             pass
         return {}
 
-    def _保存(self):
-        """原子写入 (临时文件 + os.replace); 失败只打印日志, 不抛异常"""
+    _最小落盘间隔 = 5.0   # 秒 (M1: 防抖窗口)
+
+    def _保存(self, force=False):
+        """防抖写入 (M1): 非强制时若距上次落盘不足 _最小落盘间隔 则仅标脏;
+        任务收尾/进程退出时 flush(force=True) 兜底。失败只打印日志。"""
+        now = time.time()
+        if not force and now - self._上次落盘 < self._最小落盘间隔:
+            self._脏 = True
+            return
+        self._写入()
+
+    def _写入(self):
+        """真正落盘 (原子写入; 须持 _io_lock 或确认单线程调用)"""
         try:
             fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
             tmp = fobj.with_name(fobj.name + '.tmp')
-            tmp.write_text(json.dumps(self._数据, ensure_ascii=False, indent=2),
+            tmp.write_text(json.dumps(self._数据, ensure_ascii=False),
                            encoding='utf-8')
             os.replace(tmp, fobj)
+            self._上次落盘 = time.time()
+            self._脏 = False
         except OSError as e:
             _log.info(f"[爬取历史] 保存失败: {e}")
 
