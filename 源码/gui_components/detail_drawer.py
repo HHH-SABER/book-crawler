@@ -77,29 +77,32 @@ class DetailDrawer:
             ft.Container(content=self._file_content, expand=True),
         ], spacing=6)
 
-        # 抽屉容器
+        # 抽屉容器 (收起时内容整体隐藏, 只留 0 宽占位; 旧实现内容未隐藏
+        # 导致收起后在右缘挤成一列竖排文字)
+        self._drawer_body = ft.Column([
+            # 标题行: 视图名 + 关闭按钮
+            ft.Row([
+                self._title_text(),
+                ft.Container(expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE, icon_size=16,
+                    tooltip="关闭抽屉",
+                    on_click=lambda e: self.close(),
+                    style=ft.ButtonStyle(
+                        padding=4,
+                        shape=ft.RoundedRectangleBorder(radius=4)),
+                ),
+            ], spacing=4),
+            ft.Divider(height=1),
+            self._detail_view,
+            self._preview_view,
+        ], spacing=6)
+        self._drawer_body.visible = False
         self.container = ft.Container(
-            content=ft.Column([
-                # 标题行: 视图名 + 关闭按钮
-                ft.Row([
-                    self._title_text(),
-                    ft.Container(expand=True),
-                    ft.IconButton(
-                        icon=ft.Icons.CLOSE, icon_size=16,
-                        tooltip="关闭抽屉",
-                        on_click=lambda e: self.close(),
-                        style=ft.ButtonStyle(
-                            padding=4,
-                            shape=ft.RoundedRectangleBorder(radius=6)),
-                    ),
-                ], spacing=4),
-                ft.Divider(height=1),
-                self._detail_view,
-                self._preview_view,
-            ], spacing=6),
+            content=self._drawer_body,
             width=_WIDTH_CLOSED,
             padding=ft.Padding.symmetric(horizontal=10, vertical=10),
-            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+            bgcolor=ft.Colors.SURFACE,
             animate=ft.Animation(200, "easeOutCubic"),
         )
         self._preview_view.visible = False
@@ -132,12 +135,14 @@ class DetailDrawer:
             self._detail_view.visible = True
             self._preview_view.visible = False
             self.refresh()
+        self._drawer_body.visible = True   # 展开时显示内容
         self._update()
 
     def close(self):
         """收起抽屉"""
         self.container.width = _WIDTH_CLOSED
         self.container.border = None  # 收起时隐藏左边框线
+        self._drawer_body.visible = False  # 隐藏内容, 防止挤成竖排文字
         self._update()
 
     @property

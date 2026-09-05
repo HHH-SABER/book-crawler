@@ -1,22 +1,20 @@
 # -*- coding: utf-8 -*-
-"""苹果风格 220px 宽侧边导航栏 — 精确还原 HTML 预览设计
+"""Windows 11 Fluent 风格 220px 侧边导航栏 + 顶栏 (方案 A, 还原设计预览)
 
-布局结构 (与 index.html 完全一致):
+布局结构 (与 index.html 一致):
   ┌────────────────────────┐
-  │  主功能                  │  ← 分区标题 (11px 大写灰色)
-  │  ⬇️  抓取工作台          │  ← 选中态: 灰底 + 蓝色图标
+  │  主功能                  │  ← 分区标题
+  │  ⬇  抓取工作台           │  ← 选中态: 浅蓝底 + 蓝字
   │  📊  爬取历史            │
   │  🌐  站点管理            │
   │  📝  运行日志            │
-  │                        │
   │  (弹性留白)              │
-  │                        │
-  │  ──────────────────     │  ← 分割线
+  │  ──────────────────     │
   │  🟢 抓取中 · 2 项        │  ← 底部状态指示器
   └────────────────────────┘
 
-宽度 220px, 背景色 #F0F0F3 (日间) / #161617 (夜间)
-导航项: icon(18px) + 文字(14px), 圆角 10px, 选中态灰色背景
+宽度 220px, 背景 #F1F1F1 (日间) / #171717 (夜间)
+导航项: icon(18px) + 文字(14px), 圆角 4px, 选中态浅蓝底蓝字
 """
 import flet as ft
 
@@ -100,63 +98,32 @@ def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
 
 
 # ====================================================================
-# 三、顶栏 (macOS 交通灯 + 居中标题 + 右侧主题切换)
+# 三、顶栏 (Fluent: 应用图标 + 标题居左 + 右侧主题切换)
 # ====================================================================
 
 def build_top_bar(page, title_text: str, theme_toggle_btn) -> ft.Container:
-    """构建苹果风格顶栏 (52px 高, 精确还原预览)
+    """构建 Fluent 顶栏 (48px 高, 匹配设计稿 titlebar)
 
-    布局: [红黄绿交通灯] --- [📖 小说爬虫] --- [🌙 夜间]
+    布局: [📖 小说爬虫] ──────────────────── [🌙 夜间]
     """
-    # 左侧: macOS 交通灯 (红黄绿三个圆点)
-    traffic_lights = ft.Row(
-        [
-            ft.Container(width=12, height=12, border_radius=6,
-                         bgcolor='#FF5F57', opacity=0.85),
-            ft.Container(width=12, height=12, border_radius=6,
-                         bgcolor='#FEBC2E', opacity=0.85),
-            ft.Container(width=12, height=12, border_radius=6,
-                         bgcolor='#28C840', opacity=0.85),
-        ],
-        spacing=8,
-        width=64,
-    )
-
-    # 居中: 应用图标 + 名称
+    # 左侧: 应用图标 (Fluent 蓝底圆角) + 应用名
     app_icon = ft.Container(
-        content=ft.Icon(ft.Icons.BOOK_OUTLINED, size=12, color=ft.Colors.WHITE),
-        width=20, height=20,
-        border_radius=5,
-        gradient=ft.LinearGradient(
-            begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
-            colors=[ft.Colors.PRIMARY, '#AF52DE'],
-        ),
+        content=ft.Icon(ft.Icons.MENU_BOOK_OUTLINED, size=14, color=ft.Colors.WHITE),
+        width=24, height=24,
+        border_radius=4,
+        bgcolor=ft.Colors.PRIMARY,
         alignment=ft.Alignment.CENTER,
     )
-    app_title = txt(title_text, size=SIZE_BODY, weight=WEIGHT_EMPHASIS,
+    app_title = txt(title_text, size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
                     color=ft.Colors.ON_SURFACE)
-    center_part = ft.Row(
-        [app_icon, app_title],
-        spacing=8,
-        alignment=ft.MainAxisAlignment.CENTER,
-    )
-
-    # 右侧: 主题切换按钮
-    right_part = ft.Row(
-        [theme_toggle_btn],
-        width=64,
-        alignment=ft.MainAxisAlignment.END,
-    )
 
     bar = ft.Container(
         content=ft.Row(
-            [traffic_lights, ft.Container(expand=True, content=center_part,
-                                          alignment=ft.Alignment.CENTER),
-             right_part],
-            spacing=0,
+            [app_icon, app_title, ft.Container(expand=True), theme_toggle_btn],
+            spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
-        height=52,
+        height=48,
         padding=ft.Padding.symmetric(horizontal=16, vertical=0),
         bgcolor=ft.Colors.SURFACE,
         border=ft.Border.only(
@@ -188,7 +155,7 @@ class IconRail:
         self._nav_buttons = {}
         self._control = None
         self._status_text = '就绪'
-        self._status_color = '#34C759'  # 绿色
+        self._status_color = ft.Colors.SECONDARY
 
     def set_active(self, key: str):
         self._active_key = key
@@ -206,7 +173,7 @@ class IconRail:
     def update_status(self, text: str, running: bool = False):
         """更新底部状态指示器"""
         self._status_text = text
-        self._status_color = '#007AFF' if running else '#34C759'
+        self._status_color = ft.Colors.PRIMARY if running else ft.Colors.SECONDARY
         try:
             if self._control:
                 self._control.update()
@@ -214,25 +181,25 @@ class IconRail:
             pass
 
     def _update_btn_style(self, btn, is_active: bool):
-        """更新导航按钮选中/未选中样式"""
+        """更新导航按钮选中/未选中样式 (Fluent: 选中=浅蓝底蓝字)"""
         icon_ctrl = btn.content.controls[0]
         label_ctrl = btn.content.controls[1]
 
         if is_active:
             btn.bgcolor = MORANDI_SIDEBAR_ACTIVE
             icon_ctrl.color = ft.Colors.PRIMARY
-            label_ctrl.color = ft.Colors.ON_SURFACE
-            label_ctrl.weight = WEIGHT_EMPHASIS
+            label_ctrl.color = ft.Colors.PRIMARY
+            label_ctrl.weight = WEIGHT_SUBTITLE
         else:
             btn.bgcolor = None
             icon_ctrl.color = ft.Colors.ON_SURFACE_VARIANT
-            label_ctrl.color = ft.Colors.ON_SURFACE_VARIANT
+            label_ctrl.color = ft.Colors.ON_SURFACE
             label_ctrl.weight = WEIGHT_BODY
 
     def _make_nav_btn(self, key, icon, label):
-        """构建单个导航按钮 (220px 宽, icon + 文字)"""
+        """构建单个导航按钮 (220px 宽, icon + 文字, Fluent 4px 圆角)"""
         icon_ctrl = ft.Icon(icon, size=18, color=ft.Colors.ON_SURFACE_VARIANT)
-        label_ctrl = txt(label, size=SIZE_BODY, color=ft.Colors.ON_SURFACE_VARIANT)
+        label_ctrl = txt(label, size=SIZE_BODY, color=ft.Colors.ON_SURFACE)
 
         btn = ft.Container(
             content=ft.Row(
@@ -241,7 +208,7 @@ class IconRail:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-            border_radius=10,
+            border_radius=4,
             on_click=lambda e, k=key: self._on_btn_click(k),
             on_hover=self._on_nav_hover,
             tooltip=label,
@@ -331,29 +298,9 @@ class IconRail:
         self._control = ft.Container(
             content=body,
             width=220,
+            # 注意: 不能同时设 expand=True — Row 中 expand 会使 width 失效,
+            # 侧栏被拉成窗口一半 (历史遗留 Bug, 曾把内容区挤压一半)
             bgcolor=MORANDI_SIDEBAR_BG,
             padding=ft.Padding.symmetric(horizontal=8, vertical=12),
-            expand=True,
         )
         return self._control
-
-
-# ====================================================================
-# 五、便捷引用
-# ====================================================================
-
-def build_icon_rail(page, selected_index, on_select,
-                    on_settings=None, theme_mode='light',
-                    theme_controller=None):
-    """函数式构建导航栏 (旧 API 兼容)"""
-    def _on_nav(key):
-        idx = next((i for i, (k, _, _, _) in enumerate(NAV_PAGES) if k == key), 0)
-        on_select(idx)
-
-    rail = IconRail(on_nav=_on_nav, on_theme_toggle=theme_controller)
-    if 0 <= selected_index < len(NAV_PAGES):
-        rail.set_active(NAV_PAGES[selected_index][0])
-    return rail.build()
-
-
-build_rail = build_icon_rail
