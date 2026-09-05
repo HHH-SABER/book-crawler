@@ -12,9 +12,10 @@ from .ui_theme import (make_card, LOG_TERMINAL_BG, LOG_TERMINAL_FONT,
 from .ui_morandi import (FONT_STACK, SIZE_TINY, SIZE_SMALL,
                          WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR)
 
-# 两种状态的高度
+# 三档高度: 折叠默认 / 拖拽下限 / 拖拽上限 (防遮挡任务列表)
 _HEIGHT_COLLAPSED = 130
-_HEIGHT_EXPANDED = 460
+_HEIGHT_MIN = 90
+_HEIGHT_MAX = 380
 
 
 class LogStrip:
@@ -48,9 +49,21 @@ class LogStrip:
                 padding=4, shape=ft.RoundedRectangleBorder(radius=6),
             ),
         )
+        # 拖拽调高手柄 (P: 上边缘可竖向拖动, 约束 [_HEIGHT_MIN, _HEIGHT_MAX])
+        drag_handle = ft.GestureDetector(
+            content=ft.Container(
+                content=ft.Row([], alignment=ft.MainAxisAlignment.CENTER),
+                height=8, border_radius=4,
+                bgcolor=ft.Colors.OUTLINE_VARIANT, margin=ft.margin.only(bottom=2),
+            ),
+            mouse_cursor=ft.MouseCursor.RESIZE_ROW,
+            on_pan_update=self._on_drag_resize,
+            drag_interval=10,
+        )
 
         self.container = make_card(
             ft.Column([
+                drag_handle,
                 # 标题行: 手柄 + 标题 + 空状态提示
                 ft.Row([
                     self.handle_btn,
@@ -70,10 +83,25 @@ class LogStrip:
         self.container.height = _HEIGHT_COLLAPSED
         return self.container
 
+    def _on_drag_resize(self, e):
+        """拖拽手柄调高度: 向上拖增大 (dy<0), 约束在 [MIN, MAX]"""
+        try:
+            h = float(self.container.height or _HEIGHT_COLLAPSED)
+            new_h = max(_HEIGHT_MIN, min(_HEIGHT_MAX, h - e.delta_y))
+            if abs(new_h - h) >= 1:
+                self.container.height = new_h
+                self._expanded = new_h > _HEIGHT_COLLAPSED + 5
+                try:
+                    self.container.update()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _toggle_expand(self, e=None):
         """放大/收起切换"""
         self._expanded = not self._expanded
-        self.container.height = (_HEIGHT_EXPANDED if self._expanded
+        self.container.height = (_HEIGHT_MAX if self._expanded
                                  else _HEIGHT_COLLAPSED)
         self.handle_btn.icon = (ft.Icons.KEYBOARD_ARROW_DOWN if self._expanded
                                  else ft.Icons.KEYBOARD_ARROW_UP)
