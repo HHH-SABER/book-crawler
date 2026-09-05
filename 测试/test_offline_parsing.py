@@ -389,5 +389,49 @@ class TestSessionThreadIsolation(unittest.TestCase):
             spider.close()
 
 
+class TestPinyinNoiseCleaning(unittest.TestCase):
+    """拼音替代串 / 无意义字符清洗 (_clean_pinyin_and_noise) 各分支"""
+
+    @classmethod
+    def setUpClass(cls):
+        from 爬虫 import NovelSpider
+        cls.clean = staticmethod(NovelSpider._clean_pinyin_and_noise)
+
+    def test_toned_pinyin_removed(self):
+        # 纯声调段 (āáǎà): 曾因 translate 后检查声调字符而漏删
+        self.assertEqual(self.clean('他说āáǎà然后走了'), '他说然后走了')
+
+    def test_toned_syllable_removed(self):
+        # 带声调的合法音节 (shuōde → shude 可切分)
+        self.assertEqual(self.clean('他说shuōde很快'), '他说很快')
+
+    def test_unvoiced_pinyin_pair_removed(self):
+        # 无声调拼音对删除 (残留单空格由双空格收敛而来)
+        self.assertEqual(self.clean('他的 ta de 名字'), '他的 名字')
+
+    def test_whitelist_kept(self):
+        self.assertEqual(self.clean('他打开了 app 开始听歌'),
+                         '他打开了 app 开始听歌')
+
+    def test_english_kept(self):
+        # hello/world 无法完整切分为音节 → 保留
+        self.assertEqual(self.clean('他说 hello world 很好'),
+                         '他说 hello world 很好')
+
+    def test_valid_pinyin_word_removed(self):
+        # shuo 是合法音节 → 判定拼音替代, 删除
+        self.assertEqual(self.clean('她说shuo完就走了'), '她说完就走了')
+
+    def test_repeated_punct_collapsed(self):
+        self.assertEqual(self.clean('重复！！！！'), '重复！！！')
+
+    def test_control_chars_removed(self):
+        self.assertEqual(self.clean('好\u009f\ue000\ufffd内容'), '好内容')
+
+    def test_normal_text_untouched(self):
+        s = '这是一段完全正常的中文内容，没有任何噪声。'
+        self.assertEqual(self.clean(s), s)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
