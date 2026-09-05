@@ -226,15 +226,11 @@ def main(page: ft.Page):
     # - PyInstaller onefile (小说爬虫.exe)   : EXE 所在目录/抓取结果
     output_dir = get_default_output_dir()
 
-    status_dot = ft.Icon(ft.Icons.CIRCLE, color=MORANDI_SUCCESS, size=8)
-    status_text = ft.Text("就绪", size=SIZE_SMALL, weight=WEIGHT_BODY,
-                          font_family=FONT_STACK)
+    # 底部状态条: 状态摘要已由侧边栏底部指示器承担 (实时"运行 N · 共 M"),
+    # 此处仅保留输出目录信息, 避免两处重复"就绪" (P-去重)
     status_bar = ft.Container(
         content=ft.Row([
-            status_dot,
-            status_text,
-            ft.VerticalDivider(width=1),
-            ft.Text(f"输出: {output_dir}", size=SIZE_SMALL,
+            ft.Text(f"输出目录: {output_dir}", size=SIZE_SMALL,
                     weight=WEIGHT_BODY,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                     font_family=FONT_STACK),
