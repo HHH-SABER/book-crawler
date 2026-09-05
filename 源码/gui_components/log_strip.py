@@ -84,13 +84,16 @@ class LogStrip:
         return self.container
 
     def _on_drag_resize(self, e):
-        """拖拽手柄调高度: 向上拖增大 (dy<0), 约束在 [MIN, MAX]"""
+        """拖拽手柄调高度: 向上拖增大 (global_delta.y<0), 约束在 [MIN, MAX]"""
         try:
+            dy = e.global_delta.y  # flet 0.86: DragUpdateEvent 无 delta_y
             h = float(self.container.height or _HEIGHT_COLLAPSED)
-            new_h = max(_HEIGHT_MIN, min(_HEIGHT_MAX, h - e.delta_y))
+            new_h = max(_HEIGHT_MIN, min(_HEIGHT_MAX, h - dy))
             if abs(new_h - h) >= 1:
                 self.container.height = new_h
                 self._expanded = new_h > _HEIGHT_COLLAPSED + 5
+                self.handle_btn.icon = (ft.Icons.KEYBOARD_ARROW_DOWN
+                                        if self._expanded else ft.Icons.KEYBOARD_ARROW_UP)
                 try:
                     self.container.update()
                 except Exception:
