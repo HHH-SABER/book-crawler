@@ -242,30 +242,9 @@ def main(page: ft.Page):
         border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
     )
 
-    # 守护线程每 2s 刷新状态摘要: "运行 N · 共 M" / "就绪 · 共 M"
-    def _status_refresh_loop():
-        while True:
-            try:
-                # 注意: tasks 是 {task_id: TaskInfo} 字典, 必须取 values()
-                # (旧实现直接遍历字典得到的是 key 字符串, 永远统计为 0 运行)
-                tasks = list(getattr(task_manager, 'tasks', {}).values())
-                running = sum(1 for t in tasks
-                              if (getattr(t, 'status', '') or '') in
-                              ('running', 'queued', 'crawling'))
-                total = len(tasks)
-                if running > 0:
-                    status_text.value = f"抓取中 {running} 项 · 共 {total}"
-                    status_dot.color = MORANDI_RUNNING
-                else:
-                    status_text.value = (f"就绪 · 共 {total}" if total else "就绪")
-                    status_dot.color = MORANDI_SUCCESS
-                page.update()
-            except Exception:
-                pass
-            time.sleep(2)
-
-    threading.Thread(target=_status_refresh_loop, daemon=True,
-                     name='status_bar_refresh').start()
+    # (H4 修复: 原此处有一个守护线程版状态刷新与下方异步 _status_loop 并存,
+    #  格式互相覆盖且跨线程整页 page.update() 会与主线程刷新循环并发遍历
+    #  控件树 —— 已删除, 状态摘要唯一由 _status_loop 在事件循环线程刷新)
 
     # ---- 主刷新循环 (主线程 async, 1s 周期) ----
     # 抓取工作台的表格/日志条/抽屉统一在此刷新 (仅 crawl 页可见时刷新, 省资源)
@@ -274,16 +253,18 @@ def main(page: ft.Page):
         while True:
             try:
                 if pages_map["crawl"].visible:
-                    # 各组件只改控件树, 最后统一 update 一次
-                    task_table._refresh()
-                    drawer.refresh()       # 详情视图 (仅可见时渲染)
-                    drawer.refresh_log()   # 实时日志视图 (默认视图)
-                    page.update()
+                    # 各组件只改控件树; H6 修复: 改为子树级 update —— 无参
+                    # page.update() 会 patch 整个 page 树 (四页 Stack 常驻,
+                    # 隐藏页也每秒参与 diff), 是 GUI 空闲抖动的主源
+                    task_table.refresh_ui()      # 表格行 + 任务计数
+                    drawer.refresh()             # 详情视图 (仅可见时渲染)
+                    drawer.refresh_log()         # 实时日志视图 (默认视图)
+                    drawer.update_views()        # 仅更新面板内可见视图
             except Exception:
                 pass
             await asyncio.sleep(1)
 
-    # 状态栏动态刷新: 每秒汇总任务状态
+    # 状态栏动态刷新: 每秒汇总任务状态 (H4: 唯一状态刷新处; H6: 局部 update)
     async def _status_loop():
         import asyncio
         last = ""
@@ -293,8 +274,9 @@ def main(page: ft.Page):
                 running = sum(1 for t in tasks if t.status == "running")
                 failed = sum(1 for t in tasks if t.status == "failed")
                 done = sum(1 for t in tasks if t.status == "completed")
+                total = len(tasks)
                 if running > 0:
-                    dot_color, label = MORANDI_RUNNING, f"抓取中 {running} 项"
+                    dot_color, label = MORANDI_RUNNING, f"抓取中 {running} 项 · 共 {total}"
                     if done:
                         label += f" · 已完成 {done}"
                 elif failed:
@@ -307,7 +289,8 @@ def main(page: ft.Page):
                     last = label
                     status_dot.color = dot_color
                     status_text.value = label
-                    page.update()
+                    status_dot.update()
+                    status_text.update()
             except Exception:
                 pass
             await asyncio.sleep(1)
