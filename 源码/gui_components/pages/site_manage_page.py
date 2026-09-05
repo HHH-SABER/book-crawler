@@ -218,6 +218,10 @@ class SiteManagePage:
             Path(self.config_file).write_text(
                 json.dumps(cleaned, ensure_ascii=False, indent=2),
                 encoding='utf-8')
+            # H7: 强制重放运行时合并, 使启用/禁用与新增立即在当前进程生效
+            # (旧实现 _RUNTIME_APPLIED 一次性置位, 改动须重启程序才生效)
+            from sites_config import reload_runtime_config
+            reload_runtime_config()
             return True
         except Exception as e:
             _log("站点管理", f"保存配置失败: {e}")
@@ -582,8 +586,9 @@ class SiteManagePage:
     def _on_refresh_adapters(self, e):
         """重新加载插件 (清缓存 + 重扫目录)"""
         try:
-            from sites_config import reload_adapters
+            from sites_config import reload_adapters, reload_runtime_config
             reload_adapters()
+            reload_runtime_config()   # H7: 同步重放 站点配置.json (启用/禁用立即生效)
             self._adapter_info.value = "插件已刷新"
         except Exception as ex:
             self._adapter_info.value = f"刷新失败: {ex}"
