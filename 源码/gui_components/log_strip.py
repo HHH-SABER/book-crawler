@@ -49,12 +49,16 @@ class LogStrip:
                 padding=4, shape=ft.RoundedRectangleBorder(radius=6),
             ),
         )
-        # 拖拽调高手柄 (P: 上边缘可竖向拖动, 约束 [_HEIGHT_MIN, _HEIGHT_MAX])
+        # 拖拽调高手柄 (上边缘可竖向拖动, 约束 [_HEIGHT_MIN, _HEIGHT_MAX];
+        # 手柄 12px 高 + 中央握把条, 提高可抓取性)
         drag_handle = ft.GestureDetector(
             content=ft.Container(
-                content=ft.Row([], alignment=ft.MainAxisAlignment.CENTER),
-                height=8, border_radius=4,
-                bgcolor=ft.Colors.OUTLINE_VARIANT, margin=ft.margin.Margin(0, 0, 0, 2),
+                content=ft.Container(width=44, height=4, border_radius=2,
+                                     bgcolor=ft.Colors.OUTLINE),
+                alignment=ft.Alignment(0, 0),
+                height=12,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                margin=ft.margin.Margin(0, 0, 0, 2),
             ),
             mouse_cursor=ft.MouseCursor.RESIZE_ROW,
             on_pan_update=self._on_drag_resize,
@@ -84,9 +88,27 @@ class LogStrip:
         return self.container
 
     def _on_drag_resize(self, e):
-        """拖拽手柄调高度: 向上拖增大 (global_delta.y<0), 约束在 [MIN, MAX]"""
+        """拖拽手柄调高度: 向上拖增大, 约束在 [MIN, MAX]
+
+        delta 提取按可用属性降级 (flet 0.86 DragUpdateEvent 的 global_delta /
+        primary_delta / local_delta 均可能为 None, 逐一探测; 旧实现直接取
+        e.global_delta.y, 任一环节为 None 即被 except 吞掉, 表现为拖拽无效)。
+        """
         try:
-            dy = e.global_delta.y  # flet 0.86: DragUpdateEvent 无 delta_y
+            dy = 0.0
+            gd = getattr(e, 'global_delta', None)
+            if gd is not None:
+                dy = gd.y
+            else:
+                pd = getattr(e, 'primary_delta', None)
+                if pd is not None:
+                    dy = pd
+                else:
+                    ld = getattr(e, 'local_delta', None)
+                    if ld is not None:
+                        dy = ld.y
+                    else:
+                        return
             h = float(self.container.height or _HEIGHT_COLLAPSED)
             new_h = max(_HEIGHT_MIN, min(_HEIGHT_MAX, h - dy))
             if abs(new_h - h) >= 1:
@@ -98,8 +120,12 @@ class LogStrip:
                     self.container.update()
                 except Exception:
                     pass
-        except Exception:
-            pass
+        except Exception as ex:
+            try:
+                import 日志 as _app_log
+                _app_log.debug('GUI', f"日志条拖拽异常: {type(ex).__name__}: {ex}")
+            except Exception:
+                pass
 
     def _toggle_expand(self, e=None):
         """放大/收起切换"""
