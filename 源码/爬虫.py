@@ -2927,6 +2927,108 @@ class NovelSpider:
 
         return title.strip()
 
+    # ================================================================
+    # 拼音替代 / 无意义字符清洗 (模块级, 便于单测)
+    # ================================================================
+
+    # 合法拼音音节表 (无调, 覆盖全部标准组合)
+    _PINYIN_SYLLABLES = frozenset("""
+    a o e ai ei ao ou an en ang er yi ya ye yao you yan yin yang yu yun yuan
+    wu wa wo wai wei wan wen wang weng ba bo bai bei bao ban ben bang beng bi
+    bie biao bian bin bing bu po pai pao pou pan pen pang peng pi pie piao pian
+    pin ping pu ma mo mai mei mao mou man men mang meng mi mie miao miu mian
+    min ming mu fa fo fei fou fan fen fang feng da de dai dei dao dou dan den
+    dang deng di die diao diu dian ding du duo dui duan dun dong ta te tai tao
+    tou tan tang teng ti tie tiao tian ting tu tuo tui tuan tun tong na ne nai
+    nei nao nou nan nen nang neng ni nie niao niu nian nin ning nu nuo nuan
+    nong nv nue nü la le lai lei lao lou lan lang leng li lia lie liao liu lia
+    lian lin ling lu luo luan lun long lv lüe lue ga gai gei gao gou gan gen
+    gang geng gu gua guo guai gui guan gun gong ka kai kao kou kan ken kang
+    keng ku kua kuo kuai kui kuan kun kong ha hai hei hao hou han hen hang
+    heng hu hua huo huai hui huan hun hong ji jia jie jiao jiu jian jin jiang
+    jing ju juan jun jiong qi qia qie qiao qiu qian qin qiang qing qu quan
+    qiong xi xia xie xiao xiu xian xin xiang xing xu xuan xun xiong zha zhe
+    zhi zai zei zao zou zan zen zang zeng zhong zhu zhua zhuo zhuai zhui zhuan
+    zhun cha che chi cai cao cou can cen cang ceng ci cuo cui cuan cun cong
+    zhu zhai zhao zhou zhan zhen zhang zheng shu shua shuo shuai shui shuan
+    shun sha she shi shai sao shou shan shen shang sheng sheng re rei rao rou
+    ran ren rang reng ri ru rua ruo rui ruan run rong er
+    """.split())
+
+    # 常见英文缩写/词白名单 (夹在汉字间也不删)
+    _ALPHA_WHITELIST = frozenset({
+        'app', 'api', 'vip', 'svip', 'ok', 'id', 'ip', 'cpu', 'gpu', 'kpi',
+        'k歌', '3d', '2d', '4k', '8k', 'hd', 'ai', 'ar', 'vr', 'hr', 'ceo',
+        'cba', 'nba', 'gdp', 'dna', 'mba', 'pdf', 'wifi', 'qq', 'kpi',
+    })
+
+    _TONE_MAP = str.maketrans('āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ',
+                              'aaaaeeeeiiiioooouuuuvvvv')
+
+    @staticmethod
+    def _is_pinyin_noise(s: str) -> bool:
+        """纯小写字母段是否为"拼音替代串": 可被完整切分为合法音节序列,
+        且至少含一个长度>=2 的音节 (排除 a/e/o 纯单字母堆叠的误伤)。"""
+        if s.lower() in NovelSpider._ALPHA_WHITELIST:
+            return False
+        n = len(s)
+        if n < 2 or n > 8:
+            return False
+        if not s.isalpha() or not s.islower():
+            return False
+        syl = NovelSpider._PINYIN_SYLLABLES
+        # ok[i] = (可切分, 路径上含 >=2 字母音节)
+        ok = [(False, False)] * (n + 1)
+        ok[0] = (True, False)
+        for i in range(1, n + 1):
+            for j in range(max(0, i - 6), i):
+                prev_ok, prev_long = ok[j]
+                if prev_ok and s[j:i] in syl:
+                    ok[i] = (True, prev_long or (i - j) >= 2)
+                    break
+        return ok[n][0] and ok[n][1]
+
+    @staticmethod
+    def _clean_pinyin_and_noise(content: str) -> str:
+        """过滤拼音替代串与无意义字符 (P-内容质量)。
+
+        1. 带声调拉丁字母 (āáǎà...) 出现在字词间 → 站点用拼音替代汉字, 直接删
+        2. 夹在汉字/中文标点(允许空格)间的 2-8 位纯小写字母段, 若可完整切分为
+           拼音音节且不在英文白名单 → 判定为"汉字被替换成拼音", 连同两侧空格删除
+        3. C1 控制符 / 私用区 / U+FFFD 替换符清除
+        4. 连续重复标点收敛 (!!!!! -> !!!)
+        """
+        try:
+            # 1) 带声调字母段 (夹在汉字或中文标点间, 允许空格)
+            content = re.sub(
+                r'(?<=[\u4e00-\u9fff，。！？；：、])\s*'
+                r'[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]{2,8}'
+                r'(?=\s*[\u4e00-\u9fff，。！？；：、])',
+                lambda m: '' if any(ch in m.group(0).translate(
+                    NovelSpider._TONE_MAP) for ch in 'āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ')
+                or NovelSpider._is_pinyin_noise(m.group(0).translate(
+                    NovelSpider._TONE_MAP)) else m.group(0),
+                content)
+
+            # 2) 无声调拼音替代 (支持连续多词如 "ta de"; 连同前后空格删除)
+            content = re.sub(
+                r'(?<=[\u4e00-\u9fff，。！？；：、 \t])'
+                r'[a-z]{2,8}(?:[ \t]+[a-z]{2,8}){0,3}'
+                r'(?=[ \t]*[\u4e00-\u9fff，。！？；：、])',
+                lambda m: ('' if all(NovelSpider._is_pinyin_noise(w)
+                                     for w in m.group(0).split()) else m.group(0)),
+                content)
+
+            # 3) 无意义控制/私用字符
+            content = re.sub(r'[\u0080-\u009f\ue000-\uf8ff\ufffd]', '', content)
+
+            # 4) 重复标点收敛 (保留最多 3 个)
+            content = re.sub(r'([!！?？。…~～])\1{2,}', r'\1\1\1', content)
+            content = re.sub(r'  +', ' ', content)
+        except Exception:
+            pass
+        return content
+
     def clean_content(self, content):
         """清理无意义字符和广告内容"""
         if not content:
@@ -2936,6 +3038,9 @@ class NovelSpider:
         # U+FEFF BOM / U+2060 Word Joiner / U+00AD 软连字符)
         # 部分网站会在正文中插入这些不可见字符用于反爬/水印, 通用清理适用于所有站点
         content = re.sub(r'[\u200b\u200c\u200d\ufeff\u2060\u00ad]', '', content)
+
+        # 拼音替代串与无意义字符清洗 (P-内容质量: 汉字被拼音替换/控制符/重复标点)
+        content = self._clean_pinyin_and_noise(content)
 
         # 移除Unicode编码错误乱码
         # 1. 十六进制Unicode转义序列 (如 x6700;x65b0;x627e;x56de;xff14;...)
