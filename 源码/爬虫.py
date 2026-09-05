@@ -869,6 +869,31 @@ class NovelSpider:
         首次响应可能是一个通过<script>设置cookie后window.location.reload的校验页面，
         这里提取document.cookie并重试，直到拿到真实内容。返回最终的response对象。
         注意: 调用方headers中不要硬编码Cookie头，否则会覆盖session.cookies导致校验cookie发不出去。"""
+        # ---- 20 秒短时响应缓存 (性能优化) ----
+        # 同一章节页会被 数据文件探测 → 通用检测 → 通用解码 连续抓取 2~3 次,
+        # 旧实现每页重复请求 2 次网络 (千章书多花 ~1 小时)。此处为全部请求的
+        # 咽喉, 包装一层短 TTL 缓存即可覆盖所有调用路径与返回点。
+        cache = getattr(self, '_resp_cache', None)
+        if cache is None:
+            self._resp_cache = {}
+            self._resp_cache_lock = threading.Lock()
+            cache = self._resp_cache
+        with self._resp_cache_lock:
+            hit = cache.get(url)
+        if hit is not None and time.time() - hit[0] < 20:
+            _log.debug(f"[请求缓存] 复用 {time.time() - hit[0]:.1f}s 前的响应: {url}")
+            return hit[1]
+        response = self._get_with_js_challenge_impl(url, headers, timeout)
+        try:
+            if response is not None and getattr(response, 'status_code', 0) == 200:
+                with self._resp_cache_lock:
+                    cache[url] = (time.time(), response)
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        return response
+
+    def _get_with_js_challenge_impl(self, url, headers=None, timeout=30):
+        """_get_with_js_challenge 的实际请求逻辑 (缓存包装层见上)"""
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
         _t0 = time.time()
         challenge_markers = ['ge_js_validator', 'window.location.reload']
@@ -1183,9 +1208,30 @@ class NovelSpider:
             _log.info(f"[Selenium] 抓取失败: {e}")
             return None
 
-    def inspect_page(self, url):
-        """获取网页结构"""
+    def inspect_page(self, url, polite_delay=True):
+        """获取网页结构
+
+        polite_delay: 抓取前固定等待 3 秒 (反爬礼貌延迟)。目录页等低频抓取
+        保持默认 True; 章节级高频调用 (数据文件探测/适配器正文提取) 传 False,
+        请求间隔已由速度自适应模块按档位控制, 固定 3 秒会拖慢千章书近 1 小时。
+        """
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
+        # ---- 短时页面缓存 (性能优化) ----
+        # 同一 URL 在数秒内常被抓取多次: 每章第 1 页会先经数据文件探测抓取,
+        # 随后通用检测再抓同一 URL; 适配器路径亦然。旧实现每章重复请求一次
+        # 并各自 sleep(3), 千章书浪费近 1 小时。命中缓存时跳过 sleep 与网络。
+        cache = getattr(self, '_inspect_cache', None)
+        if cache is None:
+            self._inspect_cache = {}
+            self._inspect_cache_lock = threading.Lock()
+            cache = self._inspect_cache
+        with self._inspect_cache_lock:
+            hit = cache.get(url)
+        if hit is not None and time.time() - hit[0] < 20:
+            _log.debug(f"[页面缓存] 复用 {time.time() - hit[0]:.1f}s 前的页面 "
+                       f"({len(hit[1])} 字符): {url}")
+            return BeautifulSoup(hit[1], 'lxml')
+
         # 尝试使用不同的User-Agent和请求头
         headers = {
             'User-Agent': self._fixed_ua,  # 会话固定UA (验证码cookie绑定UA)
@@ -1238,7 +1284,8 @@ class NovelSpider:
             if soup:
                 return soup
         
-        time.sleep(3)  # 增加延迟，避免被反爬虫
+        if polite_delay:
+            time.sleep(3)  # 增加延迟，避免被反爬虫 (章节级高频路径传 polite_delay=False)
         
         try:
             # 网络异常(如 zhiruo.org 目录页的 ConnectionResetError)时自动重试, 避免直接进入Selenium兜底
@@ -1266,6 +1313,8 @@ class NovelSpider:
                 if '<html' in text.lower() or '<body' in text.lower():
                     _log.info(f"成功获取到HTML内容，长度: {len(text)} 字符")
                     response.encoding = 'utf-8'
+                    with self._inspect_cache_lock:
+                        self._inspect_cache[url] = (time.time(), text)
                     soup = BeautifulSoup(text, 'lxml')
                     return soup
                 else:
@@ -4325,7 +4374,7 @@ class NovelSpider:
                     # 避免 decode_chapter_data 内部独立请求被反爬拦截 (如 banlvzw WAF 验证码)
                     self._datafile_page_html = None
                     try:
-                        soup = self.inspect_page(current_url)
+                        soup = self.inspect_page(current_url, polite_delay=False)
                         if soup is not None and hasattr(soup, 'prettify'):
                             self._datafile_page_html = str(soup)
                     except Exception:
@@ -4390,7 +4439,7 @@ class NovelSpider:
             if _adapter and _adapter.get('extract_content'):
                 try:
                     _log.info(f"[适配器] {_adapter['source']} 自定义正文提取 (第{page_index+1}页)")
-                    _adapter_soup = self.inspect_page(current_url)
+                    _adapter_soup = self.inspect_page(current_url, polite_delay=False)
                     _adapter_content = _adapter['extract_content'](
                         _adapter_soup, current_url, self.base_url, page_index=page_index)
                 except Exception as e:
@@ -5685,8 +5734,18 @@ class NovelSpider:
                                 _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
                                       f"{chapters[i]['title']}")
                                 continue
-                            futures[i] = pool.submit(_ctx_mod.copy_context().run,
-                                                     worker, chapters[i], stop_event)
+                            if stop_event is not None and stop_event.is_set():
+                                _log.info("\n⚠️ 停止信号, 不再提交新章节")
+                                break
+                            try:
+                                futures[i] = pool.submit(_ctx_mod.copy_context().run,
+                                                         worker, chapters[i], stop_event)
+                            except RuntimeError as e:
+                                # 解释器正在关闭 (如 GUI 关闭时有任务在跑):
+                                # 线程池已不可用, 记录进度并优雅退出而非崩溃
+                                _log.info(f"\n⚠️ 程序正在退出, 抓取中止 "
+                                      f"(进度检查点已保存至第 {i} 章): {e}")
+                                return output_file
                         for i in range(start, total):
                             if i not in futures:
                                 # 被增量跳过的章节: 仅更新检查点, 不写入

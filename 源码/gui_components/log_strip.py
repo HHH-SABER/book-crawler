@@ -84,6 +84,17 @@ class LogStrip:
             pass
 
     # ----------------------------------------------------------- 刷新 (主线程)
+    # 设计稿语义色: [引擎]/[反爬]/[质检]/[增量]/[速度] 等前缀着不同颜色
+    _SEMANTIC_COLORS = [
+        ('[引擎]', '#4CC2FF'),      # 引擎: 亮蓝
+        ('[反爬]', '#FCE100'),      # 反爬: 黄
+        ('[质检]', '#6CCB5F'),      # 质检: 绿
+        ('[增量]', '#9CD8F7'),      # 增量: 浅蓝
+        ('[速度自适应]', '#4CC2FF'),
+        ('[并发]', '#9CD8F7'),
+        ('[缓存]', '#9D9D9D'),
+    ]
+
     def refresh(self):
         """刷新选中任务的日志 (须在主线程调用, 由刷新 Timer 驱动)"""
         if self.log_list is None:
@@ -98,7 +109,7 @@ class LogStrip:
             return
         self.title_text.value = f"实时日志 · {task.title[:24]}"
 
-        # 只显示最近 100 条, 终端风格着色
+        # 只显示最近 100 条, 终端风格着色 (级别色 + 设计稿语义前缀色)
         self.log_list.controls.clear()
         for log in task.logs[-100:]:
             msg = log['msg']
@@ -107,6 +118,11 @@ class LogStrip:
                 text_color = MORANDI_ERROR
             elif '成功' in msg or '完成' in msg:
                 text_color = MORANDI_SUCCESS
+            else:
+                for prefix, color in self._SEMANTIC_COLORS:
+                    if prefix in msg:
+                        text_color = color
+                        break
             self.log_list.controls.append(
                 ft.Text(f"[{log['time']}] {msg}",
                         size=SIZE_TINY,

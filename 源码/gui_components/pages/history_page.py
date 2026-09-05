@@ -10,7 +10,7 @@ import flet as ft
 import time
 
 from . import history_data
-from ..ui_theme import make_card, tonal_btn
+from ..ui_theme import make_card, tonal_btn, page_header
 from ..ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
@@ -101,16 +101,13 @@ class HistoryPage:
         self._stat_row = ft.Row(spacing=6)
         self._table_view = ft.ListView(expand=True, spacing=2, auto_scroll=True)
 
+        # Fluent 页面大标题 (设计稿: 标题+副标题在页头, 视图切换在右侧)
+        header = page_header(
+            "爬取历史", "按 URL 维度记录所有抓取结果, 支持增量抓取与趋势分析",
+            actions=[self._urls_mode_btn, self._sites_mode_btn])
+
         header_card = make_card(
             ft.Column([
-                ft.Row([
-                    ft.Icon(ft.Icons.HISTORY, size=18, color=MORANDI_PRIMARY),
-                    ft.Text("爬取历史", size=SIZE_TITLE, weight=WEIGHT_TITLE,
-                            font_family=FONT_STACK),
-                    ft.Container(width=6),
-                    self._urls_mode_btn,
-                    self._sites_mode_btn,
-                ], spacing=6),
                 self._stat_row,
                 ft.Row([self._domain_dd, self._days_dd,
                         self._result_chips_row, refresh_btn, update_btn],
@@ -126,7 +123,8 @@ class HistoryPage:
         )
 
         self.refresh()
-        return ft.Column([header_card, table_card], expand=True, spacing=10)
+        return ft.Column([header, header_card, table_card], expand=True, spacing=10,
+                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     # ------------------------------------------------------------- 过滤交互
     def _on_update_shelf(self, e):

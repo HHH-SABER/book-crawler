@@ -10,6 +10,7 @@ import flet as ft
 import json
 import os
 import re
+from pathlib import Path
 import sys
 import threading
 import time
@@ -18,10 +19,10 @@ _HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn
+from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn, page_header
 from ..ui_morandi import (open_dialog, close_dialog,
-                          FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
-                          SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
+                          FONT_STACK, SIZE_TITLE, SIZE_SUBTITLE, SIZE_LABEL,
+                          SIZE_SMALL, SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
                           MORANDI_WARNING, MORANDI_ACCENT)
@@ -246,14 +247,11 @@ class SiteManagePage:
                                   color=ft.Colors.ON_SURFACE_VARIANT,
                                   font_family=FONT_STACK)
 
+        # Fluent 页面大标题 (设计稿: 标题+副标题在页头)
+        header = page_header("站点管理", "管理小说站点配置、健康度监控与适配器扩展")
+
         toolbar = make_card(
             ft.Column([
-                ft.Row([
-                    ft.Icon(ft.Icons.DNS_OUTLINED, size=18,
-                            color=MORANDI_ACCENT),
-                    ft.Text("站点管理", size=SIZE_TITLE, weight=WEIGHT_TITLE,
-                            font_family=FONT_STACK),
-                ], spacing=6),
                 ft.Row([add_btn, probe_all_btn, import_btn, export_btn],
                        spacing=6, wrap=True),
                 self._info_text,
@@ -276,8 +274,9 @@ class SiteManagePage:
 
         self._refresh_table()
         banner = self._build_alarm_banner()
-        return ft.Column([banner, toolbar, adapter_card, table_card, self._edit_card],
-                         expand=True, spacing=10)
+        return ft.Column([header, banner, toolbar, adapter_card, table_card, self._edit_card],
+                         expand=True, spacing=10,
+                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _build_alarm_banner(self):
         """P1-3: 顶部风控告警横幅 (24h 高反爬命中 + 改版漂移告警), 无告警时空。
@@ -411,7 +410,7 @@ class SiteManagePage:
                 ft.Row([
                     ft.Icon(ft.Icons.EXTENSION_OUTLINED, size=18,
                             color=MORANDI_ACCENT),
-                    ft.Text("站点适配插件 (免重新打包)", size=SIZE_TITLE,
+                    ft.Text("站点适配插件 (免重新打包)", size=SIZE_SUBTITLE,
                             weight=WEIGHT_TITLE, font_family=FONT_STACK),
                 ], spacing=6),
                 ft.Row([new_btn, open_btn, refresh_btn], spacing=6, wrap=True),
@@ -551,14 +550,18 @@ class SiteManagePage:
         adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
         try:
             os.makedirs(adapter_dir, exist_ok=True)
-            path = os.path.join(adapter_dir, fname)
-            if os.path.exists(path):
+            # pathlib 锚定适配器目录, 防路径穿越 (domain 已清洗, 双保险)
+            path = Path(adapter_dir).resolve() / fname
+            if not str(path).startswith(str(Path(adapter_dir).resolve())):
+                raise ValueError("路径越界")
+            if path.exists():
                 self._adapter_info.value = f"已存在: {fname}"
                 self._page_update()
                 return
             logname = domain.replace('.', '_')
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(_ADAPTER_TEMPLATE.format(domain=domain, logname=logname))
+            path.write_text(
+                _ADAPTER_TEMPLATE.format(domain=domain, logname=logname),
+                encoding='utf-8')
             self._adapter_info.value = f"已生成 {fname} (请编辑函数, 点“刷新”生效)"
             _log("站点管理", f"新建适配器: {path}")
         except Exception as ex:
