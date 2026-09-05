@@ -10,6 +10,7 @@ import json
 import os
 import time
 import threading
+from pathlib import Path
 
 try:
     from _path_utils import get_app_base_dir
@@ -41,10 +42,12 @@ def 加载() -> list:
 
 
 def 保存(items) -> bool:
-    """整体写回书架清单"""
+    """整体写回书架清单 (pathlib 锚定数据目录, 防路径穿越)"""
     try:
-        with open(书架路径(), 'w', encoding='utf-8') as f:
-            json.dump(items, f, ensure_ascii=False, indent=2)
+        p = Path(书架路径()).resolve()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(items, ensure_ascii=False, indent=2),
+                     encoding='utf-8')
         return True
     except Exception:
         return False

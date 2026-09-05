@@ -517,11 +517,14 @@ def load_adapters():
                     fn = getattr(mod, attr, None)
                     if callable(fn):
                         entry[attr] = fn
+                # 注意: setdefault 的默认字典不含 get_title, 适配器未定义书名
+                # 函数时该键不存在, 必须用 .get 访问 (旧代码直接索引导致
+                # "加载 uuwxw.py 失败: 'get_title'" 的误报)
                 _log.info(f"[适配器] 已加载 {fname} → {domain} "
-                          f"(目录={'✓' if entry['parse_catalog'] else '✗'} "
-                          f"正文={'✓' if entry['extract_content'] else '✗'} "
-                          f"分页={'✓' if entry['paginate'] else '✗'} "
-                          f"书名={'✓' if entry['get_title'] else '✗'})")
+                          f"(目录={'✓' if entry.get('parse_catalog') else '✗'} "
+                          f"正文={'✓' if entry.get('extract_content') else '✗'} "
+                          f"分页={'✓' if entry.get('paginate') else '✗'} "
+                          f"书名={'✓' if entry.get('get_title') else '✗'})")
             except Exception as e:
                 _log.info(f"[适配器] 加载 {fname} 失败: {e}")
     except Exception as e:

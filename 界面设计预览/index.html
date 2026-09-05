@@ -1,0 +1,2673 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小说爬虫 · 界面设计预览</title>
+<style>
+/* ============================================================
+   设计系统 — Windows Fluent 风格 Design Tokens
+   ============================================================ */
+:root {
+  /* 字体 */
+  --font-display: 'Segoe UI', 'Microsoft YaHei', '微软雅黑', system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+
+  /* 字号 */
+  --fs-title: 22px;
+  --fs-h1: 20px;
+  --fs-h2: 17px;
+  --fs-h3: 15px;
+  --fs-body: 14px;
+  --fs-small: 13px;
+  --fs-caption: 12px;
+  --fs-micro: 11px;
+
+  /* 字重 */
+  --fw-bold: 700;
+  --fw-semibold: 600;
+  --fw-medium: 500;
+  --fw-regular: 400;
+  --fw-light: 300;
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 圆角 — Windows 11 控件圆角偏小 */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-pill: 999px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.16);
+
+  /* 过渡 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+}
+
+/* ===== 日间模式 (Light) — Windows 11 Fluent 色板 ===== */
+:root {
+  --bg-primary: #F3F3F3;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #F5F5F5;
+  --bg-elevated: #FFFFFF;
+  --bg-sidebar: #F1F1F1;
+  --bg-sidebar-hover: #E7E7E7;
+  --bg-sidebar-active: #DEDEDE;
+
+  --text-primary: #1B1B1B;
+  --text-secondary: #5C5C5C;
+  --text-tertiary: #8A8A8A;
+  --text-quaternary: #A6A6A6;
+  --text-inverse: #FFFFFF;
+
+  --border-subtle: rgba(0,0,0,0.08);
+  --border-medium: rgba(0,0,0,0.12);
+  --border-strong: rgba(0,0,0,0.18);
+
+  --accent-blue: #0067C0;
+  --accent-blue-hover: #00549B;
+  --accent-blue-light: #E7F1FA;
+  --accent-green: #0F7B0F;
+  --accent-green-light: #DFF6DD;
+  --accent-orange: #C19C00;
+  --accent-orange-light: #FFF4CE;
+  --accent-red: #C42B1C;
+  --accent-red-light: #FDE7E9;
+  --accent-purple: #5B2BD5;
+  --accent-purple-light: #EDEBF9;
+  --accent-teal: #038387;
+  --accent-teal-light: #E5F6F6;
+
+  --status-success: #0F7B0F;
+  --status-success-bg: #DFF6DD;
+  --status-warning: #9D5D00;
+  --status-warning-bg: #FFF4CE;
+  --status-error: #C42B1C;
+  --status-error-bg: #FDE7E9;
+  --status-running: #0067C0;
+  --status-running-bg: #E7F1FA;
+  --status-pending: #8A8A8A;
+  --status-pending-bg: #F0F0F0;
+
+  --terminal-bg: #1F1F1F;
+  --terminal-text: #CCCCCC;
+  --terminal-dim: #767676;
+  --terminal-green: #16C60C;
+  --terminal-red: #C50F1F;
+  --terminal-yellow: #F9F1A5;
+  --terminal-blue: #3B78FF;
+  --terminal-cyan: #61D6D6;
+  --terminal-purple: #B4009E;
+}
+
+/* ===== 夜间模式 (Dark) — Windows 11 深色主题 ===== */
+html[data-theme="dark"] {
+  --bg-primary: #202020;
+  --bg-secondary: #2B2B2B;
+  --bg-tertiary: #383838;
+  --bg-elevated: #2B2B2B;
+  --bg-sidebar: #262626;
+  --bg-sidebar-hover: #383838;
+  --bg-sidebar-active: #4A4A4A;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: #C8C8C8;
+  --text-tertiary: #9A9A9A;
+  --text-quaternary: #777777;
+  --text-inverse: #1B1B1B;
+
+  --border-subtle: rgba(255,255,255,0.08);
+  --border-medium: rgba(255,255,255,0.12);
+  --border-strong: rgba(255,255,255,0.18);
+
+  --accent-blue: #4CC2FF;
+  --accent-blue-hover: #60CDFF;
+  --accent-blue-light: #12253C;
+  --accent-green: #6CCB5F;
+  --accent-green-light: #14351B;
+  --accent-orange: #FCE100;
+  --accent-orange-light: #3A3200;
+  --accent-red: #FF99A4;
+  --accent-red-light: #431D20;
+  --accent-purple: #C4A8FF;
+  --accent-purple-light: #2B2340;
+  --accent-teal: #61D6D6;
+  --accent-teal-light: #12303A;
+
+  --status-success: #6CCB5F;
+  --status-success-bg: #14351B;
+  --status-warning: #FCE100;
+  --status-warning-bg: #3A3200;
+  --status-error: #FF99A4;
+  --status-error-bg: #431D20;
+  --status-running: #4CC2FF;
+  --status-running-bg: #12253C;
+  --status-pending: #9A9A9A;
+  --status-pending-bg: #383838;
+
+  --terminal-bg: #0C0C0C;
+  --terminal-text: #CCCCCC;
+  --terminal-dim: #767676;
+  --terminal-green: #16C60C;
+  --terminal-red: #C50F1F;
+  --terminal-yellow: #F9F1A5;
+  --terminal-blue: #3B78FF;
+  --terminal-cyan: #61D6D6;
+  --terminal-purple: #B4009E;
+}
+
+/* ============================================================
+   基础重置
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  line-height: 1.5;
+  transition: background-color var(--duration-base) var(--ease-out),
+              color var(--duration-base) var(--ease-out);
+}
+
+/* ============================================================
+   页面结构
+   ============================================================ */
+.page-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+/* ===== 顶部标题栏 (应用标题 + 主题切换 + 窗口控制) ===== */
+.titlebar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.app-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+}
+
+.app-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.titlebar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  align-self: stretch;
+}
+
+/* 主题切换按钮 — 醒目顶栏位置 */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  user-select: none;
+}
+.theme-toggle:hover {
+  background: var(--bg-sidebar-hover);
+}
+.theme-toggle:active {
+  background: var(--bg-sidebar-active);
+}
+
+.theme-toggle-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.theme-toggle-label {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+/* Windows 标准窗口控制按钮（最小化 / 最大化 / 关闭） */
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  margin-right: calc(-1 * var(--sp-4));
+}
+.window-btn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: default;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.window-btn:hover {
+  background: var(--bg-sidebar-hover);
+}
+.window-btn.window-close:hover {
+  background: #C42B1C;
+  color: #FFFFFF;
+}
+
+/* ===== 主布局：侧边栏 + 内容区 ===== */
+.app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 侧边导航栏 */
+.sidebar {
+  width: 220px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--sp-3) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  transition: background-color var(--duration-base) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.sidebar-section {
+  padding: 0 var(--sp-3);
+  margin-bottom: var(--sp-1);
+}
+
+.sidebar-section-title {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px 12px;
+  margin: 0 var(--sp-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+}
+.nav-item:hover {
+  background: var(--bg-sidebar-hover);
+  color: var(--text-primary);
+}
+.nav-item.active {
+  background: var(--accent-blue-light);
+  color: var(--accent-blue);
+  font-weight: var(--fw-medium);
+}
+.nav-item-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.nav-item.active .nav-item-icon {
+  color: var(--accent-blue);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-success);
+  box-shadow: 0 0 0 3px var(--status-success-bg);
+}
+.status-dot.running {
+  background: var(--status-running);
+  box-shadow: 0 0 0 3px var(--status-running-bg);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.status-text {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+/* 主内容区 */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--sp-5);
+  gap: var(--sp-5);
+  overflow-y: auto;
+}
+
+/* ===== 页面头 ===== */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.page-title-block h1 {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-1);
+}
+.page-title-block p {
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+}
+
+/* ============================================================
+   通用组件
+   ============================================================ */
+
+/* 卡片 */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: background-color var(--duration-base) var(--ease-out),
+              border-color var(--duration-base) var(--ease-out),
+              box-shadow var(--duration-base) var(--ease-out);
+}
+
+.card-header {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-title {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.card-body {
+  padding: var(--sp-4) var(--sp-5);
+}
+
+/* 按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  font-family: var(--font-display);
+  cursor: pointer;
+  border: none;
+  transition: all var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent-blue);
+  color: white;
+}
+.btn-primary:hover {
+  background: var(--accent-blue-hover);
+}
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+}
+.btn-secondary:hover {
+  background: var(--bg-sidebar-hover);
+}
+.btn-danger {
+  background: var(--accent-red);
+  color: white;
+}
+.btn-danger:hover {
+  background: #A11D12;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--accent-blue);
+}
+.btn-ghost:hover {
+  background: var(--accent-blue-light);
+}
+.btn-icon {
+  padding: 8px;
+  width: 32px;
+  height: 32px;
+}
+.btn-sm {
+  padding: 5px 12px;
+  font-size: var(--fs-small);
+  border-radius: var(--radius-sm);
+}
+
+/* 输入框 */
+.input-field {
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-family: var(--font-display);
+  transition: all var(--duration-fast) var(--ease-out);
+  outline: none;
+}
+.input-field:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-light);
+}
+.input-field::placeholder {
+  color: var(--text-quaternary);
+}
+
+/* 下拉选择 */
+.select-field {
+  padding: 9px 32px 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-secondary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236E6E73' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right 10px center;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-family: var(--font-display);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.select-field:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-light);
+  outline: none;
+}
+
+/* 标签 / 状态徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
+}
+.badge-success {
+  background: var(--status-success-bg);
+  color: var(--status-success);
+}
+.badge-warning {
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
+}
+.badge-error {
+  background: var(--status-error-bg);
+  color: var(--status-error);
+}
+.badge-running {
+  background: var(--status-running-bg);
+  color: var(--status-running);
+}
+.badge-pending {
+  background: var(--status-pending-bg);
+  color: var(--status-pending);
+}
+.badge-info {
+  background: var(--accent-purple-light);
+  color: var(--accent-purple);
+}
+
+/* 开关 — Windows 11 风格：开启态用主题色（蓝），非 iOS 绿色 */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--bg-sidebar-active);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.switch.on {
+  background: var(--accent-blue);
+}
+.switch.on::after {
+  transform: translateX(20px);
+}
+
+/* 进度环 */
+.progress-ring {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.progress-ring svg {
+  transform: rotate(-90deg);
+}
+.progress-ring-track {
+  fill: none;
+  stroke: var(--border-subtle);
+  stroke-width: 3;
+}
+.progress-ring-fill {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--duration-base) var(--ease-out);
+}
+
+/* 分割线 */
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--sp-4) 0;
+}
+
+/* ============================================================
+   抓取工作台
+   ============================================================ */
+
+/* 输入控制区 */
+.input-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.input-row-primary {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: stretch;
+}
+.input-row-primary .url-input {
+  flex: 1;
+}
+.input-row-secondary {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.input-group label {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.chip-btn:hover {
+  background: var(--bg-sidebar-hover);
+  color: var(--text-primary);
+}
+.chip-btn.active {
+  background: var(--accent-blue-light);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  font-weight: var(--fw-medium);
+}
+
+/* 工作台主区域：任务表格 + 日志条 + 抽屉 */
+.workbench-area {
+  flex: 1;
+  display: flex;
+  gap: var(--sp-5);
+  min-height: 0;
+}
+
+.workbench-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+
+/* 任务表格 */
+.task-table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.task-table-header {
+  display: grid;
+  grid-template-columns: 32fr 12fr 8fr 8fr 9fr 7fr 8fr 16fr;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--sp-2);
+}
+.table-header-cell {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  text-transform: none;
+}
+
+.task-table-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: 32fr 12fr 8fr 8fr 9fr 7fr 8fr 16fr;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--sp-2);
+  align-items: center;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.task-row:hover {
+  background: var(--bg-tertiary);
+}
+.task-row.selected {
+  background: var(--accent-blue-light);
+}
+
+.task-cell-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.task-title {
+  font-size: var(--fs-small);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-url {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+.task-cell-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.progress-text {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-cell {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.task-cell.center { justify-content: center; }
+
+.task-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-size: 14px;
+}
+.icon-btn:hover {
+  background: var(--bg-sidebar-hover);
+  color: var(--text-primary);
+}
+.icon-btn.danger:hover {
+  background: var(--accent-red-light);
+  color: var(--accent-red);
+}
+
+/* 空状态 */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8);
+  color: var(--text-tertiary);
+}
+.empty-state-icon {
+  font-size: 48px;
+  opacity: 0.4;
+}
+.empty-state-title {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+.empty-state-desc {
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+  text-align: center;
+  max-width: 300px;
+}
+
+/* 日志条 */
+.log-strip {
+  background: var(--terminal-bg);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: height var(--duration-base) var(--ease-out);
+}
+.log-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-3);
+  background: rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  cursor: pointer;
+}
+.log-strip-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--terminal-dim);
+  font-size: var(--fs-caption);
+}
+.log-strip-title .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--terminal-green);
+}
+.log-strip-controls {
+  display: flex;
+  gap: 4px;
+}
+.log-body {
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.7;
+  color: var(--terminal-text);
+  max-height: 160px;
+  overflow-y: auto;
+}
+.log-body.expanded {
+  max-height: 400px;
+}
+.log-line { white-space: pre-wrap; word-break: break-all; }
+.log-info { color: var(--terminal-text); }
+.log-success { color: var(--terminal-green); }
+.log-error { color: var(--terminal-red); }
+.log-warning { color: var(--terminal-yellow); }
+.log-debug { color: var(--terminal-dim); }
+.log-time { color: var(--terminal-dim); }
+
+/* 右侧详情抽屉 */
+.detail-drawer {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.drawer-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4);
+}
+
+.drawer-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-3);
+}
+.drawer-section-title .icon {
+  color: var(--accent-blue);
+}
+
+/* 大进度环 */
+.big-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.big-ring {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+.big-ring svg { transform: rotate(-90deg); }
+.big-ring-track {
+  fill: none;
+  stroke: var(--border-subtle);
+  stroke-width: 5;
+}
+.big-ring-fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.big-ring-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.big-progress-info h3 {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.big-progress-info .status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* 指标网格 */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+}
+.metric-item {
+  padding: var(--sp-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+.metric-label {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+.metric-value {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.metric-value.success { color: var(--status-success); }
+.metric-value.warning { color: var(--status-warning); }
+.metric-value.error { color: var(--status-error); }
+.metric-value.info { color: var(--accent-blue); }
+
+/* ============================================================
+   爬取历史页
+   ============================================================ */
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--sp-3);
+}
+
+.stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-5);
+  text-align: center;
+  transition: all var(--duration-base) var(--ease-out);
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: var(--fw-bold);
+  margin-bottom: var(--sp-1);
+  font-variant-numeric: tabular-nums;
+}
+.stat-value.blue { color: var(--accent-blue); }
+.stat-value.green { color: var(--status-success); }
+.stat-value.orange { color: var(--accent-orange); }
+.stat-value.red { color: var(--status-error); }
+.stat-value.purple { color: var(--accent-purple); }
+.stat-label {
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.filter-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+.filter-chip.active {
+  color: var(--text-inverse);
+  border-color: transparent;
+}
+.filter-chip.active.all { background: var(--accent-blue); }
+.filter-chip.active.success { background: var(--status-success); }
+.filter-chip.active.warning { background: var(--status-warning); }
+.filter-chip.active.error { background: var(--status-error); }
+.filter-chip.active.info { background: var(--accent-purple); }
+
+.view-toggle {
+  display: flex;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+}
+.view-toggle-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.view-toggle-btn.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 历史表格 */
+.history-table {
+  width: 100%;
+}
+.history-row {
+  display: grid;
+  grid-template-columns: 36fr 14fr 7fr 7fr 9fr 8fr 19fr;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--sp-2);
+  align-items: center;
+  font-size: var(--fs-small);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.history-row:hover {
+  background: var(--bg-tertiary);
+}
+.history-row.header {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: default;
+}
+.history-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+.history-cell.mono { font-family: var(--font-mono); font-size: var(--fs-micro); }
+.history-cell.url { color: var(--text-primary); }
+.history-cell.error { color: var(--status-error); }
+
+/* ============================================================
+   站点管理页
+   ============================================================ */
+
+.alarm-banner {
+  background: var(--status-error-bg);
+  border: 1px solid var(--status-error);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--status-error);
+  font-size: var(--fs-small);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.alarm-banner .icon { font-size: 18px; flex-shrink: 0; }
+.alarm-banner ul { list-style: none; }
+.alarm-banner li { margin-bottom: 2px; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.adapter-section {
+  background: var(--accent-orange-light);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-5);
+}
+.adapter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+.adapter-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.adapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.adapter-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+.adapter-item .name {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  font-size: var(--fs-small);
+}
+.adapter-item .domain {
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+.adapter-caps {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.cap-tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-micro);
+  background: var(--accent-orange-light);
+  color: var(--accent-orange);
+  font-weight: var(--fw-medium);
+}
+
+/* 站点表格行 */
+.site-row {
+  display: grid;
+  grid-template-columns: 26fr 14fr 30fr 10fr 20fr;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--sp-2);
+  align-items: center;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.site-row:hover { background: var(--bg-tertiary); }
+.site-row.disabled { opacity: 0.5; }
+
+.site-domain {
+  font-size: var(--fs-small);
+  font-weight: var(--fw-medium);
+  color: var(--accent-teal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.site-pattern {
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+}
+.site-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.site-status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+}
+.site-status-line .health {
+  font-weight: var(--fw-semibold);
+}
+.site-status-line .health.high { color: var(--status-success); }
+.site-status-line .health.mid { color: var(--status-warning); }
+.site-status-line .health.low { color: var(--status-error); }
+
+.site-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+/* ============================================================
+   运行日志页
+   ============================================================ */
+
+.log-page-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+}
+
+.log-viewer {
+  flex: 1;
+  background: var(--terminal-bg);
+  padding: var(--sp-4);
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.8;
+}
+
+/* ============================================================
+   页面切换控制
+   ============================================================ */
+.page-view { display: none; flex: 1; flex-direction: column; gap: var(--sp-5); min-height: 0; }
+.page-view.active { display: flex; }
+
+/* ============================================================
+   设计说明区域
+   ============================================================ */
+.docs-section {
+  padding: var(--sp-8) var(--sp-6);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+.docs-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.docs-title {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-6);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.docs-title .icon {
+  font-size: 24px;
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-6);
+  margin-bottom: var(--sp-8);
+}
+
+.docs-block {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  border: 1px solid var(--border-subtle);
+}
+.docs-block h3 {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.docs-block h3 .icon { color: var(--accent-blue); font-size: 18px; }
+
+.docs-block h4 {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+
+.docs-block p, .docs-block li {
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: var(--sp-2);
+}
+
+.docs-block ul {
+  list-style: none;
+  padding-left: 0;
+}
+.docs-block ul li {
+  padding-left: var(--sp-4);
+  position: relative;
+}
+.docs-block ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+}
+
+/* 配色对比表 */
+.color-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+  margin-top: var(--sp-3);
+}
+.color-table th {
+  text-align: left;
+  padding: var(--sp-2);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-medium);
+}
+.color-table td {
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.color-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.color-swatch .swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-medium);
+}
+
+/* 布局层级图 */
+.layout-diagram {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 52px 1fr;
+  gap: 1px;
+  background: var(--border-medium);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  height: 200px;
+  margin-top: var(--sp-3);
+}
+.layout-area {
+  background: var(--bg-secondary);
+  padding: var(--sp-2);
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: var(--fw-medium);
+}
+.layout-area.titlebar {
+  grid-column: 1 / -1;
+  background: var(--bg-tertiary);
+  color: var(--accent-blue);
+}
+.layout-area.sidebar {
+  background: var(--bg-sidebar);
+  color: var(--accent-purple);
+}
+.layout-area.content {
+  color: var(--status-success);
+}
+
+/* ============================================================
+   滚动条样式
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-quaternary);
+}
+
+/* ============================================================
+   演示标签
+   ============================================================ */
+.demo-badge {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+  z-index: 1000;
+  box-shadow: var(--shadow-lg);
+}
+
+/* 页面导航指示器 */
+.page-nav-dots {
+  position: fixed;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 50;
+}
+.page-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.page-dot:hover {
+  background: var(--text-tertiary);
+  transform: scale(1.2);
+}
+.page-dot.active {
+  background: var(--accent-blue);
+  transform: scale(1.3);
+}
+</style>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+  <!-- ========== 顶部标题栏 ========== -->
+  <header class="titlebar">
+    <div class="titlebar-left">
+      <div class="app-icon">📖</div>
+      <span class="app-title">小说爬虫</span>
+    </div>
+    <div class="titlebar-right">
+      <div class="theme-toggle" id="themeToggle" title="切换日间/夜间模式">
+        <span class="theme-toggle-icon" id="themeIcon">🌙</span>
+        <span class="theme-toggle-label" id="themeLabel">夜间</span>
+      </div>
+      <div class="window-controls">
+        <button class="window-btn" title="最小化" type="button">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect x="0" y="4.5" width="10" height="1" fill="currentColor"/>
+          </svg>
+        </button>
+        <button class="window-btn" title="最大化" type="button">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor"/>
+          </svg>
+        </button>
+        <button class="window-btn window-close" title="关闭" type="button">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M1 1l8 8M9 1l-8 8" fill="none" stroke="currentColor" stroke-width="1"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== 主内容区 ========== -->
+  <div class="app-body">
+
+    <!-- 侧边导航 -->
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">主功能</div>
+        <div class="nav-item active" data-page="crawl">
+          <span class="nav-item-icon">⬇️</span>
+          <span>抓取工作台</span>
+        </div>
+        <div class="nav-item" data-page="history">
+          <span class="nav-item-icon">📊</span>
+          <span>爬取历史</span>
+        </div>
+        <div class="nav-item" data-page="sites">
+          <span class="nav-item-icon">🌐</span>
+          <span>站点管理</span>
+        </div>
+        <div class="nav-item" data-page="log">
+          <span class="nav-item-icon">📝</span>
+          <span>运行日志</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status">
+          <div class="status-dot running" id="statusDot"></div>
+          <span class="status-text" id="statusText">抓取中 · 2 项</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="main-content">
+
+      <!-- ========== 页面1: 抓取工作台 ========== -->
+      <section class="page-view active" id="page-crawl">
+        <div class="page-header">
+          <div class="page-title-block">
+            <h1>抓取工作台</h1>
+            <p>输入小说目录页URL，自动识别站点并开始抓取</p>
+          </div>
+        </div>
+
+        <!-- 输入控制卡片 -->
+        <div class="card">
+          <div class="card-body input-section">
+            <!-- 第一行：主操作 -->
+            <div class="input-row-primary">
+              <input type="text" class="input-field url-input"
+                     placeholder="粘贴小说目录页URL，例如 https://m.tanmixs.com/YzN6/ml.html">
+              <select class="select-field" style="width: 140px;">
+                <option>完整抓取</option>
+                <option>仅看目录</option>
+                <option>测试首章</option>
+                <option>章节区间</option>
+              </select>
+              <button class="btn btn-primary">
+                <span>▶</span> 开始
+              </button>
+              <button class="btn btn-danger">
+                <span>■</span> 停止
+              </button>
+            </div>
+            <!-- 第二行：次操作 -->
+            <div class="input-row-secondary">
+              <button class="chip-btn">
+                <span>📁</span> 导入网址
+              </button>
+              <button class="chip-btn">
+                <span>📋</span> 粘贴网址
+              </button>
+              <div class="input-group" style="display: none;">
+                <input class="input-field" style="width: 70px;" placeholder="起始章">
+                <input class="input-field" style="width: 70px;" placeholder="结束章">
+              </div>
+              <div class="input-group">
+                <div class="switch on"></div>
+                <label>断点续传</label>
+              </div>
+              <div class="input-group" style="margin-left: auto;">
+                <input class="input-field" style="width: 160px;" value="抓取结果">
+                <button class="btn btn-secondary btn-sm">
+                  <span>📂</span> 文件夹
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 工作台主区域 -->
+        <div class="workbench-area" style="flex: 1; min-height: 400px;">
+          <div class="workbench-main">
+            <!-- 任务表格卡片 -->
+            <div class="card task-table-container">
+              <div class="card-header">
+                <span class="card-title">任务列表</span>
+                <span style="font-size: var(--fs-caption); color: var(--text-tertiary);">共 3 个任务</span>
+              </div>
+              <div class="task-table-header">
+                <div class="table-header-cell">任务 / URL</div>
+                <div class="table-header-cell">进度</div>
+                <div class="table-header-cell" style="text-align: center;">状态</div>
+                <div class="table-header-cell">引擎</div>
+                <div class="table-header-cell">反爬</div>
+                <div class="table-header-cell">耗时</div>
+                <div class="table-header-cell">质检</div>
+                <div class="table-header-cell" style="text-align: right;">操作</div>
+              </div>
+              <div class="task-table-body">
+                <!-- 任务1：进行中 -->
+                <div class="task-row selected">
+                  <div class="task-cell-title">
+                    <span class="task-title">凡人修仙传 · 灵界篇</span>
+                    <span class="task-url">https://m.tanmixs.com/YzN6/ml.html</span>
+                  </div>
+                  <div class="task-cell-progress">
+                    <div class="progress-ring">
+                      <svg width="20" height="20" viewBox="0 0 20 20">
+                        <circle class="progress-ring-track" cx="10" cy="10" r="8"></circle>
+                        <circle class="progress-ring-fill" cx="10" cy="10" r="8"
+                                stroke="var(--status-running)"
+                                stroke-dasharray="50.26" stroke-dashoffset="18"></circle>
+                      </svg>
+                    </div>
+                    <span class="progress-text">642/1248</span>
+                  </div>
+                  <div class="task-cell center">
+                    <span class="badge badge-running">抓取中</span>
+                  </div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-success);">curl_cffi</span>
+                  </div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-warning);">rate_limit</span>
+                  </div>
+                  <div class="task-cell">08:42</div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-success); font-weight: 500;">87分</span>
+                  </div>
+                  <div class="task-actions">
+                    <button class="icon-btn" title="展开详情">⌄</button>
+                    <button class="icon-btn" title="预览文件">📄</button>
+                    <button class="icon-btn" title="重新下载">↻</button>
+                    <button class="icon-btn danger" title="删除">🗑</button>
+                  </div>
+                </div>
+
+                <!-- 任务2：已完成 -->
+                <div class="task-row">
+                  <div class="task-cell-title">
+                    <span class="task-title">诡秘之主</span>
+                    <span class="task-url">https://www.630wang.org/book/12345.html</span>
+                  </div>
+                  <div class="task-cell-progress">
+                    <div class="progress-ring">
+                      <svg width="20" height="20" viewBox="0 0 20 20">
+                        <circle class="progress-ring-track" cx="10" cy="10" r="8"></circle>
+                        <circle class="progress-ring-fill" cx="10" cy="10" r="8"
+                                stroke="var(--status-success)"
+                                stroke-dasharray="50.26" stroke-dashoffset="0"></circle>
+                      </svg>
+                    </div>
+                    <span class="progress-text">1432/1432</span>
+                  </div>
+                  <div class="task-cell center">
+                    <span class="badge badge-success">已完成</span>
+                  </div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-success);">cloudscraper</span>
+                  </div>
+                  <div class="task-cell">JS质询</div>
+                  <div class="task-cell">12:05</div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-success); font-weight: 500;">92分</span>
+                  </div>
+                  <div class="task-actions">
+                    <button class="icon-btn" title="展开详情">⌄</button>
+                    <button class="icon-btn" title="预览文件">📄</button>
+                    <button class="icon-btn" title="重新下载">↻</button>
+                    <button class="icon-btn danger" title="删除">🗑</button>
+                  </div>
+                </div>
+
+                <!-- 任务3：失败 -->
+                <div class="task-row">
+                  <div class="task-cell-title">
+                    <span class="task-title">某不知名小说</span>
+                    <span class="task-url">https://unknown-site.com/novel/1.html</span>
+                  </div>
+                  <div class="task-cell-progress">
+                    <div class="progress-ring">
+                      <svg width="20" height="20" viewBox="0 0 20 20">
+                        <circle class="progress-ring-track" cx="10" cy="10" r="8"></circle>
+                        <circle class="progress-ring-fill" cx="10" cy="10" r="8"
+                                stroke="var(--status-error)"
+                                stroke-dasharray="50.26" stroke-dashoffset="40"></circle>
+                      </svg>
+                    </div>
+                    <span class="progress-text">23/486</span>
+                  </div>
+                  <div class="task-cell center">
+                    <span class="badge badge-error">失败</span>
+                  </div>
+                  <div class="task-cell">
+                    <span style="color: var(--text-tertiary);">requests</span>
+                  </div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-error);">WAF拦截</span>
+                  </div>
+                  <div class="task-cell">00:47</div>
+                  <div class="task-cell">
+                    <span style="color: var(--status-error); font-weight: 500;">—</span>
+                  </div>
+                  <div class="task-actions">
+                    <button class="icon-btn" title="展开详情">⌄</button>
+                    <button class="icon-btn" title="预览文件">📄</button>
+                    <button class="icon-btn" title="重新下载">↻</button>
+                    <button class="icon-btn danger" title="删除">🗑</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 日志条 -->
+            <div class="log-strip" id="logStrip">
+              <div class="log-strip-header" onclick="toggleLog()">
+                <div class="log-strip-title">
+                  <span class="dot"></span>
+                  <span>实时日志 · 凡人修仙传 · 灵界篇</span>
+                </div>
+                <div class="log-strip-controls">
+                  <button class="icon-btn" style="color: var(--terminal-dim);" title="展开/收起">⌃</button>
+                </div>
+              </div>
+              <div class="log-body" id="logBody">
+<span class="log-line log-info"><span class="log-time">[14:32:08]</span> 系统: 任务启动，模式=完整抓取，速度=自适应</span>
+<span class="log-line log-info"><span class="log-time">[14:32:09]</span> 引擎: 初始 requests → 探测站点反爬机制</span>
+<span class="log-line log-warning"><span class="log-time">[14:32:10]</span> 反爬: 检测到 rate_limit (429 + Retry-After)</span>
+<span class="log-line log-info"><span class="log-time">[14:32:10]</span> 引擎: 降级为 cloudscraper → 重试</span>
+<span class="log-line log-info"><span class="log-time">[14:32:11]</span> 引擎: 降级为 curl_cffi → 成功</span>
+<span class="log-line log-info"><span class="log-time">[14:32:12]</span> 目录: 解析到 1248 个章节</span>
+<span class="log-line log-success"><span class="log-time">[14:32:15]</span> 第642章: 抓取完成 (3.2KB, 质检 85分)</span>
+<span class="log-line log-info"><span class="log-time">[14:32:16]</span> 速度: 自适应调整为 3 线程</span>
+<span class="log-line log-success"><span class="log-time">[14:32:18]</span> 第643章: 抓取完成 (2.8KB, 质检 88分)</span>
+<span class="log-line log-debug"><span class="log-time">[14:32:19]</span> 增量: 第644章已存在，跳过</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右侧详情抽屉 -->
+          <aside class="detail-drawer">
+            <!-- 任务详情 -->
+            <div class="drawer-section">
+              <div class="drawer-section-title">
+                <span class="icon">📊</span>
+                任务详情
+              </div>
+              <div class="big-progress">
+                <div class="big-ring">
+                  <svg width="64" height="64" viewBox="0 0 64 64">
+                    <circle class="big-ring-track" cx="32" cy="32" r="26"></circle>
+                    <circle class="big-ring-fill" cx="32" cy="32" r="26"
+                            stroke="var(--status-running)"
+                            stroke-dasharray="163.36" stroke-dashoffset="59"></circle>
+                  </svg>
+                  <div class="big-ring-text">51%</div>
+                </div>
+                <div class="big-progress-info">
+                  <h3>凡人修仙传</h3>
+                  <div class="status-row">
+                    <span class="badge badge-running">抓取中</span>
+                    <span style="font-size: var(--fs-caption); color: var(--text-tertiary);">642 / 1248 章</span>
+                  </div>
+                </div>
+              </div>
+              <div class="metrics-grid">
+                <div class="metric-item">
+                  <div class="metric-label">当前引擎</div>
+                  <div class="metric-value success">curl_cffi</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">反爬类型</div>
+                  <div class="metric-value warning">rate_limit</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">内容质检</div>
+                  <div class="metric-value success">87 分</div>
+                </div>
+                <div class="metric-item">
+                  <div class="metric-label">增量跳过</div>
+                  <div class="metric-value info">127 章</div>
+                </div>
+              </div>
+              <div style="margin-top: var(--sp-3); font-size: var(--fs-caption); color: var(--text-tertiary);">
+                降级链: requests → cloudscraper → curl_cffi
+              </div>
+            </div>
+
+            <!-- 输出文件 -->
+            <div class="drawer-section">
+              <div class="drawer-section-title">
+                <span class="icon">📁</span>
+                输出文件
+              </div>
+              <div style="display: flex; flex-direction: column; gap: var(--sp-2);">
+                <div style="display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); background: var(--bg-tertiary); border-radius: var(--radius-md);">
+                  <span style="font-size: 16px;">📄</span>
+                  <div style="flex: 1; min-width: 0;">
+                    <div style="font-size: var(--fs-small); font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">凡人修仙传·灵界篇.txt</div>
+                    <div style="font-size: var(--fs-micro); color: var(--text-tertiary);">2.4 MB · 642 章</div>
+                  </div>
+                  <button class="icon-btn" title="打开文件夹">📂</button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ========== 页面2: 爬取历史 ========== -->
+      <section class="page-view" id="page-history">
+        <div class="page-header">
+          <div class="page-title-block">
+            <h1>爬取历史</h1>
+            <p>按 URL 维度记录所有抓取结果，支持增量爬取与趋势分析</p>
+          </div>
+          <div class="view-toggle">
+            <div class="view-toggle-btn active">URL 明细</div>
+            <div class="view-toggle-btn">站点汇总</div>
+          </div>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-value blue">2,847</div>
+            <div class="stat-label">总请求数</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value green">1,923</div>
+            <div class="stat-label">新增</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value purple">612</div>
+            <div class="stat-label">更新</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value orange">234</div>
+            <div class="stat-label">未变化</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value red">78</div>
+            <div class="stat-label">失败</div>
+          </div>
+        </div>
+
+        <!-- 过滤器 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="filter-bar">
+              <select class="select-field" style="width: 200px;">
+                <option>全部站点</option>
+                <option>tanmixs.com</option>
+                <option>630wang.org</option>
+                <option>ciyewk.com</option>
+              </select>
+              <select class="select-field" style="width: 150px;">
+                <option>全部时间</option>
+                <option>最近 24 小时</option>
+                <option>最近 7 天</option>
+                <option>最近 30 天</option>
+              </select>
+              <div class="filter-chips">
+                <div class="filter-chip active all">全部</div>
+                <div class="filter-chip">新增</div>
+                <div class="filter-chip">更新</div>
+                <div class="filter-chip">未变化</div>
+                <div class="filter-chip">失败</div>
+              </div>
+              <div style="margin-left: auto;">
+                <button class="btn btn-secondary btn-sm">
+                  <span>↻</span> 刷新
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 历史表格 -->
+        <div class="card" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+          <div class="history-table" style="flex: 1; overflow-y: auto;">
+            <div class="history-row header">
+              <div class="history-cell">URL</div>
+              <div class="history-cell">最后抓取</div>
+              <div class="history-cell">状态码</div>
+              <div class="history-cell">耗时</div>
+              <div class="history-cell">字节</div>
+              <div class="history-cell">结果</div>
+              <div class="history-cell">错误原因</div>
+            </div>
+            <!-- 行 -->
+            <div class="history-row">
+              <div class="history-cell url mono">https://m.tanmixs.com/YzN6/ml.html</div>
+              <div class="history-cell">2026-09-04 14:32</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">0.8s</div>
+              <div class="history-cell mono">124K</div>
+              <div class="history-cell"><span class="badge badge-success">更新</span></div>
+              <div class="history-cell">—</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://www.630wang.org/book/12345.html</div>
+              <div class="history-cell">2026-09-04 13:15</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">1.2s</div>
+              <div class="history-cell mono">256K</div>
+              <div class="history-cell"><span class="badge badge-success">新增</span></div>
+              <div class="history-cell">—</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://ciyewk.com/book/67890.html</div>
+              <div class="history-cell">2026-09-04 11:08</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">0.5s</div>
+              <div class="history-cell mono">89K</div>
+              <div class="history-cell"><span class="badge badge-info">未变化</span></div>
+              <div class="history-cell">ETag 匹配</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://unknown-site.com/novel/1.html</div>
+              <div class="history-cell">2026-09-04 10:22</div>
+              <div class="history-cell error mono">403</div>
+              <div class="history-cell mono">2.1s</div>
+              <div class="history-cell mono">12K</div>
+              <div class="history-cell"><span class="badge badge-error">失败</span></div>
+              <div class="history-cell error">WAF 拦截，所有引擎降级失败</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://ltbook.net/novel/54321/</div>
+              <div class="history-cell">2026-09-03 22:47</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">3.4s</div>
+              <div class="history-cell mono">312K</div>
+              <div class="history-cell"><span class="badge badge-success">新增</span></div>
+              <div class="history-cell">—</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://zhiruo.com/book/9876.html</div>
+              <div class="history-cell">2026-09-03 18:30</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">1.8s</div>
+              <div class="history-cell mono">178K</div>
+              <div class="history-cell"><span class="badge badge-success">更新</span></div>
+              <div class="history-cell">—</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 页面3: 站点管理 ========== -->
+      <section class="page-view" id="page-sites">
+        <div class="page-header">
+          <div class="page-title-block">
+            <h1>站点管理</h1>
+            <p>管理小说站点配置、健康度监控与适配器扩展</p>
+          </div>
+        </div>
+
+        <!-- 告警横幅 -->
+        <div class="alarm-banner">
+          <span class="icon">⚠️</span>
+          <ul>
+            <li>风控 unknown-site.com: blocked×3 · WAF 验证码拦截持续 24 小时</li>
+            <li>站点漂移 630wang.org: 正文选择器命中率下降，疑似页面改版</li>
+          </ul>
+        </div>
+
+        <!-- 工具栏卡片 -->
+        <div class="card">
+          <div class="card-body">
+            <div class="toolbar">
+              <button class="btn btn-primary">
+                <span>+</span> 新增站点
+              </button>
+              <button class="btn btn-secondary">
+                <span>📡</span> 全部测试
+              </button>
+              <button class="btn btn-secondary">
+                <span>📥</span> 导入
+              </button>
+              <button class="btn btn-secondary">
+                <span>📤</span> 导出
+              </button>
+              <span style="margin-left: auto; font-size: var(--fs-caption); color: var(--text-tertiary);">
+                共 12 个站点 · 8 个启用
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 适配器插件区 -->
+        <div class="adapter-section">
+          <div class="adapter-header">
+            <div class="adapter-title">
+              <span style="font-size: 18px;">🔌</span>
+              站点适配插件（免重新打包）
+            </div>
+            <div style="display: flex; gap: var(--sp-2);">
+              <button class="btn btn-primary btn-sm">
+                <span>+</span> 新建适配器
+              </button>
+              <button class="btn btn-secondary btn-sm">
+                <span>📂</span> 打开目录
+              </button>
+              <button class="btn btn-secondary btn-sm">
+                <span>↻</span> 刷新
+              </button>
+            </div>
+          </div>
+          <div class="adapter-list">
+            <div class="adapter-item">
+              <span style="font-size: 16px;">✅</span>
+              <div>
+                <div class="name">als1010.py</div>
+                <div class="domain">als1010.com</div>
+              </div>
+              <div class="adapter-caps">
+                <span class="cap-tag">目录</span>
+                <span class="cap-tag">正文</span>
+              </div>
+            </div>
+            <div class="adapter-item">
+              <span style="font-size: 16px;">✅</span>
+              <div>
+                <div class="name">uuwxw.py</div>
+                <div class="domain">uuwxw.com</div>
+              </div>
+              <div class="adapter-caps">
+                <span class="cap-tag">目录</span>
+                <span class="cap-tag">正文</span>
+                <span class="cap-tag">分页</span>
+              </div>
+            </div>
+            <div class="adapter-item">
+              <span style="font-size: 16px;">✅</span>
+              <div>
+                <div class="name">victor-w-ma_github_io.py</div>
+                <div class="domain">victor-w-ma.github.io</div>
+              </div>
+              <div class="adapter-caps">
+                <span class="cap-tag">目录</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 站点表格 -->
+        <div class="card" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+          <div style="display: grid; grid-template-columns: 26fr 14fr 30fr 10fr 20fr; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border-subtle); gap: var(--sp-2);">
+            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary);">域名</div>
+            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary);">模式</div>
+            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary);">状态</div>
+            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary); text-align: center;">启用</div>
+            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary); text-align: right;">操作</div>
+          </div>
+          <div style="flex: 1; overflow-y: auto;">
+            <div class="site-row">
+              <div class="site-domain">tanmixs.com</div>
+              <div class="site-pattern">xs 码点流</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health high">97%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line" style="color: var(--status-warning);">
+                  反爬: rate_limit
+                </div>
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">630wang.org</div>
+              <div class="site-pattern">html_selector</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health mid">72%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line" style="color: var(--status-error);">
+                  ⚠ 站点漂移 · 选择器失效
+                </div>
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">ciyewk.com</div>
+              <div class="site-pattern">ajax_two_step</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health high">94%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line">
+                  探测 200/0.6s
+                </div>
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">unknown-site.com</div>
+              <div class="site-pattern">html_selector</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health low">23%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line" style="color: var(--status-error);">
+                  风控24h: blocked×3
+                </div>
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row disabled">
+              <div class="site-domain">old-site.net</div>
+              <div class="site-pattern">qsbs_bb</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health low">0%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line">
+                  站点已下线
+                </div>
+              </div>
+              <div style="display: flex; justify-content: center;">
+                <div class="switch"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 页面4: 运行日志 ========== -->
+      <section class="page-view" id="page-log">
+        <div class="page-header">
+          <div class="page-title-block">
+            <h1>运行日志</h1>
+            <p>查看系统运行日志，便于排查问题与追踪状态</p>
+          </div>
+        </div>
+
+        <div class="card log-page-container">
+          <div class="log-toolbar">
+            <select class="select-field" style="width: 180px;">
+              <option>全部日志</option>
+              <option>GUI</option>
+              <option>爬虫</option>
+              <option>反爬检测</option>
+              <option>站点管理</option>
+            </select>
+            <select class="select-field" style="width: 140px;">
+              <option>全部级别</option>
+              <option>INFO</option>
+              <option>WARNING</option>
+              <option>ERROR</option>
+              <option>DEBUG</option>
+            </select>
+            <input type="text" class="input-field" style="width: 200px;" placeholder="搜索关键词...">
+            <div style="margin-left: auto; display: flex; gap: var(--sp-2);">
+              <button class="btn btn-secondary btn-sm">
+                <span>📋</span> 复制
+              </button>
+              <button class="btn btn-secondary btn-sm">
+                <span>📥</span> 导出
+              </button>
+              <button class="btn btn-secondary btn-sm">
+                <span>🗑</span> 清空
+              </button>
+            </div>
+          </div>
+          <div class="log-viewer">
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:08]</span> [系统] 程序启动 (模式: 源码模式, Python 3.11.4)</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:08]</span> [系统] EXE/项目目录: K:\程序文件\小说爬虫</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:09]</span> [站点配置] 加载 12 个内置站点配置 + 3 个外部适配器</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:09]</span> [GUI] 主题切换为: 浅色</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:15]</span> [GUI] 开始抓取: https://m.tanmixs.com/YzN6/ml.html 模式=full → task_001</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:15]</span> [爬虫] task_001 初始化，引擎=requests</span>
+<span class="log-line log-warning"><span class="log-time">[2026-09-04 14:32:16]</span> [反爬] task_001: 检测到 rate_limit (HTTP 429 + Retry-After: 5)</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:16]</span> [引擎] task_001: 降级为 cloudscraper</span>
+<span class="log-line log-warning"><span class="log-time">[2026-09-04 14:32:17]</span> [反爬] task_001: cloudscraper 仍被拦截 (JS 质询未通过)</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:17]</span> [引擎] task_001: 降级为 curl_cffi (impersonate=chrome120)</span>
+<span class="log-line log-success"><span class="log-time">[2026-09-04 14:32:18]</span> [引擎] task_001: curl_cffi 连接成功，状态码 200</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:18]</span> [爬虫] task_001: 目录解析完成，共 1248 章</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:19]</span> [速度自适应] task_001: 初始档位 2 线程，延迟 1.0s</span>
+<span class="log-line log-success"><span class="log-time">[2026-09-04 14:32:22]</span> [质检] 第1章: 五维评分 88 分 (通过)</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:25]</span> [增量] 第10章: 已存在且内容一致，跳过</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:30]</span> [速度自适应] task_001: 升档为 3 线程，延迟 0.8s</span>
+<span class="log-line log-warning"><span class="log-time">[2026-09-04 14:33:15]</span> [反爬] task_001: 连续 3 次 429，降速保护</span>
+<span class="log-line log-info"><span class="log-time">[2026-09-04 14:33:16]</span> [速度自适应] task_001: 降档为 1 线程，延迟 2.0s</span>
+<span class="log-line log-debug"><span class="log-time">[2026-09-04 14:34:02]</span> [内容解码] Base64 解码成功，2348 字</span>
+<span class="log-line log-success"><span class="log-time">[2026-09-04 14:35:00]</span> [GUI] 已创建 3 个抓取任务 (每本书独立进度)</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ========== 设计说明区域 ========== -->
+<section class="docs-section" id="docs">
+  <div class="docs-container">
+    <h2 class="docs-title">
+      <span class="icon">📐</span>
+      界面布局说明
+    </h2>
+
+    <div class="docs-grid">
+      <!-- 1. 整体布局结构 -->
+      <div class="docs-block">
+        <h3><span class="icon">🗂</span>整体布局结构</h3>
+        <p>采用 Windows 桌面应用常用的三段式布局（顶部标题栏 + 左侧导航 + 主内容区），从上到下、从左到右层次分明：</p>
+
+        <div class="layout-diagram">
+          <div class="layout-area titlebar">① 标题栏 (52px)</div>
+          <div class="layout-area sidebar">② 侧边导航 (220px)</div>
+          <div class="layout-area content">③ 主内容区 (自适应)</div>
+        </div>
+
+        <h4>各区域功能</h4>
+        <ul>
+          <li><strong>标题栏</strong>：左侧应用图标与标题，右侧<strong>主题切换按钮</strong>（醒目位置，一键切换日/夜模式）与标准窗口控制（最小化 / 最大化 / 关闭）</li>
+          <li><strong>侧边导航</strong>：4 个主功能入口（抓取工作台、爬取历史、站点管理、运行日志），底部状态栏显示实时运行状态</li>
+          <li><strong>主内容区</strong>：承载各页面核心功能，内边距 20px，页面间距 20px，呼吸感充足</li>
+        </ul>
+      </div>
+
+      <!-- 2. 层级关系与交互逻辑 -->
+      <div class="docs-block">
+        <h3><span class="icon">🔗</span>层级关系与交互逻辑</h3>
+
+        <h4>页面层级（从高到低）</h4>
+        <ul>
+          <li><strong>L0 全局层</strong>：标题栏 + 侧边导航 + 状态栏，始终可见，跨页面共享</li>
+          <li><strong>L1 页面层</strong>：4 个主页面通过导航切换，使用 Stack 模式保活状态</li>
+          <li><strong>L2 卡片层</strong>：功能模块以卡片为单位组织，卡片内包含标题栏 + 内容区</li>
+          <li><strong>L3 抽屉/浮层层</strong>：右侧详情抽屉、对话框、提示条，上下文相关</li>
+          <li><strong>L4 行内展开层</strong>：表格行内展开详情，不打断浏览流</li>
+        </ul>
+
+        <h4>核心交互流</h4>
+        <ul>
+          <li><strong>抓取流程</strong>：输入URL → 选择模式 → 点击开始 → 任务出现在表格 → 实时进度/日志更新 → 完成后状态变更</li>
+          <li><strong>任务联动</strong>：点击行选中 → 日志条自动切换到该任务日志 → 右侧抽屉同步显示详情</li>
+          <li><strong>页面切换</strong>：点击侧边导航切换页面，抓取任务在后台持续运行</li>
+        </ul>
+      </div>
+
+      <!-- 3. 日间模式配色方案 -->
+      <div class="docs-block">
+        <h3><span class="icon">☀️</span>日间模式配色方案</h3>
+        <p>基于 Windows 11 Fluent Design 设计规范，采用明亮洁净的浅色配色：</p>
+
+        <table class="color-table">
+          <thead>
+            <tr><th>用途</th><th>色值</th><th>对比度</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>主背景</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #F3F3F3;"></span>#F3F3F3</span></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>卡片/面板</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FFFFFF;"></span>#FFFFFF</span></td>
+              <td>与正文 16.1:1</td>
+            </tr>
+            <tr>
+              <td>主文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #1B1B1B;"></span>#1B1B1B</span></td>
+              <td>AAA 级</td>
+            </tr>
+            <tr>
+              <td>次级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #5C5C5C;"></span>#5C5C5C</span></td>
+              <td>AA 级 (6.1:1)</td>
+            </tr>
+            <tr>
+              <td>主色调蓝</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #0067C0;"></span>#0067C0</span></td>
+              <td>白底 5.6:1</td>
+            </tr>
+            <tr>
+              <td>成功绿</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #0F7B0F;"></span>#0F7B0F</span></td>
+              <td>白底 4.9:1</td>
+            </tr>
+            <tr>
+              <td>警告黄</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #9D5D00;"></span>#9D5D00</span></td>
+              <td>白底 4.6:1</td>
+            </tr>
+            <tr>
+              <td>错误红</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #C42B1C;"></span>#C42B1C</span></td>
+              <td>白底 5.0:1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 4. 夜间模式配色方案 -->
+      <div class="docs-block">
+        <h3><span class="icon">🌙</span>夜间模式配色方案</h3>
+        <p>Windows 11 深色主题底色 + 高饱和强调色，夜间使用不刺眼：</p>
+
+        <table class="color-table">
+          <thead>
+            <tr><th>用途</th><th>色值</th><th>对比度</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>主背景</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #202020; border-color: #444;"></span>#202020</span></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>卡片/面板</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #2B2B2B;"></span>#2B2B2B</span></td>
+              <td>与正文 13.8:1</td>
+            </tr>
+            <tr>
+              <td>主文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FFFFFF;"></span>#FFFFFF</span></td>
+              <td>AAA 级</td>
+            </tr>
+            <tr>
+              <td>次级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #C8C8C8;"></span>#C8C8C8</span></td>
+              <td>AA 级 (8.1:1)</td>
+            </tr>
+            <tr>
+              <td>主色调蓝</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #4CC2FF;"></span>#4CC2FF</span></td>
+              <td>深色底 7.6:1</td>
+            </tr>
+            <tr>
+              <td>成功绿</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #6CCB5F;"></span>#6CCB5F</span></td>
+              <td>深色底 5.9:1</td>
+            </tr>
+            <tr>
+              <td>警告黄</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FCE100;"></span>#FCE100</span></td>
+              <td>深色底 12.8:1</td>
+            </tr>
+            <tr>
+              <td>错误红</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FF99A4;"></span>#FF99A4</span></td>
+              <td>深色底 7.9:1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 5. 抓取工作台详细说明 -->
+      <div class="docs-block">
+        <h3><span class="icon">⬇️</span>抓取工作台 · 功能划分</h3>
+
+        <h4>输入控制区</h4>
+        <ul>
+          <li><strong>URL 输入框</strong>：自适应拉伸，支持回车快速开始，粘贴即校验</li>
+          <li><strong>模式选择</strong>：完整抓取 / 仅看目录 / 测试首章 / 章节区间，区间模式显示起止章输入</li>
+          <li><strong>主操作按钮</strong>：开始（蓝色主按钮）+ 停止（红色危险按钮），状态联动禁用</li>
+          <li><strong>次操作行</strong>：导入网址、粘贴网址、断点续传开关、输出目录、打开文件夹</li>
+        </ul>
+
+        <h4>任务表格区</h4>
+        <ul>
+          <li><strong>8 列布局</strong>：任务/URL → 进度 → 状态 → 引擎 → 反爬 → 耗时 → 质检 → 操作</li>
+          <li><strong>进度列</strong>：迷你环形进度条 + 数值，一目了然</li>
+          <li><strong>状态列</strong>：胶囊标签，颜色区分进行中/完成/失败/等待</li>
+          <li><strong>操作列</strong>：展开详情、预览文件、重下、删除，4 个图标按钮紧凑排列</li>
+        </ul>
+
+        <h4>日志条</h4>
+        <ul>
+          <li>默认 130px 高度紧凑显示，点击手柄可放大至全屏高度</li>
+          <li>终端深底 + 等宽字体，按级别着色（信息/成功/警告/错误/调试）</li>
+          <li>自动滚动到最新行，跟随选中任务切换</li>
+        </ul>
+
+        <h4>右侧详情抽屉</h4>
+        <ul>
+          <li><strong>大进度环</strong>：64px 环形进度 + 百分比数值 + 状态标签</li>
+          <li><strong>2×2 指标网格</strong>：引擎、反爬、质检、增量跳过 4 项核心指标</li>
+          <li><strong>降级链展示</strong>：显示引擎自动降级路径</li>
+          <li><strong>输出文件</strong>：文件名、大小、章节数，一键打开所在文件夹</li>
+        </ul>
+      </div>
+
+      <!-- 6. 其他页面说明 -->
+      <div class="docs-block">
+        <h3><span class="icon">📑</span>其他页面 · 功能划分</h3>
+
+        <h4>爬取历史页</h4>
+        <ul>
+          <li><strong>5 张统计卡</strong>：总请求数、新增、更新、未变化、失败，顶部横向排列</li>
+          <li><strong>过滤器栏</strong>：站点下拉、时间范围下拉、结果类型 chips（全部/新增/更新/未变化/失败）</li>
+          <li><strong>双视图切换</strong>：URL 明细 / 站点汇总，分段控件切换</li>
+          <li><strong>明细表</strong>：7 列数据，站点行可点击跳转到该站点筛选</li>
+        </ul>
+
+        <h4>站点管理页</h4>
+        <ul>
+          <li><strong>风控告警横幅</strong>：24 小时高风险站点 + 站点漂移告警，红色醒目</li>
+          <li><strong>工具栏</strong>：新增站点、全部测试、导入、导出</li>
+          <li><strong>适配器插件区</strong>：橙色主题卡片，展示外部插件列表与能力标签</li>
+          <li><strong>站点表格</strong>：域名 + 模式 + 状态（健康度/反爬/探测） + 启用开关 + 操作</li>
+          <li><strong>健康度分级</strong>：≥80% 绿色、≥50% 橙色、&lt;50% 红色</li>
+        </ul>
+
+        <h4>运行日志页</h4>
+        <ul>
+          <li><strong>日志工具栏</strong>：来源过滤、级别过滤、关键词搜索、复制/导出/清空</li>
+          <li><strong>终端风格日志</strong>：深色背景 + 等宽字体，时间戳 + 来源 + 内容</li>
+          <li><strong>级别着色</strong>：INFO 原色、SUCCESS 绿色、WARNING 黄色、ERROR 红色、DEBUG 灰色</li>
+        </ul>
+      </div>
+
+      <!-- 7. 主题切换设计 -->
+      <div class="docs-block" style="grid-column: 1 / -1;">
+        <h3><span class="icon">🎨</span>日间/夜间模式切换设计</h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6);">
+          <div>
+            <h4>切换按钮位置</h4>
+            <p>主题切换按钮置于<strong>标题栏最右侧</strong>，始终可见、一键可达：</p>
+            <ul>
+              <li>使用胶囊形按钮，含图标 + 文字标签，视觉重量适中</li>
+              <li>悬停时轻微上浮 + 阴影，提供明确的可点击反馈</li>
+              <li>图标随主题变化：日间模式显示月亮🌙（切换到夜间），夜间模式显示太阳☀️（切换到日间）</li>
+              <li>文字标签同步更新："夜间" / "日间"</li>
+            </ul>
+          </div>
+          <div>
+            <h4>切换过渡效果</h4>
+            <ul>
+              <li>所有颜色属性 250ms ease-out 平滑过渡，无闪烁感</li>
+              <li>图标 180° 旋转动画，增加切换仪式感</li>
+              <li>CSS 变量驱动，所有组件自动适配，无需单独处理</li>
+            </ul>
+
+            <h4>可读性保障</h4>
+            <ul>
+              <li>正文文字对比度 ≥ 7:1（AAA 级）</li>
+              <li>次级文字对比度 ≥ 4.5:1（AA 级）</li>
+              <li>强调色在对应底色上对比度 ≥ 3:1</li>
+              <li>状态色不仅靠颜色区分，同时配有文字标签和图标</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- 演示标签 -->
+<div class="demo-badge">
+  🎨 设计预览 · 点击左侧导航切换页面 · 右上角切换主题
+</div>
+
+<script>
+// ===== 主题切换 =====
+const themeToggle = document.getElementById('themeToggle');
+const themeIcon = document.getElementById('themeIcon');
+const themeLabel = document.getElementById('themeLabel');
+
+themeToggle.addEventListener('click', () => {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  
+  if (isDark) {
+    html.setAttribute('data-theme', 'light');
+    themeIcon.textContent = '🌙';
+    themeLabel.textContent = '夜间';
+  } else {
+    html.setAttribute('data-theme', 'dark');
+    themeIcon.textContent = '☀️';
+    themeLabel.textContent = '日间';
+  }
+  
+  // 图标旋转动画
+  themeIcon.style.transform = 'rotate(360deg)';
+  setTimeout(() => {
+    themeIcon.style.transform = 'rotate(0deg)';
+  }, 300);
+});
+
+themeIcon.style.transition = 'transform 0.3s ease';
+
+// ===== 页面切换 =====
+const navItems = document.querySelectorAll('.nav-item');
+const pageViews = document.querySelectorAll('.page-view');
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    const page = item.getAttribute('data-page');
+    
+    // 更新导航激活态
+    navItems.forEach(nav => nav.classList.remove('active'));
+    item.classList.add('active');
+    
+    // 更新页面显示
+    pageViews.forEach(view => {
+      view.classList.remove('active');
+    });
+    document.getElementById('page-' + page).classList.add('active');
+    
+    // 滚动到顶部
+    document.querySelector('.main-content').scrollTop = 0;
+  });
+});
+
+// ===== 日志条展开/收起 =====
+let logExpanded = false;
+function toggleLog() {
+  logExpanded = !logExpanded;
+  const body = document.getElementById('logBody');
+  if (logExpanded) {
+    body.classList.add('expanded');
+  } else {
+    body.classList.remove('expanded');
+  }
+}
+
+// ===== 开关切换 =====
+document.querySelectorAll('.switch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    sw.classList.toggle('on');
+  });
+});
+</script>
+
+</body>
+</html>

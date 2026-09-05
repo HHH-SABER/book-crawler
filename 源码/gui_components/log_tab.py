@@ -1,28 +1,34 @@
 # -*- coding: utf-8 -*-
-"""运行日志页签：按日期查看落盘日志，错误/警告高亮
+"""运行日志页 (Fluent 风格, 匹配设计稿 page-log)
 
-日志文件位于 BASE_DIR/日志/YYYY-MM-DD[._N].log（见 日志.py）。
+工具栏: 来源下拉 + 级别下拉 + 关键词搜索 + 复制/导出/清空;
+第二行: 日期下拉 + 刷新 + 打开日志目录 (实际按天浏览日志文件的实用入口)。
+查看器: 深色终端风, 行按级别着色 (INFO 浅 / WARNING 黄 / ERROR 红 / DEBUG 灰)。
 """
 import os
+import re
 import sys
 import subprocess
+from pathlib import Path
+
 import flet as ft
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 from _path_utils import get_app_base_dir  # noqa: E402
 
 # UI 主题系统
-from .ui_theme import (make_card, tonal_btn, BTN_TEXT_STYLE,
-                       LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
+from .ui_theme import (make_card, tonal_btn, filled_btn, BTN_TEXT_STYLE,
+                       LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color,
+                       page_header)
 
 # 统一字体规范
-from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL,
-                         SIZE_BODY, SIZE_TINY, WEIGHT_BODY,
-                         MORANDI_ERROR)  # noqa: E402
+from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+                         SIZE_BODY, WEIGHT_BODY,
+                         MORANDI_ERROR, open_dialog)
 
-# 单文件最多显示行数（超出取尾部）
-_MAX_DISPLAY_LINES = 1500
+_MAX_DISPLAY_LINES = 3000   # 大文件只显示尾部 N 行
 
 
 def get_log_dir() -> str:
@@ -39,68 +45,105 @@ def list_log_files() -> list:
         return []
     return sorted(names, reverse=True)
 
+# 行格式: "[01:47:19.984] [INFO] [sites_config] 消息..." → 提取来源字段
+_SOURCE_RE = re.compile(r'^\[[^\]]+\]\s*\[[A-Z]+\]\s*\[([^\]]+)\]')
+
 
 class LogTab:
-    """运行日志查看页签"""
+    """运行日志查看页"""
 
     def __init__(self):
-        self.date_dropdown = None
-        self.log_list = None
-        self.page = None  # 由 gui_app 注入
+        self.page = None
         self._built = False
-        self._current_filter = 'all'  # 日志级别过滤：all / error / warn / info / debug
+        # 过滤状态
+        self._source = '__all__'
+        self._level = 'all'
+        self._keyword = ''
+        # 数据
+        self._all_lines = []       # 当前文件的行 (截断后)
+        self._sources = []         # 当前文件中出现过的来源
+        # UI 引用
+        self.log_list = None
+        self.date_dropdown = None
+        self.source_dd = None
+        self.level_dd = None
+        self.keyword_field = None
+        self.status_text = None
 
-    # ------------------------------------------------------------------ UI
+    # ---------------------------------------------------------------- UI
     def build(self) -> ft.Control:
-        """构建日志页签 UI"""
+        """构建日志页 UI"""
+        # 来源下拉 (选项随日志文件动态生成)
+        self.source_dd = ft.Dropdown(
+            label="来源", width=180, dense=True,
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
+            options=[ft.dropdown.Option("__all__", "全部日志")],
+            value="__all__",
+            on_select=lambda e: self._on_filter_change('source'),
+        )
+
+        # 级别下拉 (设计稿: 全部级别/INFO/WARNING/ERROR/DEBUG)
+        self.level_dd = ft.Dropdown(
+            label="级别", width=140, dense=True,
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
+            options=[
+                ft.dropdown.Option("all", "全部级别"),
+                ft.dropdown.Option("info", "INFO"),
+                ft.dropdown.Option("warn", "WARNING"),
+                ft.dropdown.Option("error", "ERROR"),
+                ft.dropdown.Option("debug", "DEBUG"),
+            ],
+            value="all",
+            on_select=lambda e: self._on_filter_change('level'),
+        )
+
+        # 关键词搜索 (固定宽度: Column 内 Row 的 expand 在部分组合下失效)
+        self.keyword_field = ft.TextField(
+            label="搜索关键词", width=360, dense=True,
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
+            on_submit=lambda e: self._on_filter_change('keyword'),
+        )
+
+        # 右侧动作按钮 (设计稿: 复制/导出/清空)
+        copy_btn = tonal_btn("复制", icon=ft.Icons.CONTENT_COPY,
+                             on_click=self._on_copy, tooltip="复制当前过滤结果到剪贴板")
+        export_btn = tonal_btn("导出", icon=ft.Icons.DOWNLOAD,
+                               on_click=self._on_export, tooltip="导出当前过滤结果为 txt")
+        clear_btn = tonal_btn("清空", icon=ft.Icons.DELETE_SWEEP_OUTLINED,
+                              on_click=self._on_clear_view,
+                              tooltip="仅清空当前显示 (不影响日志文件)")
+
+        # 日期与文件入口 (按天浏览日志的实用行)
         self.date_dropdown = ft.Dropdown(
-            label="日志日期",
-            width=260,
+            label="日志日期", width=200, dense=True,
             text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             options=[],
             on_select=lambda e: self._reload(),
         )
-
         refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self._reload())
         open_dir_btn = tonal_btn("打开日志目录", icon=ft.Icons.FOLDER_OPEN,
                                  on_click=lambda e: self._open_log_dir())
-        # 日志级别过滤按钮
-        self.filter_btns = {
-            'all': tonal_btn("全部", icon=ft.Icons.LIST,
-                             on_click=lambda e: self._set_filter('all')),
-            'error': tonal_btn("错误", icon=ft.Icons.ERROR_OUTLINED,
-                               on_click=lambda e: self._set_filter('error')),
-            'warn': tonal_btn("警告", icon=ft.Icons.WARNING_OUTLINED,
-                              on_click=lambda e: self._set_filter('warn')),
-            'info': tonal_btn("信息", icon=ft.Icons.INFO_OUTLINED,
-                              on_click=lambda e: self._set_filter('info')),
-            'debug': tonal_btn("调试", icon=ft.Icons.BUG_REPORT,
-                               on_click=lambda e: self._set_filter('debug')),
-        }
-        tip = ft.Text(
-            "日志记录所有任务操作、抓取详情与错误堆栈，便于事后排查问题。"
-            "文件位置：BASE_DIR/日志/YYYY-MM-DD.log（保留最近30天）",
-            size=SIZE_SMALL, weight=WEIGHT_BODY,
-            color=ft.Colors.ON_SURFACE_VARIANT, italic=True,
-            font_family=FONT_STACK,
+        self.status_text = ft.Text("", size=SIZE_TINY, weight=WEIGHT_BODY,
+                                   color=ft.Colors.ON_SURFACE_VARIANT,
+                                   font_family=FONT_STACK)
+
+        toolbar = make_card(
+            ft.Column([
+                ft.Row([self.source_dd, self.level_dd, self.keyword_field,
+                        copy_btn, export_btn, clear_btn],
+                       spacing=6),
+                ft.Row([self.date_dropdown, refresh_btn, open_dir_btn,
+                        self.status_text],
+                       spacing=6, wrap=True),
+            ], spacing=8),
+            padding=10,
         )
 
         self.log_list = ft.ListView(
             expand=True,
             spacing=1,
-            auto_scroll=True,
-        )
-
-        toolbar = make_card(
-            ft.Column([
-                ft.Row([self.date_dropdown, refresh_btn, open_dir_btn],
-                       wrap=True),
-                ft.Row([self.filter_btns[k] for k in self.filter_btns],
-                       wrap=True, spacing=4),
-                tip,
-            ]),
-            padding=10,
+            auto_scroll=False,
         )
 
         viewer = ft.Container(
@@ -109,7 +152,7 @@ class LogTab:
             padding=10,
             # 深色终端风格: 深底 + 浅色文字 (ERROR红/WARN黄/DEBUG灰)
             bgcolor=LOG_TERMINAL_BG,
-            border_radius=12,
+            border_radius=8,
         )
 
         self._built = True
@@ -119,11 +162,14 @@ class LogTab:
         except Exception:
             pass
 
+        header = page_header(
+            "运行日志", "查看系统运行日志，便于排查问题与追踪状态")
         return ft.Column([
+            header,
             toolbar,
             ft.Container(content=viewer, expand=True,
                          padding=ft.Padding(left=10, top=0, right=10, bottom=10)),
-        ], expand=True)
+        ], expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     # ---------------------------------------------------------------- 逻辑
     def _open_log_dir(self):
@@ -160,6 +206,7 @@ class LogTab:
                 self.date_dropdown.value = files[0][:-4] if files else None
 
             if not self.date_dropdown.value:
+                self._all_lines = []
                 self.log_list.controls.clear()
                 self.log_list.controls.append(
                     ft.Text("暂无日志", size=SIZE_SMALL, weight=WEIGHT_BODY,
@@ -176,8 +223,9 @@ class LogTab:
             pass
 
     def _load_file(self, filename: str):
-        """读取并渲染单个日志文件（大文件只显示尾部 _MAX_DISPLAY_LINES 行）"""
+        """读取单个日志文件 (大文件只显示尾部 _MAX_DISPLAY_LINES 行) 并渲染"""
         path = os.path.join(get_log_dir(), filename)
+        self._all_lines = []
         self.log_list.controls.clear()
         if not os.path.isfile(path):
             self.log_list.controls.append(
@@ -195,63 +243,131 @@ class LogTab:
 
         if len(lines) > _MAX_DISPLAY_LINES:
             lines = lines[-_MAX_DISPLAY_LINES:]
-            self.log_list.controls.append(
-                ft.Text(f"(文件较大，仅显示最后 {_MAX_DISPLAY_LINES} 行)",
-                        size=SIZE_TINY, weight=WEIGHT_BODY,
-                        color=ft.Colors.ON_SURFACE_VARIANT, italic=True,
-                        font_family=FONT_STACK))
 
-        for line in lines:
-            # 应用日志级别过滤
-            if not self._filter_line(line):
-                continue
-            self.log_list.controls.append(
-                ft.Text(line, size=SIZE_TINY,
-                        font_family=LOG_TERMINAL_FONT,
-                        color=log_line_color(line), selectable=True))
+        self._all_lines = lines
+        self._rebuild_source_options(lines)
+        self._render_lines()
 
-    @staticmethod
-    def _line_color(line: str):
-        """按日志级别着色（统一走 ui_theme）"""
-        return log_line_color(line)
+    def _rebuild_source_options(self, lines):
+        """从日志行提取来源字段, 动态生成来源下拉选项"""
+        sources = []
+        for line in lines[-2000:]:
+            m = _SOURCE_RE.match(line)
+            if m:
+                src = m.group(1)
+                if src and src not in sources:
+                    sources.append(src)
+        self._sources = sources
+        if self.source_dd is None:
+            return
+        self.source_dd.options = (
+            [ft.dropdown.Option("__all__", "全部日志")] +
+            [ft.dropdown.Option(s, s) for s in sources[:30]]
+        )
+        if self._source != '__all__' and self._source not in sources:
+            self._source = '__all__'
+        self.source_dd.value = self._source
 
-    def _set_filter(self, level: str):
-        """设置日志级别过滤"""
-        self._current_filter = level
-        # 更新按钮样式
-        for key, btn in self.filter_btns.items():
-            if key == level:
-                btn.style = ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
-                    bgcolor=ft.Colors.PRIMARY_CONTAINER,
-                    color=ft.Colors.ON_PRIMARY_CONTAINER,
-                    text_style=BTN_TEXT_STYLE,
-                )
-            else:
-                btn.style = ft.ButtonStyle(
-                    shape=ft.RoundedRectangleBorder(radius=10),
-                    text_style=BTN_TEXT_STYLE,
-                )
-        # 重新加载当前日志文件
-        if self.date_dropdown.value:
-            self._load_file(f"{self.date_dropdown.value}.log")
+    def _on_filter_change(self, kind: str):
+        """来源/级别/关键词过滤变化 → 重渲染"""
+        self._source = self.source_dd.value or '__all__'
+        self._level = self.level_dd.value or 'all'
+        self._keyword = (self.keyword_field.value or '').strip()
+        self._render_lines()
         try:
             self.page.update()
         except Exception:
             pass
 
-    def _filter_line(self, line: str) -> bool:
-        """判断日志行是否应该显示（根据当前过滤级别）"""
-        if self._current_filter == 'all':
+    def _visible_lines(self):
+        """应用 来源+级别+关键词 三维过滤, 返回可见行列表"""
+        kw = self._keyword.lower()
+        out = []
+        for line in self._all_lines:
+            if self._source != '__all__' and self._source not in line:
+                continue
+            if not self._level_match(line):
+                continue
+            if kw and kw not in line.lower():
+                continue
+            out.append(line)
+        return out
+
+    def _level_match(self, line: str) -> bool:
+        upper = line.upper()
+        if self._level == 'all':
             return True
-        level = line.upper()
-        if self._current_filter == 'error':
-            return 'ERROR' in level or '错误' in line or '失败' in line
-        if self._current_filter == 'warn':
-            return 'WARN' in level or '警告' in line
-        if self._current_filter == 'debug':
-            return 'DEBUG' in level or '调试' in line
-        # info: 显示所有非 error/warn/debug 的行
-        return not ('ERROR' in level or '错误' in line or '失败' in line) and \
-               not ('WARN' in level or '警告' in line) and \
-               not ('DEBUG' in level or '调试' in line)
+        if self._level == 'error':
+            return '[ERROR]' in upper
+        if self._level == 'warn':
+            return '[WARN]' in upper or '[WARNING]' in upper
+        if self._level == 'debug':
+            return '[DEBUG]' in upper
+        # info: 非 error/warn/debug
+        return not ('[ERROR]' in upper or '[WARN]' in upper or '[DEBUG]' in upper)
+
+    def _render_lines(self):
+        """渲染过滤后的日志行"""
+        self.log_list.controls.clear()
+        lines = self._visible_lines()
+        if len(self._all_lines) >= _MAX_DISPLAY_LINES:
+            self.log_list.controls.append(
+                ft.Text(f"(文件较大，仅显示最后 {_MAX_DISPLAY_LINES} 行)",
+                        size=SIZE_TINY, weight=WEIGHT_BODY,
+                        color=ft.Colors.ON_SURFACE_VARIANT, italic=True,
+                        font_family=FONT_STACK))
+        for line in lines:
+            self.log_list.controls.append(
+                ft.Text(line, size=SIZE_TINY,
+                        font_family=LOG_TERMINAL_FONT,
+                        color=log_line_color(line), selectable=True))
+        if self.status_text is not None:
+            self.status_text.value = f"显示 {len(lines)} / {len(self._all_lines)} 行"
+
+    # ------------------------------------------------------------ 动作按钮
+    def _on_copy(self, e=None):
+        """复制当前过滤结果到剪贴板 (Windows clip.exe)"""
+        text = '\n'.join(self._visible_lines())
+        if not text:
+            self._notify("没有可复制的内容")
+            return
+        try:
+            import locale
+            enc = locale.getpreferredencoding(False)
+            proc = subprocess.Popen('clip', stdin=subprocess.PIPE, shell=False)
+            proc.communicate(text.encode(enc, errors='replace'))
+            self._notify(f"已复制 {len(self._visible_lines())} 行到剪贴板")
+        except Exception as ex:
+            self._notify(f"复制失败: {ex}")
+
+    def _on_export(self, e=None):
+        """导出当前过滤结果为 txt (日志目录下, pathlib 写入)"""
+        lines = self._visible_lines()
+        if not lines:
+            self._notify("没有可导出的内容")
+            return
+        try:
+            import time as _t
+            fname = f"日志导出_{_t.strftime('%Y%m%d_%H%M%S')}.txt"
+            out = Path(get_app_base_dir()) / '日志' / fname
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+            self._notify(f"已导出 {len(lines)} 行 → 日志/{fname}")
+        except OSError as ex:
+            self._notify(f"导出失败: {ex}")
+
+    def _on_clear_view(self, e=None):
+        """清空当前显示 (不影响日志文件)"""
+        self.log_list.controls.clear()
+        if self.status_text is not None:
+            self.status_text.value = "已清空显示 (重新加载即可恢复)"
+        try:
+            self.page.update()
+        except Exception:
+            pass
+
+    def _notify(self, msg: str):
+        try:
+            open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
+        except Exception:
+            pass

@@ -26,6 +26,7 @@ if getattr(sys, "frozen", False):
 
 from gui_components.task_manager import TaskManager
 from gui_components.icon_rail import IconRail, NAV_PAGES, build_theme_toggle, build_top_bar
+from gui_components.ui_theme import page_header
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
 from gui_components.log_strip import LogStrip
@@ -92,11 +93,15 @@ def main(page: ft.Page):
     page.window.height = min(800, max(600, _sh - 90))
     page.window.min_width = 860
     page.window.min_height = 600
-    try:
-        page.window.left = max(0, (_sw - page.window.width) // 2)
-        page.window.top = max(0, (_sh - page.window.height) // 2 - 20)
-    except Exception:
-        pass
+    # 居中: 用 flet 官方 center() 在窗口就绪后调用。旧实现用 GetSystemMetrics
+    # 手算坐标, 与原生窗口创建存在竞态且只算主屏 (多显示器下偏移), 导致启动不居中
+    async def _center_window():
+        try:
+            await page.window.wait_until_ready_to_show()
+            await page.window.center()
+        except Exception as e:
+            app_log.debug("系统", f"窗口居中失败 (不阻断启动): {e}")
+    page.run_task(_center_window)
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
@@ -163,6 +168,7 @@ def main(page: ft.Page):
 
     crawl_workbench = ft.Row([
         ft.Column([
+            page_header('抓取工作台', '输入小说目录页URL，自动识别站点并开始抓取'),
             input_bar.build(),
             ft.Container(content=task_table.build(), expand=True),
             log_strip.build(),
@@ -289,20 +295,17 @@ def main(page: ft.Page):
     _theme_toggle_btn[0] = build_theme_toggle(page, 'light', toggle_theme)
     top_bar = build_top_bar(page, '小说爬虫', _theme_toggle_btn[0])
 
-    # ---- 整体布局 (苹果风格三段式: 顶栏 + 侧边导航 + 主内容) ----
+    # ---- 整体布局 (Fluent 三段式: 顶栏 + 侧边导航 + 主内容) ----
     main_row = ft.Row([
         rail.build(),
-        # 主内容区: 洁净浅灰白底 + 柔和渐变
+        # 主内容区: Fluent 平涂底色 (日间 #F3F3F3 / 夜间 #202020, 由主题解析)
         ft.Container(
             content=ft.Container(
                 content=content_stack, expand=True,
-                padding=ft.Padding.symmetric(horizontal=20, vertical=20),
+                padding=ft.Padding.symmetric(horizontal=20, vertical=16),
             ),
             expand=True,
-            gradient=ft.LinearGradient(
-                begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
-                colors=[ft.Colors.SURFACE, ft.Colors.SURFACE_CONTAINER_LOW],
-            ),
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
         ),
     ], expand=True, spacing=0, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
@@ -314,9 +317,22 @@ def main(page: ft.Page):
         ),
     )
 
-    # 退出时关闭日志文件
+    # 退出时: 先停掉全部运行中任务 (置位 stop_event, 爬虫循环会保存检查点并
+    # 优雅退出, 避免 "cannot schedule new futures after interpreter shutdown"),
+    # 再关闭日志句柄
+    def _on_disconnect(e):
+        try:
+            for t in task_manager.get_all_tasks():
+                if t.status in ("running", "pending"):
+                    t.stop_flag.set()
+        except Exception:
+            pass
+        try:
+            app_log.close()
+        except Exception:
+            pass
     try:
-        page.on_disconnect = lambda e: app_log.close()
+        page.on_disconnect = _on_disconnect
     except Exception:
         pass
 

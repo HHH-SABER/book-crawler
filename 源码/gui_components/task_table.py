@@ -49,10 +49,22 @@ class TaskTable:
     def build(self) -> ft.Control:
         """构建任务表格"""
         self._list_view = ft.ListView(expand=True, spacing=4, auto_scroll=False)
+        # 卡片头: "任务列表" + 动态任务计数 (设计稿 card-header)
+        self._count_text = ft.Text("共 0 个任务", size=SIZE_TINY,
+                                   weight=WEIGHT_BODY,
+                                   color=ft.Colors.ON_SURFACE_VARIANT,
+                                   font_family=FONT_STACK)
+        card_header = ft.Row([
+            ft.Text("任务列表", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                    color=ft.Colors.ON_SURFACE, font_family=FONT_STACK),
+            ft.Container(expand=True),
+            self._count_text,
+        ])
         header = self._build_header()
         self._refresh()
         return make_card(
             ft.Column([
+                card_header,
                 header,
                 ft.Container(
                     content=self._list_view, expand=True,
@@ -103,6 +115,12 @@ class TaskTable:
         if sig == self._sig:
             return  # 无变化: 保留控件树
         self._sig = sig
+
+        # 同步任务计数 (设计稿: 卡片头右侧 "共 N 个任务")
+        try:
+            self._count_text.value = f"共 {len(tasks)} 个任务"
+        except Exception:
+            pass
 
         self._list_view.controls.clear()
         if not tasks:
