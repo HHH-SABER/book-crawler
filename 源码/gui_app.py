@@ -31,7 +31,6 @@ import threading
 from gui_components.ui_theme import page_header
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
-from gui_components.log_strip import LogStrip
 from gui_components.detail_drawer import DetailDrawer
 from gui_components.log_tab import LogTab
 from gui_components.pages.history_page import HistoryPage
@@ -64,7 +63,6 @@ try:
     import gui_components.icon_rail  # noqa: F401
     import gui_components.input_bar  # noqa: F401
     import gui_components.task_table  # noqa: F401
-    import gui_components.log_strip  # noqa: F401
     import gui_components.detail_drawer  # noqa: F401
     import gui_components.row_detail  # noqa: F401
     import gui_components.log_tab  # noqa: F401
@@ -146,10 +144,9 @@ def main(page: ft.Page):
                     task_manager=task_manager,
                     on_theme_toggle=toggle_theme)
 
-    # ---- 抓取工作台: 输入条 + 任务表格 + 日志条 + 抽屉 ----
+    # ---- 抓取工作台: 输入条 + 任务表格 | 右侧常驻面板 (实时日志/详情/预览) ----
     input_bar = InputBar(task_manager)
     task_table = TaskTable(task_manager)
-    log_strip = LogStrip(task_manager)
     drawer = DetailDrawer(task_manager)
 
     file_picker = ft.FilePicker()
@@ -163,10 +160,9 @@ def main(page: ft.Page):
     input_bar.on_task_created = _on_task_created
     input_bar.page = page
     task_table.page = page
-    log_strip.page = page
     drawer.page = page
 
-    # 任务表格行点击 → 选中 (日志条/抽屉自动跟随); 预览按钮 → 打开抽屉
+    # 任务表格行点击 → 选中 (右侧面板日志/详情自动跟随); 预览按钮 → 切到文件预览
     task_table.on_open_preview = lambda tid: drawer.open("preview", tid)
 
     crawl_workbench = ft.Row([
@@ -174,10 +170,9 @@ def main(page: ft.Page):
             page_header('抓取工作台', '输入小说目录页URL，自动识别站点并开始抓取'),
             input_bar.build(),
             ft.Container(content=task_table.build(), expand=True),
-            log_strip.build(),
         ], expand=True, spacing=8),
         drawer.build(),
-    ], expand=True, spacing=0)
+    ], expand=True, spacing=8)
 
     # ---- 其他三个页面 ----
     history_page = HistoryPage()
@@ -279,10 +274,10 @@ def main(page: ft.Page):
         while True:
             try:
                 if pages_map["crawl"].visible:
-                    # 三个组件只改控件树, 最后统一 update 一次
+                    # 各组件只改控件树, 最后统一 update 一次
                     task_table._refresh()
-                    log_strip.refresh()
-                    drawer.refresh()
+                    drawer.refresh()       # 详情视图 (仅可见时渲染)
+                    drawer.refresh_log()   # 实时日志视图 (默认视图)
                     page.update()
             except Exception:
                 pass
