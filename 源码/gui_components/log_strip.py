@@ -54,7 +54,7 @@ class LogStrip:
             content=ft.Container(
                 content=ft.Row([], alignment=ft.MainAxisAlignment.CENTER),
                 height=8, border_radius=4,
-                bgcolor=ft.Colors.OUTLINE_VARIANT, margin=ft.margin.only(bottom=2),
+                bgcolor=ft.Colors.OUTLINE_VARIANT, margin=ft.margin.Margin(0, 0, 0, 2),
             ),
             mouse_cursor=ft.MouseCursor.RESIZE_ROW,
             on_pan_update=self._on_drag_resize,
