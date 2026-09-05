@@ -50,8 +50,11 @@ def _save(st):
     try:
         p = Path(_path()).resolve()   # pathlib 锚定, 防路径穿越
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(st, ensure_ascii=False, indent=1),
-                     encoding="utf-8")
+        # M8: tmp + os.replace 原子替换 (写一半崩溃不再整体损坏)
+        tmp = p.with_name(p.name + '.tmp')
+        tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1),
+                       encoding="utf-8")
+        os.replace(tmp, p)
     except Exception:
         pass
 
@@ -78,6 +81,7 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int) ->
         return []
     cur = {"空章率": empty / total, "短章率": short / total, "失败率": failed / total}
     alarms = []
+    drifted = False   # M9: 本次触发漂移告警时, 基线不被 EMA 吸收坏值
     try:
         with _LOCK:
             st = _load()
@@ -89,9 +93,16 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int) ->
                         alarms.append(
                             f"⚠ {domain}: {k} 本次 {v:.0%} vs 基线 {bv:.0%} — 疑似站点改版, "
                             f"建议用 脚本/probe_adapter.py 重探")
-            # 更新基线 (EMA)
-            new = {k: _ema((base or {}).get(k), v) for k, v in cur.items()}
-            new["样本数"] = (base or {}).get("样本数", 0) + 1
+                        drifted = True
+            if drifted:
+                # M9 修复: 告警时跳过 EMA 更新 —— 旧实现无条件吸收, 站点真改版
+                # 后 2-3 次任务基线即收敛到坏值, 告警自动"熄火"且持久化误报
+                new = dict(base) if base else {}
+                new["样本数"] = (base or {}).get("样本数", 0) + 1
+            else:
+                # 更新基线 (EMA)
+                new = {k: _ema((base or {}).get(k), v) for k, v in cur.items()}
+                new["样本数"] = (base or {}).get("样本数", 0) + 1
             st[domain] = new
             _save(st)
     except Exception:
