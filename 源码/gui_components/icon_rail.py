@@ -156,16 +156,9 @@ class IconRail:
         self._nav_buttons = {}
         self._control = None
         self.page = None
+        # 状态摘要显示已移至窗口底部全局状态条 (gui_app status_bar),
+        # 侧边栏不再重复渲染状态指示器
         self._task_manager = task_manager
-        # 计数参数: 由 _refresh_status 计算后更新底部状态文本 (替换原"就绪"占位)
-        self._status_text = '就绪'
-        self._status_color = ft.Colors.SECONDARY
-        # P2-状态栏: 守护线程每 2s 刷新活动任务摘要 (flet 0.86 无 on_interval, 用线程)
-        self._stop_refresh = threading.Event()
-        if task_manager is not None:
-            self._refresh_thread = threading.Thread(
-                target=self._refresh_status_loop, daemon=True, name='icon_rail_status')
-            self._refresh_thread.start()
 
     def set_active(self, key: str):
         self._active_key = key
@@ -189,38 +182,6 @@ class IconRail:
                 self._control.update()
         except Exception:
             pass
-
-    def _refresh_status_loop(self):
-        """P2 底部状态栏: 守护线程每 2s 刷新活动任务摘要 (替换"就绪"占位)"""
-        while not self._stop_refresh.is_set():
-            try:
-                self._refresh_status_once()
-            except Exception:
-                pass
-            self._stop_refresh.wait(2.0)
-
-    def _refresh_status_once(self):
-        tm = self._task_manager
-        if tm is None:
-            return
-        try:
-            tasks = tm.tasks  # 列表
-        except Exception:
-            return
-        running = 0
-        total = len(tasks)
-        latest = ''
-        for t in tasks:
-            st = getattr(t, 'status', '') or ''
-            if st in ('running', 'queued', 'crawling'):
-                running += 1
-            if not latest:
-                latest = getattr(t, 'title', '') or ''
-        if running > 0:
-            text = f'运行 {running} · 共 {total}'
-        else:
-            text = f'就绪 · 共 {total}' if total else '就绪'
-        self.update_status(text, running=(running > 0))
 
     def _update_btn_style(self, btn, is_active: bool):
         """更新导航按钮选中/未选中样式 (Fluent: 选中=浅蓝底蓝字)"""
@@ -297,28 +258,8 @@ class IconRail:
         # 导航按钮列表
         nav_btns = [self._make_nav_btn(k, ic, lb) for k, ic, lb, _ in NAV_PAGES]
 
-        # 底部状态指示器
-        status_dot = ft.Container(
-            width=8, height=8, border_radius=4,
-            bgcolor=self._status_color,
-        )
-        status_label = txt(self._status_text, size=SIZE_TINY,
-                           color=ft.Colors.ON_SURFACE_VARIANT)
-        self._status_dot = status_dot
-        self._status_label = status_label
-
-        status_box = ft.Container(
-            content=ft.Row(
-                [status_dot, status_label],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=ft.Padding.symmetric(horizontal=8, vertical=8),
-            border_radius=10,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-        )
-
-        # 组合: 分区标题 + 导航按钮 + 弹性留白 + 分割线 + 状态
+        # 组合: 分区标题 + 导航按钮 + 弹性留白
+        # (状态摘要显示已移至窗口底部全局状态条, 侧边栏不再重复)
         body = ft.Column(
             [
                 ft.Container(
@@ -327,11 +268,6 @@ class IconRail:
                 ),
                 *nav_btns,
                 ft.Container(expand=True),
-                ft.Divider(height=1, color=ft.Colors.OUTLINE_VARIANT),
-                ft.Container(
-                    content=status_box,
-                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-                ),
             ],
             spacing=2,
             expand=True,
