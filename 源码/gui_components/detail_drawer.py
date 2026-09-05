@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""右侧上下文抽屉：任务详情 / 文件预览 (跟随选中对象切换)
+"""右侧常驻面板：实时日志 (默认) / 任务详情 / 文件预览 三视图切换
 
-- 收起时宽度 0 (不占主区空间), 展开时 320px
+- 宽度固定 320px, 始终展开
+- 实时日志视图 (默认): 跟随选中任务的实时日志, 深色终端风 + 语义着色
 - 任务详情视图: 大进度环 + 指标卡 (引擎/反爬/质检/增量) + 输出文件
 - 文件预览视图: 抓取结果目录文件列表 + 内容预览
-历史/站点配置已升级为独立页面, 不在本抽屉。
+- 行内 📄 按钮切到详情/预览, × 按钮返回实时日志
 """
 import flet as ft
 import os
@@ -12,7 +13,8 @@ import sys
 import glob
 
 from .task_manager import TaskManager
-from .ui_theme import (status_chip, status_color, tonal_btn)
+from .ui_theme import (status_chip, status_color, tonal_btn,
+                       LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
 from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
@@ -22,22 +24,24 @@ _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
 from _path_utils import get_default_output_dir  # noqa: E402
 
-# 抽屉宽度
+# 面板宽度 (常驻)
 _WIDTH_OPEN = 320
-_WIDTH_CLOSED = 0
 
 
 class DetailDrawer:
-    """右侧上下文抽屉组件"""
+    """右侧常驻面板 (实时日志 / 任务详情 / 文件预览)"""
 
     def __init__(self, task_manager: TaskManager):
         self.task_manager = task_manager
         self.page = None
-        self._view = "detail"     # detail / preview
+        self._view = "log"        # log (默认) / detail / preview
         self._files = []
         self._selected_file = None
         # UI 引用
         self.container = None
+        self._title_text = None
+        self._log_view = None
+        self._log_list = None
         self._detail_view = None
         self._preview_view = None
         self._file_list = None
@@ -46,7 +50,17 @@ class DetailDrawer:
 
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
-        """构建抽屉 (默认收起)"""
+        """构建右侧面板 (默认实时日志视图)"""
+        # ---- 实时日志视图 (默认) ----
+        self._log_list = ft.ListView(expand=True, spacing=1, auto_scroll=True)
+        self._log_view = ft.Container(
+            content=self._log_list,
+            expand=True,
+            bgcolor=LOG_TERMINAL_BG,
+            border_radius=8,
+            padding=8,
+        )
+
         # ---- 任务详情视图 ----
         self._detail_view = ft.Column(spacing=8)
 
@@ -77,90 +91,140 @@ class DetailDrawer:
             ft.Container(content=self._file_content, expand=True),
         ], spacing=6)
 
-        # 抽屉容器 (收起时内容整体隐藏, 只留 0 宽占位; 旧实现内容未隐藏
-        # 导致收起后在右缘挤成一列竖排文字)
+        # 标题行: 视图名动态 + 右上角切换按钮 (详情/预览视图时 = 返回日志)
+        self._title_text = ft.Text("实时日志", size=SIZE_SMALL,
+                                   weight=WEIGHT_SUBTITLE, font_family=FONT_STACK)
+        self._toggle_btn = ft.IconButton(
+            icon=ft.Icons.INFO_OUTLINED, icon_size=16,
+            tooltip="查看任务详情",
+            on_click=lambda e: self._on_toggle_click(),
+            style=ft.ButtonStyle(
+                padding=4, shape=ft.RoundedRectangleBorder(radius=4)),
+        )
+
         self._drawer_body = ft.Column([
-            # 标题行: 视图名 + 关闭按钮
             ft.Row([
-                self._title_text(),
+                self._title_text,
                 ft.Container(expand=True),
-                ft.IconButton(
-                    icon=ft.Icons.CLOSE, icon_size=16,
-                    tooltip="关闭抽屉",
-                    on_click=lambda e: self.close(),
-                    style=ft.ButtonStyle(
-                        padding=4,
-                        shape=ft.RoundedRectangleBorder(radius=4)),
-                ),
+                self._toggle_btn,
             ], spacing=4),
             ft.Divider(height=1),
+            self._log_view,
             self._detail_view,
             self._preview_view,
-        ], spacing=6)
-        self._drawer_body.visible = False
+        ], spacing=6, expand=True)
+        self._detail_view.visible = False
+        self._preview_view.visible = False
         self.container = ft.Container(
             content=self._drawer_body,
-            width=_WIDTH_CLOSED,
+            width=_WIDTH_OPEN,
             padding=ft.Padding.symmetric(horizontal=10, vertical=10),
             bgcolor=ft.Colors.SURFACE,
-            animate=ft.Animation(200, "easeOutCubic"),
+            border=ft.Border(left=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
+            # 注意: 不能再设 expand=True — 工作台 Row 中左列与面板都是
+            # expand 时会 50/50 平分, 内容区被压剩一半 (列错位的真正根因)
         )
-        self._preview_view.visible = False
-        self._detail_view.visible = True
-        # 默认展开"任务详情"卡 (与设计预览一致: 右侧常驻任务详情/文件预览两卡)
-        self.container.width = _WIDTH_OPEN
-        self._drawer_body.visible = True
         try:
-            self.refresh()   # 立即填充 detail 视图 (无任务显示占位文本)
+            self.refresh()      # 详情视图立即填充
+            self.refresh_log()  # 日志视图立即填充
         except Exception:
             pass
         return self.container
 
-    def _title_text(self) -> ft.Text:
-        return ft.Text("任务详情", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                       font_family=FONT_STACK)
-
-    # ------------------------------------------------------------- 开关路由
-    def open(self, view: str = "detail", task_id: str = ""):
-        """展开抽屉并切换视图 (主线程)
+    # ------------------------------------------------------------- 视图路由
+    def open(self, view: str = "log", task_id: str = ""):
+        """切换面板视图 (主线程)
 
         Args:
-            view: "detail" (任务详情, 用选中任务) / "preview" (文件预览)
+            view: "log" (实时日志, 默认) / "detail" (任务详情) / "preview" (文件预览)
             task_id: 可选, 指定任务 (默认用当前选中任务)
         """
         if task_id:
             self.task_manager.select_task(task_id)
-        self._view = view
-        self.container.width = _WIDTH_OPEN
-        self.container.border = ft.Border(left=ft.BorderSide(
-            1, ft.Colors.OUTLINE_VARIANT))
-        if view == "preview":
-            self._detail_view.visible = False
-            self._preview_view.visible = True
+        self._view = view if view in ("log", "detail", "preview") else "log"
+        self._log_view.visible = (self._view == "log")
+        self._detail_view.visible = (self._view == "detail")
+        self._preview_view.visible = (self._view == "preview")
+        # 标题 + 右上角按钮随视图切换 (非日志视图时按钮变为"返回日志")
+        self._title_text.value = {
+            "log": "实时日志", "detail": "任务详情", "preview": "文件预览",
+        }[self._view]
+        self._toggle_btn.icon = (ft.Icons.CLOSE if self._view != "log"
+                                 else ft.Icons.INFO_OUTLINED)
+        self._toggle_btn.tooltip = ("返回实时日志" if self._view != "log"
+                                    else "查看任务详情")
+        if self._view == "preview":
             self._scan_files()
-        else:
-            self._detail_view.visible = True
-            self._preview_view.visible = False
+        elif self._view == "detail":
             self.refresh()
-        self._drawer_body.visible = True   # 展开时显示内容
         self._update()
 
     def close(self):
-        """收起抽屉"""
-        self.container.width = _WIDTH_CLOSED
-        self.container.border = None  # 收起时隐藏左边框线
-        self._drawer_body.visible = False  # 隐藏内容, 防止挤成竖排文字
-        self._update()
+        """返回实时日志视图 (历史 API 兼容: 面板常驻不再收起)"""
+        self.open("log")
+
+    def _on_toggle_click(self):
+        """右上角按钮: 日志视图 → 查看任务详情; 其他视图 → 返回日志"""
+        self.open("log" if self._view != "log" else "detail")
 
     @property
     def is_open(self) -> bool:
-        return self.container is not None and self.container.width == _WIDTH_OPEN
+        """面板常驻展开 (历史 API 兼容)"""
+        return self.container is not None
 
     def _update(self):
         try:
             self.page.update()
         except Exception:
             pass
+
+    # ----------------------------------------------------------- 实时日志视图
+    # 语义着色: [引擎]/[反爬]/[质检]/[增量]/[速度] 等前缀着不同颜色
+    _SEMANTIC_COLORS = [
+        ('[引擎]', '#4CC2FF'),      # 引擎: 亮蓝
+        ('[反爬]', '#FCE100'),      # 反爬: 黄
+        ('[质检]', '#6CCB5F'),      # 质检: 绿
+        ('[增量]', '#9CD8F7'),      # 增量: 浅蓝
+        ('[速度自适应]', '#4CC2FF'),
+        ('[并发]', '#9CD8F7'),
+        ('[缓存]', '#9D9D9D'),
+    ]
+
+    def refresh_log(self):
+        """刷新实时日志视图 (主线程, 由刷新循环驱动; 仅日志视图可见时渲染)"""
+        if self._log_list is None or not self._log_view.visible:
+            return
+        tid = self.task_manager.selected_task_id
+        if not tid:
+            if self._title_text.value != "实时日志":
+                self._title_text.value = "实时日志"
+            return
+        task = self.task_manager.get_task(tid)
+        if not task:
+            return
+        self._title_text.value = f"实时日志 · {task.title[:24]}"
+
+        # 只显示最近 100 条, 级别色 + 语义前缀色
+        self._log_list.controls.clear()
+        for log in task.logs[-100:]:
+            msg = log['msg']
+            text_color = log_line_color(msg)
+            if '[错误]' in msg or '失败' in msg:
+                text_color = MORANDI_ERROR
+            elif '成功' in msg or '完成' in msg:
+                text_color = MORANDI_SUCCESS
+            else:
+                for prefix, color in self._SEMANTIC_COLORS:
+                    if prefix in msg:
+                        text_color = color
+                        break
+            self._log_list.controls.append(
+                ft.Text(f"[{log['time']}] {msg}",
+                        size=SIZE_TINY,
+                        font_family=LOG_TERMINAL_FONT,
+                        color=text_color,
+                        selectable=True)
+            )
 
     # ----------------------------------------------------------- 详情刷新
     def refresh(self):
