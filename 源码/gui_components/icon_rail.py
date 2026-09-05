@@ -17,6 +17,7 @@
 导航项: icon(18px) + 文字(14px), 圆角 4px, 选中态浅蓝底蓝字
 """
 import flet as ft
+import threading
 
 from .ui_morandi import (
     txt, SIZE_TINY, SIZE_BODY, SIZE_SMALL,
@@ -147,15 +148,24 @@ class IconRail:
       - .build()
     """
 
-    def __init__(self, on_nav=None, on_theme_toggle=None):
+    def __init__(self, on_nav=None, on_theme_toggle=None, task_manager=None):
         self._on_nav = on_nav
         self._on_theme_toggle = on_theme_toggle
         self._active_key = 'crawl'
         self._is_dark = False
         self._nav_buttons = {}
         self._control = None
+        self.page = None
+        self._task_manager = task_manager
+        # 计数参数: 由 _refresh_status 计算后更新底部状态文本 (替换原"就绪"占位)
         self._status_text = '就绪'
         self._status_color = ft.Colors.SECONDARY
+        # P2-状态栏: 守护线程每 2s 刷新活动任务摘要 (flet 0.86 无 on_interval, 用线程)
+        self._stop_refresh = threading.Event()
+        if task_manager is not None:
+            self._refresh_thread = threading.Thread(
+                target=self._refresh_status_loop, daemon=True, name='icon_rail_status')
+            self._refresh_thread.start()
 
     def set_active(self, key: str):
         self._active_key = key
@@ -179,6 +189,38 @@ class IconRail:
                 self._control.update()
         except Exception:
             pass
+
+    def _refresh_status_loop(self):
+        """P2 底部状态栏: 守护线程每 2s 刷新活动任务摘要 (替换"就绪"占位)"""
+        while not self._stop_refresh.is_set():
+            try:
+                self._refresh_status_once()
+            except Exception:
+                pass
+            self._stop_refresh.wait(2.0)
+
+    def _refresh_status_once(self):
+        tm = self._task_manager
+        if tm is None:
+            return
+        try:
+            tasks = tm.tasks  # 列表
+        except Exception:
+            return
+        running = 0
+        total = len(tasks)
+        latest = ''
+        for t in tasks:
+            st = getattr(t, 'status', '') or ''
+            if st in ('running', 'queued', 'crawling'):
+                running += 1
+            if not latest:
+                latest = getattr(t, 'title', '') or ''
+        if running > 0:
+            text = f'运行 {running} · 共 {total}'
+        else:
+            text = f'就绪 · 共 {total}' if total else '就绪'
+        self.update_status(text, running=(running > 0))
 
     def _update_btn_style(self, btn, is_active: bool):
         """更新导航按钮选中/未选中样式 (Fluent: 选中=浅蓝底蓝字)"""

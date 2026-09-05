@@ -89,10 +89,10 @@ def main(page: ft.Page):
         _sw, _sh = _user32.GetSystemMetrics(0), _user32.GetSystemMetrics(1)
     except Exception:
         _sw, _sh = 1920, 1080
-    page.window.width = min(1280, max(860, _sw - 40))
-    page.window.height = min(800, max(600, _sh - 90))
-    page.window.min_width = 860
-    page.window.min_height = 600
+    page.window.width = min(1500, max(960, int(_sw * 0.9)))
+    page.window.height = min(860, max(640, int(_sh * 0.85)))
+    page.window.min_width = 1100
+    page.window.min_height = 640
     # 居中: 用 flet 官方 center() 在窗口就绪后调用。旧实现用 GetSystemMetrics
     # 手算坐标, 与原生窗口创建存在竞态且只算主屏 (多显示器下偏移), 导致启动不居中
     async def _center_window():
@@ -141,6 +141,7 @@ def main(page: ft.Page):
 
     # ---- 图标导航栏 ----
     rail = IconRail(on_nav=lambda key: _switch_page(key),
+                    task_manager=task_manager,
                     on_theme_toggle=toggle_theme)
 
     # ---- 抓取工作台: 输入条 + 任务表格 + 日志条 + 抽屉 ----
