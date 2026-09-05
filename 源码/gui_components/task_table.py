@@ -23,6 +23,26 @@ except Exception:
     app_log = None
 
 
+# ---------------------------------------------------------------- 列定义
+# 表头与数据行共用同一份列宽 (单一定义源, 保证表头与行严格对齐):
+#   - 标题列 width=None → expand 占据剩余宽度
+#   - 其余列固定像素宽 → 任何窗口尺寸下操作按钮都不会被压缩裁剪
+#     (修复: 纯 flex 布局在窄窗口丢操作按钮 + 表头与行错位)
+_COLUMNS = [
+    # (表头文字, 宽度px / None=expand, 是否居中)
+    ("任务 / URL", None, False),
+    ("进度", 100, False),
+    ("状态", 72, True),
+    ("引擎", 84, False),
+    ("反爬", 84, False),
+    ("耗时", 56, False),
+    ("质检", 56, False),
+    ("操作", 144, True),
+]
+_TITLE_COL = 0        # expand 列在 _COLUMNS 中的下标
+_OPS_COL = 7          # 操作列下标
+
+
 def _log(source: str, message: str):
     if app_log is not None:
         try:
@@ -76,26 +96,19 @@ class TaskTable:
         )
 
     def _build_header(self) -> ft.Control:
-        """表头 (与数据行同列宽比例)"""
-        def _h(text, flex, align=ft.MainAxisAlignment.START):
+        """表头 (与数据行共用 _COLUMNS 列宽, 严格对齐)"""
+        def _h(label, width, center):
             return ft.Container(
-                content=ft.Text(text, size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
+                content=ft.Text(label, size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
                                 color=ft.Colors.ON_SURFACE_VARIANT,
                                 font_family=FONT_STACK),
-                expand=flex if flex else None,
-                alignment=ft.Alignment(-1, 0) if align == ft.MainAxisAlignment.START
-                else ft.Alignment(0, 0),
+                expand=(width is None),
+                width=width,
+                alignment=ft.Alignment(0, 0) if center else ft.Alignment(-1, 0),
             )
-        return ft.Row([
-            _h("任务 / URL", 42),
-            _h("进度", 12),
-            _h("状态", 8, ft.MainAxisAlignment.CENTER),
-            _h("引擎", 8),
-            _h("反爬", 9),
-            _h("耗时", 6),
-            _h("质检", 7),
-            _h("", 12, ft.MainAxisAlignment.CENTER),
-        ], spacing=6)
+        return ft.Row(
+            [_h(label, width, center) for label, width, center in _COLUMNS],
+            spacing=6)
 
     # ------------------------------------------------------------- 刷新 (主线程)
     def _refresh(self):
@@ -151,13 +164,16 @@ class TaskTable:
         is_expanded = (task.task_id == self._expanded_id)
         is_selected = task.selected
 
-        # ---- 单元格工厂 ----
-        def _cell(content, flex=None, center=False):
+        # ---- 单元格工厂 (与表头共用 _COLUMNS 列宽) ----
+        def _cell(content, width=None, center=False):
             return ft.Container(
                 content=content,
-                expand=flex, alignment=ft.Alignment(0, 0) if center
+                width=width,
+                expand=(width is None),
+                alignment=ft.Alignment(0, 0) if center
                 else ft.Alignment(-1, 0),
             )
+        _w = lambda idx: _COLUMNS[idx][1]
 
         # 标题+URL 单元格
         title_text = ft.Text((task.title[:24] + "…") if len(task.title) > 24 else task.title,
@@ -170,7 +186,7 @@ class TaskTable:
                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                            font_family=FONT_STACK)
         title_cell = _cell(ft.Column([title_text, url_text],
-                                     spacing=1, tight=True), flex=36)
+                                     spacing=1, tight=True), width=_w(0))
 
         # 进度单元格 (迷你条 + 数值)
         if task.progress_total > 0:
@@ -189,10 +205,10 @@ class TaskTable:
         progress_cell = _cell(ft.Row([ring, ft.Text(pct_text, size=SIZE_TINY,
                                                    font_family=FONT_STACK,
                                                    color=ft.Colors.ON_SURFACE_VARIANT)],
-                                    spacing=4), flex=12)
+                                    spacing=4), width=_w(1))
 
         # 状态单元格
-        status_cell = _cell(status_chip(task.status), flex=8, center=True)
+        status_cell = _cell(status_chip(task.status), width=_w(2), center=True)
 
         # 引擎单元格
         engine = task.metrics.engine or "—"
@@ -201,7 +217,7 @@ class TaskTable:
                                     color=(MORANDI_SUCCESS if task.metrics.engine
                                            else ft.Colors.ON_SURFACE_VARIANT),
                                     max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS), flex=8)
+                                    overflow=ft.TextOverflow.ELLIPSIS), width=_w(3))
 
         # 反爬单元格 (命中显示标签色, 未命中灰)
         anti = task.metrics.anti_spider_type
@@ -210,12 +226,12 @@ class TaskTable:
                                   color=(MORANDI_WARNING if anti
                                          else ft.Colors.ON_SURFACE_VARIANT),
                                   max_lines=1,
-                                  overflow=ft.TextOverflow.ELLIPSIS), flex=9)
+                                  overflow=ft.TextOverflow.ELLIPSIS), width=_w(4))
 
         # 耗时单元格
         elapsed_cell = _cell(ft.Text(_fmt_elapsed(task), size=SIZE_TINY,
                                      font_family=FONT_STACK,
-                                     color=ft.Colors.ON_SURFACE_VARIANT), flex=6)
+                                     color=ft.Colors.ON_SURFACE_VARIANT), width=_w(5))
 
         # 质检单元格
         qs = task.metrics.quality_score
@@ -225,7 +241,7 @@ class TaskTable:
         else:
             q_text, q_color = "—", ft.Colors.ON_SURFACE_VARIANT
         quality_cell = _cell(ft.Text(q_text, size=SIZE_TINY, weight=WEIGHT_BODY,
-                                     font_family=FONT_STACK, color=q_color), flex=7)
+                                     font_family=FONT_STACK, color=q_color), width=_w(6))
 
         # 操作单元格: 展开 / 预览 / 重下 / 删除
         expand_btn = ft.IconButton(
@@ -268,7 +284,7 @@ class TaskTable:
         ops_cell = _cell(ft.Row([expand_btn, preview_btn, redl_btn, del_btn],
                                 spacing=2,
                                 alignment=ft.MainAxisAlignment.CENTER),
-                         flex=15, center=True)
+                         width=_w(7), center=True)
 
         # 主行
         main_row = ft.Row([
