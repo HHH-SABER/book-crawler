@@ -21,7 +21,7 @@ if _HERE not in sys.path:
 
 from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn, page_header
 from ..ui_morandi import (open_dialog, close_dialog,
-                          FONT_STACK, SIZE_TITLE, SIZE_SUBTITLE, SIZE_LABEL,
+                          FONT_STACK, SIZE_SUBTITLE, SIZE_LABEL,
                           SIZE_SMALL, SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
