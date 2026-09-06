@@ -34,6 +34,14 @@ from bs4 import BeautifulSoup
 import time
 from fake_useragent import UserAgent
 
+# DNS 污染回退: 部分站点域名被本地 DNS 污染 (解析 0.0.0.0) 而站点在线,
+# 进程内 patch getaddrinfo, 污染时用 DoH (1.1.1.1/阿里) 解析真实 IP
+try:
+    import dns_doh as _dns_doh
+    _dns_doh.install()
+except Exception:
+    pass  # 模块缺失/失败不影响主流程
+
 # P1-1 内置 UA 池: fake-useragent 需联网拉数据, 失败/离线时降级用 (避免所有
 # 降级 run 共用同一个 UA 被集中封禁)。选择按域名 hash 稳定 + 轮换时排除当前。
 _BUILTIN_UA_POOL = [
