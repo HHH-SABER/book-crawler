@@ -14,8 +14,14 @@ permissions:
   contents: write
 
 jobs:
+  # 质量门禁: 发布前离线回归必须全绿 (test.yml 以 workflow_call 被本流程复用)
+  test:
+    name: Offline Regression (unittest)
+    uses: ./.github/workflows/test.yml
+
   build:
     name: Build Windows EXE
+    needs: test
     runs-on: windows-latest
     timeout-minutes: 120
     steps:

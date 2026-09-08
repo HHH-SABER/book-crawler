@@ -28,16 +28,47 @@
 
 ### 测试
 
-- 离线回归 `测试/test_offline_parsing.py` **38/38 通过**（含 Rust 路径下
-  的码点流解码）；并发基准见 `rust_core_poc/`（concurrency_bench.py）
-- 质检/解码 parity 用真实样本 + 边界样本验证逐字段一致；`rust_core` 缺失
-  兜底路径已单测验证
+- 离线回归 `测试/test_offline_parsing.py` 通过（含 Rust 路径下的码点流解码）；
+  并发基准见 `rust_core_poc/`（concurrency_bench.py）
+- 质检/解码 parity 用真实样本 + 边界样本验证逐字段一致；Rust 开/关双路径
+  一致性与缺失兜底已固化为单测 `TestRustFallbackParity`（质检/码点流各覆盖）
 
 ### 打包
 
 - `build_exe.py` 把 `源码/rust_core.pyd` 经 `--add-data` 打进 EXE bundle 根
   （onefile 解压后 `_MEIPASS` 在 sys.path，`import rust_core` 直接命中）；
   `.pyd` 缺失时静默回退纯 Python，不影响分发
+
+### 修复 — 审查还债（GUI 竞态 / 分页崩溃 / driver 泄漏 / DoH 卡顿 / 合规默认值）
+
+- **build_paged_url 缺 suffix 防御**（sites_config.py）: GUI 新增/JSON 导入的
+  `content_pagination` 缺 `suffix` 时直接 KeyError 使整章分页失败（调用点无
+  try 保护）→ 缺 suffix 视为无翻页能力返回 None
+- **restart_task 终态竞态**（task_manager.py）: stop 后旧爬虫线程可能仍在收尾
+  数秒，此时重启会在同 task_id 上起新线程；旧线程退出时按 `task.status ==
+  "running"` 判断会把新运行误标 completed/failed 并冻结其计时 → 新增
+  `_is_task_thread_owner`（线程身份校验），终态只由登记线程写入
+- **tanmixs 并发 driver 泄漏**（爬虫.py）: 并发分支在方法内每次新建
+  `threading.local()`，`hasattr` 恒 False → 每次调用创建新 Chrome driver 且
+  从不 quit（验证码分支同样把可见 driver 存进局部 TLS）→ TLS 槽位提升为
+  实例字段只建一次，新增登记表，`close()` 统一 quit 回收
+- **dns_doh IP 字面量/localhost 快速通道**（dns_doh.py）: 旧实现把解析结果
+  里的 127.0.0.1 当污染，对 name=127.0.0.1 发起 DoH 查询（两源 8s 超时串行，
+  最坏卡 16 秒，波及本地代理/本地 ollama 等环回请求）→ IP 字面量与
+  localhost 系直接走系统解析，不触发 DoH
+- **合规默认值对齐**（配置/captcha_config.json 模板）: 分发模板
+  `ddddocr.enabled=true` 与代码默认值（False）及 waf_captcha.py 合规声明
+  （自动识别默认关闭）矛盾 → 模板改回 false
+- **依赖约束修正**（requirements.txt）: `flet>=0.22.0` 与实际使用的 0.86 API
+  严重不符（0.22 下无法运行）→ `flet>=0.86.0,<0.87`
+- **CI 质量门禁**（.github/workflows/test.yml 新增 + release.yml 接线）:
+  push main / PR 触发离线回归；Release 构建以 `needs: test` 先测后打包，
+  修复"只构建不测试"的发布流程缺口
+
+### 其他
+
+- 质检评分权重/阈值在 内容质检器.py 与 rust_core_poc/pyo3_ext/src/lib.rs
+  双处镜像，两侧补"同步警告"注释（调参必须两边同步并跑 qa_parity.py）
 
 ***
 

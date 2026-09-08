@@ -30,6 +30,10 @@ except (ImportError, OSError):
     _RUST_质检可用 = False
 
 # ---- 评分参数 (集中定义, 便于调整) ----
+# ⚠ 双实现同步警告: 本组权重/阈值在 rust_core_poc/pyo3_ext/src/lib.rs
+#   (W_长度 / 阈值长 等常量) 有一份 Rust 镜像。存在 源码/rust_core.pyd 时
+#   质检走 Rust 路径, 只改这里不会生效 — 调参必须两边同步修改, 并运行
+#   `python rust_core_poc/qa_parity.py` 验证逐字段一致。
 权重_长度 = 25
 权重_中文占比 = 25
 权重_乱码率 = 20

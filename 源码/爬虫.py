@@ -683,6 +683,14 @@ class NovelSpider:
         self._tanmixs_user_data = os.path.join(tempfile.gettempdir(), 'tanmixs_chrome_profile')
         # 并发模式: 每个线程独立 driver + 独立 profile (Selenium driver 非线程安全)
         self._tanmixs_concurrent = False
+        # H1 修复: 并发模式的线程级 driver 槽位必须在实例上只建一次 —
+        # 旧实现在方法内每次新建 threading.local(), hasattr 恒 False,
+        # 每次调用都创建新 Chrome driver 且从不 quit (进程级泄漏)。
+        self._tanmixs_tls = threading.local()
+        # 并发模式 driver 登记表: worker 线程结束后其 TLS 槽位不可达,
+        # close() 靠这份列表统一 quit 回收 (配合 _tanmixs_drivers_lock)
+        self._tanmixs_drivers_lock = threading.Lock()
+        self._tanmixs_all_drivers = []
         # 并发章节状态隔离: 以下四项原为实例属性, 多 worker 并发时互相踩踏
         # (指纹被清→重复正文/误判截断; datafile HTML 串章)。改为线程本地存储,
         # 每个抓取线程独立一份 (经属性读写, 调用点零改动)
@@ -800,11 +808,13 @@ class NovelSpider:
         """
         # 并发模式: 每个线程独立 driver + 独立 profile (避免共享 driver 竞态与 profile 锁)
         if self._tanmixs_concurrent:
-            import threading
-            tls = threading.local()
+            tls = self._tanmixs_tls
             if not hasattr(tls, '_tanmixs_driver'):
-                tls._tanmixs_driver = self._create_tanmixs_driver(
+                driver = self._create_tanmixs_driver(
                     visible, os.path.join(tempfile.gettempdir(), f'tanmixs_profile_{threading.get_ident()}'))
+                with self._tanmixs_drivers_lock:
+                    self._tanmixs_all_drivers.append(driver)
+                tls._tanmixs_driver = driver
             return tls._tanmixs_driver
 
         # 如果已有持久化driver且模式匹配, 直接复用
@@ -861,12 +871,14 @@ class NovelSpider:
         except Exception as e:
             _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         if self._tanmixs_concurrent:
-            # 并发模式: 重置当前线程的 driver, 用可见模式重建
-            import threading
-            tls = threading.local()
-            tls._tanmixs_driver = self._create_tanmixs_driver(
+            # 并发模式: 旧 driver 已在上方 quit, 重置当前线程的 TLS 槽位并
+            # 用可见模式重建 (写入登记表供 close() 回收; 旧实现把 driver 存进
+            # 方法内新建的局部 threading.local(), 方法一返回即不可达 → 泄漏)
+            visible_driver = self._create_tanmixs_driver(
                 visible=True, profile_dir=os.path.join(tempfile.gettempdir(), f'tanmixs_profile_{threading.get_ident()}'))
-            visible_driver = tls._tanmixs_driver
+            with self._tanmixs_drivers_lock:
+                self._tanmixs_all_drivers.append(visible_driver)
+            self._tanmixs_tls._tanmixs_driver = visible_driver
         else:
             self._tanmixs_driver = None
             # 创建可见driver (复用同一user-data-dir)
@@ -5729,6 +5741,16 @@ class NovelSpider:
         if driver is not None:
             try:
                 driver.quit()
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        # 持久化 tanmixs driver (并发模式): worker 线程结束后其 TLS 槽位不可达,
+        # 靠登记表统一 quit (close 在线程池收尾后的主线程执行, 可安全遍历)
+        with self._tanmixs_drivers_lock:
+            tanmixs_drivers = list(self._tanmixs_all_drivers)
+            self._tanmixs_all_drivers.clear()
+        for _d in tanmixs_drivers:
+            try:
+                _d.quit()
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         # 交给验证码模块自清理 (若它持有浏览器实例)
