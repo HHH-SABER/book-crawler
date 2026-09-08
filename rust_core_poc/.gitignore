@@ -1,0 +1,14 @@
+# ============ Rust 加速 POC: 仅提交源码/脚本, 排除构建产物 ============
+# 本地手动搭建的工具链 (rustup 镜像下载的组件, 数十~数百 MB, 不入库)
+.toolchain/
+# 编译输出 (cargo target/), 各子 crate 命中此规则
+target/
+# 网络探测临时 crate (一次性, 无关 POC 交付)
+probe_net/
+# 生成的输入/输出 (run_bench.py 产出的临时文件)
+*.bin
+*.txt
+# 编译产物扩展 (.pyd / .dll)
+*.pyd
+*.dll
+*.exe

@@ -6140,7 +6140,12 @@ class NovelSpider:
             _log.info(f"[质检] 汇总报告生成异常: {e}")
         self._记录站点历史(catalog_url, novel_title, total, failed,
                             output_file, 质检摘要=质检摘要)
-        # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史不丢失)
+        # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史/站点历史不丢失)
+        if _站点历史可用:
+            try:
+                取站点历史().flush()
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         if self._爬取历史 is not None:
             try:
                 self._爬取历史.flush()
