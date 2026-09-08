@@ -41,6 +41,16 @@
 
 ### 修复 — 审查还债（GUI 竞态 / 分页崩溃 / driver 泄漏 / DoH 卡顿 / 合规默认值）
 
+- **EXE 启动即崩两连修**（build_exe.py，v2.4.0 首次补真实启动冒烟测试发现）:
+  ① flet 0.86 图标枚举经 `importlib.resources` 运行时读取 `icons.json` 纯数据，
+  PyInstaller 无 flet hook 不自动收集 → `icon_rail` 导入即 FileNotFoundError；
+  现全量收集 flet 包内 .json 数据（material/cupertino 两套，<600KB）。
+  ② `flet.app.run()` 运行时才动态 import 的 `flet_desktop` 启动模块（纯 py，
+  客户端二进制本体走 `_flet_client` + `FLET_VIEW_PATH`）静态分析收不到 →
+  ft.run 即 ModuleNotFoundError；补 `--hidden-import flet_desktop`。
+  两个缺口 v2.3.1 EXE 同样存在（从未被真实启动过）；修复后 EXE 实测可拉起
+  主窗口（flet 客户端窗口标题"小说爬虫"）
+
 - **build_paged_url 缺 suffix 防御**（sites_config.py）: GUI 新增/JSON 导入的
   `content_pagination` 缺 `suffix` 时直接 KeyError 使整章分页失败（调用点无
   try 保护）→ 缺 suffix 视为无翻页能力返回 None
