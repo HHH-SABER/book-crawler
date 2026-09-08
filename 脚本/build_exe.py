@@ -312,6 +312,28 @@ def main():
     else:
         log("[INFO] rust_core.pyd 不存在, 跳过 (运行时间退纯 Python)")
 
+    # flet 包内纯数据文件 (material/icons.json 等): flet 0.86 的图标枚举经
+    # importlib.resources 在运行时读取 (controls/material/icons.py::_load),
+    # PyInstaller 没有 flet hook 不会自动收集纯数据 — 缺失时 GUI 启动即崩
+    # (FileNotFoundError: _MEIxxx/flet/controls/material/icons.json, v2.4.0 实测)。
+    # 全量收集 flet 包内的 .json 数据文件 (共 <600KB), 覆盖 material/cupertino 两套
+    try:
+        import flet as _flet
+        _flet_dir = os.path.dirname(_flet.__file__)
+        for _root, _dirs, _files in os.walk(_flet_dir):
+            if "__pycache__" in _root:
+                continue
+            for _fn in _files:
+                if os.path.splitext(_fn)[1].lower() != ".json":
+                    continue
+                _full = os.path.join(_root, _fn)
+                _rel_dir = os.path.relpath(_root, _flet_dir)
+                add_data_list.append(f"{_full}:{os.path.join('flet', _rel_dir)}")
+                log(f"[OK] Bundling flet data: {_rel_dir}\\{_fn}")
+    except Exception as e:
+        log(f"[ERROR] 收集 flet 数据文件失败 (EXE 将缺图标元数据): {e}")
+        sys.exit(5)
+
     # --- 4.5) 生成 PyInstaller 版本资源文件 (EXE 属性中的版本号/公司/产品等)
     version_file = 生成版本文件(os.path.join(ROOT, "_version_info.txt"))
 
@@ -351,8 +373,11 @@ def main():
     for hi in selenium_hidden_imports:
         cmd.extend(["--hidden-import", hi])
     # ebooklib (EPUB 导出) 在 epub_exporter.py 中 try/except 引入, 显式收集确保
-    # onefile EXE 内可用; 其依赖 lxml 由 PyInstaller 自带 hook 处理
-    for hi in ("ebooklib",):
+    # onefile EXE 内可用; 其依赖 lxml 由 PyInstaller 自带 hook 处理。
+    # flet_desktop: flet.app.run() 运行时才动态 import 的纯 py 启动模块 (客户端
+    # 二进制本体由 _flet_client + FLET_VIEW_PATH 提供, 见 gui_app.py 头部),
+    # 静态分析收不到 → EXE 启动到 ft.run 即 ModuleNotFoundError (v2.4.0 实测)
+    for hi in ("ebooklib", "flet_desktop"):
         cmd.extend(["--hidden-import", hi])
 
     log(f"[INFO] script = {script_path}")
