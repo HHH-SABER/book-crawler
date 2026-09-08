@@ -433,5 +433,59 @@ class TestPinyinNoiseCleaning(unittest.TestCase):
         self.assertEqual(self.clean(s), s)
 
 
+class TestRustFallbackParity(unittest.TestCase):
+    """Rust 加速路径与纯 Python 兜底路径的一致性 (CHANGELOG 2.4.0)。
+
+    rust_core.pyd 存在时走 Rust, 缺失/异常回退纯 Python — 本用例通过
+    开关 _RUST_*可用 标志, 断言两条路径对同一输入产出完全一致的结果;
+    pyd 缺失的环境 (CI/fresh clone) 两次都走纯 Python, 兜底路径同样被覆盖。
+    """
+
+    SAMPLE = ('晨读的声音在校园里回荡，他抱着书本跑过操场，' * 30)  # 长中文正文
+
+    def test_qa_质检_rust_on_off_一致(self):
+        import 内容质检器
+        old = 内容质检器._RUST_质检可用
+        try:
+            内容质检器._RUST_质检可用 = True
+            on = 内容质检器.内容质检器().质检(self.SAMPLE, 章节标题='第一章')
+            内容质检器._RUST_质检可用 = False
+            off = 内容质检器.内容质检器().质检(self.SAMPLE, 章节标题='第一章')
+        finally:
+            内容质检器._RUST_质检可用 = old
+        self.assertEqual(on.得分, off.得分, 'Rust 与纯 Python 得分不一致')
+        self.assertEqual(on.有效, off.有效)
+        self.assertEqual(on.原因, off.原因)
+        self.assertEqual(on.统计, off.统计)
+
+    def test_qa_空文本_rust_on_off_一致(self):
+        # 空文本走不到 Rust (Python 侧先判空)? 无论哪边先处理, 结果必须一致
+        import 内容质检器
+        old = 内容质检器._RUST_质检可用
+        try:
+            内容质检器._RUST_质检可用 = True
+            on = 内容质检器.内容质检器().质检('')
+            内容质检器._RUST_质检可用 = False
+            off = 内容质检器.内容质检器().质检('')
+        finally:
+            内容质检器._RUST_质检可用 = old
+        self.assertEqual(on.得分, off.得分)
+        self.assertEqual(on.有效, off.有效)
+
+    def test_codepoint_解码_rust_on_off_一致(self):
+        import content_decoder
+        raw = 'x7b2cx4e00x7ae0' * 12   # x 前缀码点流 (同 test_codepoint_stream_with_x_prefix)
+        old = content_decoder._RUST_解码可用
+        try:
+            content_decoder._RUST_解码可用 = True
+            on = content_decoder.parse_codepoint_stream(raw)
+            content_decoder._RUST_解码可用 = False
+            off = content_decoder.parse_codepoint_stream(raw)
+        finally:
+            content_decoder._RUST_解码可用 = old
+        self.assertEqual(on, off, 'Rust 与纯 Python 码点流解码结果不一致')
+        self.assertIn('第一章', on)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

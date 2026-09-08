@@ -490,6 +490,16 @@ class TaskManager:
         if task.metrics:
             task.metrics.end_time = time.time()
 
+    def _is_task_thread_owner(self, task: TaskInfo) -> bool:
+        """当前线程是否仍是该任务登记的运行线程。
+
+        restart_task 允许在旧线程收尾期间 (stop_event 已置位但 run_crawl 尚未
+        返回) 于同一 task_id 上重启: 新线程接管 task.thread。旧线程退出时若
+        仍按 task.status 判断, 会把新运行误标 completed/failed 并冻结其
+        end_time — 终态变更必须只由登记线程执行。"""
+        with self._lock:
+            return task.thread is threading.current_thread()
+
     def _run_batch_task(self, task: TaskInfo, urls: list, threads: int,
                         delay: float, resume: bool, output_dir: str,
                         export_epub: bool = False):
@@ -516,15 +526,16 @@ class TaskManager:
                 export_epub=export_epub,
             )
             # 如果状态还是running且没有标记completed，标记为completed
-            if task.status == "running":
+            if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")
         except Exception as e:
-            self._set_terminal(task, "failed")
-            task.error = str(e)
-            task.logs.append({
-                'time': time.strftime('%H:%M:%S'),
-                'msg': f"[错误] {e}"
-            })
+            if self._is_task_thread_owner(task):
+                self._set_terminal(task, "failed")
+                task.error = str(e)
+                task.logs.append({
+                    'time': time.strftime('%H:%M:%S'),
+                    'msg': f"[错误] {e}"
+                })
             if app_log is not None:
                 app_log.error_exc(f"任务{task.task_id}", f"批量任务异常: {e}", e)
         finally:
@@ -562,15 +573,16 @@ class TaskManager:
                 incremental=incremental or task.incremental,
             )
             # 如果状态还是running且没有标记completed，标记为completed
-            if task.status == "running":
+            if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")
         except Exception as e:
-            self._set_terminal(task, "failed")
-            task.error = str(e)
-            task.logs.append({
-                'time': time.strftime('%H:%M:%S'),
-                'msg': f"[错误] {e}"
-            })
+            if self._is_task_thread_owner(task):
+                self._set_terminal(task, "failed")
+                task.error = str(e)
+                task.logs.append({
+                    'time': time.strftime('%H:%M:%S'),
+                    'msg': f"[错误] {e}"
+                })
             if app_log is not None:
                 app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
         finally:

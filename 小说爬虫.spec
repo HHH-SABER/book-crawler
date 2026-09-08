@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['K:/程序文件/小说爬虫/源码/gui_app.py'],
+    ['E:/程序文件/小说爬虫/源码/gui_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('K:/程序文件/小说爬虫/_flet_client', 'flet_client'), ('K:/程序文件/小说爬虫/源码/站点配置.json', '.'), ('K:/程序文件/小说爬虫/配置/captcha_config.json', '.'), ('K:/程序文件/小说爬虫/.venv/Lib/site-packages/ddddocr', 'ddddocr')],
+    datas=[('E:/程序文件/小说爬虫/_flet_client', 'flet_client'), ('E:/程序文件/小说爬虫/源码/站点配置.json', '.'), ('E:/程序文件/小说爬虫/配置/captcha_config.json', '.'), ('E:/程序文件/小说爬虫/.venv/Lib/site-packages/ddddocr', 'ddddocr'), ('E:/程序文件/小说爬虫/源码/rust_core.pyd', '.')],
     hiddenimports=['selenium.webdriver.chrome.webdriver', 'selenium.webdriver.chrome.service', 'selenium.webdriver.chrome.options', 'selenium.webdriver.common.by', 'selenium.webdriver.common.action_chains', 'selenium.webdriver.common.keys', 'selenium.webdriver.support.ui', 'selenium.webdriver.support.expected_conditions', 'ebooklib'],
     hookspath=[],
     hooksconfig={},
@@ -35,6 +35,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version='K:/程序文件/小说爬虫/_version_info.txt',
-    icon=['K:/程序文件/小说爬虫/脚本/图标.ico'],
+    version='E:/程序文件/小说爬虫/_version_info.txt',
+    icon=['E:/程序文件/小说爬虫/脚本/图标.ico'],
 )

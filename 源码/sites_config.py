@@ -643,7 +643,11 @@ def build_paged_url(base_url, page_index, pagination):
     page_num = pagination.get('start', 1) + page_index - 1
     if page_num > pagination.get('max_pages', 30):
         return None
-    suffix = pagination['suffix']
+    # 缺 suffix 的配置 (GUI 新增/JSON 导入, 如只配 max_pages 的单页站点)
+    # 视为无翻页能力, 返回 None 而非 KeyError (调用点无 try 保护)
+    suffix = pagination.get('suffix')
+    if not suffix:
+        return None
     # 查询参数模式 (如 ?page={N}): 直接追加到 URL 末尾, 不替换 .html
     # 用于 tanmixs.com 等使用 ?page=N 翻页的站点
     if '?' in suffix:
