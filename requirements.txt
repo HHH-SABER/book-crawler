@@ -27,7 +27,9 @@ numpy>=1.24.0
 
 # ===== GUI 框架 =====
 # Flet（基于 Flutter 渲染引擎，支持桌面 EXE 与安卓 APK）
-flet>=0.22.0
+# 注意: GUI 全面使用 0.86 API (page.window / show_dialog / ft.run),
+# 0.85 及以下无法运行, 上界防 0.87 破坏性变更
+flet>=0.86.0,<0.87
 
 # ===== 打包工具（可选，仅在打 EXE 时使用）=====
 # pyinstaller>=6.0.0  # flet pack 内部会用，不手动装也可以

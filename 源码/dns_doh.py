@@ -15,6 +15,7 @@ DoH 源白名单 (仅 https 固定服务器): 1.1.1.1 (Cloudflare JSON API) /
 dns.alidns.com (阿里), 双源容错。查询参数经 urlencode 编码。
 结果缓存 10 分钟 (域名 IP 变化时自动刷新)。
 """
+import ipaddress
 import json
 import socket
 import ssl
@@ -73,7 +74,21 @@ def _looks_polluted(addrs) -> bool:
     return False
 
 
+def _is_ip_literal(host: str) -> bool:
+    """host 本身是 IP 字面量 (无需 DNS 解析, 也绝不该被当成污染去 DoH '纠偏')"""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
 def _patched_getaddrinfo(host, port, *args, **kwargs):
+    # 快速通道: IP 字面量 / localhost 直连环回或本机是合法场景 (flet 本地端口、
+    # 本地代理、本地 ollama 等)。旧实现会把解析结果里的 127.0.0.1 当污染,
+    # 对 name=127.0.0.1 发起 DoH 查询 (两个源超时 8s 串行, 最坏卡 16 秒)。
+    if _is_ip_literal(host) or host == 'localhost' or host.endswith('.localhost'):
+        return _orig_getaddrinfo(host, port, *args, **kwargs)
     results = None
     try:
         try:
