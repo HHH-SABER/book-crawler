@@ -1,0 +1,20 @@
+[package]
+name = "poc_ab"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "poc_ab"
+path = "src/main.rs"
+
+[[bin]]
+name = "qa_ab"
+path = "src/bin/qa_ab.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# 零第三方依赖: 用 std 足够, 保证无网也能 cargo build
+[dependencies]

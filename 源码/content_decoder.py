@@ -29,6 +29,13 @@ from urllib.parse import urlparse
 
 import requests
 
+# ---- Rust 加速 (可选): 缺失时自动回退纯 Python, 不影响任何功能 ----
+try:
+    from rust_core import parse_codepoint_stream_nogil as _rs_codepoint
+    _RUST_解码可用 = True
+except (ImportError, OSError):
+    _RUST_解码可用 = False
+
 # ============================================================
 # 1. 数据文件引用探测
 # ============================================================
@@ -163,6 +170,12 @@ def parse_codepoint_stream(content, replace_map=None):
     Returns:
         str: 还原后的正文
     """
+    # Rust 加速路径 (签名/行为与纯 Python 完全一致); 缺失/异常时回退
+    if _RUST_解码可用:
+        try:
+            return _rs_codepoint(content, replace_map)
+        except Exception:
+            pass  # Rust 异常 → 回退纯 Python 实现
     mapping = {}
     if replace_map:
         for code, ctrl in replace_map.items():

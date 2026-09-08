@@ -158,6 +158,24 @@ pip install -r requirements.txt
 - **打包工具**：PyInstaller（onefile + 版本资源文件）
 - **验证码识别**：ddddocr + OpenCV（可选）
 
+## Rust 加速（可选）
+
+从 **v2.4.0** 起，内容质检与正文码点流解码可选用 **Rust（PyO3 abi3 扩展）** 加速，
+其余功能与架构保持纯 Python，降级安全：
+
+- **接入模块**：`内容质检器.质检` 与 `content_decoder.parse_codepoint_stream`
+  在检测到 `源码/rust_core.pyd` 时自动走 Rust；`.pyd` 缺失/异常时**静默回退纯
+  Python**，不影响任何功能与现有 EXE 分发。
+- **并发收益**：Rust 计算通过 `py.allow_threads` **释放 GIL**，让多 worker 并发
+  抓取时这两个 CPU 热点从"进程内 1 核轮流算"变为"多核并行"。真实样本实测
+  （8 线程）：解码 ~13x、质检 ~11x 单核；叠加 GIL 释放后并发吞吐再提升 3~5x。
+- **兼容**：abi3 产物支持 Python 3.12~3.14；打包由 `脚本/build_exe.py` 自动将
+  `.pyd` 打进 EXE（见 CHANGELOG 2.4.0「打包」）。
+
+重建/测试见 [`rust_core_poc/`](rust_core_poc/)（源码 + 基准脚本；本地无链接器/网络
+受限时该目录日志含手动构建说明）。并发瓶颈分析见
+[`文档/并发瓶颈分析与落地建议.md`](文档/并发瓶颈分析与落地建议.md)。
+
 ## 许可证
 
 见 [LICENSE](LICENSE) 文件。

@@ -302,6 +302,15 @@ def main():
     else:
         log("[ERROR] ddddocr not installed! Run .venv\\Scripts\\pip.exe install -r requirements.txt")
         sys.exit(4)
+    # Rust 加速扩展 rust_core.pyd（内容质检/码点流解码的 PyO3 abi3 扩展）。
+    # 放到 bundle 根 (.): onefile 解压后 _MEIPASS 在 sys.path 上, `import rust_core`
+    # 可直接命中; .pyd 缺失时自动回退纯 Python (可选, 非致命)
+    rust_core_pyd = os.path.join(ROOT, "源码", "rust_core.pyd")
+    if os.path.isfile(rust_core_pyd):
+        add_data_list.append(f"{rust_core_pyd}:.")
+        log(f"[OK] Bundling rust_core.pyd (Rust 加速)")
+    else:
+        log("[INFO] rust_core.pyd 不存在, 跳过 (运行时间退纯 Python)")
 
     # --- 4.5) 生成 PyInstaller 版本资源文件 (EXE 属性中的版本号/公司/产品等)
     version_file = 生成版本文件(os.path.join(ROOT, "_version_info.txt"))
