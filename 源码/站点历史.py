@@ -36,6 +36,7 @@ _log = _app_log.get('站点历史')
 设计原则: 纯标准库实现, 读写失败静默降级 (不影响主流程抓取)。
 """
 
+import atexit
 import json
 import os
 import threading
@@ -66,6 +67,11 @@ class 站点历史:
         self._file = self._取存储路径()
         self._io_lock = threading.Lock()
         self._数据 = self._加载()
+        # M1 防抖: 书级并发/连续记录时避免每次任务全量序列化重写 JSON。
+        # 改为脏标记 + 最小落盘间隔, 任务收尾 / 进程退出时强制刷盘。
+        self._脏 = False
+        self._上次落盘 = 0.0
+        atexit.register(self._atexit_flush)
 
     # ------------------------------------------------------------------
     # 存储层
@@ -94,13 +100,41 @@ class 站点历史:
             pass
         return {}
 
-    def _保存(self):
+    def _atexit_flush(self):
+        """进程退出时强制刷盘 (防抖窗口内未落盘的记录不丢失)"""
+        try:
+            with self._io_lock:
+                if self._脏:
+                    self._写入()
+        except Exception:
+            pass
+
+    def flush(self):
+        """对外强制刷盘入口 (任务收尾调用)"""
+        with self._io_lock:
+            if self._脏:
+                self._写入()
+
+    _最小落盘间隔 = 5.0   # 秒 (M1 防抖窗口)
+
+    def _保存(self, force=False):
+        """防抖写入: 非强制时若距上次落盘不足窗口则仅标脏; 任务收尾/退出时 flush 兜底。"""
+        now = time.time()
+        if not force and now - self._上次落盘 < self._最小落盘间隔:
+            self._脏 = True
+            return
+        self._写入()
+
+    def _写入(self):
+        """真正落盘 (原子写入; 调用方须持 _io_lock 或确保单线程)"""
         try:
             fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
             tmp = fobj.with_name(fobj.name + '.tmp')
             tmp.write_text(json.dumps(self._数据, ensure_ascii=False, indent=2),
                            encoding='utf-8')
             os.replace(tmp, fobj)   # 原子替换, 避免写一半损坏
+            self._上次落盘 = time.time()
+            self._脏 = False
         except OSError as e:
             _log.info(f"[站点历史] 保存失败: {e}")
 

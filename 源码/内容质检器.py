@@ -22,6 +22,13 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Dict
 
+# ---- Rust 加速 (可选): 缺失时自动回退纯 Python, 不影响任何功能 ----
+try:
+    from rust_core import qa_质检_full_nogil as _rs_质检_full
+    _RUST_质检可用 = True
+except (ImportError, OSError):
+    _RUST_质检可用 = False
+
 # ---- 评分参数 (集中定义, 便于调整) ----
 权重_长度 = 25
 权重_中文占比 = 25
@@ -85,6 +92,17 @@ class 内容质检器:
             质检报告
         """
         报告 = 质检报告(章节=章节标题 or '未命名章节')
+        # Rust 加速路径: 返回字段与纯 Python 完全一致; 异常/缺失时回退
+        if _RUST_质检可用:
+            try:
+                _rs = _rs_质检_full(text)
+                报告.得分 = _rs['得分']
+                报告.有效 = _rs['有效']
+                报告.原因 = list(_rs['原因'])
+                报告.统计 = dict(_rs['统计'])
+                return 报告
+            except Exception:
+                pass  # Rust 异常 → 回退纯 Python 实现
         if not text or not text.strip():
             报告.原因.append('正文为空')
             报告.统计 = self._空统计()

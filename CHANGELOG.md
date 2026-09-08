@@ -6,6 +6,41 @@
 
 ***
 
+## \[2.4.0] - 2026-09-08 (未发布)
+
+### 新增 — 可选 Rust 加速（PyO3 扩展 `rust_core`）
+
+- **内容质检 + 码点流解码接入 Rust**：`内容质检器.质检` 与
+  `content_decoder.parse_codepoint_stream` 在检测到 `rust_core.pyd` 时走 Rust
+  （`pyo3` abi3 扩展，`py.allow_threads` 释放 GIL）；`.pyd` 缺失/异常自动回退
+  纯 Python，**有则提速、无则照旧**，不影响任何功能与现有 EXE 分发
+- **接入点**：`内容质检器.py` / `content_decoder.py` 顶部条件 import + 快路径，
+  对外字段与纯 Python `质检报告` 逐字段一致（得分/有效/原因/统计）
+- **实测**（真实样本，8 线程并发）：解码 ~13x、质检 ~11x 单核；GIL 释放
+  后这两步从"进程内 1 核轮流算"变"多核并行"，并发吞吐再提升 3~5x
+- **兼容**：abi3 产物支持 Python 3.12~3.14；多平台绑定（Termux 交叉编译）
+  暂不在本期
+
+### 改进 — 站点历史写入防抖（对齐爬取历史 M1 模式）
+
+- `站点历史.py` 改为"脏标记 + 5s 最小落盘间隔"，避免书级并发收尾时每次
+  任务全量序列化重写 JSON；任务收尾 `flush()` + `atexit` 兜底，记录不丢失
+
+### 测试
+
+- 离线回归 `测试/test_offline_parsing.py` **38/38 通过**（含 Rust 路径下
+  的码点流解码）；并发基准见 `rust_core_poc/`（concurrency_bench.py）
+- 质检/解码 parity 用真实样本 + 边界样本验证逐字段一致；`rust_core` 缺失
+  兜底路径已单测验证
+
+### 打包
+
+- `build_exe.py` 把 `源码/rust_core.pyd` 经 `--add-data` 打进 EXE bundle 根
+  （onefile 解压后 `_MEIPASS` 在 sys.path，`import rust_core` 直接命中）；
+  `.pyd` 缺失时静默回退纯 Python，不影响分发
+
+***
+
 ## \[2.3.1] - 2026-09-06 (发布)
 
 ### 修复 — 按用户截图反馈对齐设计预览
