@@ -41,6 +41,15 @@
 
 ### 修复 — 审查还债（GUI 竞态 / 分页崩溃 / driver 泄漏 / DoH 卡顿 / 合规默认值）
 
+- **外部适配器整体失效（高危回归, ae0207e 引入）**（sites_config.py）: H7 站点
+  配置热重载重构时丢失 `ADAPTERS[domain] = entry` 登记 — 适配器日志显示"已加载"
+  但注册表恒空，`get_adapter()` 永远返回 None（爬虫从不停走适配器函数），站点
+  管理页全部显示"加载失败或未注册"；补回登记后三个内置插件实测恢复注册
+  （als1010.space / uuwxw.cc / victor-w-ma.github.io）
+- **任务表删除按钮被遮挡**（task_table.py）: 操作列在 v2.3.1 新增"预览"按钮后
+  仍为 3 按钮时代的定宽 144px，4 按钮 × 40px 默认尺寸 ≈166px 溢出裁切 → 列宽
+  164px + 四个 IconButton 显式 36×32（几何确定，任何 DPI 下不再裁切）
+
 - **EXE 启动即崩两连修**（build_exe.py，v2.4.0 首次补真实启动冒烟测试发现）:
   ① flet 0.86 图标枚举经 `importlib.resources` 运行时读取 `icons.json` 纯数据，
   PyInstaller 无 flet hook 不自动收集 → `icon_rail` 导入即 FileNotFoundError；

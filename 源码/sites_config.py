@@ -545,6 +545,11 @@ def load_adapters():
                     fn = getattr(mod, attr, None)
                     if callable(fn):
                         entry[attr] = fn
+                # H7 回归修复: entry 必须登记进 ADAPTERS — 旧代码经 setdefault
+                # 注册, H7 重载重构时赋值被丢, 适配器"已加载"但注册表恒空,
+                # get_adapter() 永远返回 None (爬虫不走适配器 + GUI 显示
+                # "加载失败或未注册")
+                ADAPTERS[domain] = entry
                 # 注意: setdefault 的默认字典不含 get_title, 适配器未定义书名
                 # 函数时该键不存在, 必须用 .get 访问 (旧代码直接索引导致
                 # "加载 uuwxw.py 失败: 'get_title'" 的误报)

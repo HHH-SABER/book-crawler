@@ -2,7 +2,7 @@
 """全宽任务表格：多列行布局 + 行内展开详情
 
 自绘 Column/Row (不用 ft.DataTable —— 其列宽控制弱且不支持行内展开)。
-列: 标题/URL | 进度条 | 状态 | 引擎 | 反爬 | 耗时 | 质检 | 操作(展开/重下/删除)
+列: 标题/URL | 进度条 | 状态 | 引擎 | 反爬 | 耗时 | 质检 | 操作(展开/预览/重下/删除)
 
 刷新策略: 签名比对, 数据无变化跳过重建 (防止高频 update 丢点击事件)。
 """
@@ -38,7 +38,9 @@ _COLUMNS = [
     ("反爬", 84, False),
     ("耗时", 56, False),
     ("质检", 56, False),
-    ("操作", 144, True),
+    # 164px: 4 按钮 (展开/预览/重下/删除) × 36 + 间距 3×2 = 150, 留余量防裁切
+    # (v2.3.1 为 3 按钮 144px, 新增预览按钮后未同步加宽 → 删除按钮被裁切)
+    ("操作", 164, True),
 ]
 _TITLE_COL = 0        # expand 列在 _COLUMNS 中的下标
 _OPS_COL = 7          # 操作列下标
@@ -253,6 +255,7 @@ class TaskTable:
             icon=(ft.Icons.EXPAND_LESS if is_expanded else ft.Icons.EXPAND_MORE),
             icon_size=14, tooltip="展开/收起详情",
             on_click=lambda e, tid=task.task_id: self._toggle_expand(tid),
+            width=36, height=32,
             style=ft.ButtonStyle(
                 padding=2, shape=ft.RoundedRectangleBorder(radius=6),
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
@@ -262,6 +265,7 @@ class TaskTable:
             icon=ft.Icons.ARTICLE_OUTLINED, icon_size=14,
             tooltip="预览抽屉 (任务详情/输出文件)",
             on_click=lambda e, tid=task.task_id: self._on_open_preview(tid),
+            width=36, height=32,
             style=ft.ButtonStyle(
                 padding=2, shape=ft.RoundedRectangleBorder(radius=6),
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
@@ -271,6 +275,7 @@ class TaskTable:
             icon=ft.Icons.REPLAY, icon_size=14,
             tooltip="重新下载 (从头重新抓取)",
             on_click=lambda e, tid=task.task_id: self._on_redownload(tid),
+            width=36, height=32,
             style=ft.ButtonStyle(
                 padding=2, shape=ft.RoundedRectangleBorder(radius=6),
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
@@ -280,6 +285,7 @@ class TaskTable:
             icon=ft.Icons.DELETE_OUTLINE, icon_size=14,
             tooltip="删除任务",
             on_click=lambda e, tid=task.task_id: self._on_delete(tid),
+            width=36, height=32,
             style=ft.ButtonStyle(
                 padding=2, shape=ft.RoundedRectangleBorder(radius=6),
                 bgcolor=ft.Colors.ERROR_CONTAINER,
