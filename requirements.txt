@@ -30,6 +30,10 @@ numpy>=1.24.0
 # 注意: GUI 全面使用 0.86 API (page.window / show_dialog / ft.run),
 # 0.85 及以下无法运行, 上界防 0.87 破坏性变更
 flet>=0.86.0,<0.87
+# flet-desktop: flet 的桌面客户端启动器 — flet 只在首次运行 GUI 时运行时
+# pip 安装它, 打包机/CI 从未跑过 GUI 就会缺失 → EXE 首启崩溃
+# (flet/utils/pip.py 在冻结环境里回退安装时自身 NameError: exit)
+flet-desktop>=0.86.0,<0.87
 
 # ===== 打包工具（可选，仅在打 EXE 时使用）=====
 # pyinstaller>=6.0.0  # flet pack 内部会用，不手动装也可以
