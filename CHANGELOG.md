@@ -6,7 +6,7 @@
 
 ***
 
-## \[2.4.0] - 2026-09-08 (未发布)
+## \[2.4.0] - 2026-09-09 (未发布)
 
 ### 新增 — 可选 Rust 加速（PyO3 扩展 `rust_core`）
 
@@ -38,6 +38,39 @@
 - `build_exe.py` 把 `源码/rust_core.pyd` 经 `--add-data` 打进 EXE bundle 根
   （onefile 解压后 `_MEIPASS` 在 sys.path，`import rust_core` 直接命中）；
   `.pyd` 缺失时静默回退纯 Python，不影响分发
+
+### 修复 — 第二轮审查还债（高危 4 + 中危 8 + 验证链，2026-09-09）
+
+- **dns_doh DoH 源递归防环**（H3）: DoH 服务器自身域名 (dns.alidns.com) 加入
+  快速通道直连原函数 — 否则 alidns 解析失败时 urlopen→getaddrinfo(已 patch)
+  →再次 DoH 查询同一域名无限递归空转；补递归回归单测
+- **内置站点删除后禁用标志复位**（H4）: 重放运行时配置前先 pop 内置条目的
+  enabled — 修复"先禁用再删除"后站点保持禁用至重启、与 GUI 提示相悖
+- **书架.json 原子写**（M1）: tmp + os.replace 对齐爬取历史/风控事件模式
+- **重启任务同步用户当前选项**（M2）: 同 URL 复用重启前把输入条的
+  续传/导出EPUB/输出目录写入任务字段，restart 使用 task.resume
+  （旧实现硬编码 False 且静默丢弃用户刚改的选项）
+- **多源回退真正兜底**（M5）: 主源 run() 抛异常不再冒出 run_crawl，
+  切换下一备用源；全部源异常时向上抛最后一个异常
+- **风控冷却响应停止**（M8）: 跨 run 冷却等待改分片 sleep 响应 stop_event
+  （旧实现 GUI 点停止后最长再挂 5 分钟）
+- **收尾统计全路径覆盖**（M7）: 质检汇总/站点历史/风控 task_result/漂移上报/
+  flush 抽成 `_收尾汇总`，用户停止/中断/解释器退出也走到（旧实现提前 return
+  全部跳过）；停止文案经契约测试保证不会误触发 GUI 的 completed 解析
+- **适配器注册表原子重建**（M3）: load_adapters 构建新表后整体换引用（reload
+  无空窗）、扫描失败不置位可重试、删除插件后清理其追加的站点条目
+- **超时章节 worker 显式排空**（M6）: 180s 超时被弃的 future 收尾等待
+  （每个上限 60s），防 close() 与存活 worker 相撞致资源错误
+- **打包链**（M4+H1）: 版本.json/CHANGELOG 改为构建成功后写入（失败不消耗
+  版本号）；playwright driver 显式入库兜底（实测其自带 hook 已收集，防上游
+  变化）；**EXE 启动冒烟测试固化进 build_exe**（打包后自动拉起验证 flet
+  客户端，60s 未出现即构建失败，--skip-smoke 可跳过）
+- **CI**（M12）: release 现场编译 rust_core.pyd（best-effort，失败降级纯
+  Python）；test 门禁补跑手写回归脚本（不被 unittest discover 收集）
+- **验证链**（H2+M11）: 补"真实 pyd 存在才运行"的多形态样本 A/B 用例 +
+  ciyewk 真实样本（replace_map 非空）双路径逐字符一致；新增
+  test_log_contract.py 把 GUI print 正则数据通道的文案契约固化为单测
+  （进度/标题/完成终态/引擎/反爬/质检/增量，含"停止文案不得误标 completed"）
 
 ### 修复 — 审查还债（GUI 竞态 / 分页崩溃 / driver 泄漏 / DoH 卡顿 / 合规默认值）
 

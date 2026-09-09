@@ -249,6 +249,12 @@ class InputBar:
                 if existing.status == "running":
                     self._notify("该网址已有任务在运行")
                     return
+                # M2: 重启前把输入条当前选项同步进任务字段 — 旧实现直接复用旧值
+                # 且 resume 恒为 False, 用户刚勾选的 续传/导出EPUB/输出目录 被静默丢弃
+                existing.resume = self.resume_switch.value
+                existing.export_epub = self.epub_switch.value
+                if (self.output_dir_input.value or '').strip():
+                    existing.output_dir = self.output_dir_input.value.strip()
                 if self.task_manager.restart_task(existing.task_id):
                     self.task_manager.select_task(existing.task_id)
                     self.stop_btn.disabled = False

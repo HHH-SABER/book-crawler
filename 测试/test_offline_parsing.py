@@ -486,6 +486,55 @@ class TestRustFallbackParity(unittest.TestCase):
         self.assertEqual(on, off, 'Rust 与纯 Python 码点流解码结果不一致')
         self.assertIn('第一章', on)
 
+    @unittest.skipUnless((_PROJECT_ROOT / '源码' / 'rust_core.pyd').exists(),
+                         'rust_core.pyd 未安装, 跳过真实 pyd A/B')
+    def test_qa_真实pyd样本扫描一致(self):
+        """H2: 仅 pyd 真实存在时运行 — 多形态样本逐个对比 Rust 与纯 Python。
+
+        旧的开关式用例在 pyd 缺失时恒真 (门禁测不出 lib.rs 与 Python 漂移),
+        本用例补上"真实 pyd 参与运算"的断言。"""
+        import 内容质检器
+        qa = 内容质检器.内容质检器()
+        cases = [
+            self.SAMPLE,                                  # 长中文正文
+            '短章内容较少的情况。',                        # 短章区间
+            'ab12 \x01\x02 {}<>??',                       # 乱码/符号密集
+            '\ufffd\ue000\ufff0' * 40,                    # 乱码区
+            '标点only，。。！！？？' * 10,                 # 标点密度高
+        ]
+        old = 内容质检器._RUST_质检可用
+        try:
+            for text in cases:
+                内容质检器._RUST_质检可用 = True
+                on = qa.质检(text, 章节标题='样本')
+                内容质检器._RUST_质检可用 = False
+                off = qa.质检(text, 章节标题='样本')
+                tag = repr(text[:16])
+                self.assertEqual(on.得分, off.得分, f'得分不一致: {tag}')
+                self.assertEqual(on.有效, off.有效, f'有效不一致: {tag}')
+                self.assertEqual(on.原因, off.原因, f'原因不一致: {tag}')
+                self.assertEqual(on.统计, off.统计, f'统计不一致: {tag}')
+        finally:
+            内容质检器._RUST_质检可用 = old
+
+    def test_codepoint_真实样本_replace_map_双路径一致(self):
+        """H2: ciyewk 真实 .book 携带非空压缩映射 — replace_map 非空是双实现
+        最易漂移且此前零覆盖的场景。开关 Rust 路径对比全文逐字符一致。"""
+        import content_decoder
+        raw = _read('ciyewk_1.book')
+        old = content_decoder._RUST_解码可用
+        try:
+            content_decoder._RUST_解码可用 = True
+            on = content_decoder.decode_data(raw)
+            content_decoder._RUST_解码可用 = False
+            off = content_decoder.decode_data(raw)
+        finally:
+            content_decoder._RUST_解码可用 = old
+        self.assertEqual(on[1], 'codepoint_stream')
+        self.assertIsNotNone(on[0])
+        self.assertEqual(on[0], off[0], '含映射的码点流解码 Rust/纯Python 不一致')
+        self.assertIn(FEATURE_OPENING, on[0])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
