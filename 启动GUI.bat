@@ -31,8 +31,8 @@ if not defined PYTHON_EXE (
 rem ---------- 2. Check Flet dependency ----------
 "%PYTHON_EXE%" -c "import flet" >nul 2>&1
 if errorlevel 1 (
-    echo [WARN] Flet not found. Installing dependencies, first run may take 1-3 minutes...
-    "%PYTHON_EXE%" -m pip install flet requests beautifulsoup4 lxml fake-useragent selenium playwright pillow ddddocr opencv-python numpy onnxruntime urllib3 certifi httpx httpcore
+    echo [WARN] Flet not found. Installing dependencies from requirements.txt, first run may take 1-3 minutes...
+    "%PYTHON_EXE%" -m pip install -r requirements.txt
     if errorlevel 1 (
         echo [ERROR] Dependency install failed. Run manually:
         echo         .venv\Scripts\pip.exe install -r requirements.txt

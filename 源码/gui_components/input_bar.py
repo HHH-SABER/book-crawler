@@ -27,7 +27,7 @@ except Exception:
 
 from .ui_theme import (make_card, filled_btn, tonal_btn, outline_btn,
                        text_btn, danger_btn)
-from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_BODY, SIZE_SMALL,
+from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_BODY, SIZE_SMALL,
                           WEIGHT_BODY, open_dialog)
 
 

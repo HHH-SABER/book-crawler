@@ -24,7 +24,7 @@ from .ui_theme import (make_card, tonal_btn,
                        page_header)
 
 # 统一字体规范
-from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          SIZE_BODY, WEIGHT_BODY,
                          MORANDI_ERROR, open_dialog)
 

@@ -39,6 +39,31 @@
   （onefile 解压后 `_MEIPASS` 在 sys.path，`import rust_core` 直接命中）；
   `.pyd` 缺失时静默回退纯 Python，不影响分发
 
+### 清理 — 移动端方案收敛前的代码库大扫除（2026-09-09）
+
+移动端路线收敛为"常驻机 Web 远控"唯一方案（见 文档/手机远控方案设计.md），
+清除其他备选方案与历史遗留的线头：
+
+- **移除 Termux 本地方案三件套**：文档/Termux安卓移植.md、requirements-termux.txt、
+  脚本/termux_setup.sh（备选路线不再维护）
+- **删除一次性日志迁移工具** 脚本/mig_logging.py（print→日志 迁移早已完成）
+- **小说爬虫.spec 移出版本库并 gitignore**：PyInstaller 每次构建自动再生成的
+  副产品，build_exe.py 从不使用它
+- **移除 ui_morandi 兼容垫片**：10 处 import 全部直连 ui_fluent，垫片文件删除
+  （垫片 docstring 里"计划在引用迁移后移除"的承诺兑现）
+- **GUI 死接口清理**：TaskManager.create_batch_task/_run_batch_task（批量入口
+  从未接线）、update_metrics/on_selected_change（无生产调用方，联动走轮询）；
+  IconRail 的 task_manager 参数与 PAGE_TITLES/PAGE_SUBTITLES 死常量；
+  DetailDrawer.is_open 历史 API；gui_app 未使用的 time/threading 导入
+- **sites_config 死函数**：detect_qsbs_bb_pattern/detect_ajax_pattern/
+  auto_detect_pattern（自动探测从未接线）+ _ORION34G_CHAPTER_IDS 兼容占位
+- **工具残留**：ensure_flet_cache._validate_download_url（校验早已内联至调用点）、
+  monitor_summary.events_raw 死变量
+- **启动GUI.bat** 依赖安装改为 requirements.txt 单一来源（原内联清单与主清单
+  漂移且缺 flet-desktop）
+- 测试同步：_test_task_metrics 去除对已删接口的用例；全量 63 unittest +
+  40 回归 + 引用检查全绿；GUI 源码启动与 EXE 冒烟实测正常
+
 ### 修复 — 第二轮审查还债（高危 4 + 中危 8 + 验证链，2026-09-09）
 
 - **dns_doh DoH 源递归防环**（H3）: DoH 服务器自身域名 (dns.alidns.com) 加入

@@ -7,7 +7,7 @@ import flet as ft
 import time
 
 from .task_manager import TaskInfo
-from .ui_morandi import (FONT_STACK, SIZE_TINY,
+from .ui_fluent import (FONT_STACK, SIZE_TINY,
                          WEIGHT_SUBTITLE, WEIGHT_BODY,
                          MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_WARNING)
 

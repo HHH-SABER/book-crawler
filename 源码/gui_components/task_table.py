@@ -12,7 +12,7 @@ import time
 
 from .task_manager import TaskManager
 from .ui_theme import make_card, status_chip, status_color
-from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE,
                          WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR,
                          MORANDI_WARNING, open_dialog, close_dialog)

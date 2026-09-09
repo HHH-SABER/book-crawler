@@ -47,10 +47,7 @@ def main():
     ap.add_argument("--domain", default="")
     args = ap.parse_args()
 
-    events_raw = 0
     dom = summary_by_domain(args.hours)
-    events_raw = sum(len(v["anti"]) + len(v["captcha"]) + (1 if v["task"]["runs"] else 0)
-                     for v in dom.values())
     if args.domain:
         dom = {k: v for k, v in dom.items() if args.domain in k}
 
