@@ -8,6 +8,25 @@
 
 ## \[2.4.0] - 2026-09-09 (未发布)
 
+### 新增 — 手机远控一期（常驻机 Web 远控服务，源码/远控/）
+
+- **架构**：常驻机跑远控服务（FastAPI /api/v1 + 单页面板），手机浏览器经
+  Tailscale 访问；发任务/看进度/读日志/下载 EPUB（③ 下载闭环）。设计文档
+  见 文档/手机远控方案设计.md（面板实现定稿为 FastAPI 直出单页 HTML，
+  替代原 NiceGUI 方案——少一个框架依赖、无 3.14 二次兼容风险）
+- **安全**：token 首启自动生成（数据/远控配置.json，已被 gitignore），
+  `hmac.compare_digest` 常时比较（Bearer 或 ?k=）；默认仅监听 127.0.0.1；
+  发任务强制过 `validate_public_url`；EPUB 按书籍 id 反查路径杜绝穿越；
+  面板动态内容全 textContent 渲染（站点日志内容不可注入 XSS）
+- **健壮性**：日志增量接口带 `截断` 标志（500 条截断后客户端指针自动重置，
+  防永久漏日志）；SSE 流 15s 保活 + 1h 生命上限；爬虫重依赖惰性导入
+  （仅发任务/EPUB 时触达）；书架扫描过滤质检报告文件
+- **测试**：测试/test_remote_service.py 12 例（TestClient 进程内，鉴权/
+  任务创建校验/日志增量与截断/书架/EPUB 生成，不起真实爬虫）；实机冒烟
+  curl 全端点验通（healthz/401/200/面板/书架过滤/SSE）
+- **启动**：双击 启动远控.bat（或 `python -m 远控`）；requirements 新增
+  fastapi/uvicorn（Python 3.14 兼容性已实测）
+
 ### 新增 — 可选 Rust 加速（PyO3 扩展 `rust_core`）
 
 - **内容质检 + 码点流解码接入 Rust**：`内容质检器.质检` 与
