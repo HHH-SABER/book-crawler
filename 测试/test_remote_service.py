@@ -1,0 +1,146 @@
+# -*- coding: utf-8 -*-
+"""远控服务 API 单测: TestClient 进程内验证, 不起真实爬虫/不联网。
+
+运行方式 (项目根目录):
+    python -m unittest discover -s 测试 -v
+"""
+import os
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT / '源码'))
+
+from 远控 import 服务   # noqa: E402
+
+
+def _client():
+    """每个用例独立 TestClient + 固定 token 配置 (绕过磁盘配置)"""
+    服务._CONFIG = None
+    patcher = mock.patch.object(服务, '取配置',
+                                return_value={'token': 'testtoken',
+                                              '端口': 0, '绑定': '127.0.0.1'})
+    patcher.start()
+    from fastapi.testclient import TestClient
+    return TestClient(服务.app), patcher
+
+
+class Test远控服务(unittest.TestCase):
+    def setUp(self):
+        self.client, self._patcher = _client()
+        self.addCleanup(self._patcher.stop)
+        # 清空服务内 TaskManager 单例的任务表
+        self.mgr = 服务._任务管理器()
+        self.mgr.tasks.clear()
+
+    # ------------------------------------------------------------ 鉴权
+    def test_无token_401(self):
+        self.assertEqual(self.client.get('/api/v1/tasks').status_code, 401)
+
+    def test_错误token_401(self):
+        self.assertEqual(
+            self.client.get('/api/v1/tasks?k=wrong').status_code, 401)
+
+    def test_正确token_200_and_healthz免鉴权(self):
+        self.assertEqual(
+            self.client.get('/api/v1/tasks?k=testtoken').status_code, 200)
+        self.assertEqual(self.client.get('/api/v1/healthz').status_code, 200)
+
+    # ------------------------------------------------------------ 任务
+    def test_空任务列表(self):
+        r = self.client.get('/api/v1/tasks?k=testtoken')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {'任务': []})
+
+    def test_注入任务后列表可见(self):
+        from gui_components.task_manager import TaskInfo
+        t = TaskInfo(task_id='t1', url='https://example.com/b/1',
+                     title='测试书', status='running')
+        t.progress_current, t.progress_total = 3, 10
+        self.mgr.tasks['t1'] = t
+        r = self.client.get('/api/v1/tasks?k=testtoken').json()
+        self.assertEqual(len(r['任务']), 1)
+        snap = r['任务'][0]
+        self.assertEqual(snap['id'], 't1')
+        self.assertEqual(snap['进度'], [3, 10])
+
+    def test_发任务_非法URL_400且不建任务(self):
+        r = self.client.post('/api/v1/tasks?k=testtoken',
+                             json={'url': 'http://127.0.0.1/x'})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(len(self.mgr.tasks), 0, '非法 URL 不得创建任务')
+
+    def test_发任务_合法URL_走create_task(self):
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_9') as m:
+            r = self.client.post('/api/v1/tasks?k=testtoken',
+                                 json={'url': 'https://example.com/b/1',
+                                       'mode': 'test', 'resume': False})
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.json(), {'task_id': 'task_9'})
+            m.assert_called_once()
+            self.assertEqual(m.call_args.kwargs.get('mode'), 'test')
+            self.assertIs(m.call_args.kwargs.get('resume'), False)
+
+    def test_发任务_缺url_400(self):
+        r = self.client.post('/api/v1/tasks?k=testtoken', json={})
+        self.assertEqual(r.status_code, 400)
+
+    def test_日志增量与截断标志(self):
+        from gui_components.task_manager import TaskInfo
+        t = TaskInfo(task_id='t2', url='https://example.com/b/2')
+        t.logs.extend([{'time': '0', 'msg': f'行{i}'} for i in range(5)])
+        self.mgr.tasks['t2'] = t
+        r = self.client.get('/api/v1/tasks/t2/logs?after=3&k=testtoken').json()
+        self.assertEqual(r['total'], 5)
+        self.assertEqual(len(r['entries']), 2)
+        self.assertFalse(r['截断'])
+        # after 超界 (如日志被 500 条截断) → 从 0 重发并置截断
+        r2 = self.client.get('/api/v1/tasks/t2/logs?after=999&k=testtoken').json()
+        self.assertTrue(r2['截断'])
+        self.assertEqual(len(r2['entries']), 5)
+
+    def test_停止不存在任务_404(self):
+        self.assertEqual(
+            self.client.post('/api/v1/tasks/nope/stop?k=testtoken').status_code,
+            404)
+
+    # ------------------------------------------------------------ 书架
+    def setUp_books(self, tmp: Path):
+        (tmp / '测试书.txt').write_text(
+            '## 第一章\n\n内容一。\n\n## 第二章\n\n内容二。\n', encoding='utf-8')
+        return mock.patch.object(服务, 'get_default_output_dir',
+                                 lambda: str(tmp))
+
+    def test_书架列表(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            with self.setUp_books(tmp):
+                r = self.client.get('/api/v1/books?k=testtoken').json()
+            self.assertEqual(len(r['书籍']), 1)
+            b = r['书籍'][0]
+            self.assertEqual(b['标题'], '测试书')
+            self.assertNotIn('路径', b, '服务器路径不得泄露给客户端')
+
+    def test_epub下载_按id反查_错误id_404(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            with self.setUp_books(tmp):
+                books = self.client.get(
+                    '/api/v1/books?k=testtoken').json()['书籍']
+                bid = books[0]['id']
+                r = self.client.get(f'/api/v1/books/{bid}/epub?k=testtoken')
+                self.assertEqual(r.status_code, 200)
+                self.assertIn('epub', r.headers.get('content-type', ''))
+                self.assertGreater(len(r.content), 100)
+                r404 = self.client.get(
+                    '/api/v1/books/deadbeefdead/epub?k=testtoken')
+                self.assertEqual(r404.status_code, 404)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
