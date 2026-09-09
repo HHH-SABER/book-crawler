@@ -11,6 +11,11 @@ on:
   workflow_call:
   workflow_dispatch:
 
+# CI Windows 控制台默认 cp1252, 测试脚本打印中文/✓ 会 UnicodeEncodeError
+# (同 build_exe.py 的 e085eb5 修复), 全 workflow 强制 Python UTF-8 模式
+env:
+  PYTHONUTF8: '1'
+
 jobs:
   test:
     name: Offline Regression (unittest)
