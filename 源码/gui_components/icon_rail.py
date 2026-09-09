@@ -18,7 +18,7 @@
 """
 import flet as ft
 
-from .ui_morandi import (
+from .ui_fluent import (
     txt, SIZE_TINY, SIZE_BODY,
     WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
     MORANDI_SIDEBAR_BG, MORANDI_SIDEBAR_HOVER, MORANDI_SIDEBAR_ACTIVE,
@@ -34,20 +34,6 @@ NAV_PAGES = [
     ('sites',   ft.Icons.LANGUAGE,               '站点管理',   2),
     ('log',     ft.Icons.SPEED,                  '运行日志',   3),
 ]
-
-PAGE_TITLES = {
-    'crawl':   '抓取工作台',
-    'history': '爬取历史',
-    'sites':   '站点管理',
-    'log':     '运行日志',
-}
-
-PAGE_SUBTITLES = {
-    'crawl':   '输入小说目录页URL，自动识别站点并开始抓取',
-    'history': '查看历史抓取记录与统计',
-    'sites':   '管理站点适配器与风控策略',
-    'log':     '查看实时运行日志与错误信息',
-}
 
 
 # ====================================================================
@@ -140,14 +126,14 @@ def build_top_bar(page, title_text: str, theme_toggle_btn) -> ft.Container:
 class IconRail:
     """220px 宽侧边导航栏 — 苹果风格, 自定义按钮
 
-    兼容旧 API:
+    API:
       - IconRail(on_nav=..., on_theme_toggle=...)
       - .toggle_theme_icon(is_dark)
       - .set_active(key)
       - .build()
     """
 
-    def __init__(self, on_nav=None, on_theme_toggle=None, task_manager=None):
+    def __init__(self, on_nav=None, on_theme_toggle=None):
         self._on_nav = on_nav
         self._on_theme_toggle = on_theme_toggle
         self._active_key = 'crawl'
@@ -157,7 +143,6 @@ class IconRail:
         self.page = None
         # 状态摘要显示已移至窗口底部全局状态条 (gui_app status_bar),
         # 侧边栏不再重复渲染状态指示器
-        self._task_manager = task_manager
 
     def set_active(self, key: str):
         self._active_key = key

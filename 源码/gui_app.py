@@ -11,7 +11,6 @@
 import flet as ft
 import sys
 import os
-import time
 
 # 添加当前目录到 path，确保能 import GUI 组件和爬虫模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,7 +26,6 @@ if getattr(sys, "frozen", False):
 
 from gui_components.task_manager import TaskManager
 from gui_components.icon_rail import IconRail, NAV_PAGES, build_theme_toggle, build_top_bar
-import threading
 from gui_components.ui_theme import page_header
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
@@ -105,7 +103,7 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
     # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
-    from gui_components.ui_morandi import (
+    from gui_components.ui_fluent import (
         make_morandi_theme, make_morandi_dark_theme,
         FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING,
@@ -141,7 +139,6 @@ def main(page: ft.Page):
 
     # ---- 图标导航栏 ----
     rail = IconRail(on_nav=lambda key: _switch_page(key),
-                    task_manager=task_manager,
                     on_theme_toggle=toggle_theme)
 
     # ---- 抓取工作台: 输入条 + 任务表格 | 右侧常驻面板 (实时日志/详情/预览) ----

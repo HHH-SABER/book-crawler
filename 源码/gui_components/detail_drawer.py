@@ -15,7 +15,7 @@ import glob
 from .task_manager import TaskManager
 from .ui_theme import (status_chip, status_color, tonal_btn,
                        LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
-from .ui_morandi import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
                           MORANDI_WARNING, MORANDI_ACCENT)
@@ -167,11 +167,6 @@ class DetailDrawer:
     def _on_toggle_click(self):
         """右上角按钮: 日志视图 → 查看任务详情; 其他视图 → 返回日志"""
         self.open("log" if self._view != "log" else "detail")
-
-    @property
-    def is_open(self) -> bool:
-        """面板常驻展开 (历史 API 兼容)"""
-        return self.container is not None
 
     def _update(self):
         try:

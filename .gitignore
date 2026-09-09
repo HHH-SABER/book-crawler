@@ -8,9 +8,8 @@ __pycache__/
 *.egg
 dist/
 build/
-# 保留项目的 PyInstaller 打包配置
+# PyInstaller spec 是每次构建的再生成物 (build_exe.py 直接传参, 不用 spec)
 *.spec
-!小说爬虫.spec
 
 # ============ 虚拟环境 ============
 .venv/

@@ -76,28 +76,17 @@ def test_incremental_skip():
 
 
 def test_task_manager_select():
+    """选中态切换与幂等 (订阅回调机制已随死代码清理移除, 联动走刷新循环轮询)"""
     mgr = tm.TaskManager(page=None)
     mgr.tasks['a'] = new_task(); mgr.tasks['a'].task_id = 'a'
     mgr.tasks['b'] = new_task(); mgr.tasks['b'].task_id = 'b'
-    seen = []
-    mgr.on_selected_change(lambda tid: seen.append(tid))
     mgr.select_task('a')
-    assert seen == ['a']
     assert mgr.tasks['a'].selected and not mgr.tasks['b'].selected
-    mgr.select_task('a')          # 重复选择不触发
-    assert seen == ['a']
+    mgr.select_task('a')          # 重复选择幂等
+    assert mgr.selected_task_id == 'a'
     mgr.select_task('b')
-    assert seen == ['a', 'b']
+    assert not mgr.tasks['a'].selected and mgr.tasks['b'].selected
     assert mgr.selected_task_id == 'b'
-
-
-def test_update_metrics():
-    mgr = tm.TaskManager(page=None)
-    t = new_task(); mgr.tasks['t1'] = t
-    mgr.update_metrics('t1', engine='cloudscraper', quality_score=88.0)
-    assert t.metrics.engine == 'cloudscraper' and t.metrics.quality_score == 88.0
-    mgr.update_metrics('t1', 不存在字段='x')  # 静默忽略
-    mgr.update_metrics('nope', engine='x')     # 不存在的任务, 静默
 
 
 if __name__ == '__main__':

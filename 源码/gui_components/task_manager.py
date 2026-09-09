@@ -365,47 +365,21 @@ class TaskManager:
         self._lock = threading.Lock()
         self._counter = 0
         self._selected_task_id: str = ""       # 当前选中任务 (表格高亮/抽屉联动)
-        self._selected_callbacks: list = []    # 选中变化订阅者 (主线程调用)
 
     # ------------------------------------------------------------ 选中联动
-    def on_selected_change(self, callback):
-        """订阅选中任务变化 (回调签名: callback(task_id: str), 空串=取消选中)"""
-        self._selected_callbacks.append(callback)
-
     def select_task(self, task_id: str):
-        """选中/取消选中任务 (切换到新任务时触发回调, 线程安全)"""
+        """选中/取消选中任务 (线程安全; 联动由 GUI 刷新循环轮询读取)"""
         with self._lock:
-            old = self._selected_task_id
-            if task_id == old:
+            if task_id == self._selected_task_id:
                 return
             for t in self.tasks.values():
                 t.selected = (t.task_id == task_id)
             self._selected_task_id = task_id
-        for cb in self._selected_callbacks:
-            try:
-                cb(task_id)
-            except Exception:
-                pass
 
     @property
     def selected_task_id(self) -> str:
         """当前选中任务 ID (空串=无选中)"""
         return self._selected_task_id
-
-    # ------------------------------------------------------------ 指标更新
-    def update_metrics(self, task_id: str, **fields):
-        """外部直接更新任务指标字段 (仅改数据不动 UI, 线程安全)
-
-        可用字段: engine / anti_spider_type / quality_score / quality_passed /
-                  incremental_skipped / engine_fallback_chain
-        """
-        with self._lock:
-            task = self.tasks.get(task_id)
-            if task is None:
-                return
-            for k, v in fields.items():
-                if hasattr(task.metrics, k):
-                    setattr(task.metrics, k, v)
 
     def create_task(self, url: str, mode: str = "full",
                     chapter_range: tuple = None, threads: int = None,
@@ -450,39 +424,6 @@ class TaskManager:
         t.start()
         return task_id
 
-    def create_batch_task(self, urls: list, threads: int = None,
-                          delay: float = None, resume: bool = True,
-                          output_dir: str = None, export_epub: bool = False) -> str:
-        """创建并启动一个批量任务 (一次抓取多本书), 返回 task_id
-
-        内部调用 run_batch: 书级并行 (None=自适应) + 同域限流保护 + 汇总报告。
-        """
-        with self._lock:
-            self._counter += 1
-            task_id = f"task_{self._counter}"
-
-        task = TaskInfo(
-            task_id=task_id,
-            url=f"[批量] {len(urls)} 本书",
-            title=f"批量{len(urls)}本",
-            mode="batch",
-            status="running",
-            export_epub=export_epub,
-        )
-        task.metrics.start_time = time.time()
-        with self._lock:
-            self.tasks[task_id] = task
-
-        # 启动子线程执行批量抓取
-        t = threading.Thread(
-            target=self._run_batch_task,
-            args=(task, urls, threads, delay, resume, output_dir, export_epub),
-            daemon=True
-        )
-        task.thread = t
-        t.start()
-        return task_id
-
     @staticmethod
     def _set_terminal(task: TaskInfo, status: str):
         """置为终态 (completed/failed/stopped) 并冻结耗时 end_time"""
@@ -499,47 +440,6 @@ class TaskManager:
         end_time — 终态变更必须只由登记线程执行。"""
         with self._lock:
             return task.thread is threading.current_thread()
-
-    def _run_batch_task(self, task: TaskInfo, urls: list, threads: int,
-                        delay: float, resume: bool, output_dir: str,
-                        export_epub: bool = False):
-        """在子线程中执行 run_batch，重定向 print 到任务日志"""
-        # 注册到线程感知 stdout 调度器 (不再直接替换全局 sys.stdout, 避免多任务互踩)
-        _THREAD_STDOUT.register(TaskLogRedirector(task, sys.__stdout__))
-        try:
-            # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from 爬虫 import run_batch
-
-            if app_log is not None:
-                app_log.info(f"任务{task.task_id}", f"批量任务启动: {len(urls)} 个网址")
-            run_batch(
-                url_list=urls,
-                threads=threads,
-                sort_chapters=True,
-                resume=resume,
-                show_progress=True,
-                output_dir=output_dir,
-                delay=delay,
-                stop_event=task.stop_flag,
-                unique_title=True,
-                export_epub=export_epub,
-            )
-            # 如果状态还是running且没有标记completed，标记为completed
-            if self._is_task_thread_owner(task) and task.status == "running":
-                self._set_terminal(task, "completed")
-        except Exception as e:
-            if self._is_task_thread_owner(task):
-                self._set_terminal(task, "failed")
-                task.error = str(e)
-                task.logs.append({
-                    'time': time.strftime('%H:%M:%S'),
-                    'msg': f"[错误] {e}"
-                })
-            if app_log is not None:
-                app_log.error_exc(f"任务{task.task_id}", f"批量任务异常: {e}", e)
-        finally:
-            _THREAD_STDOUT.unregister()
 
     def _run_task(self, task: TaskInfo, url: str, mode: str,
                   chapter_range: tuple, threads: int, delay: float,

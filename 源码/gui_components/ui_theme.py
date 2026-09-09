@@ -3,7 +3,7 @@
 
 双主题适配原则：颜色优先使用 Flet Material3 语义色
 （SURFACE / PRIMARY_CONTAINER / ERROR_CONTAINER 等）自动适配深浅主题；
-需要跨主题保持辨识度的状态色/日志色则使用 ui_morandi 定义的 Fluent 色相。
+需要跨主题保持辨识度的状态色/日志色则使用 ui_fluent 定义的 Fluent 色相。
 
 Fluent 规范 (界面设计预览/index.html):
   - 卡片: 纯白面 (夜间 #2B2B2B) + 8px 圆角 + 细边框 + 轻阴影
@@ -12,8 +12,8 @@ Fluent 规范 (界面设计预览/index.html):
 """
 import flet as ft
 
-# 统一字体与字重规范 (来自 ui_morandi, 本模块所有文本必须遵守)
-from .ui_morandi import (
+# 统一字体与字重规范 (来自 ui_fluent, 本模块所有文本必须遵守)
+from .ui_fluent import (
     FONT_STACK, FONT_TERMINAL, SIZE_BODY, SIZE_TINY, WEIGHT_BODY,
     WEIGHT_EMPHASIS, WEIGHT_TITLE, MORANDI_TERMINAL_BG, LOG_COLOR_INFO,
     LOG_COLOR_ERROR, LOG_COLOR_WARN, LOG_COLOR_DEBUG,

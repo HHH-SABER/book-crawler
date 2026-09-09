@@ -11,7 +11,7 @@ import time
 
 from . import history_data
 from ..ui_theme import make_card, tonal_btn, page_header
-from ..ui_morandi import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
+from ..ui_fluent import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_PRIMARY, MORANDI_SECONDARY, MORANDI_SUCCESS,
