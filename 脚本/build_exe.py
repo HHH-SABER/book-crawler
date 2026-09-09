@@ -493,6 +493,25 @@ def main():
 
     # --- EXE 启动冒烟测试 (v2.4.0 教训: 打包成功 ≠ 能启动 — flet icons.json
     # 与 flet_desktop 两个缺口都靠真实启动才暴露; CI 发布前必须过此关) ---
+    def _dump_crash_log(dist):
+        """冒烟失败时把 EXE 首启日志尾部打进构建输出 (日志.py 的全局
+        excepthook 会把 traceback 写文件, CI 上拿不到对话框内容, 靠这个诊断)"""
+        import glob as _glob
+        try:
+            log_dir = os.path.join(dist, "日志")
+            files = sorted(_glob.glob(os.path.join(log_dir, "*.log")),
+                           key=os.path.getmtime)
+            if not files:
+                log("[SMOKE] 无 EXE 首启日志 — 崩溃发生在 日志 模块初始化之前")
+                return
+            with open(files[-1], "r", encoding="utf-8", errors="replace") as f:
+                tail = f.readlines()[-40:]
+            log(f"[SMOKE] ===== EXE 首启日志尾部 ({os.path.basename(files[-1])}) =====")
+            for ln in tail:
+                log("    " + ln.rstrip())
+        except Exception as e:
+            log(f"[SMOKE] 读取首启日志失败: {e}")
+
     if _args.skip_smoke:
         log("[INFO] --skip-smoke: 跳过启动冒烟测试")
     else:
@@ -546,6 +565,7 @@ def main():
             else:
                 log(f"[ERROR] 冒烟失败: {_diag or '90s 内未见 flet 客户端进程'} "
                     "(手动运行 dist\\小说爬虫.exe 查看报错对话框)")
+                _dump_crash_log(dist)
                 sys.exit(5)
 
 
