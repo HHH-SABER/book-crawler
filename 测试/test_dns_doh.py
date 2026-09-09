@@ -65,6 +65,15 @@ class TestIpLiteralFastPath(unittest.TestCase):
         results = dns_doh._patched_getaddrinfo('localhost', 80)
         self.assertTrue(results)
 
+    def test_doh_source_host_no_recursion(self):
+        """H3 回归: DoH 服务器自身域名绝不能再走 DoH 查询。
+
+        旧实现对 dns.alidns.com 不设防 — alidns 解析失败时 urlopen 内部
+        getaddrinfo(已 patch) 再次 DoH 查询同一域名, 无限递归空转。"""
+        self._forbid_doh()
+        results = dns_doh._patched_getaddrinfo('dns.alidns.com', 443)
+        self.assertTrue(results)
+
     def test_is_ip_literal(self):
         self.assertTrue(dns_doh._is_ip_literal('127.0.0.1'))
         self.assertTrue(dns_doh._is_ip_literal('::1'))

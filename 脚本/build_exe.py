@@ -179,6 +179,8 @@ def main():
                     help="递增版本: --bump(默认patch) / --bump=minor / --bump=major")
     _g.add_argument("--version", dest="指定版本", help="手动指定版本号 (不递增)")
     _g.add_argument("--no-bump", action="store_true", help="保持当前版本号不变")
+    _g.add_argument("--skip-smoke", action="store_true",
+                    help="跳过构建后的 EXE 启动冒烟测试 (默认开启: 打包成功≠能启动)")
     _args = _parser.parse_args()
 
     _上次版本 = _读版本()
@@ -190,7 +192,6 @@ def main():
         _级别 = _args.bump or "patch"
         _新版本 = _递增(_上次版本, _级别)
     _今天 = time.strftime("%Y-%m-%d")
-    _写版本(_新版本, _今天)
 
     global PRODUCT_VERSION, FILE_VERSION
     PRODUCT_VERSION = _新版本
@@ -198,7 +199,7 @@ def main():
 
     banner(f"Novel Crawler EXE Build  v{PRODUCT_VERSION}")
     log(f"[版本] 上次={_上次版本} → 本次={PRODUCT_VERSION} ({FILE_VERSION})")
-    log(_同步CHANGELOG(_新版本, _今天))
+    log("[版本] 版本.json/CHANGELOG 在构建成功后写入 (M4: 失败不消耗版本号)")
     log("")
 
     # --- 1) find pyinstaller.exe (或回退 python -m PyInstaller)
@@ -333,6 +334,20 @@ def main():
     except Exception as e:
         log(f"[ERROR] 收集 flet 数据文件失败 (EXE 将缺图标元数据): {e}")
         sys.exit(5)
+    # H1: playwright 反检测引擎的 driver/ (node.exe + 驱动包, ~100MB) 是运行时
+    # 动态调用的二进制资源。实测 playwright 自带 hook-playwright.sync_api 通常
+    # 已收集 driver (v2.4.1 构建体积未因本条变化可证), 此处显式 add-data 兜底,
+    # 防上游 hook 行为变化导致静默回退裸 Selenium (stealth 反指纹全丢)
+    try:
+        import playwright as _pw
+        _pw_driver = os.path.join(os.path.dirname(_pw.__file__), "driver")
+        if os.path.isdir(_pw_driver):
+            add_data_list.append(f"{_pw_driver}:playwright/driver")
+            log("[OK] playwright driver 显式入库 (自带 hook 之外的兜底)")
+        else:
+            log("[WARN] playwright/driver 不存在, EXE 将回退 Selenium (无 stealth)")
+    except ImportError:
+        log("[INFO] playwright 未安装, 跳过 (EXE 内回退 Selenium)")
 
     # --- 4.5) 生成 PyInstaller 版本资源文件 (EXE 属性中的版本号/公司/产品等)
     version_file = 生成版本文件(os.path.join(ROOT, "_version_info.txt"))
@@ -418,6 +433,10 @@ def main():
         sys.exit(code)
 
     log("[SUCCESS] Build finished OK!")
+    # M4: 版本号/CHANGELOG 在构建成功后才落盘 — 旧实现在 PyInstaller 之前就写,
+    # 打包失败后 版本.json 已消耗、CHANGELOG 顶部已被改写 → 下次成功打包跳号
+    _写版本(_新版本, _今天)
+    log(_同步CHANGELOG(_新版本, _今天))
     # 清理临时版本文件 (避免污染项目根目录)
     try:
         os.remove(version_file)
@@ -471,6 +490,42 @@ def main():
         log(f"  - Distribute the ENTIRE folder: {final_exe_dir}   (not only the .exe)")
     log("  - Missing chromedriver? Place it next to .exe or on PATH")
     log("  - Customize site configs: run the EXE once, edit 站点配置.json beside it")
+
+    # --- EXE 启动冒烟测试 (v2.4.0 教训: 打包成功 ≠ 能启动 — flet icons.json
+    # 与 flet_desktop 两个缺口都靠真实启动才暴露; CI 发布前必须过此关) ---
+    if _args.skip_smoke:
+        log("[INFO] --skip-smoke: 跳过启动冒烟测试")
+    else:
+        # 基线: 已有实例在跑则跳过 (避免误杀用户会话/误判进程来源)
+        _base = subprocess.run(["tasklist"], capture_output=True, text=True,
+                               errors="replace").stdout or ""
+        if "小说爬虫.exe" in _base or "flet.exe" in _base:
+            log("[WARN] 检测到 小说爬虫/flet 进程已在运行, 冒烟测试跳过 (避免干扰现有会话)")
+        elif mode != "ONEFILE" or not os.path.isfile(final_exe):
+            log(f"[WARN] 产物为 {mode}, 冒烟测试仅支持 ONEFILE, 跳过")
+        else:
+            log("[SMOKE] 启动 EXE 验证 (最长 60s 等待 flet 客户端拉起)...")
+            _smoke_ok = False
+            try:
+                subprocess.Popen([final_exe], cwd=final_exe_dir)
+                for _ in range(30):
+                    time.sleep(2)
+                    _r = subprocess.run(["tasklist"], capture_output=True,
+                                        text=True, errors="replace").stdout or ""
+                    if "flet.exe" in _r:
+                        _smoke_ok = True
+                        break
+            finally:
+                subprocess.run(["taskkill", "/F", "/IM", "小说爬虫.exe"],
+                               capture_output=True)
+                subprocess.run(["taskkill", "/F", "/IM", "flet.exe"],
+                               capture_output=True)
+            if _smoke_ok:
+                log("[OK] 冒烟通过: EXE 拉起主窗口成功 (flet 客户端进程出现)")
+            else:
+                log("[ERROR] 冒烟失败: 60s 内未见 flet 客户端进程 — EXE 启动即崩! "
+                    "(手动运行 dist\\小说爬虫.exe 查看报错对话框)")
+                sys.exit(5)
 
 
 if __name__ == "__main__":

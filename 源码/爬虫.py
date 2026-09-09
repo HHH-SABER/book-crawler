@@ -5813,6 +5813,92 @@ class NovelSpider:
             idx[cur_title] = '\n'.join(buf).strip()
         return idx
 
+    def _收尾汇总(self, output_file, catalog_url, novel_title, total, failed,
+                  export_epub, 正常完成=True):
+        """整书收尾: 暴露统计 + 质检汇总 + 站点历史 + 强制刷盘 + 风控/漂移上报。
+
+        M7: 正常完成与提前返回(用户停止/KeyboardInterrupt/解释器退出)都必须
+        走到这里 — 旧实现提前 return 跳过全部收尾, 停止的任务在健康度监控/
+        风控聚合中完全缺失, 防抖窗口内的历史不落盘。
+        - 提前返回: 检查点保留 (断点续传, 由调用方决定不移除); last_aborted
+          置 True 供多源回退判定"不切换备用源"; 不导出 EPUB、不打"抓取完成"
+          日志 (避免 GUI 正则把停止的任务误解析为 completed)
+        - 正常完成: 由调用方先移除检查点
+        """
+        self.last_failed = failed
+        self.last_total = total
+        self.last_aborted = not 正常完成
+        # 整书质检汇总报告 + 站点抓取历史记录
+        try:
+            质检摘要 = self._生成质检汇总报告(output_file, total, failed)
+        except Exception as e:
+            质检摘要 = None
+            _log.info(f"[质检] 汇总报告生成异常: {e}")
+        self._记录站点历史(catalog_url, novel_title, total, failed,
+                            output_file, 质检摘要=质检摘要)
+        # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史/站点历史不丢失)
+        if _站点历史可用:
+            try:
+                取站点历史().flush()
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        if self._爬取历史 is not None:
+            try:
+                self._爬取历史.flush()
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        # 验证码监控报告 (类型/耗时/成功率/成本) 与告警
+        if self._captcha_manager is not None:
+            try:
+                _log.info(f"\n{self._captcha_manager.report()}")
+                for alarm in self._captcha_manager.alarms():
+                    _log.info(alarm)
+            except Exception as e:
+                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        if 正常完成:
+            if failed:
+                _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
+            else:
+                _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
+            # EPUB 导出 (可选): 有内容且开启时, 把结果 txt 一并转为 .epub
+            if export_epub and output_file and os.path.isfile(output_file) \
+                    and (total - len(failed)) > 0:
+                try:
+                    from epub_exporter import txt_to_epub
+                    txt_to_epub(output_file, title=novel_title)
+                except Exception as e:
+                    _log.info(f"[epub] 导出异常(不影响抓取结果): {e}")
+        else:
+            _log.info(f"\n任务已停止/中断: 目标{total}章, 失败{len(failed)}章, "
+                      f"进度检查点已保存 (输出: {output_file})")
+        # P2-1 打点: 任务级风控事件 (成功/失败/新增由爬取历史统计, 此处给监控聚合口径)
+        try:
+            import re as _re
+            import 风控事件 as _event
+            _m = _re.match(r'https?://([^/:]+)', catalog_url)
+            _event.add('task_result', {
+                '域名': _m.group(1) if _m else '',
+                '完成': total - len(failed), '失败': len(failed),
+                '目标': total,
+                # run() 无 mode 参数 (历史遗留 NameError 曾令本块整体失效:
+                # 风控打点/flush/漂移检测全部被吞), 按增量开关派生
+                '模式': 'incremental' if getattr(self, '_增量模式', False) else 'full',
+            })
+            _event.flush()
+            # P2-2 站点改版漂移检测: 空章=失败未提取内容数, 短章=质检未通过数
+            try:
+                import 站点漂移检测 as _drift
+                _empty = len(failed)   # failed 即未提取到内容的章
+                _short = (质检摘要 or {}).get('未通过', 0) if 质检摘要 else 0
+                _drift.report_task(_m.group(1) if _m else '', total,
+                                   empty=_empty, short=_short, failed=len(failed))
+            except Exception as e:
+                _log.debug(f'[漂移检测] 上报异常: {type(e).__name__}: {e}')
+        except Exception as e:
+            # 风控打点失效曾无任何痕迹 (NameError 被静默吞掉), 至少留 debug 线索
+            _log.debug(f'[风控打点] task_result 记录异常: {type(e).__name__}: {e}')
+        return output_file
+
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
             stop_event=None, unique_title=False, novel_title=None,
@@ -6022,6 +6108,7 @@ class NovelSpider:
                     # 只允许一个线程进入, 共享同一 Context 会报 "already entered"。
                     with ThreadPoolExecutor(max_workers=threads) as pool:
                         futures = {}
+                        timed_out = []   # M6: result 超时被放弃、但 worker 仍在运行的 future
                         for i in range(start, total):
                             # 增量模式: 跳过未变更章节 (不提交到线程池)。
                             # 从头重抓(start==0)时仅当旧正文已索引(可搬运)才允许跳过,
@@ -6045,7 +6132,10 @@ class NovelSpider:
                                 # 线程池已不可用, 记录进度并优雅退出而非崩溃
                                 _log.info(f"\n⚠️ 程序正在退出, 抓取中止 "
                                       f"(进度检查点已保存至第 {i} 章): {e}")
-                                return output_file
+                                # M7: 提前返回也要走收尾统计 (旧实现直接 return)
+                                return self._收尾汇总(output_file, catalog_url,
+                                                      novel_title, total, failed,
+                                                      export_epub, 正常完成=False)
                         for i in range(start, total):
                             if i not in futures:
                                 # 被增量跳过的章节: 从头重抓时搬运旧正文到新文件
@@ -6066,7 +6156,10 @@ class NovelSpider:
                                 for _fut in futures.values():
                                     _fut.cancel()
                                 _log.info(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
-                                return output_file
+                                # M7: 提前返回也要走收尾统计 (旧实现直接 return)
+                                return self._收尾汇总(output_file, catalog_url,
+                                                      novel_title, total, failed,
+                                                      export_epub, 正常完成=False)
                             chap = chapters[i]
                             _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
                             try:
@@ -6076,6 +6169,7 @@ class NovelSpider:
                             except TimeoutError:
                                 _log.info(f"⚠️ 第 {i + 1} 章抓取超时(>180s), 取消该任务并记失败")
                                 futures[i].cancel()
+                                timed_out.append(futures[i])   # M6: 排空清单
                                 content = ''
                             except KeyboardInterrupt:
                                 raise
@@ -6095,12 +6189,26 @@ class NovelSpider:
                                                   i + 1, total, file_handle=f)
                             if show_progress:
                                 print_progress_bar(i + 1, total, extra=chap['title'][:20])
+                        # M6: 超时被弃的章节 worker 仍在后台跑 — 显式排空并给上限/可见性。
+                        # (with 退出时 shutdown(wait=True) 本就会等; 若不排空, run 收尾
+                        # close() 与仍存活的 worker 相撞: 用已关闭 session 报错, 或恰在
+                        # close 后创建 tanmixs driver → Chrome 进程泄漏)
+                        if timed_out:
+                            _log.info(f"等待 {len(timed_out)} 个超时章节的 worker 收尾 (每个最长 60s)...")
+                            for _tf in timed_out:
+                                try:
+                                    _tf.result(timeout=60)
+                                except Exception as e:
+                                    _log.debug(f'裸 except 吞异常: {type(e).__name__}')
                 else:
                     # ===== 串行抓取 (默认) =====
                     for i in range(start, total):
                         if stop_event is not None and stop_event.is_set():
                             _log.info(f"\n⚠️ 用户停止! 进度检查点已保存 (输出: {output_file})")
-                            return output_file
+                            # M7: 提前返回也要走收尾统计 (旧实现直接 return)
+                            return self._收尾汇总(output_file, catalog_url,
+                                                  novel_title, total, failed,
+                                                  export_epub, 正常完成=False)
                         chap = chapters[i]
                         # 增量模式: 跳过未变更章节 (不请求)。
                         # 追加模式(start>0): 旧正文已在文件中, 直接跳过;
@@ -6148,78 +6256,15 @@ class NovelSpider:
                             time.sleep(_cur_delay * getattr(self, '_延迟因子', 1.0))
         except KeyboardInterrupt:
             _log.info(f"\n⚠️ 用户中断! 进度检查点已保存，下次运行将自动从断点继续 (输出: {output_file})")
-            return output_file
+            # M7: 提前返回也要走收尾统计 (旧实现直接 return)
+            return self._收尾汇总(output_file, catalog_url, novel_title,
+                                  total, failed, export_epub, 正常完成=False)
 
         self._remove_checkpoint(output_file)
-        # 暴露抓取结果统计 (供多源回退判定使用)
-        self.last_failed = failed
-        self.last_total = total
-        # 整书质检汇总报告 + 站点抓取历史记录
-        try:
-            质检摘要 = self._生成质检汇总报告(output_file, total, failed)
-        except Exception as e:
-            质检摘要 = None
-            _log.info(f"[质检] 汇总报告生成异常: {e}")
-        self._记录站点历史(catalog_url, novel_title, total, failed,
-                            output_file, 质检摘要=质检摘要)
-        # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史/站点历史不丢失)
-        if _站点历史可用:
-            try:
-                取站点历史().flush()
-            except Exception as e:
-                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        if self._爬取历史 is not None:
-            try:
-                self._爬取历史.flush()
-            except Exception as e:
-                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        # 验证码监控报告 (类型/耗时/成功率/成本) 与告警
-        if self._captcha_manager is not None:
-            try:
-                _log.info(f"\n{self._captcha_manager.report()}")
-                for alarm in self._captcha_manager.alarms():
-                    _log.info(alarm)
-            except Exception as e:
-                _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        if failed:
-            _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
-        else:
-            _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
-        # EPUB 导出 (可选): 有内容且开启时, 把结果 txt 一并转为 .epub
-        if export_epub and output_file and os.path.isfile(output_file) \
-                and (total - len(failed)) > 0:
-            try:
-                from epub_exporter import txt_to_epub
-                txt_to_epub(output_file, title=novel_title)
-            except Exception as e:
-                _log.info(f"[epub] 导出异常(不影响抓取结果): {e}")
-        # P2-1 打点: 任务级风控事件 (成功/失败/新增由爬取历史统计, 此处给监控聚合口径)
-        try:
-            import re as _re
-            import 风控事件 as _event
-            _m = _re.match(r'https?://([^/:]+)', catalog_url)
-            _event.add('task_result', {
-                '域名': _m.group(1) if _m else '',
-                '完成': total - len(failed), '失败': len(failed),
-                '目标': total,
-                # run() 无 mode 参数 (历史遗留 NameError 曾令本块整体失效:
-                # 风控打点/flush/漂移检测全部被吞), 按增量开关派生
-                '模式': 'incremental' if getattr(self, '_增量模式', False) else 'full',
-            })
-            _event.flush()
-            # P2-2 站点改版漂移检测: 空章=失败未提取内容数, 短章=质检未通过数
-            try:
-                import 站点漂移检测 as _drift
-                _empty = len(failed)   # failed 即未提取到内容的章
-                _short = (质检摘要 or {}).get('未通过', 0) if 质检摘要 else 0
-                _drift.report_task(_m.group(1) if _m else '', total,
-                                   empty=_empty, short=_short, failed=len(failed))
-            except Exception as e:
-                _log.debug(f'[漂移检测] 上报异常: {type(e).__name__}: {e}')
-        except Exception as e:
-            # 风控打点失效曾无任何痕迹 (NameError 被静默吞掉), 至少留 debug 线索
-            _log.debug(f'[风控打点] task_result 记录异常: {type(e).__name__}: {e}')
-        return output_file
+        # M7: 收尾统计抽成 _收尾汇总 — 与提前返回路径 (用户停止/中断/解释器退出)
+        # 共用同一份收尾逻辑, 保证健康度监控/风控聚合/历史刷盘全路径覆盖
+        return self._收尾汇总(output_file, catalog_url, novel_title,
+                              total, failed, export_epub, 正常完成=True)
 
 
 def get_base_url(url):
@@ -6486,7 +6531,15 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             if _cd > 0:
                 等待秒 = min(_cd, 300)
                 _log.info(f"⚠️ {_m_cd.group(1)} 处于风控冷却中, 礼貌等待 {等待秒:.0f} 秒后开始 (P2-3)")
-                time.sleep(等待秒)
+                # M8: 分片 sleep 响应停止信号 — 旧实现整段 time.sleep, GUI 点停止
+                # 后任务最长再挂 5 分钟才退出
+                _已等 = 0
+                while _已等 < 等待秒:
+                    if stop_event is not None and stop_event.is_set():
+                        _log.info("⚠️ 风控冷却等待被停止信号打断, 任务退出")
+                        return ''
+                    time.sleep(1)
+                    _已等 += 1
     except Exception:
         pass
     # 统一输出目录 -> 绝对路径, 避免多套结果目录
@@ -6581,6 +6634,8 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     if len(sources) > 1:
         _log.info(f"[多源回退] 共 {len(sources)} 个数据源 (主源 + {len(sources)-1} 个备用)")
 
+    last_error = None   # M5: 最后一个源的异常 (全部源异常时向上抛, 保持单源行为)
+    all_errored = True  # M5: 是否所有源都以异常收场
     for src_idx, src in enumerate(sources):
         if src_idx > 0:
             _log.info(f"[多源回退] ⚠️ 主源抓取异常, 切换备用源 {src_idx}/{len(sources)-1}: {src}")
@@ -6599,10 +6654,21 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                                threads=threads, delay=delay, stop_event=stop_event,
                                unique_title=unique_title, novel_title=unique_novel_title,
                                incremental=incremental, export_epub=export_epub)
+        except Exception as e:
+            # M5: 源 run() 抛未捕获异常时切换下一备用源 — 旧实现 try/finally
+            # 无 except, 异常直接冒出 run_crawl, 备用源永不尝试 (与
+            # "主源抓取异常, 切换备用源" 的设计语义不符)
+            last_error = e
+            _log.info(f"[多源回退] 源 {src_idx+1} 抓取异常: {str(e)[:200]}"
+                      + ("，切换下一个备用源" if src_idx < len(sources) - 1 else "，无更多备用源"))
+            continue
         finally:
             # 每个源抓完(含异常/停止)立即释放浏览器与连接资源, 防止 Chrome 进程泄漏 (P1-3)
             src_spider.close()
-        # 成功判定: 失败章节占比 < 20% 且验证码触发率 < 50%
+        all_errored = False   # M5: 本源 run() 未抛异常
+        # M7: 用户停止/中断 (_收尾汇总 正常完成=False) — 不再尝试备用源
+        if getattr(src_spider, 'last_aborted', False):
+            return
         failed = getattr(src_spider, 'last_failed', None)
         total_n = getattr(src_spider, 'last_total', 0)
         if failed is None:
@@ -6629,6 +6695,10 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         _log.info(f"[多源回退] 源 {src_idx+1}/{len(sources)} 未达标 "
               f"(失败率 {fail_ratio:.0%}, 验证码触发率 {rate:.0%}), "
               + ("尝试下一个备用源..." if src_idx < len(sources) - 1 else "无更多备用源"))
+
+    if all_errored and last_error is not None:
+        # M5: 所有源都异常 → 向上抛最后一个异常 (保持旧单源行为: GUI 标记失败)
+        raise last_error
 
 
 def run_batch(url_list, threads=None, sort_chapters=True, resume=True,

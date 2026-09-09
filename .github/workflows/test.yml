@@ -35,3 +35,7 @@ jobs:
 
       - name: Run offline regression tests
         run: python -m unittest discover -s 测试 -v
+
+      # M12: 手写回归脚本不被 unittest discover 收集, 显式纳入门禁
+      - name: Run standalone regression suite
+        run: python 测试/回归测试_修复验证.py
