@@ -35,5 +35,10 @@ flet>=0.86.0,<0.87
 # (flet/utils/pip.py 在冻结环境里回退安装时自身 NameError: exit)
 flet-desktop>=0.86.0,<0.87
 
+# ===== 远控服务 (源码/远控/, 常驻机 Web 面板; 不打进 EXE) =====
+# Python 3.14 兼容性已实测 (fastapi 0.141 / pydantic 2.13)
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
 # ===== 打包工具（可选，仅在打 EXE 时使用）=====
 # pyinstaller>=6.0.0  # flet pack 内部会用，不手动装也可以
