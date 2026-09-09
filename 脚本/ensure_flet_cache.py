@@ -30,15 +30,6 @@ _ALLOWED_DL_HOSTS = {
 }
 
 
-def _validate_download_url(url):
-    """校验下载 URL: 仅 http/https + 域名白名单 (防 SSRF 访问内网/元数据)"""
-    p = urllib.parse.urlparse(url)
-    if p.scheme not in ('http', 'https'):
-        raise ValueError(f"仅允许 http/https 协议: {url}")
-    host = (p.hostname or '').lower()
-    if not host or host not in _ALLOWED_DL_HOSTS:
-        raise ValueError(f"下载域名不在白名单: {host}")
-    return url
 
 
 def log(msg=""):

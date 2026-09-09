@@ -82,7 +82,6 @@ PATTERN_SELENIUM = 'selenium'
 # 第2页:     /orion/{book_id}/{chapter_id}/1.html  (去掉 .html, 追加 /N.html)
 # chapter_id 就在章节 URL 中, 无需从 HTML 提取
 # ============================================================
-_ORION34G_CHAPTER_IDS = {}  # 保留兼容 (旧版预留, 当前不用)
 
 
 def paginate_orion34g(base_url, page_index):
@@ -690,49 +689,6 @@ def build_paged_url(base_url, page_index, pagination):
     # 路径替换模式 (如 _{N}.html): 替换 .html 为分页后缀
     suffix = suffix.replace('{N}', str(page_num))
     return base_url.replace('.html', suffix)
-
-
-def detect_qsbs_bb_pattern(html):
-    """检测页面是否使用 qsbs.bb Base64 加密"""
-    return bool(re.search(r"qsbs\.bb\('([A-Za-z0-9+/=]+)'\)", html))
-
-
-def detect_ajax_pattern(html):
-    """检测页面是否使用两步 AJAX 动态加载"""
-    return bool(re.search(r'/api/read_sign\.php', html))
-
-
-def auto_detect_pattern(session, url, headers, base_url=None):
-    """自动探测未知站点的适配模式
-    
-    Args:
-        session: requests.Session
-        url: 章节页 URL
-        headers: 请求头
-        base_url: 站点基础 URL
-    
-    Returns:
-        检测到的模式, 或 None
-    """
-    try:
-        resp = session.get(url, headers=headers, timeout=30)
-        html = resp.content.decode('utf-8', errors='ignore')
-        
-        if detect_qsbs_bb_pattern(html):
-            return PATTERN_QSBS_BB
-        if detect_ajax_pattern(html):
-            return PATTERN_AJAX_TWO_STEP
-        
-        # 检查是否有选择器能提取到足够内容
-        soup = BeautifulSoup(html, 'lxml')
-        for sel in ['#content', '.content', '#nr1', '#bookcontent', '#chaptercontent']:
-            el = soup.select_one(sel)
-            if el and len(el.get_text(strip=True)) > 500:
-                return PATTERN_HTML_SELECTOR
-        
-        return None
-    except Exception:
-        return None
 
 
 # ============================================================
