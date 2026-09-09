@@ -663,7 +663,9 @@ class TaskManager:
         """在原任务内重新开始抓取 (不新建任务)。
 
         重置进度/日志/停止标记后, 用原参数在同一个 task_id 上重新启动
-        抓取线程; resume=False 从头重新抓取, 输出覆盖同名文件。
+        抓取线程; resume 取 task.resume (调用方 — 输入条复用分支 — 在重启前
+        已把用户当前 续传/EPUB/输出目录 选项同步进 task 字段, M2), 输出覆盖
+        同名文件。
 
         Returns:
             bool: 是否成功重启
@@ -686,13 +688,15 @@ class TaskManager:
             task.stop_flag = threading.Event()  # 新建停止标记 (旧标记可能已被置位)
             task.logs.append({
                 'time': time.strftime('%H:%M:%S'),
-                'msg': "[重新下载] 任务在原任务内重新开始 (从头抓取)"
+                'msg': f"[重新下载] 任务在原任务内重新开始 (续传={task.resume})"
             })
             # 重新启动抓取线程 (同一 task_id, 任务列表不新增条目)
+            # M2: resume 用 task.resume — 旧实现硬编码 False, 用户在输入条上
+            # 勾选的 断点续传/导出EPUB/输出目录 被静默丢弃
             t = threading.Thread(
                 target=self._run_task,
                 args=(task, task.url, task.mode, task.chapter_range,
-                      task.threads, task.delay, False, task.output_dir),
+                      task.threads, task.delay, task.resume, task.output_dir),
                 daemon=True
             )
             task.thread = t

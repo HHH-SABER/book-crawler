@@ -87,7 +87,10 @@ def _patched_getaddrinfo(host, port, *args, **kwargs):
     # 快速通道: IP 字面量 / localhost 直连环回或本机是合法场景 (flet 本地端口、
     # 本地代理、本地 ollama 等)。旧实现会把解析结果里的 127.0.0.1 当污染,
     # 对 name=127.0.0.1 发起 DoH 查询 (两个源超时 8s 串行, 最坏卡 16 秒)。
-    if _is_ip_literal(host) or host == 'localhost' or host.endswith('.localhost'):
+    # H3: DoH 服务器自身域名必须走原函数 — 否则 alidns 解析失败时,
+    # urlopen→getaddrinfo(已 patch)→再次 DoH 查询同一域名, 无限递归空转。
+    if _is_ip_literal(host) or host in _DOH_ALLOWED_HOSTS \
+            or host == 'localhost' or host.endswith('.localhost'):
         return _orig_getaddrinfo(host, port, *args, **kwargs)
     results = None
     try:

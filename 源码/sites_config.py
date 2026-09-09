@@ -433,6 +433,13 @@ def _apply_runtime_config():
         SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
                             if p.get('domain') not in _RUNTIME_APPENDED]
         _RUNTIME_APPENDED = set()
+    # H4 修复: 重放前先复位内置条目上的 enabled 标志 — 场景: 用户先禁用内置站
+    # (enabled=False 被 upsert 进内置条目) 再从 JSON 删除该站点, 重放若不复位,
+    # 该站将保持禁用至重启, 与 GUI"内置站点将回退默认配置"的提示相悖。
+    # 复位后由下方 JSON upsert 重新施加 JSON 中声明的 enabled (若有)。
+    # 此时 _RUNTIME_APPENDED 条目已被移除, 剩余全部是内置条目。
+    for _p in SITE_PATTERNS:
+        _p.pop('enabled', None)
     _RUNTIME_APPLIED = True
     try:
         import json as _json
@@ -484,6 +491,8 @@ def reload_runtime_config():
 # 外部站点适配器插件: BASE_DIR/站点适配/*.py (免重新打包扩展新站)
 # ============================================================
 ADAPTERS = {}          # domain -> {'source', 'parse_catalog', 'extract_content', 'paginate'}
+_ADAPTER_APPENDED = set()  # 适配器 _merge_site_pattern 追加进 SITE_PATTERNS 的域名
+                           # (覆盖型域名不入 — 语义与 JSON 覆盖内置条目一致)
 _ADAPTERS_LOADED = False
 
 
@@ -507,14 +516,15 @@ def load_adapters():
     安全提示: 这些 .py 文件会被 import 执行，等同直接运行代码，
     请只放入可信来源的适配器（信任级别与修改主程序代码一致）。
     """
-    global _ADAPTERS_LOADED
+    global _ADAPTERS_LOADED, ADAPTERS, _ADAPTER_APPENDED
     if _ADAPTERS_LOADED:
         return
-    _ADAPTERS_LOADED = True
+    new_adapters = {}
     try:
         from _path_utils import get_app_base_dir
         adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
         if not os.path.isdir(adapter_dir):
+            _ADAPTERS_LOADED = True   # 目录不存在: 无可加载, 置位避免每次重扫
             return
         files = sorted(f for f in os.listdir(adapter_dir)
                        if f.endswith('.py') and not f.startswith('_'))
@@ -532,7 +542,7 @@ def load_adapters():
                     continue
                 # L3 修复: 同域名第二个插件文件会产生"B 的配置 + A 的函数"缝合体,
                 # 显式拒绝并告警 (提示改插件文件里的 SITE['domain'])
-                if domain in ADAPTERS:
+                if domain in new_adapters:
                     _log.info(f"[适配器] 跳过 {fname}: 域名 {domain} 已由其他插件注册, "
                               f"请修改该插件的 SITE['domain']")
                     continue
@@ -545,11 +555,12 @@ def load_adapters():
                     fn = getattr(mod, attr, None)
                     if callable(fn):
                         entry[attr] = fn
-                # H7 回归修复: entry 必须登记进 ADAPTERS — 旧代码经 setdefault
+                # H7 回归修复: entry 必须登记进注册表 — 旧代码经 setdefault
                 # 注册, H7 重载重构时赋值被丢, 适配器"已加载"但注册表恒空,
                 # get_adapter() 永远返回 None (爬虫不走适配器 + GUI 显示
                 # "加载失败或未注册")
-                ADAPTERS[domain] = entry
+                # M3: 先写进本地新表, 扫描完成后整体换引用 (原子, 无并发空窗)
+                new_adapters[domain] = entry
                 # 注意: setdefault 的默认字典不含 get_title, 适配器未定义书名
                 # 函数时该键不存在, 必须用 .get 访问 (旧代码直接索引导致
                 # "加载 uuwxw.py 失败: 'get_title'" 的误报)
@@ -562,6 +573,19 @@ def load_adapters():
                 _log.info(f"[适配器] 加载 {fname} 失败: {e}")
     except Exception as e:
         _log.info(f"[适配器] 扫描目录失败: {e}")
+        return  # M3: 扫描级失败不置位, 下次调用重试 (旧实现先置位, 失败后永不重试)
+    # M3: 构建完成后整体换引用 (旧实现逐条写入 ADAPTERS / reload 先清空后重建,
+    # 均存在并发空窗 — 空窗期 get_adapter 返回 None, 抓取中的任务静默降级通用
+    # 解析)。get_adapter 每次调用读取模块属性, 换引用原子生效。
+    ADAPTERS = new_adapters
+    _ADAPTERS_LOADED = True
+    # 清理已被删除的适配器此前追加进 SITE_PATTERNS 的站点条目
+    # (覆盖型条目保留: 语义与 JSON 覆盖内置条目一致)
+    _残留 = _ADAPTER_APPENDED - set(new_adapters)
+    if _残留:
+        SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
+                            if p.get('domain') not in _残留]
+        _ADAPTER_APPENDED -= _残留
 
 
 def _import_adapter_module(path, mod_name):
@@ -575,7 +599,11 @@ def _import_adapter_module(path, mod_name):
 
 
 def _merge_site_pattern(site):
-    """把适配器 SITE 按域名 upsert 进 SITE_PATTERNS, 返回合并后的条目"""
+    """把适配器 SITE 按域名 upsert 进 SITE_PATTERNS, 返回合并后的条目。
+
+    追加型 (SITE_PATTERNS 中不存在) 的域名记入 _ADAPTER_APPENDED,
+    供 load_adapters 在插件被删除后清理残留条目。"""
+    global _ADAPTER_APPENDED
     domain = site.get('domain')
     for p in SITE_PATTERNS:
         if p.get('domain') == domain:
@@ -583,6 +611,7 @@ def _merge_site_pattern(site):
                 p[k] = v
             return p
     SITE_PATTERNS.append(dict(site))
+    _ADAPTER_APPENDED.add(domain)
     return SITE_PATTERNS[-1]
 
 
@@ -603,9 +632,10 @@ def reload_adapters():
 
     适配器模块经 module_from_spec 加载且从不注册 sys.modules (L3: 清理
     sys.modules 的旧逻辑是死代码, 已移除), 直接重扫目录即可。
-    """
-    global _ADAPTERS_LOADED, ADAPTERS
-    ADAPTERS = {}
+    M3: 旧实现先 ADAPTERS = {} 再重扫, 空窗期并发 get_adapter 返回 None →
+    抓取中的任务静默降级通用解析; 现 load_adapters 内部构建新表后原子换引用,
+    重载全程无空窗。"""
+    global _ADAPTERS_LOADED
     _ADAPTERS_LOADED = False
     load_adapters()
 

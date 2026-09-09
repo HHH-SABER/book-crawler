@@ -42,12 +42,17 @@ def 加载() -> list:
 
 
 def 保存(items) -> bool:
-    """整体写回书架清单 (pathlib 锚定数据目录, 防路径穿越)"""
+    """整体写回书架清单 (tmp + os.replace 原子替换, 防写一半损坏。
+
+    M1 修复: 旧实现直接 write_text, 崩溃/断电可致 书架.json 损坏 →
+    加载() 静默返回空列表, 全部书架记录无痕丢失。对齐 爬取历史/风控事件 模式。"""
     try:
         p = Path(书架路径()).resolve()
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(items, ensure_ascii=False, indent=2),
-                     encoding='utf-8')
+        tmp = p.with_name(p.name + '.tmp')
+        tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2),
+                       encoding='utf-8')
+        os.replace(tmp, p)
         return True
     except Exception:
         return False

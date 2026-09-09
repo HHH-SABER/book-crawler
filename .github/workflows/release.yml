@@ -44,6 +44,25 @@ jobs:
           .venv/Scripts/pip.exe install -r requirements.txt
           .venv/Scripts/pip.exe install pyinstaller
 
+      # Rust 加速扩展: pyd 不入库 (gitignore), CI 现场编译后打进 EXE
+      # (M12: 旧发布产物永远纯 Python 且无人知晓; 失败不阻塞, 仅纯 Python 发布)
+      - name: Build rust_core.pyd (Rust 加速, best-effort)
+        shell: bash
+        run: |
+          .venv/Scripts/python.exe -m pip install maturin
+          (cd rust_core_poc/pyo3_ext && ../.venv/Scripts/python.exe -m maturin build --release) \
+            || { echo "[WARN] rust_core 编译失败, 本次发布为纯 Python"; exit 0; }
+          .venv/Scripts/python.exe -c "
+          import glob, zipfile, shutil
+          whls = sorted(glob.glob('rust_core_poc/pyo3_ext/target/wheels/*.whl'))
+          assert whls, 'maturin 未产出 wheel'
+          with zipfile.ZipFile(whls[-1]) as z:
+              name = [n for n in z.namelist() if n.endswith('.pyd')][0]
+              with z.open(name) as src, open('源码/rust_core.pyd', 'wb') as dst:
+                  shutil.copyfileobj(src, dst)
+          print('rust_core.pyd 已就位')
+          "
+
       - name: Extract version from tag
         id: ver
         shell: bash
