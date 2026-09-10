@@ -1,5 +1,5 @@
 @echo off
-rem ---------- 远控服务启动 (常驻机用; 手机/外部设备经浏览器访问) ----------
+rem ---------- Զ�ط������� (��פ����; �ֻ�/�ⲿ�豸�����������) ----------
 setlocal
 cd /d "%~dp0"
 set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
@@ -19,8 +19,8 @@ if errorlevel 1 (
 rem ---------- env ----------
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
-set "PYTHONPATH=%~dp0源码"
+set "PYTHONPATH=%~dp0Դ��"
 
-"%PYTHON_EXE%" -m 远控
-rem 守护模式 (脚本/远控守护.bat) 下免暂停, 便于自动重启循环
-if not "%远控_无暂停%"=="1" pause
+"%PYTHON_EXE%" -m Զ��
+rem �ػ�ģʽ (�ű�/Զ���ػ�.bat) ������ͣ, �����Զ�����ѭ��
+if not "%Զ��_����ͣ%"=="1" pause
