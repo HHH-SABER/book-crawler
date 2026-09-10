@@ -256,6 +256,12 @@ def 创建任务(body: dict, k: Optional[str] = None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"任务创建失败: {e}")
+    try:   # 标记来源: 远控页在桌面端按此过滤展示"手机端记录"
+        t = _任务管理器().get_task(task_id)
+        if t is not None:
+            t.来源 = "手机"
+    except Exception:
+        pass
     return {"task_id": task_id}
 
 
