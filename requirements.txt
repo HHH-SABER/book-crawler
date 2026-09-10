@@ -40,5 +40,8 @@ flet-desktop>=0.86.0,<0.87
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 
+# 系统托盘 (关闭按钮 → 最小化到托盘; 纯 Python + Win32, 打包友好)
+pystray>=0.19.5
+
 # ===== 打包工具（可选，仅在打 EXE 时使用）=====
 # pyinstaller>=6.0.0  # flet pack 内部会用，不手动装也可以

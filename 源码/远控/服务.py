@@ -62,35 +62,65 @@ def 注入任务管理器(mgr) -> None:
     _task_manager = mgr
 
 
-def 后台启动(host: str = None, port: int = None):
-    """守护线程内启动 uvicorn (GUI 内嵌远控); 禁用时返回 None。
+_server = None          # 内嵌 uvicorn.Server 实例 (供开关优雅停机)
+_server_thread = None
 
-    - loop/http 显式指定纯 Python 实现, 避免冻结环境缺 C 扩展
-    - 端口被占用等启动失败仅记日志, 绝不影响桌面客户端本体
+
+def 后台启动(host: str = None, port: int = None):
+    """守护线程内启动 uvicorn (GUI 内嵌远控); 禁用/已在运行返回 None。
+
+    - 持有 Server 实例: 停止后台() 经 should_exit 优雅停机 (端口释放)
+    - loop/http 显式纯 Python 实现, 防冻结环境缺 C 扩展
+    - 端口被占等失败: 线程内捕获并记日志, 不影响桌面客户端
     """
+    global _server, _server_thread
     import threading as _t
     import uvicorn
     cfg = 取配置()
     if not cfg.get("启用", True):
         return None
+    if 运行中():
+        return None
     _host = host or cfg.get("绑定", "127.0.0.1")
     _port = int(port or cfg.get("端口", 8760))
+    try:
+        config = uvicorn.Config(app, host=_host, port=_port,
+                                log_level="warning", loop="asyncio", http="h11")
+        _server = uvicorn.Server(config)
+    except Exception as e:
+        _日志留痕(f"内嵌远控配置失败: {type(e).__name__}: {e}")
+        _server = None
+        return None
+    _server_thread = _t.Thread(target=_server.run, name="远控服务", daemon=True)
+    _server_thread.start()
+    return _server_thread
 
-    def _跑():
+
+def 停止后台() -> None:
+    """优雅停止内嵌远控 (should_exit 触发 uvicorn 收尾, 线程自然退出)"""
+    global _server, _server_thread
+    srv = _server
+    _server = None
+    if srv is not None:
         try:
-            uvicorn.run(app, host=_host, port=_port, log_level="warning",
-                        loop="asyncio", http="h11")
-        except Exception as e:
-            try:
-                import 日志 as _alog
-                _alog.get("远控").info(
-                    f"内嵌远控启动失败 (端口 {_port} 可能被占用): "
-                    f"{type(e).__name__}: {e}")
-            except Exception:
-                pass
-    t = _t.Thread(target=_跑, name="远控服务", daemon=True)
-    t.start()
-    return t
+            srv.should_exit = True
+        except Exception:
+            pass
+    _server_thread = None
+
+
+def 运行中() -> bool:
+    """内嵌远控是否在运行 (顶栏开关据此展示真实状态)"""
+    return _server is not None and _server_thread is not None \
+        and _server_thread.is_alive()
+
+
+def _日志留痕(msg: str) -> None:
+    try:
+        import 日志 as _alog
+        _alog.get("远控").info(msg)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------- 鉴权
