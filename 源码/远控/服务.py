@@ -27,6 +27,7 @@ import json
 import os
 import threading
 import time
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -289,6 +290,112 @@ _app = app  # 别名 (语义可读)
 _已扫中断 = False
 _章节缓存: dict = {}      # txt路径 -> (mtime, [ {标题, 内容} ])
 _进度锁 = threading.Lock()
+_已推终态: set = set()    # (task_id, status, end_time) — 防重复推送
+
+
+def _书id_from输出(task) -> Optional[str]:
+    """任务的输出文件 → 书籍 id (用于推送/面板直达链接); 无效返回 None"""
+    path = (task.output_file or "").strip()
+    if not path or not os.path.isfile(path):
+        return None
+    return hashlib.md5(os.path.abspath(path).encode("utf-8")).hexdigest()[:12]
+
+
+def _发送推送(标题: str, 内容: str) -> None:
+    """完成推送 (④): Bark / ntfy, 按配置二选一或都发; 失败仅记日志不抛"""
+    cfg = 取配置().get("推送") or {}
+    渠道结果 = []
+    bark = cfg.get("bark") or {}
+    if bark.get("启用") and bark.get("地址"):
+        try:
+            from urllib.parse import quote
+            base = bark["地址"].rstrip("/")
+            # safe='': 标题/正文里的 '/' 若不过滤会破坏 Bark 的路径结构
+            url = f"{base}/{quote(标题, safe='')}/{quote(内容, safe='')}"
+            with urllib.request.urlopen(url, timeout=10):
+                pass
+            渠道结果.append("bark✓")
+        except Exception as e:
+            渠道结果.append(f"bark✗{type(e).__name__}")
+    ntfy = cfg.get("ntfy") or {}
+    if ntfy.get("启用") and ntfy.get("主题"):
+        try:
+            from email.header import Header
+            data = 内容.encode("utf-8")
+            req = urllib.request.Request(
+                ntfy.get("服务器", "https://ntfy.sh").rstrip("/")
+                + "/" + ntfy["主题"],
+                data=data, method="POST",
+                headers={"Title": Header(标题, "utf-8").encode(),
+                         "Tags": "books"})
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+            渠道结果.append("ntfy✓")
+        except Exception as e:
+            渠道结果.append(f"ntfy✗{type(e).__name__}")
+    if 渠道结果:
+        try:
+            from 日志 import get as _日志取
+            _日志取("远控").info(f"[推送] {标题} → {' '.join(渠道结果)}")
+        except Exception:
+            pass
+
+
+def _扫描终态() -> list:
+    """终态监视器单遍: 检测 running → 终态 的翻转, 逐条发送推送。
+
+    仅在"本进程内观察到 running"的任务上触发; 启动时恢复的 interrupted
+    不会误推。返回本遍触发的事件列表 (供单测断言)。"""
+    已触发 = []
+    mgr = _任务管理器()
+    with mgr._lock:
+        快照 = list(mgr.tasks.values())
+    for t in 快照:
+        if t.status not in ("completed", "failed", "stopped"):
+            continue
+        end = t.metrics.end_time if t.metrics else 0
+        键 = (t.task_id, t.status, end)
+        if 键 in _已推终态:
+            continue
+        # 只推"本进程见过其运行"的任务: 恢复的 interrupted 直接是终态而非翻转,
+        # 但其 end_time 为 0 且从未 running; 用 end_time>0 判定为真实终态
+        if not end:
+            continue
+        _已推终态.add(键)
+        章节 = f"{t.progress_current}/{t.progress_total}章" \
+            if t.progress_total else ""
+        链接 = ""
+        前 = (取配置().get("外链前缀") or "").rstrip("/")
+        if 前:
+            bid = _书id_from输出(t)
+            if bid:
+                链接 = f"\n阅读: {前}/reader/{bid}?k={取配置().get('token','')}"
+        状态词 = {"completed": "抓取完成", "failed": "抓取失败",
+                  "stopped": "已停止"}.get(t.status, t.status)
+        _发送推送(f"{t.title or t.url} · {状态词}",
+                  f"{章节}{链接}")
+        已触发.append((t.task_id, t.status))
+    # 防内存增长: 只保留最近 500 个键
+    if len(_已推终态) > 500:
+        for k in list(_已推终态)[:len(_已推终态) - 500]:
+            _已推终态.discard(k)
+    return 已触发
+
+
+async def _终态监视():
+    """每 3 秒跑一遍终态检测 (HTTP 发送放线程池, 不阻塞事件循环)"""
+    while True:
+        try:
+            await asyncio.to_thread(_扫描终态)
+        except Exception:
+            pass
+        await asyncio.sleep(3)
+
+
+@app.on_event("startup")
+async def _启动监视器():
+    asyncio.create_task(_终态监视())
+
 
 
 def _恢复中断任务():

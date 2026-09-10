@@ -21,9 +21,30 @@ _CONFIG_NAME = "远控配置.json"
 
 _DEFAULTS = {
     "端口": 8760,
-    "绑定": "127.0.0.1",   # 默认仅本机; 对手机服务用 tailscale serve 反代, 不裸绑 0.0.0.0
+    "绑定": "127.0.0.1",   # 默认仅本机; 手机访问见 文档/手机远控方案设计.md 使用指南
     "token": "",           # 首建时自动生成 (32 位十六进制)
+    # 外链前缀: 推送/分享链接的基地址 (如 https://主机名.tailxxxx.ts.net),
+    # 留空则推送不含链接
+    "外链前缀": "",
+    # 完成推送 (④): 二选一或都开; 地址填你自己的服务
+    "推送": {
+        "bark": {"启用": False, "地址": ""},          # 如 https://api.day.app/你的key
+        "ntfy": {"启用": False, "服务器": "https://ntfy.sh", "主题": ""},
+    },
 }
+
+_推送默认 = dict(_DEFAULTS["推送"])
+
+
+def _合并默认(cfg: dict) -> dict:
+    """嵌套字段深合并: 磁盘缺键/半配置时补齐默认, 防 KeyError"""
+    合并 = dict(_DEFAULTS)
+    合并.update({k: v for k, v in cfg.items() if k not in ("推送",)})
+    推送 = cfg.get("推送") if isinstance(cfg.get("推送"), dict) else {}
+    合并["推送"] = {}
+    for 渠道, 默认 in _推送默认.items():
+        合并["推送"][渠道] = {**默认, **(推送.get(渠道) or {})}
+    return 合并
 
 
 def _配置路径() -> str:
@@ -34,16 +55,22 @@ def _配置路径() -> str:
 def _加载或创建() -> dict:
     path = _配置路径()
     cfg = dict(_DEFAULTS)
+    disk = None
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                disk = json.load(f)
-            if isinstance(disk, dict):
-                cfg.update(disk)
+                _d = json.load(f)
+            if isinstance(_d, dict):
+                disk = _d
+                cfg = _合并默认(_d)   # 深合并: 磁盘半配置也不缺键
         except (OSError, ValueError):
             pass  # 配置损坏 → 用默认重建 (token 会更换, 属预期)
     if not cfg.get("token"):
         cfg["token"] = secrets.token_hex(16)
+        _原子写(path, cfg)
+        return cfg
+    # 老配置缺新字段 (首次引入的 推送/外链前缀) → 落盘补齐, 便于用户直接编辑
+    if disk is None or "推送" not in disk or "外链前缀" not in disk:
         _原子写(path, cfg)
     return cfg
 

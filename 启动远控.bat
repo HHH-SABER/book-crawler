@@ -22,4 +22,5 @@ set PYTHONIOENCODING=utf-8
 set "PYTHONPATH=%~dp0源码"
 
 "%PYTHON_EXE%" -m 远控
-pause
+rem 守护模式 (脚本/远控守护.bat) 下免暂停, 便于自动重启循环
+if not "%远控_无暂停%"=="1" pause
