@@ -56,6 +56,8 @@ class TaskInfo:
     output_dir: str = None
     export_epub: bool = False   # 抓取完成后是否同时导出 EPUB
     incremental: bool = False   # 增量抓取 (跳过已抓取且未变化的章节, 一键更新用)
+    # 任务来源: 本机(桌面客户端创建) / 手机(远控面板创建) — 远控页按此过滤展示
+    来源: str = "本机"
     # 运行时指标 (GUI 表格列数据源)
     metrics: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
     selected: bool = False  # 当前是否被选中 (供抽屉/表格高亮)

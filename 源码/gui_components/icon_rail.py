@@ -33,6 +33,7 @@ NAV_PAGES = [
     ('history', ft.Icons.HISTORY,                '爬取历史',   1),
     ('sites',   ft.Icons.LANGUAGE,               '站点管理',   2),
     ('log',     ft.Icons.SPEED,                  '运行日志',   3),
+    ('remote',  ft.Icons.SETTINGS_REMOTE,        '远控',       4),
 ]
 
 
