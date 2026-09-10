@@ -165,6 +165,21 @@ def 生成版本文件(path: str) -> str:
         sys.exit(5)
 
 
+def _flet_pids(tasklist_output: str) -> set:
+    """从 tasklist 输出里取出 flet.exe 的 PID 集合。
+
+    冒烟的强验证判据是"启动 EXE 之后**新出现**的 flet.exe", 所以必须按 PID 做差分:
+    源码方式运行的 GUI、历史崩溃残留都会留下 flet.exe, 只按进程名判断会让冒烟假通过。
+    PID 是纯 ASCII 数字, 不受控制台代码页影响 (中文进程名在 CI 英文系统会变 '???')。
+    """
+    pids = set()
+    for line in (tasklist_output or "").splitlines():
+        parts = line.split()
+        if len(parts) > 1 and parts[0].lower() == "flet.exe":
+            pids.add(parts[1])
+    return pids
+
+
 def main():
     """主流程: 版本解析/递增 → 环境准备 → PyInstaller 打包 → 产物报告"""
     # --- init log
@@ -518,19 +533,29 @@ def main():
     if _args.skip_smoke:
         log("[INFO] --skip-smoke: 跳过启动冒烟测试")
     else:
-        # 基线: 已有实例在跑则跳过 (避免误杀用户会话/误判进程来源)
-        _base = subprocess.run(["tasklist"], capture_output=True, text=True,
-                               errors="replace").stdout or ""
-        if "小说爬虫.exe" in _base or "flet.exe" in _base:
-            log("[WARN] 检测到 小说爬虫/flet 进程已在运行, 冒烟测试跳过 (避免干扰现有会话)")
+        # 基线: 只把"打包产物本身在跑"视为冲突 (否则会误杀用户会话)。
+        # 修复两点 (2026-09-10):
+        #   1) 不能因存在 flet.exe 就跳过 —— 源码方式运行的 GUI、历史崩溃残留都会
+        #      留下 flet.exe, 那会让冒烟永远跑不起来 (实测踩到过一次)。
+        #   2) 循环里原先用 "tasklist 出现 flet.exe" 判成功, 残留进程会让冒烟
+        #      **假通过**。改为 PID 差分: 只认"启动 EXE 之后新出现的 flet.exe"。
+        _base_tl = subprocess.run(["tasklist"], capture_output=True, text=True,
+                                  errors="replace").stdout or ""
+        _基础flet = _flet_pids(_base_tl)
+        if "小说爬虫.exe" in _base_tl:
+            log("[WARN] 检测到 小说爬虫.exe 已在运行, 冒烟测试跳过 (避免干扰现有会话)")
         elif mode != "ONEFILE" or not os.path.isfile(final_exe):
             log(f"[WARN] 产物为 {mode}, 冒烟测试仅支持 ONEFILE, 跳过")
         else:
-            log("[SMOKE] 启动 EXE 验证 (最长 90s; flet 客户端出现=强通过; "
+            log("[SMOKE] 启动 EXE 验证 (最长 90s; 新出现 flet 客户端=强通过; "
                 "CI 无 GPU/桌面环境降级为'无报错对话框+进程存活'弱验证)")
+            if _基础flet:
+                log(f"[INFO] 基线已有 {len(_基础flet)} 个 flet.exe (非本产物), "
+                    "按 PID 差分排除, 不影响判定")
             _on_ci = os.environ.get("GITHUB_ACTIONS") == "true"
             _smoke_ok = False
             _diag = ""
+            _本次flet = set()
             try:
                 # 进程存活用 PID 匹配 (纯 ASCII 数字) — 中文进程名在 tasklist
                 # 重定向输出里受代码页影响 (CI 英文系统会变 '???') 不可靠
@@ -539,8 +564,9 @@ def main():
                     time.sleep(1.5)
                     _tl = subprocess.run(["tasklist"], capture_output=True,
                                          text=True, errors="replace").stdout or ""
-                    if "flet.exe" in _tl:
-                        _smoke_ok = True   # 强验证: flet 客户端真拉起来了
+                    _本次flet = _flet_pids(_tl) - _基础flet
+                    if _本次flet:
+                        _smoke_ok = True   # 强验证: 本产物真把 flet 客户端拉起来了
                         break
                     # 快速失败: PyInstaller 启动即崩会弹出 "Unhandled exception
                     # in script" 对话框 (v2.4.0 的缺口就是这类)
@@ -556,17 +582,20 @@ def main():
                                  "关闭了弹出的窗口请重跑构建, 否则疑似静默崩溃)")
                         break
             finally:
-                subprocess.run(["taskkill", "/F", "/IM", "小说爬虫.exe"],
+                # 只回收本次冒烟拉起来的进程 —— 旧实现 taskkill /IM flet.exe 会
+                # 连用户正在用的 GUI 一起杀掉
+                subprocess.run(["taskkill", "/F", "/PID", str(_proc.pid)],
                                capture_output=True)
-                subprocess.run(["taskkill", "/F", "/IM", "flet.exe"],
-                               capture_output=True)
+                for _pid in _本次flet:
+                    subprocess.run(["taskkill", "/F", "/PID", _pid],
+                                   capture_output=True)
             if _smoke_ok:
                 log("[OK] 冒烟通过 (强验证): EXE 拉起主窗口成功")
             elif not _diag and _on_ci:
                 log("[WARN] 冒烟弱验证通过: CI 无 GPU/桌面 90s 未拉起 flet 客户端, "
                     "但 EXE 存活且无启动报错对话框")
             else:
-                log(f"[ERROR] 冒烟失败: {_diag or '90s 内未见 flet 客户端进程'} "
+                log(f"[ERROR] 冒烟失败: {_diag or '90s 内未见新 flet 客户端进程'} "
                     "(手动运行 dist\\小说爬虫.exe 查看报错对话框)")
                 _dump_crash_log(dist)
                 sys.exit(5)
