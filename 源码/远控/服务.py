@@ -367,6 +367,7 @@ async def 任务日志流(task_id: str, after: int = 0,
 _已扫中断 = False
 _章节缓存: dict = {}      # txt路径 -> (mtime, [ {标题, 内容} ])
 _进度锁 = threading.Lock()
+_章节缓存锁 = threading.Lock()   # 同步端点跑在 Starlette 线程池, 读/写/淘汰须互斥
 _已推终态: set = set()    # (task_id, status, end_time) — 防重复推送
 
 
@@ -537,7 +538,8 @@ def _解析章节(item: dict) -> list:
         mtime = os.path.getmtime(path)
     except OSError as e:
         raise HTTPException(status_code=404, detail="文件已不存在") from e
-    cached = _章节缓存.get(path)
+    with _章节缓存锁:
+        cached = _章节缓存.get(path)
     if cached and cached[0] == mtime:
         return cached[1]
     try:
@@ -562,9 +564,13 @@ def _解析章节(item: dict) -> list:
         导语 = "\n".join(缓冲).strip()
         if 导语:
             章节.append({"标题": "(开篇)", "内容": 导语})
-    _章节缓存[path] = (mtime, 章节)
-    if len(_章节缓存) > 8:   # 防长会话内存缓涨 (一本 900KB txt ≈ 2MB 缓存)
-        _章节缓存.pop(next(iter(_章节缓存)))
+    with _章节缓存锁:
+        _章节缓存[path] = (mtime, 章节)
+        # 防长会话内存缓涨 (一本 900KB txt ≈ 2MB 缓存)
+        # 淘汰须持锁: 并发请求下 len() 与 pop(next(iter())) 之间可能被另一
+        # 线程清空 → StopIteration / dict changed size → 未捕获异常 → 500
+        while len(_章节缓存) > 8:
+            _章节缓存.pop(next(iter(_章节缓存)))
     return 章节
 
 

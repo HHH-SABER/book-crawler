@@ -336,7 +336,21 @@ def main(page: ft.Page):
             pass
 
     def _切远控(e):
+        """开关点击入口: 只做调度。
+
+        修复: 旧实现把整个切换过程写成同步回调, 其中 `time.sleep(0.5)` 直接睡在
+        Flet UI 线程上 —— 这 0.5 秒内窗口不响应任何事件 (点什么都没反应),
+        正是"界面卡死"体感的一部分。
+        """
         try:
+            page.run_task(_切远控异步)
+        except Exception as _e_sw:
+            app_log.info("远控", f"远控开关调度异常: {type(_e_sw).__name__}: {_e_sw}")
+
+    async def _切远控异步():
+        """远控开关的实际切换 (await 让出事件循环, 不阻塞 UI)"""
+        try:
+            import asyncio   # 本文件惯例: asyncio 在函数内局部导入
             import 远控.服务 as _远控切
             if _远控切.运行中():
                 _远控切.设置启用(False)
@@ -347,8 +361,7 @@ def main(page: ft.Page):
             else:
                 _远控切.设置启用(True)
                 _远控切.后台启动()
-                import time as _tmo
-                _tmo.sleep(0.5)   # 留出线程绑定端口的时间再判定
+                await asyncio.sleep(0.5)   # 留出线程绑定端口的时间再判定
                 ok = _远控切.运行中()
                 _更新远控外观(ok)
                 _cfg = _远控切.取配置()
@@ -408,19 +421,63 @@ def main(page: ft.Page):
     async def _显示主窗():
         page.window.visible = True
         page.window.minimized = False
+        try:
+            page.update()
+        except Exception:
+            pass
 
-    async def _彻底退出():
+    def _停远控服务():
+        """停内嵌远控 (非阻塞: 只置 should_exit, 由 daemon 线程自行收尾)"""
         try:
             import 远控.服务 as _远控退
             _远控退.停止后台()
-        except Exception:
-            pass
+        except Exception as _e:
+            app_log.info("退出", f"停远控失败: {type(_e).__name__}: {_e}")
+
+    def _收尾落盘():
+        """显式落盘 + 关日志。
+
+        退出流程最后是 os._exit(), 不会触发 atexit —— 而这些模块平时靠 atexit
+        兜底, 不在这里显式 flush 就会丢数据 (爬取历史/站点历史的防抖窗口内记录、
+        风控事件的内存缓冲、日志尾部)。
+        """
         try:
-            from gui_components.tray import 停止托盘
-            停止托盘(_托盘["对象"])
+            import 爬取历史 as _ch
+            _ch.取爬取历史().flush()
+        except Exception as _e:
+            app_log.info("退出", f"爬取历史 flush 失败: {type(_e).__name__}: {_e}")
+        try:
+            import 站点历史 as _sh
+            _sh.取站点历史().flush()
+        except Exception as _e:
+            app_log.info("退出", f"站点历史 flush 失败: {type(_e).__name__}: {_e}")
+        try:
+            import 风控事件 as _fk
+            _fk.flush()
+        except Exception as _e:
+            app_log.info("退出", f"风控事件 flush 失败: {type(_e).__name__}: {_e}")
+        try:
+            app_log.close()
         except Exception:
             pass
-        os._exit(0)
+
+    async def _彻底退出():
+        """**唯一**的退出出口 —— 步骤顺序不可改, 详见 gui_components/退出流程.py
+
+        实测 (flet 0.86.5, 桌面是"Python + flet.exe"双进程):
+          · 只用 os._exit(0): 跳过 flet 的 close_flet_view(), flet.exe 变孤儿窗口
+            (界面还在、没有后端、点关闭没反应) = 用户报的"关不掉 / 界面卡死"
+          · 只用 page.window.destroy(): 客户端正常回收, 但 ft.run() 不返回, Python 挂住
+        故必须 destroy → 等 flet 收尾 → 兜底强退。
+        """
+        from gui_components.退出流程 import 执行退出
+        await 执行退出(
+            page,
+            托盘对象=_托盘["对象"],
+            停远控=_停远控服务,
+            任务管理器=task_manager,
+            收尾钩子=(_收尾落盘,),
+            记录=lambda m: app_log.info("退出", m))
 
     def _隐藏到托盘():
         # 关键顺序: 先建托盘, 成功后才隐藏窗口 —— 托盘创建失败时窗口保持

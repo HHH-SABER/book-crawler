@@ -34,12 +34,18 @@ class TestIpLiteralFastPath(unittest.TestCase):
     """IP 字面量 / localhost 快速通道: 直连环回/本机是合法场景, 不走 DoH"""
 
     def setUp(self):
-        # 不调用 install() (避免全局 patch 泄漏进其他测试), 仅设置等效状态
-        dns_doh._orig_getaddrinfo = socket.getaddrinfo
+        # 不调用 install() (避免全局 patch 泄漏进其他测试), 仅设置等效状态。
+        # 必须用 dns_doh 备份的"真原函数": 若此前已有测试或模块 import 过 爬虫
+        # (导入期会调用 install()), socket.getaddrinfo 已是 _patched_getaddrinfo,
+        # 拿它当原函数会让补丁函数调用自己 → RecursionError。
+        self._orig = getattr(dns_doh, '_orig_getaddrinfo', None)
+        dns_doh._orig_getaddrinfo = dns_doh._真实_getaddrinfo
         dns_doh._doh_cache.clear()
 
     def tearDown(self):
-        del dns_doh._orig_getaddrinfo
+        # 还原而非 del: del 会把模块属性整个删掉, 之后 install() 读它会
+        # AttributeError, 污染同进程的后续用例。
+        dns_doh._orig_getaddrinfo = self._orig
         dns_doh._doh_cache.clear()
 
     def _forbid_doh(self):
@@ -89,7 +95,8 @@ class TestPollutionFallback(unittest.TestCase):
         # 无则设为未安装等效态 (原函数); 有则保存原值用于还原
         self._orig = getattr(dns_doh, '_orig_getaddrinfo', None)
         if self._orig is None:
-            dns_doh._orig_getaddrinfo = socket.getaddrinfo
+            # 用备份的真原函数, 不用 socket.getaddrinfo (可能已被 install() 打过补丁)
+            dns_doh._orig_getaddrinfo = dns_doh._真实_getaddrinfo
         self._doh = dns_doh._doh_query
         dns_doh._doh_cache.clear()
 
@@ -137,6 +144,37 @@ class TestPollutionFallback(unittest.TestCase):
         dns_doh._doh_query = _boom
         results = dns_doh._patched_getaddrinfo('healthy.example.com', 443)
         self.assertEqual(results[0][4][0], '1.2.3.4')
+
+
+class TestInstallRobustness(unittest.TestCase):
+    """install() 必须备份"真原函数", 而不是"调用那一刻的 socket.getaddrinfo"。
+
+    回归背景: 只要有模块 import 过 爬虫 (它会在导入期调用 install()),
+    socket.getaddrinfo 就已经是 _patched_getaddrinfo。若此时仍拿
+    socket.getaddrinfo 当原函数, 补丁函数就会调用自己 → 每次解析 RecursionError。
+    该缺陷此前被"测试文件的导入顺序"掩盖。
+    """
+
+    def setUp(self):
+        self._原_orig = getattr(dns_doh, '_orig_getaddrinfo', None)
+        self._原_socket = socket.getaddrinfo
+        self.addCleanup(self._还原现场)
+
+    def _还原现场(self):
+        dns_doh._orig_getaddrinfo = self._原_orig
+        socket.getaddrinfo = self._原_socket
+
+    def test_已被打补丁时安装仍备份真原函数(self):
+        socket.getaddrinfo = dns_doh._patched_getaddrinfo   # 模拟已被打过补丁
+        dns_doh._orig_getaddrinfo = None                    # 模拟未安装
+        dns_doh.install()
+        self.assertIs(dns_doh._orig_getaddrinfo, dns_doh._真实_getaddrinfo)
+        self.assertIsNot(dns_doh._orig_getaddrinfo, dns_doh._patched_getaddrinfo)
+
+    def test_备份的真原函数可正常解析(self):
+        """真原函数必须真的能解析, 否则打补丁后所有网络操作都会炸"""
+        infos = dns_doh._真实_getaddrinfo('localhost', 80)
+        self.assertTrue(infos)
 
 
 if __name__ == '__main__':

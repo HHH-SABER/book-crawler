@@ -111,5 +111,61 @@ class TestMetricsContract(unittest.TestCase):
         self.assertEqual(t.metrics.incremental_skipped, 2)
 
 
+class TestTaskIdSortContract(unittest.TestCase):
+    """任务列表排序契约: task_id 不保证是纯数字后缀。
+
+    回归背景: 旧实现 get_all_tasks 用 int(task_id.split('_')[-1]) 排序, 而
+    远控/服务.py 把从 checkpoint 恢复的中断任务写成 "resume_<md5前8位>" 型
+    task_id → int() 抛 ValueError; 该异常从 get_all_tasks 冒出后被 GUI 刷新
+    循环外层 try 吞掉, 导致任务表/状态栏/远控页整体静默停摆 (重启才恢复)。
+    """
+
+    @staticmethod
+    def _mgr():
+        return tm.TaskManager(page=object())
+
+    def _add(self, mgr, task_id):
+        t = tm.TaskInfo(task_id=task_id, url='https://example.com/book/1')
+        mgr.tasks[task_id] = t
+        return t
+
+    def test_远控恢复任务id不使排序崩溃(self):
+        mgr = self._mgr()
+        want = ['task_1', 'task_2', 'task_10', 'resume_ab12cd34']
+        for tid in want:
+            self._add(mgr, tid)
+        got = [t.task_id for t in mgr.get_all_tasks()]   # 旧实现此处抛 ValueError
+        self.assertEqual(sorted(got), sorted(want))
+
+    def test_数字后缀仍按数值排序(self):
+        """M5 修复不得回退: 字典序会把 task_10 排到 task_2 之前"""
+        mgr = self._mgr()
+        for tid in ('task_10', 'task_2', 'task_1'):
+            self._add(mgr, tid)
+        self.assertEqual([t.task_id for t in mgr.get_all_tasks()],
+                         ['task_1', 'task_2', 'task_10'])
+
+    def test_无下划线task_id也能排序(self):
+        mgr = self._mgr()
+        for tid in ('abc', 'task_1'):
+            self._add(mgr, tid)
+        self.assertEqual(len(mgr.get_all_tasks()), 2)
+
+
+class TestLogRingContract(unittest.TestCase):
+    """日志环形缓冲: 上限 500 条, 且保留的是**最近** 500 条。"""
+
+    def test_超限后保留最近500条(self):
+        task = _new_task()
+        rd = tm.TaskLogRedirector(task, Path(os.devnull).open('w', encoding='utf-8'))
+        rd._log_to_file = lambda line: None      # 不污染真实日志文件
+        for i in range(600):
+            rd.write(f'第{i}行\n')
+        rd.original.close()
+        self.assertEqual(len(task.logs), 500)
+        self.assertEqual(task.logs[0]['msg'], '第100行')
+        self.assertEqual(task.logs[-1]['msg'], '第599行')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
