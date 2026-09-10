@@ -423,7 +423,8 @@ def main(page: ft.Page):
         os._exit(0)
 
     def _隐藏到托盘():
-        page.window.visible = False
+        # 关键顺序: 先建托盘, 成功后才隐藏窗口 —— 托盘创建失败时窗口保持
+        # 可见 (旧实现先隐藏再建托盘, 托盘失败即"窗口消失且无入口"=关不掉)
         if _托盘["对象"] is None:
             try:
                 from gui_components.tray import 启动托盘
@@ -436,8 +437,14 @@ def main(page: ft.Page):
                     退出=lambda: page.run_task(_彻底退出))
                 app_log.info("托盘", "已最小化到托盘 (远控保持运行; 双击图标恢复)")
             except Exception as _e_tray:
-                app_log.info("托盘", f"托盘不可用, 改为最小化窗口: {_e_tray}")
-                page.window.minimized = True
+                app_log.info("托盘", f"托盘不可用, 取消隐藏以保持可操作: {_e_tray}")
+                try:
+                    page.show_dialog(ft.SnackBar(
+                        ft.Text("系统托盘不可用, 已取消关闭; 建议再点关闭并选直接退出")))
+                except Exception:
+                    pass
+                return
+        page.window.visible = False
 
     def _关闭询问():
         记住 = ft.Checkbox(label="记住我的选择", value=False)
