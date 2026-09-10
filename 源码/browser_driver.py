@@ -151,9 +151,19 @@ class PlaywrightDriver:
 
     # ---- 生命周期 ----
     def _ensure_started(self):
-        """懒启动浏览器 (首次 get 时)"""
+        """懒启动浏览器 (首次 get 时); 启动失败则回收已拉起的资源。"""
         if self._started:
             return
+        try:
+            self._启动实现()
+        except Exception:
+            # 修复: 启动链任一环节失败时, 已 start() 的 playwright(node) 与
+            # 半开的 chromium 都不会被回收 —— 调用方拿不到可用的 driver, 也就
+            # 没机会调 quit(), 于是 node/chromium 进程泄漏 (反复重试会累积)。
+            self.quit()
+            raise
+
+    def _启动实现(self):
         launch_args = [
             '--disable-blink-features=AutomationControlled',
             '--disable-gpu',
