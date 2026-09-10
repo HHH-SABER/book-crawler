@@ -960,6 +960,8 @@ class NovelSpider:
             # 旧实现 mark_failed 全项目零调用, 坏代理永久"健康"
             self._代理失败反馈()
             raise
+        # 成功 → 代理池失败计数清零 (使代理池能自愈; 无代理时零开销)
+        self._代理成功反馈()
         # ---- 反爬机制自动识别 (限频退避 / UA轮换; WAF验证码/JS挑战交给下方执行器) ----
         # 检测器基于状态码+响应头+body特征通用识别, 命中即打印结构化日志并动态调整策略
         if self._反爬检测器 is not None:
@@ -4937,9 +4939,12 @@ class NovelSpider:
                 if 'tanmixs.com' in current_url:
                     break
                 try:
-                    # 随机延迟，避免被反爬虫 (0.5~1.5秒, 平衡速度与反爬)
-                    delay = random.SystemRandom().uniform(0.5, 1.5)
-                    time.sleep(delay)
+                    # 随机延迟 + 档位间隔: 取较大值而非相加 (见 _单页等待秒 注释)。
+                    # 旧实现 sleep(random 0.5~1.5) 与章节级档位间隔叠加, 实际节流
+                    # 是两者的和 (千章白等 500~1500s, 是整章 CPU 的十倍以上)。
+                    _spd0 = getattr(self, '_speed_ctrl', None)
+                    _配额 = _spd0.current_delay() if _spd0 is not None else 0.0
+                    time.sleep(_单页等待秒(_配额))
                     
                     response = self.session.get(current_url, headers=headers, timeout=30)
 
@@ -5464,6 +5469,21 @@ class NovelSpider:
                 _log.debug(f'[代理池] 失败反馈: {proxy}')
             except Exception as e:
                 _log.debug(f'[代理池] 失败反馈异常: {type(e).__name__}: {e}')
+
+    def _代理成功反馈(self):
+        """请求成功 → 代理池 mark_success (清零失败计数与冷却)。
+
+        修复: 原先只有失败反馈没有成功反馈, 而 `失败` 是累计计数 —— 一个代理
+        累计失败 5 次就永久出池。补齐成功侧后, 代理池才能自愈。
+        仅在走代理池时生效, 每请求一次字典写 (无代理时零开销)。
+        """
+        proxy = getattr(self, '_当前代理', '')
+        pool = getattr(self, '_代理池', None)
+        if proxy and pool is not None:
+            try:
+                pool.mark_success(proxy)
+            except Exception as e:
+                _log.debug(f'[代理池] 成功反馈异常: {type(e).__name__}: {e}')
 
     def _fetch_with_retry(self, chap, max_retries=2):
         """P1-2: 章节抓取外层兜底重试。
@@ -6440,6 +6460,39 @@ def _safe_filename_part(title: str, max_len: int = 80) -> str:
 # 登记后, 后续任务在 resolve 时把这些“进行中”的标题视为已占用, 从而分配到不同序号。
 _TITLE_REGISTRY_LOCK = threading.Lock()
 _TITLE_REGISTRY = set()
+
+
+# ==================================================================
+# 单页等待时长 (性能: 抖动与档位间隔取较大值, 而非相加)
+# ------------------------------------------------------------------
+# 背景 (2026-09-10 实测): 每页原实现无条件 time.sleep(random 0.5~1.5) ——
+# 该抖动与章节循环里的"速度自适应档位间隔"(_spd.current_delay()) **叠加**,
+# 实际间隔 = 档位间隔 + 0.5~1.5s。于是控制器以为按 1.0s 节流, 实际是 1.5~2.5s,
+# 它的"健康就提速"模型建立在错误前提上。
+# 实测代价: 1000 章白等 500~1500 秒, 而整章 CPU (HTML 解析/质检/清洗) 合计
+# 仅约 60 秒 —— 这是墙钟里唯一值钱的杠杆。
+# 改法: 取两者较大值。既去掉双重计时, 又保留"每页至少 0.5~1.5s 抖动"这个
+# 反爬节律下限 (任何档位都不会比改动前更快)。
+# 回滚: 把下面这个常量置 False 即恢复"相加"的旧行为。
+页面等待_抖动与档位取较大值 = True
+
+
+def _单页等待秒(档位间隔=0.0, 抖动=None, 取较大值=None):
+    """算一次页面请求前的等待秒数 (纯函数, 便于单测)。
+
+    Args:
+        档位间隔: 速度自适应当前档位的间隔秒数 (无控制器时传 0)
+        抖动: 本次抖动秒数; None 则随机取 [0.5, 1.5)
+        取较大值: None 则取模块常量 页面等待_抖动与档位取较大值
+    """
+    import random as _rnd
+    if 抖动 is None:
+        抖动 = _rnd.SystemRandom().uniform(0.5, 1.5)
+    if 取较大值 is None:
+        取较大值 = 页面等待_抖动与档位取较大值
+    if 取较大值:
+        return max(抖动, 档位间隔 or 0.0)
+    return 抖动 + (档位间隔 or 0.0)
 
 
 def _resolve_unique_title(novel_title: str, output_dir: str,

@@ -1196,7 +1196,17 @@ class CaptchaManager:
             # 人工兜底必须最后
             chain = [c for c in chain if c != 'manual'] + ['manual'] if 'manual' in chain else chain
         else:
-            chain = [self._current]
+            # 合规护栏: 具名策略同样必须服从 strategies.<name>.enabled。
+            # 旧实现直接 chain = [self._current], 于是 set_strategy('ddddocr')
+            # 能绕过 strategies.ddddocr.enabled=false 跑 OCR —— 与本项目
+            # "验证码自动识别默认必须关闭"的硬边界冲突 (AGENTS.md)。
+            # 注: 显式把 enabled 置 true 后再 set_strategy 的正当路径不受影响。
+            if self.strategy_enabled(self._current):
+                chain = [self._current]
+            else:
+                _log.info(f"[验证码] 策略 {self._current} 未启用 "
+                          f"(strategies.{self._current}.enabled=false), 拒绝执行")
+                chain = ['manual'] if self.strategy_enabled('manual') else []
 
         for name in chain:
             handler = self._handlers.get(name)
