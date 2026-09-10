@@ -31,7 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
 from _path_utils import get_default_output_dir, get_app_base_dir
@@ -53,7 +53,7 @@ def _任务管理器():
 
 
 # ---------------------------------------------------------------- 鉴权
-def _要求鉴权(k: Optional[str] = None, authorization: Optional[str] = None) -> None:
+def _要求鉴权(k: Optional[str] = None, authorization: Optional[str] = Header(default=None)) -> None:
     """token 校验: ?k= 或 Authorization: Bearer <token>, 常时比较防时序侧信道"""
     token = 取配置().get("token", "")
     supplied = k or ""
@@ -151,7 +151,7 @@ def 面板():
 
 @app.post("/api/v1/tasks")
 def 创建任务(body: dict, k: Optional[str] = None,
-            authorization: Optional[str] = None):
+            authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     url = (body or {}).get("url", "").strip()
     if not url:
@@ -203,7 +203,7 @@ def _任务快照(t) -> dict:
 
 
 @app.get("/api/v1/tasks")
-def 任务列表(k: Optional[str] = None, authorization: Optional[str] = None):
+def 任务列表(k: Optional[str] = None, authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     _恢复中断任务()   # 只读恢复: 首次查询时重建上次中断的任务展示
     mgr = _任务管理器()
@@ -214,7 +214,7 @@ def 任务列表(k: Optional[str] = None, authorization: Optional[str] = None):
 
 @app.post("/api/v1/tasks/{task_id}/stop")
 def 停止任务(task_id: str, k: Optional[str] = None,
-            authorization: Optional[str] = None):
+            authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     if not _任务管理器().stop_task(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -223,7 +223,7 @@ def 停止任务(task_id: str, k: Optional[str] = None,
 
 @app.delete("/api/v1/tasks/{task_id}")
 def 删除展示任务(task_id: str, k: Optional[str] = None,
-                authorization: Optional[str] = None):
+                authorization: Optional[str] = Header(default=None)):
     """移除任务展示项 (仅非运行态; 不删除输出文件与检查点)"""
     _要求鉴权(k, authorization)
     if not _删除展示任务(task_id):
@@ -233,7 +233,7 @@ def 删除展示任务(task_id: str, k: Optional[str] = None,
 
 @app.get("/api/v1/tasks/{task_id}/logs")
 def 任务日志(task_id: str, after: int = 0,
-            k: Optional[str] = None, authorization: Optional[str] = None):
+            k: Optional[str] = None, authorization: Optional[str] = Header(default=None)):
     """日志增量: 客户端持 after 指针; 日志被 500 条截断致 total < after 时,
     从 0 重发并置 截断=True (客户端据此重置指针, 防永久漏日志)"""
     _要求鉴权(k, authorization)
@@ -253,7 +253,7 @@ def 任务日志(task_id: str, after: int = 0,
 @app.get("/api/v1/tasks/{task_id}/logs/stream")
 async def 任务日志流(task_id: str, after: int = 0,
                     k: Optional[str] = None,
-                    authorization: Optional[str] = None):
+                    authorization: Optional[str] = Header(default=None)):
     """日志 SSE 流: 每 0.6s 推增量, 15s 无新日志发注释行保活"""
     _要求鉴权(k, authorization)
     task = _任务管理器().get_task(task_id)
@@ -516,7 +516,7 @@ def _写进度(book_id: str, chapter: int) -> None:
 
 @app.get("/api/v1/books/{book_id}/chapters")
 def 章节列表(book_id: str, k: Optional[str] = None,
-            authorization: Optional[str] = None):
+            authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     item = _按id查书(book_id)
     if item is None:
@@ -529,7 +529,7 @@ def 章节列表(book_id: str, k: Optional[str] = None,
 
 @app.get("/api/v1/books/{book_id}/content/{index}")
 def 章节内容(book_id: str, index: int, k: Optional[str] = None,
-            authorization: Optional[str] = None):
+            authorization: Optional[str] = Header(default=None)):
     """路径参数用 ASCII 名 {index} — 中文组名在 Starlette 路径正则下不匹配 (实测 404)"""
     _要求鉴权(k, authorization)
     item = _按id查书(book_id)
@@ -544,14 +544,14 @@ def 章节内容(book_id: str, index: int, k: Optional[str] = None,
 
 @app.get("/api/v1/books/{book_id}/progress")
 def 读进度(book_id: str, k: Optional[str] = None,
-           authorization: Optional[str] = None):
+           authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     return {"章节": _读进度(book_id)}
 
 
 @app.post("/api/v1/books/{book_id}/progress")
 def 存进度(book_id: str, body: dict, k: Optional[str] = None,
-           authorization: Optional[str] = None):
+           authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     序 = (body or {}).get("章节")
     if not isinstance(序, int) or 序 < 0:
@@ -571,7 +571,7 @@ def 阅读页(book_id: str, k: Optional[str] = None):
 
 
 @app.get("/api/v1/books")
-def 书架列表(k: Optional[str] = None, authorization: Optional[str] = None):
+def 书架列表(k: Optional[str] = None, authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     items = _扫结果目录()
     标题表 = _书架标题映射()
@@ -585,7 +585,7 @@ def 书架列表(k: Optional[str] = None, authorization: Optional[str] = None):
 
 @app.get("/api/v1/books/{book_id}/epub")
 def 下载epub(book_id: str, k: Optional[str] = None,
-             authorization: Optional[str] = None):
+             authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     item = _按id查书(book_id)
     if item is None:
