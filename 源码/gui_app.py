@@ -34,6 +34,7 @@ from gui_components.detail_drawer import DetailDrawer
 from gui_components.log_tab import LogTab
 from gui_components.pages.history_page import HistoryPage
 from gui_components.pages.site_manage_page import SiteManagePage
+from gui_components.pages.remote_page import RemotePage
 
 # 打包后路径约定（源码/EXE 双模式）
 from _path_utils import get_default_output_dir, get_state_root  # noqa: E402
@@ -193,10 +194,13 @@ def main(page: ft.Page):
     history_page = HistoryPage()
     site_page = SiteManagePage()
     log_tab = LogTab()
+    remote_page = RemotePage()
     history_page.page = page
     history_page.task_manager = task_manager   # 一键更新书架需创建任务
     site_page.page = page
     log_tab.page = page
+    remote_page.page = page
+    remote_page.task_manager = task_manager    # 手机端记录数据源
 
     # ---- 页面切换 (Stack 保状态) ----
     pages_map = {
@@ -204,6 +208,7 @@ def main(page: ft.Page):
         "history": history_page.build(),
         "sites": site_page.build(),
         "log": log_tab.build(),
+        "remote": remote_page.build(),
     }
     content_stack = ft.Stack(
         controls=[pages_map[k] for k, _, _, _ in NAV_PAGES],
@@ -226,6 +231,11 @@ def main(page: ft.Page):
         elif key == "log":
             try:
                 log_tab._reload()
+            except Exception:
+                pass
+        elif key == "remote":
+            try:
+                remote_page.refresh()
             except Exception:
                 pass
         try:
@@ -275,6 +285,8 @@ def main(page: ft.Page):
                     drawer.refresh()             # 详情视图 (仅可见时渲染)
                     drawer.refresh_log()         # 实时日志视图 (默认视图)
                     drawer.update_views()        # 仅更新面板内可见视图
+                if pages_map["remote"].visible:
+                    remote_page.refresh()        # 远控页: 手机端记录实时呈现
             except Exception:
                 pass
             await asyncio.sleep(1)
@@ -353,6 +365,21 @@ def main(page: ft.Page):
         _更新远控外观(_远控初.运行中())
     except Exception:
         pass
+
+    # 远控页接线: 开关与顶栏同一实现; 访问信息同源 (运行状态/地址/token)
+    remote_page.切换远控 = _切远控
+
+    def _远控页信息():
+        try:
+            import 远控.服务 as _s
+            cfg = _s.取配置()
+            return {"运行": _s.运行中(),
+                    "地址": f"http://{cfg.get('绑定')}:{cfg.get('端口')}/",
+                    "token": cfg.get("token", "")}
+        except Exception:
+            return {"运行": False, "地址": "", "token": ""}
+
+    remote_page.取信息 = _远控页信息
 
     # ---- 关闭行为: 最小化到托盘 / 直接退出 (关闭按钮不再直接退出) ----
     _关闭配置 = os.path.join(get_state_root(), "数据", "客户端配置.json")

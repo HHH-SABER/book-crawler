@@ -102,6 +102,20 @@ class Test远控服务(unittest.TestCase):
         self.assertTrue(r2['截断'])
         self.assertEqual(len(r2['entries']), 5)
 
+    def test_发任务_标记来源为手机(self):
+        """远控页按 来源=手机 过滤展示 — API 创建的任务必须带标记"""
+        from gui_components.task_manager import TaskInfo
+
+        def _建并返回(url, **kw):
+            t = TaskInfo(task_id='src_1', url=url)
+            self.mgr.tasks['src_1'] = t
+            return 'src_1'
+        with mock.patch.object(self.mgr, 'create_task', side_effect=_建并返回):
+            r = self.client.post('/api/v1/tasks?k=testtoken',
+                                 json={'url': 'https://example.com/b/3'})
+            self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.mgr.tasks['src_1'].来源, '手机')
+
     def test_停止不存在任务_404(self):
         self.assertEqual(
             self.client.post('/api/v1/tasks/nope/stop?k=testtoken').status_code,
@@ -251,14 +265,21 @@ class Test远控开关与生命周期(unittest.TestCase):
 
     def setUp(self):
         from 远控 import 服务
+        import socket as _sock
         self.服务 = 服务
         self.addCleanup(服务.停止后台)
         服务._server = None
         服务._server_thread = None
+        # 随机空闲端口: 固定端口会被上轮测试客户端的 TIME_WAIT 残留咬住
+        # (Windows 下监听套接字无法绑定含 TIME_WAIT 的端口 → WinError 10048)
+        _s = _sock.socket()
+        _s.bind(('127.0.0.1', 0))
+        self.端口 = _s.getsockname()[1]
+        _s.close()
         self._cfg = mock.patch.object(
             服务, '取配置',
             return_value={'token': 'testtoken', '启用': True,
-                          '端口': 8763, '绑定': '127.0.0.1'})
+                          '端口': self.端口, '绑定': '127.0.0.1'})
         self._cfg.start()
         self.addCleanup(self._cfg.stop)
 
@@ -281,32 +302,46 @@ class Test远控开关与生命周期(unittest.TestCase):
                                return_value={'启用': False}):
             self.assertIsNone(self.服务.后台启动())
 
-    def test_启动_运行中_healthz_停止_再启动(self):
-        import json as _j
+    def _等健康(self, 端口: int, 上限秒=15) -> bool:
+        """轮询 healthz 直到可访问 — 不假设'线程活着'等于'端口已绑定'
+        (uvicorn 冷启动导入+绑定需数秒, 固定 sleep/早打请求都会假失败)"""
         import time as _t
         import urllib.request as _u
-        th = self.服务.后台启动()
-        self.assertIsNotNone(th, '启动未返回线程')
-        _t.sleep(3)
-        self.assertTrue(self.服务.运行中(), '运行中() 应为 True')
-        r = _u.urlopen('http://127.0.0.1:8763/api/v1/healthz', timeout=5)
-        self.assertEqual(r.status, 200)
+        for _ in range(int(上限秒 * 2)):
+            try:
+                r = _u.urlopen(f'http://127.0.0.1:{端口}/api/v1/healthz',
+                               timeout=2)
+                if r.status == 200:
+                    return True
+            except Exception:
+                pass
+            _t.sleep(0.5)
+        return False
+
+    def test_启动_运行中_healthz_停止_再启动(self):
+        import time as _t
+        self.assertIsNotNone(self.服务.后台启动(), '启动未返回线程')
+        self.assertTrue(self._等健康(self.端口), '服务未在 15s 内可访问')
+        self.assertTrue(self.服务.运行中())
         # 已在运行: 重复启动应被拒绝 (防双绑定)
         self.assertIsNone(self.服务.后台启动())
-        # 关 → 端口释放
+        # 关 → 线程退出 (端口释放由 asyncio 收尾; 不再裸 bind 探测,
+        #  自身客户端连接的 TIME_WAIT 会让该探测假失败)
         self.服务.停止后台()
-        _t.sleep(2)
+        for _ in range(24):
+            if not self.服务.运行中():
+                break
+            _t.sleep(0.5)
         self.assertFalse(self.服务.运行中(), '停止后 运行中() 应为 False')
-        import socket
-        s = socket.socket()
-        try:
-            s.bind(('127.0.0.1', 8763))
-        finally:
-            s.close()   # 能绑定 = 端口确实已释放
-        # 关 → 开 再来一次 (开关切换路径)
-        self.assertIsNotNone(self.服务.后台启动())
-        _t.sleep(3)
-        self.assertTrue(self.服务.运行中())
+        # 关 → 开 再来一次 (开关切换路径)。换新随机端口: Windows 下快速重绑
+        # 同一端口可能撞上本测试自身客户端连接的 TIME_WAIT (OS 语义, 与开关无关)
+        import socket as _sock
+        _s2 = _sock.socket()
+        _s2.bind(('127.0.0.1', 0))
+        端口2 = _s2.getsockname()[1]
+        _s2.close()
+        self.assertIsNotNone(self.服务.后台启动(port=端口2))
+        self.assertTrue(self._等健康(端口2), '重启后服务未可访问')
 
 
 if __name__ == '__main__':
