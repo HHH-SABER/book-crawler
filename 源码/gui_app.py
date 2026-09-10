@@ -488,7 +488,10 @@ def main(page: ft.Page):
                 else:
                     _关闭询问()
         except Exception as _e_cl:
-            app_log.info("关闭", f"关闭处理异常: {_e_cl}")
+            # 保险: 关闭处理自身异常时直接退出 — 绝不因处理失败而吞掉关闭
+            # (prevent_close 已置位, 吞掉即"关不掉")
+            app_log.info("关闭", f"关闭处理异常, 直接退出以免卡死: {_e_cl}")
+            page.run_task(_彻底退出)
 
     page.window.prevent_close = True
     page.window.on_event = _处理关闭
