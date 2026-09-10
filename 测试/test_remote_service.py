@@ -243,5 +243,71 @@ class Test远控服务(unittest.TestCase):
             self.assertEqual(len(已发), 1)
 
 
+class Test远控开关与生命周期(unittest.TestCase):
+    """v2.4.3 新增: 开关后端 (保存配置/设置启用) 与 服务生命周期。
+
+    实起真实 uvicorn (8763 端口) 验证 运行中/healthz/停止 全链路 —
+    mock 内部状态测不出"停止后端口真的释放"。"""
+
+    def setUp(self):
+        from 远控 import 服务
+        self.服务 = 服务
+        self.addCleanup(服务.停止后台)
+        服务._server = None
+        服务._server_thread = None
+        self._cfg = mock.patch.object(
+            服务, '取配置',
+            return_value={'token': 'testtoken', '启用': True,
+                          '端口': 8763, '绑定': '127.0.0.1'})
+        self._cfg.start()
+        self.addCleanup(self._cfg.stop)
+
+    def test_设置启用_写盘与内存同步(self):
+        import json as _j
+        import tempfile
+        from 远控 import 配置
+        with tempfile.TemporaryDirectory() as td:
+            cfg_file = td + '/cfg.json'
+            with mock.patch.object(配置, '_配置路径', lambda: cfg_file), \
+                    mock.patch.object(配置, '_CONFIG',
+                                      {'token': 't', '启用': True}):
+                self.assertTrue(配置.设置启用(False))
+                self.assertFalse(配置.取配置()['启用'], '内存单例未同步')
+                with open(cfg_file, encoding='utf-8') as f:
+                    self.assertFalse(_j.load(f)['启用'], '未写盘')
+
+    def test_禁用时后台启动返回None(self):
+        with mock.patch.object(self.服务, '取配置',
+                               return_value={'启用': False}):
+            self.assertIsNone(self.服务.后台启动())
+
+    def test_启动_运行中_healthz_停止_再启动(self):
+        import json as _j
+        import time as _t
+        import urllib.request as _u
+        th = self.服务.后台启动()
+        self.assertIsNotNone(th, '启动未返回线程')
+        _t.sleep(3)
+        self.assertTrue(self.服务.运行中(), '运行中() 应为 True')
+        r = _u.urlopen('http://127.0.0.1:8763/api/v1/healthz', timeout=5)
+        self.assertEqual(r.status, 200)
+        # 已在运行: 重复启动应被拒绝 (防双绑定)
+        self.assertIsNone(self.服务.后台启动())
+        # 关 → 端口释放
+        self.服务.停止后台()
+        _t.sleep(2)
+        self.assertFalse(self.服务.运行中(), '停止后 运行中() 应为 False')
+        import socket
+        s = socket.socket()
+        try:
+            s.bind(('127.0.0.1', 8763))
+        finally:
+            s.close()   # 能绑定 = 端口确实已释放
+        # 关 → 开 再来一次 (开关切换路径)
+        self.assertIsNotNone(self.服务.后台启动())
+        _t.sleep(3)
+        self.assertTrue(self.服务.运行中())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
