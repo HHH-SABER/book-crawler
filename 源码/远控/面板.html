@@ -35,6 +35,19 @@
 <body>
 <h2 style="margin-top:0">小说爬虫 · 远控面板</h2>
 
+<div id="login" style="display:none; position:fixed; left:0; top:0; right:0; bottom:0;
+     background:rgba(0,0,0,.85); z-index:99; align-items:center; justify-content:center;">
+  <div style="background:#1a2029; padding:20px; border-radius:12px; width:86%; max-width:360px;">
+    <div style="margin-bottom:10px;">请输入访问 token<br><span class="dim">(常驻机 数据/远控配置.json 中的 token)</span></div>
+    <input id="token输入" type="text" autocomplete="off" autocapitalize="off"
+           style="width:100%; padding:10px; font-size:16px; border-radius:6px;
+                  border:1px solid #333; background:#0d1015; color:#dde3ec;">
+    <div style="margin-top:12px; text-align:right;">
+      <button onclick="提交token()" style="font-size:15px; padding:8px 20px;">确定</button>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="row"><input type="text" id="url" placeholder="小说目录页 URL"></div>
   <div class="row" style="margin-top:8px">
@@ -67,22 +80,33 @@ var token = localStorage.getItem('远控token') || '';
 var 日志目标 = null;   // 当前展开日志的任务 id
 var 日志指针 = 0;
 
-function 取token() {
-  if (!token) {
-    token = (prompt('输入访问 token (见常驻机 数据/远控配置.json)') || '').trim();
-    localStorage.setItem('远控token', token);
-  }
-  return token;
+// 移动端部分浏览器 (夸克/UC 等) 屏蔽系统 prompt 的输入框 —
+// 改用页面内自绘登录层, 任何浏览器都可输入
+function 显示登录() {
+  var box = document.getElementById('login');
+  box.style.display = 'flex';
+  var inp = document.getElementById('token输入');
+  inp.value = '';
+  try { inp.focus(); } catch (e) {}
+}
+function 提交token() {
+  var v = (document.getElementById('token输入').value || '').trim();
+  if (!v) return;
+  token = v;
+  localStorage.setItem('远控token', v);
+  document.getElementById('login').style.display = 'none';
+  启动刷新();
 }
 function api(path, opt) {
-  取token();
+  if (!token) { 显示登录(); return Promise.reject(new Error('请先输入 token')); }
   var sep = path.includes('?') ? '&' : '?';
   opt = opt || {};
   opt.headers = Object.assign({ 'Authorization': 'Bearer ' + token }, opt.headers || {});
   return fetch(path + sep + '_=' + Date.now(), opt).then(function (r) {
     if (r.status === 401) {
       localStorage.removeItem('远控token'); token = '';
-      throw new Error('token 无效, 请刷新页面重新输入');
+      显示登录();
+      throw new Error('token 无效, 请重新输入');
     }
     return r;
   });
@@ -236,11 +260,16 @@ function 刷新书架() {
     });
 }
 
-取token();
-刷新任务(); 刷新书架();
-setInterval(刷新任务, 2000);
-setInterval(拉日志, 1500);
-setInterval(刷新书架, 10000);
+var 已启动 = false;
+function 启动刷新() {
+  if (已启动) return;   // 401 后重新登录可能再次调用, 防重复计时器
+  已启动 = true;
+  刷新任务(); 刷新书架();
+  setInterval(刷新任务, 2000);
+  setInterval(拉日志, 1500);
+  setInterval(刷新书架, 10000);
+}
+if (token) { 启动刷新(); } else { 显示登录(); }
 </script>
 </body>
 </html>
