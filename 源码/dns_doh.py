@@ -34,6 +34,11 @@ _CACHE_TTL = 600  # DoH 结果缓存 10 分钟
 _doh_cache = {}          # host -> (ip, ts)
 _polluted_hosts = set()  # 已确认污染的域名 (避免重复打印)
 _orig_getaddrinfo = None
+# 模块导入时的真·原函数备份 (打补丁前的快照)。
+# 修复: install() 原实现备份"调用那一刻的 socket.getaddrinfo", 若此前已有代码
+# 把 socket.getaddrinfo 换成 _patched_getaddrinfo (例如任何模块 import 了 爬虫,
+# 它会在导入期调用 install()), 备份就会指向打补丁后的函数 → 每次解析无限递归。
+_真实_getaddrinfo = socket.getaddrinfo
 
 _CTX = ssl.create_default_context()
 
@@ -136,9 +141,16 @@ def _patched_getaddrinfo(host, port, *args, **kwargs):
 
 
 def install():
-    """安装 DNS 污染回退 (幂等, 进程内全局生效)"""
+    """安装 DNS 污染回退 (幂等, 进程内全局生效)
+
+    修复: 原实现用 `socket.getaddrinfo` 当原函数备份 —— 若 install() 之前
+    socket.getaddrinfo 已被替换为 _patched_getaddrinfo (例如 import 爬虫 时
+    已经装过一次, 或测试直接改过), 备份就会指向补丁自身, 导致每次解析无限
+    递归 (RecursionError)。改为固定引用模块导入时快照的真原函数。
+    另外用 globals().get 读状态: 有测试会 del 掉该全局, 直接读会 AttributeError。
+    """
     global _orig_getaddrinfo
-    if _orig_getaddrinfo is not None:
+    if globals().get('_orig_getaddrinfo') is not None:
         return
-    _orig_getaddrinfo = socket.getaddrinfo
+    _orig_getaddrinfo = _真实_getaddrinfo
     socket.getaddrinfo = _patched_getaddrinfo

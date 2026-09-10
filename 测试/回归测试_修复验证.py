@@ -275,10 +275,17 @@ def test_speed_adaptive():
     ok("连续3章失败降档", c.tier.level == 1, c.tier.name)
     c.note_risk("rate_limit")
     ok("限频事件再降档", c.tier.level == 0, c.tier.name)
+    # N3 修复: 回升除冷静期外, 还要求"距上次反爬事件静默 UPGRADE_RISK_FREE_SECONDS"。
+    # 先把档位冷静期拨过去, 验证反爬事件未静默时**拒绝**回升 (旧实现此处会误升)。
     c._last_change_time -= sa.UPGRADE_COOLDOWN_SECONDS + 10
     for _ in range(sa.UPGRADE_CONSEC_OK + 5):
         c.record_chapter(True)
-    ok("冷静期+稳定成功回升", c.tier.level == 1, c.tier.name)
+    ok("反爬事件未静默时拒绝回升", c.tier.level == 0, c.tier.name)
+    # 再把风险事件时间轴拨过去, 模拟静默期满 → 此时才允许回升
+    c._last_risk_time -= sa.UPGRADE_RISK_FREE_SECONDS + 10
+    for _ in range(sa.UPGRADE_CONSEC_OK + 5):
+        c.record_chapter(True)
+    ok("冷静期+稳定成功+风险静默后回升", c.tier.level == 1, c.tier.name)
     snap = c.snapshot()
     ok("降升计数正确", snap["downgrades"] == 2 and snap["upgrades"] == 1, str(snap))
 
@@ -309,10 +316,6 @@ def test_speed_adaptive():
     ok("闸门并发峰值=1 (降两档后)", peak["v"] == 1, f"峰值 {peak['v']}")
 
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("回归测试: 7 组修复点无副作用验证")
-    print("=" * 60)
 # ==================================================================
 # 测试8: 增量模式从头重抓不得丢失旧正文 (T1 致命 Bug 回归)
 # ==================================================================

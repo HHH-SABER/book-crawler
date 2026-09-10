@@ -94,6 +94,7 @@ SMALL_BOOK_CHAPTERS = 30
 # 回升条件
 UPGRADE_COOLDOWN_SECONDS = 180    # 距上次档位变动的冷静期
 UPGRADE_CONSEC_OK = 30            # 最近连续成功章节数
+UPGRADE_RISK_FREE_SECONDS = 180   # 距上次反爬事件须静默这么久才允许回升
 
 
 # ====================================================================== 设备画像
@@ -106,6 +107,7 @@ except Exception:
     _PROFILE_CACHE = Path(__file__).resolve().parent.parent / '数据' / '速度画像.json'
 _PROFILE_TTL = 7 * 24 * 3600      # 画像缓存 7 天 (设备硬件不会频繁变化)
 _PROFILE_LOCK = threading.Lock()  # 并发任务同时首次选档时, 基准只跑一份、写入不竞争
+_BENCH_LOCK = threading.Lock()    # CPU 基准各 worker 累加 total_hashed 的互斥
 
 
 def _cpu_core_count():
@@ -211,7 +213,7 @@ def _sha256_bench(workers=1, duration=0.35):
         while time.perf_counter() < end:
             h.update(block)
             local += len(block)
-        with threading.Lock():
+        with _BENCH_LOCK:
             total_hashed += local
 
     threads = [threading.Thread(target=_worker) for _ in range(max(1, workers))]
@@ -344,7 +346,7 @@ class SpeedController:
         self._active = 0            # 当前正在闸门内抓取的 worker 数
         self._consec_fail = 0
         self._consec_ok = 0
-        self._risk_since_change = 0
+        self._last_risk_time = 0.0   # 上次反爬事件时刻 (0=从未发生 → 不阻塞回升)
         self._last_change_time = time.time()
         self._downgrades = 0
         self._upgrades = 0
@@ -393,7 +395,7 @@ class SpeedController:
             return
         msg = None
         with self._lock:
-            self._risk_since_change += 1
+            self._last_risk_time = time.time()
             self._consec_ok = 0
             if self._tier.level > 0:
                 msg = self._change_tier_locked(self._tier.level - 1,
@@ -440,7 +442,11 @@ class SpeedController:
             return None
         if time.time() - self._last_change_time < UPGRADE_COOLDOWN_SECONDS:
             return None
-        if self._risk_since_change > 0:
+        # 修复(N3): 旧判据是"自上次换档以来的风险事件数", 而该计数在每次换档时
+        # 都被 _change_tier_locked 清零 → 风险事件导致的降档反而把判据自己抹掉;
+        # 更糟的是在最低档再遇风险时计数只增不清零 → 该任务内永久无法回升。
+        # 改为时间判据: 距上次反爬事件静默 UPGRADE_RISK_FREE_SECONDS 才允许回升。
+        if time.time() - self._last_risk_time < UPGRADE_RISK_FREE_SECONDS:
             return None
         if self._system_pressure():
             return f"[速度自适应] {self.domain} 条件满足但系统内存紧张, 暂不回升"
@@ -456,7 +462,6 @@ class SpeedController:
         upgraded = new_tier.level > old_tier.level
         self._tier = new_tier
         self._last_change_time = time.time()
-        self._risk_since_change = 0
         self._consec_ok = 0
         if upgraded:
             self._upgrades += 1
