@@ -71,6 +71,7 @@ class ProxyPool:
         with _LOCK:
             if not self._items:
                 return None
+            self._半开复位()   # 失败达上限的代理在恢复期后放行一次试探
             # 同域复用
             for p, st in self._items.items():
                 if st["域绑定"].get(domain) and self._healthy(p):
@@ -96,6 +97,31 @@ class ProxyPool:
             # 未指定 proxy: 解除该域所有绑定, 强制换
             for st in self._items.values():
                 st["域绑定"].pop(domain, None)
+
+    def mark_success(self, proxy=None):
+        """成功反馈: 清零失败计数与冷却 (熔断器闭合)。
+
+        修复: 旧实现只有 mark_failed、没有成功反馈, 而 `失败` 是**累计**计数
+        (docstring 却写"连续失败") —— 代理累计失败 5 次即永久出池。
+        现由本方法 + _半开复位() 共同保证"恢复得了"。
+        """
+        with _LOCK:
+            if proxy and proxy in self._items:
+                st = self._items[proxy]
+                st["失败"] = 0
+                st["冷却截止"] = 0.0
+
+    def _半开复位(self, 阈值=5, 恢复探测秒=600):
+        """熔断器半开: 失败达上限且冷却已过恢复期的代理, 放行一次试探。
+
+        这样"累计失败 5 次"不再等于永久出池 —— 试探成功会被
+        mark_success 清零, 再失败则重新累计并进入更长冷却。
+        """
+        now = time.time()
+        for st in self._items.values():
+            if st["失败"] >= 阈值 and now - st["冷却截止"] >= 恢复探测秒:
+                st["失败"] = 阈值 - 1
+                st["冷却截止"] = 0.0
 
     def _wrap(self, proxy):
         if proxy.startswith(("http://", "https://", "socks5://")):
