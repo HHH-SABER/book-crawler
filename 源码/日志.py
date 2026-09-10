@@ -76,8 +76,15 @@ class AppLogger:
         return os.path.join(get_log_dir(), name)
 
     def _switch_file_if_needed(self):
-        """按天/按大小轮转日志文件"""
+        """按天/按大小轮转日志文件。
+
+        性能优化: 旧实现每次写入都 exists+getsize (高频 DEBUG 下 I/O 放大) —
+        现以内存累计字节数 _cur_size 为准, 仅在"跨天/累计超阈值"时才触达
+        文件系统; 打开/切换文件时只 stat 一次。"""
         today = time.strftime('%Y-%m-%d')
+        if (self._file is not None and self._cur_date == today
+                and getattr(self, '_cur_size', 0) < _MAX_FILE_SIZE):
+            return
         seq = 0
         path = self._daily_path(today)
         while seq < 100:
@@ -96,6 +103,10 @@ class AppLogger:
             self._file_path = path
             self._file = open(path, 'a', encoding='utf-8', buffering=1)  # 行缓冲
             self._cur_date = today
+        try:
+            self._cur_size = os.path.getsize(path)
+        except OSError:
+            self._cur_size = 0
 
     # ---------------------------------------------------------------- 写日志
     def _write(self, level: str, source: str, message: str):
@@ -107,6 +118,8 @@ class AppLogger:
             try:
                 self._switch_file_if_needed()
                 self._file.write(line + '\n')
+                self._cur_size = (getattr(self, '_cur_size', 0)
+                                  + len(line.encode('utf-8')) + 1)
             except Exception:
                 pass  # 日志失败绝不影响主流程
         # console 镜像: 原样输出消息 (无前缀), 供 CLI 进度与 GUI 日志条捕获 (B1)
