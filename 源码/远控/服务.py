@@ -52,6 +52,47 @@ def _任务管理器():
     return _task_manager
 
 
+# ---------------------------------------------------------------- 内嵌模式
+def 注入任务管理器(mgr) -> None:
+    """桌面客户端内嵌模式: 用 GUI 的 TaskManager 实例共享任务列表。
+
+    共享后: 手机发起的任务实时出现在桌面任务表 (GUI 每秒轮询同一对象),
+    桌面发起的任务手机同样可见 —— 跨端同步由"单实例"天然保证。"""
+    global _task_manager
+    _task_manager = mgr
+
+
+def 后台启动(host: str = None, port: int = None):
+    """守护线程内启动 uvicorn (GUI 内嵌远控); 禁用时返回 None。
+
+    - loop/http 显式指定纯 Python 实现, 避免冻结环境缺 C 扩展
+    - 端口被占用等启动失败仅记日志, 绝不影响桌面客户端本体
+    """
+    import threading as _t
+    import uvicorn
+    cfg = 取配置()
+    if not cfg.get("启用", True):
+        return None
+    _host = host or cfg.get("绑定", "127.0.0.1")
+    _port = int(port or cfg.get("端口", 8760))
+
+    def _跑():
+        try:
+            uvicorn.run(app, host=_host, port=_port, log_level="warning",
+                        loop="asyncio", http="h11")
+        except Exception as e:
+            try:
+                import 日志 as _alog
+                _alog.get("远控").info(
+                    f"内嵌远控启动失败 (端口 {_port} 可能被占用): "
+                    f"{type(e).__name__}: {e}")
+            except Exception:
+                pass
+    t = _t.Thread(target=_跑, name="远控服务", daemon=True)
+    t.start()
+    return t
+
+
 # ---------------------------------------------------------------- 鉴权
 def _要求鉴权(k: Optional[str] = None, authorization: Optional[str] = Header(default=None)) -> None:
     """token 校验: ?k= 或 Authorization: Bearer <token>, 常时比较防时序侧信道"""
@@ -216,8 +257,10 @@ def 任务列表(k: Optional[str] = None, authorization: Optional[str] = Header(
 def 停止任务(task_id: str, k: Optional[str] = None,
             authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
-    if not _任务管理器().stop_task(task_id):
+    mgr = _任务管理器()
+    if mgr.get_task(task_id) is None:
         raise HTTPException(status_code=404, detail="任务不存在")
+    mgr.stop_task(task_id)   # 该方法无返回值 (GUI 直接调用语义), 不能按 bool 判断
     return {"ok": True}
 
 
