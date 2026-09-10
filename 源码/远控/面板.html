@@ -172,6 +172,25 @@ function 刷新任务() {
           b1.onclick = function () { 停止(t.id); };
           td5.appendChild(b1);
         }
+        if (t.状态 === 'interrupted') {
+          var br = document.createElement('button');
+          br.textContent = '续传';
+          br.onclick = function () {
+            api('/api/v1/tasks', { method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: t.url, resume: true,
+                                       unique_title: false }) })
+              .then(function () { 提示('已续传 ' + t.id); 刷新任务(); })
+              .catch(function (e) { 提示('续传失败: ' + e.message); });
+          };
+          var bi = document.createElement('button');
+          bi.className = 'sec'; bi.textContent = '忽略';
+          bi.onclick = function () {
+            api('/api/v1/tasks/' + t.id, { method: 'DELETE' })
+              .then(刷新任务).catch(function (e) { 提示(e.message); });
+          };
+          td5.append(br, bi);
+        }
         var b2 = document.createElement('button');
         b2.className = 'sec'; b2.textContent = '日志';
         b2.onclick = function () { 展开日志(t.id); };
@@ -196,13 +215,20 @@ function 刷新书架() {
         var row = document.createElement('div'); row.className = 'book';
         var name = document.createElement('span');
         name.textContent = b.标题 + '  (' + Math.round(b.大小 / 1024) + ' KB)';
+        var ops = document.createElement('div'); ops.style.display = 'flex';
+        ops.style.gap = '6px';
+        var rd = document.createElement('a');
+        rd.href = '/reader/' + b.id + '?k=' + token;
+        var rb = document.createElement('button'); rb.textContent = '阅读';
+        rd.appendChild(rb);
         var dl = document.createElement('a');
         dl.href = '/api/v1/books/' + b.id + '/epub?k=' + token;
         dl.setAttribute('download', '');
         var btn = document.createElement('button');
-        btn.textContent = '下载 EPUB';
+        btn.textContent = 'EPUB';
         dl.appendChild(btn);
-        row.append(name, dl);
+        ops.append(rd, dl);
+        row.append(name, ops);
         box.appendChild(row);
       });
     }).catch(function (e) {

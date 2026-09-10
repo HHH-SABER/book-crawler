@@ -141,6 +141,80 @@ class Test远控服务(unittest.TestCase):
                     '/api/v1/books/deadbeefdead/epub?k=testtoken')
                 self.assertEqual(r404.status_code, 404)
 
+    # ------------------------------------------------------------ 二期: 阅读
+    def test_章节列表与内容(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            with self.setUp_books(tmp):
+                bid = self.client.get(
+                    '/api/v1/books?k=testtoken').json()['书籍'][0]['id']
+                ch = self.client.get(
+                    f'/api/v1/books/{bid}/chapters?k=testtoken').json()
+                self.assertEqual(ch['总章数'], 2)
+                self.assertEqual(ch['进度'], 0)
+                self.assertEqual(ch['章节'][1]['标题'], '第二章')
+                c0 = self.client.get(
+                    f'/api/v1/books/{bid}/content/0?k=testtoken').json()
+                self.assertEqual(c0['标题'], '第一章')
+                self.assertIn('内容一', c0['内容'])
+                r404 = self.client.get(
+                    f'/api/v1/books/{bid}/content/99?k=testtoken')
+                self.assertEqual(r404.status_code, 404)
+
+    def test_阅读进度存取(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            with self.setUp_books(tmp):
+                bid = self.client.get(
+                    '/api/v1/books?k=testtoken').json()['书籍'][0]['id']
+                r = self.client.post(
+                    f'/api/v1/books/{bid}/progress?k=testtoken',
+                    json={'章节': 1})
+                self.assertEqual(r.status_code, 200)
+                r2 = self.client.get(
+                    f'/api/v1/books/{bid}/progress?k=testtoken')
+                self.assertEqual(r2.json(), {'章节': 1})
+                r3 = self.client.post(
+                    f'/api/v1/books/{bid}/progress?k=testtoken',
+                    json={'章节': -5})
+                self.assertEqual(r3.status_code, 400)
+
+    def test_中断任务恢复_列表可见并可删除(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            (tmp / '某书.txt.checkpoint.json').write_text(
+                '{"catalog_url": "https://example.com/b/9", '
+                '"completed": 7, "total": 20}', encoding='utf-8')
+            with mock.patch.object(服务, 'get_default_output_dir',
+                                   lambda: str(td)):
+                self.mgr.tasks.clear()
+                服务._已扫中断 = False        # 允许重扫 (服务启动后只扫一次)
+                r = self.client.get('/api/v1/tasks?k=testtoken').json()
+                恢复项 = [t for t in r['任务'] if t['id'].startswith('resume_')]
+                self.assertEqual(len(恢复项), 1)
+                t = 恢复项[0]
+                self.assertEqual(t['状态'], 'interrupted')
+                self.assertEqual(t['进度'], [7, 20])
+                self.assertEqual(t['url'], 'https://example.com/b/9')
+                # 清理: DELETE 移除展示项
+                self.assertEqual(
+                    self.client.delete(
+                        f"/api/v1/tasks/{t['id']}?k=testtoken").status_code, 200)
+                self.assertNotIn(t['id'], self.mgr.tasks)
+                服务._已扫中断 = True   # 还原, 免污染其他用例
+
+    def test_删除运行中任务_拒绝(self):
+        from gui_components.task_manager import TaskInfo
+        t = TaskInfo(task_id='t9', url='https://example.com/b/9',
+                     status='running')
+        self.mgr.tasks['t9'] = t
+        self.assertEqual(
+            self.client.delete('/api/v1/tasks/t9?k=testtoken').status_code,
+            404)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -32,7 +33,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
-from _path_utils import get_default_output_dir
+from _path_utils import get_default_output_dir, get_app_base_dir
 from .配置 import 取配置
 
 app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
@@ -178,6 +179,8 @@ def 创建任务(body: dict, k: Optional[str] = None,
             chapter_range=chapter_range,
             resume=bool((body or {}).get("resume", True)),
             export_epub=bool((body or {}).get("export_epub", False)),
+            # 续传中断任务时必须 False — True 会另存 "书名(1).txt" 而非续写
+            unique_title=bool((body or {}).get("unique_title", True)),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"任务创建失败: {e}")
@@ -201,6 +204,7 @@ def _任务快照(t) -> dict:
 @app.get("/api/v1/tasks")
 def 任务列表(k: Optional[str] = None, authorization: Optional[str] = None):
     _要求鉴权(k, authorization)
+    _恢复中断任务()   # 只读恢复: 首次查询时重建上次中断的任务展示
     mgr = _任务管理器()
     with mgr._lock:
         tasks = list(mgr.tasks.values())
@@ -213,6 +217,16 @@ def 停止任务(task_id: str, k: Optional[str] = None,
     _要求鉴权(k, authorization)
     if not _任务管理器().stop_task(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
+    return {"ok": True}
+
+
+@app.delete("/api/v1/tasks/{task_id}")
+def 删除展示任务(task_id: str, k: Optional[str] = None,
+                authorization: Optional[str] = None):
+    """移除任务展示项 (仅非运行态; 不删除输出文件与检查点)"""
+    _要求鉴权(k, authorization)
+    if not _删除展示任务(task_id):
+        raise HTTPException(status_code=404, detail="任务不存在或仍在运行")
     return {"ok": True}
 
 
@@ -268,6 +282,187 @@ async def 任务日志流(task_id: str, after: int = 0,
     return StreamingResponse(_流(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
+
+
+_app = app  # 别名 (语义可读)
+
+_已扫中断 = False
+_章节缓存: dict = {}      # txt路径 -> (mtime, [ {标题, 内容} ])
+_进度锁 = threading.Lock()
+
+
+def _恢复中断任务():
+    """只读恢复 (关键变更 6): 服务启动后首次查询时, 扫 抓取结果/*.checkpoint.json,
+    把上次被中断的任务重建为 interrupted 展示项。续传 = 对其 url 以
+    resume=True + unique_title=False 重新发任务 (断点续传语义自动接管)。"""
+    global _已扫中断
+    if _已扫中断:
+        return
+    _已扫中断 = True
+    mgr = _任务管理器()
+    out_dir = get_default_output_dir()
+    try:
+        names = os.listdir(out_dir)
+    except OSError:
+        return
+    from gui_components.task_manager import TaskInfo
+    for name in names:
+        if not name.endswith(".checkpoint.json"):
+            continue
+        path = os.path.join(out_dir, name)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                ck = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(ck, dict) or not ck.get("catalog_url"):
+            continue
+        tid = "resume_" + hashlib.md5(path.encode("utf-8")).hexdigest()[:8]
+        if tid in mgr.tasks:
+            continue
+        t = TaskInfo(task_id=tid, url=ck["catalog_url"],
+                     title=name[:-len(".checkpoint.json")],
+                     status="interrupted",
+                     progress_current=int(ck.get("completed", 0) or 0),
+                     progress_total=int(ck.get("total", 0) or 0))
+        with mgr._lock:
+            mgr.tasks[tid] = t
+
+
+def _删除展示任务(task_id: str) -> bool:
+    """移除任务展示项 (仅非运行态; 不动输出文件与检查点)"""
+    mgr = _任务管理器()
+    with mgr._lock:
+        t = mgr.tasks.get(task_id)
+        if t is None or t.status == "running":
+            return False
+        del mgr.tasks[task_id]
+        if mgr._selected_task_id == task_id:
+            mgr._selected_task_id = ""
+        return True
+
+
+# ---------------------------------------------------------------- 阅读
+def _解析章节(item: dict) -> list:
+    """按 '## 标题' 切分 txt 为章节列表 (mtime 缓存)。
+
+    首个 '## ' 之前的导语非空时作为 '(开篇)' 章节保留 (epub 导出会丢弃它,
+    阅读页选择保留, 由读者自己跳过)。"""
+    path = item["路径"]
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError as e:
+        raise HTTPException(status_code=404, detail="文件已不存在") from e
+    cached = _章节缓存.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"读取失败: {e}") from e
+    章节 = []
+    当前标题, 缓冲 = None, []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if 当前标题 is not None:
+                章节.append({"标题": 当前标题, "内容": "\n".join(缓冲).strip()})
+            当前标题, 缓冲 = line[3:].strip(), []
+        elif 当前标题 is not None:
+            缓冲.append(line)
+        else:
+            缓冲.append(line)   # 首章之前的导语
+    if 当前标题 is not None:
+        章节.append({"标题": 当前标题, "内容": "\n".join(缓冲).strip()})
+    else:
+        导语 = "\n".join(缓冲).strip()
+        if 导语:
+            章节.append({"标题": "(开篇)", "内容": 导语})
+    _章节缓存[path] = (mtime, 章节)
+    if len(_章节缓存) > 8:   # 防长会话内存缓涨 (一本 900KB txt ≈ 2MB 缓存)
+        _章节缓存.pop(next(iter(_章节缓存)))
+    return 章节
+
+
+def _读进度(book_id: str) -> int:
+    try:
+        with open(os.path.join(get_app_base_dir(), "数据", "阅读进度.json"),
+                  "r", encoding="utf-8") as f:
+            return int(json.load(f).get(book_id, 0))
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
+def _写进度(book_id: str, chapter: int) -> None:
+    path = os.path.join(get_app_base_dir(), "数据", "阅读进度.json")
+    with _进度锁:
+        data = {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            pass
+        data[book_id] = max(0, int(chapter))
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+
+
+@app.get("/api/v1/books/{book_id}/chapters")
+def 章节列表(book_id: str, k: Optional[str] = None,
+            authorization: Optional[str] = None):
+    _要求鉴权(k, authorization)
+    item = _按id查书(book_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    章节 = _解析章节(item)
+    return {"总章数": len(章节),
+            "章节": [{"序": i, "标题": c["标题"]} for i, c in enumerate(章节)],
+            "进度": _读进度(book_id)}
+
+
+@app.get("/api/v1/books/{book_id}/content/{index}")
+def 章节内容(book_id: str, index: int, k: Optional[str] = None,
+            authorization: Optional[str] = None):
+    """路径参数用 ASCII 名 {index} — 中文组名在 Starlette 路径正则下不匹配 (实测 404)"""
+    _要求鉴权(k, authorization)
+    item = _按id查书(book_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    章节 = _解析章节(item)
+    if not 0 <= index < len(章节):
+        raise HTTPException(status_code=404, detail="章节超出范围")
+    return {"序": index, "标题": 章节[index]["标题"],
+            "内容": 章节[index]["内容"], "总章数": len(章节)}
+
+
+@app.get("/api/v1/books/{book_id}/progress")
+def 读进度(book_id: str, k: Optional[str] = None,
+           authorization: Optional[str] = None):
+    _要求鉴权(k, authorization)
+    return {"章节": _读进度(book_id)}
+
+
+@app.post("/api/v1/books/{book_id}/progress")
+def 存进度(book_id: str, body: dict, k: Optional[str] = None,
+           authorization: Optional[str] = None):
+    _要求鉴权(k, authorization)
+    序 = (body or {}).get("章节")
+    if not isinstance(序, int) or 序 < 0:
+        raise HTTPException(status_code=400, detail="章节序号无效")
+    _写进度(book_id, 序)
+    return {"ok": True}
+
+
+@app.get("/reader/{book_id}")
+def 阅读页(book_id: str, k: Optional[str] = None):
+    """阅读器页面 (token 经 ?k= 传入, JS 转存 sessionStorage)"""
+    _要求鉴权(k)
+    页 = Path(__file__).with_name("阅读.html")
+    if not 页.is_file():
+        raise HTTPException(status_code=500, detail="阅读页文件缺失")
+    return FileResponse(页, media_type="text/html")
 
 
 @app.get("/api/v1/books")
