@@ -123,6 +123,23 @@ def main(page: ft.Page):
     # ---- 全局任务管理器 ----
     task_manager = TaskManager(page)
 
+    # ---- 内嵌远控服务 (常驻): 与桌面客户端共用同一 TaskManager ----
+    # 跨端同步: 手机端发起的任务实时出现在本窗口任务表 (同一对象, GUI 轮询
+    # 即可见); 桌面方发的任务手机同样可见。客户端关闭则服务随之停止。
+    try:
+        from 远控 import 服务 as _远控
+        _远控.注入任务管理器(task_manager)
+        _t = _远控.后台启动()
+        if _t is not None:
+            _cfg = _远控.取配置()
+            app_log.info("远控",
+                         f"内嵌远控已启动: http://{_cfg.get('绑定')}:"
+                         f"{_cfg.get('端口')}/ (手机访问需 Tailscale; "
+                         f"token 见 数据/远控配置.json)")
+    except Exception as _e_远控:
+        app_log.info("远控", f"内嵌远控启动失败 (不影响本机使用): "
+                             f"{type(_e_远控).__name__}: {_e_远控}")
+
     # ---- 主题切换 ----
     _theme_dark = [False]
     _theme_toggle_btn = [None]  # 顶栏主题切换按钮引用
