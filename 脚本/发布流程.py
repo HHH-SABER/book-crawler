@@ -110,7 +110,26 @@ def 打包(参数):
         print('\n❌ 步骤④失败: 打包命令报成功但 dist/ 下没有 .exe 产物, 已中止。')
         return False
     最大 = max(产物, key=lambda p: p.stat().st_size)
-    print(f'✅ 步骤④⑤通过: 产物 {最大.name} ({最大.stat().st_size/1024/1024:.1f} MB)')
+    print(f'✅ 步骤④产物: {最大.name} ({最大.stat().st_size/1024/1024:.1f} MB)')
+
+    # 冒烟被跳过 = 没验证, 不能算通过。
+    # 冒烟是"打包成功 ≠ 能启动"的唯一防线 (v2.4.0 的 flet icons.json / flet_desktop
+    # 两个缺口都是靠真实启动才暴露的), 静默跳过等于放弃了这道防线。
+    # 三种跳过口径都要覆盖: 检测到占用 / 产物非 ONEFILE / 显式 --skip-smoke。
+    _冒烟跳过 = ('冒烟测试跳过' in out or '冒烟测试仅支持' in out
+                 or '--skip-smoke' in out)
+    if _冒烟跳过:
+        if not 参数.allow_skip_smoke:
+            print('\n❌ 步骤⑤未通过: 冒烟测试被跳过 (原因见上面的 WARN/INFO)。')
+            print('   冒烟未执行 = 未验证 EXE 能否启动, 判定为失败。')
+            print('   处理: 关闭占用进程后重跑, 或显式加 --allow-skip-smoke 接受风险。')
+            return False
+        print('⚠️ 步骤⑤: 冒烟被跳过, 但已显式 --allow-skip-smoke, 继续。')
+    elif '冒烟失败' in out:
+        print('\n❌ 步骤⑤失败: 冒烟测试报错, 已中止。')
+        return False
+
+    print('✅ 步骤⑤通过: 冒烟测试已真实执行')
     return True
 
 
@@ -161,6 +180,8 @@ def main():
     p.add_argument('--bump', choices=['patch', 'minor', 'major'],
                    default=None, help='版本号递增级别 (默认由 build_exe 决定)')
     p.add_argument('--branch', default='main', help='推送分支 (默认 main)')
+    p.add_argument('--allow-skip-smoke', dest='allow_skip_smoke', action='store_true',
+                   help='允许冒烟被跳过 (默认视为失败: 没验证就等于没通过)')
     p.add_argument('--message', default='chore(release): 发版校验通过后提交',
                    help='提交信息')
     参数 = p.parse_args()
