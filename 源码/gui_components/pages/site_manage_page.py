@@ -292,7 +292,11 @@ class SiteManagePage:
             import 风控事件 as _ev
             # 1) 漂移/改版告警 (content_issue 事件最近 3 条)
             import os, json, time as _t
-            d = os.path.join(get_app_base_dir(), "数据")
+            try:
+                from _path_utils import get_state_root as _状态根
+            except Exception:
+                _状态根 = get_app_base_dir
+            d = os.path.join(_状态根(), "数据")
             files = sorted([os.path.join(d, f) for f in os.listdir(d)
                             if f.startswith("风控事件-")]) if os.path.isdir(d) else []
             cutoff = _t.time() - 24 * 3600
