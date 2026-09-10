@@ -92,3 +92,21 @@ def 取配置() -> dict:
             if _CONFIG is None:
                 _CONFIG = _加载或创建()
     return _CONFIG
+
+
+def 保存配置(cfg: dict) -> bool:
+    """原子写回配置并同步内存单例 (远控开关等运行时修改用)"""
+    global _CONFIG
+    try:
+        _原子写(_配置路径(), cfg)
+        _CONFIG = cfg
+        return True
+    except OSError:
+        return False
+
+
+def 设置启用(flag: bool) -> bool:
+    """切换远控启用开关 (写盘 + 内存态), 供顶栏开关调用"""
+    cfg = dict(取配置())
+    cfg["启用"] = bool(flag)
+    return 保存配置(cfg)

@@ -25,7 +25,8 @@ if getattr(sys, "frozen", False):
         os.environ["FLET_VIEW_PATH"] = _bundled_flet_client
 
 from gui_components.task_manager import TaskManager
-from gui_components.icon_rail import IconRail, NAV_PAGES, build_theme_toggle, build_top_bar
+from gui_components.icon_rail import (IconRail, NAV_PAGES, build_theme_toggle,
+                                      build_top_bar, build_remote_toggle)
 from gui_components.ui_theme import page_header
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
@@ -35,7 +36,7 @@ from gui_components.pages.history_page import HistoryPage
 from gui_components.pages.site_manage_page import SiteManagePage
 
 # 打包后路径约定（源码/EXE 双模式）
-from _path_utils import get_default_output_dir  # noqa: E402
+from _path_utils import get_default_output_dir, get_state_root  # noqa: E402
 
 # 统一日志模块: 启动记录 + 全局未捕获异常写日志
 import 日志 as app_log  # noqa: E402
@@ -314,7 +315,152 @@ def main(page: ft.Page):
 
     # ---- 顶栏 (苹果风格: 标题 + 醒目主题切换按钮) ----
     _theme_toggle_btn[0] = build_theme_toggle(page, 'light', toggle_theme)
-    top_bar = build_top_bar(page, '小说爬虫', _theme_toggle_btn[0])
+    # ---- 远控开关 (顶栏胶囊): 控制内嵌远控启用/禁用 ----
+    def _更新远控外观(启用):
+        _远控按钮更新(启用)
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    def _切远控(e):
+        try:
+            import 远控.服务 as _远控切
+            if _远控切.运行中():
+                _远控切.设置启用(False)
+                _远控切.停止后台()
+                _更新远控外观(False)
+                app_log.info("远控", "远控已停用 (手机端将无法访问)")
+                page.show_dialog(ft.SnackBar(ft.Text("远控已停用, 手机端将无法访问")))
+            else:
+                _远控切.设置启用(True)
+                _远控切.后台启动()
+                import time as _tmo
+                _tmo.sleep(0.5)   # 留出线程绑定端口的时间再判定
+                ok = _远控切.运行中()
+                _更新远控外观(ok)
+                _cfg = _远控切.取配置()
+                msg = (f"远控已启用: http://{_cfg.get('绑定')}:{_cfg.get('端口')}/"
+                       if ok else "远控启用失败 (端口 8760 可能被占用)")
+                app_log.info("远控", msg)
+                page.show_dialog(ft.SnackBar(ft.Text(msg)))
+        except Exception as _e_sw:
+            app_log.info("远控", f"远控开关切换异常: {type(_e_sw).__name__}: {_e_sw}")
+
+    _远控按钮, _远控按钮更新 = build_remote_toggle(_切远控)
+    try:
+        import 远控.服务 as _远控初
+        _更新远控外观(_远控初.运行中())
+    except Exception:
+        pass
+
+    # ---- 关闭行为: 最小化到托盘 / 直接退出 (关闭按钮不再直接退出) ----
+    _关闭配置 = os.path.join(get_state_root(), "数据", "客户端配置.json")
+
+    def _读关闭行为():
+        import json as _j
+        try:
+            with open(_关闭配置, "r", encoding="utf-8") as f:
+                return _j.load(f).get("关闭行为", "询问")
+        except Exception:
+            return "询问"
+
+    def _写关闭行为(v):
+        import json as _j
+        try:
+            os.makedirs(os.path.dirname(_关闭配置), exist_ok=True)
+            tmp = _关闭配置 + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _j.dump({"关闭行为": v}, f, ensure_ascii=False)
+            os.replace(tmp, _关闭配置)
+        except OSError:
+            pass
+
+    _托盘 = {"对象": None}
+
+    async def _显示主窗():
+        page.window.visible = True
+        page.window.minimized = False
+
+    async def _彻底退出():
+        try:
+            import 远控.服务 as _远控退
+            _远控退.停止后台()
+        except Exception:
+            pass
+        try:
+            from gui_components.tray import 停止托盘
+            停止托盘(_托盘["对象"])
+        except Exception:
+            pass
+        os._exit(0)
+
+    def _隐藏到托盘():
+        page.window.visible = False
+        if _托盘["对象"] is None:
+            try:
+                from gui_components.tray import 启动托盘
+                图标路径 = os.path.normpath(os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "..",
+                    "脚本", "图标.ico"))
+                _托盘["对象"] = 启动托盘(
+                    图标路径,
+                    显示=lambda: page.run_task(_显示主窗),
+                    退出=lambda: page.run_task(_彻底退出))
+                app_log.info("托盘", "已最小化到托盘 (远控保持运行; 双击图标恢复)")
+            except Exception as _e_tray:
+                app_log.info("托盘", f"托盘不可用, 改为最小化窗口: {_e_tray}")
+                page.window.minimized = True
+
+    def _关闭询问():
+        记住 = ft.Checkbox(label="记住我的选择", value=False)
+
+        def _选托盘(e):
+            try:
+                page.pop_dialog()
+            except Exception:
+                pass
+            if 记住.value:
+                _写关闭行为("托盘")
+            _隐藏到托盘()
+
+        def _选退出(e):
+            try:
+                page.pop_dialog()
+            except Exception:
+                pass
+            if 记住.value:
+                _写关闭行为("退出")
+            page.run_task(_彻底退出)
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("关闭窗口"),
+            content=ft.Column(
+                [ft.Text("最小化到系统托盘 (远控保持运行), 还是直接退出?"),
+                 记住], tight=True, spacing=10),
+            actions=[ft.TextButton("最小化到托盘", on_click=_选托盘),
+                     ft.TextButton("直接退出", on_click=_选退出)],
+        )
+        page.show_dialog(dlg)
+
+    def _处理关闭(e):
+        try:
+            if getattr(e, "type", None) == ft.WindowEventType.CLOSE:
+                行为 = _读关闭行为()
+                if 行为 == "托盘":
+                    _隐藏到托盘()
+                elif 行为 == "退出":
+                    page.run_task(_彻底退出)
+                else:
+                    _关闭询问()
+        except Exception as _e_cl:
+            app_log.info("关闭", f"关闭处理异常: {_e_cl}")
+
+    page.window.prevent_close = True
+    page.window.on_event = _处理关闭
+
+    top_bar = build_top_bar(page, '小说爬虫', _theme_toggle_btn[0],
+                            extra_controls=[_远控按钮])
 
     # ---- 整体布局 (Fluent 三段式: 顶栏 + 侧边导航 + 主内容) ----
     main_row = ft.Row([

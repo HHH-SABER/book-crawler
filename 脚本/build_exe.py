@@ -392,7 +392,7 @@ def main():
     # flet_desktop: flet.app.run() 运行时才动态 import 的纯 py 启动模块 (客户端
     # 二进制本体由 _flet_client + FLET_VIEW_PATH 提供, 见 gui_app.py 头部),
     # 静态分析收不到 → EXE 启动到 ft.run 即 ModuleNotFoundError (v2.4.0 实测)
-    for hi in ("ebooklib", "flet_desktop"):
+    for hi in ("ebooklib", "flet_desktop", "pystray"):
         cmd.extend(["--hidden-import", hi])
     # 内嵌远控 (GUI 内导 远控.服务): uvicorn 为惰性导入且自身动态加载子模块,
     # 必须整包收集; fastapi/pydantic 由静态分析覆盖

@@ -87,7 +87,38 @@ def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
 # 三、顶栏 (Fluent: 应用图标 + 标题居左 + 右侧主题切换)
 # ====================================================================
 
-def build_top_bar(page, title_text: str, theme_toggle_btn) -> ft.Container:
+def build_remote_toggle(on_click):
+    """顶栏远控开关 (胶囊按钮, 与主题切换同款形态)。
+
+    返回 (控件, 更新状态函数): 更新(启用: bool) 刷新文案/配色/提示。
+    默认启用 — 与 数据/远控配置.json 的 "启用" 一致。"""
+    def _外观(启用: bool):
+        btn.bgcolor = (ft.Colors.PRIMARY_CONTAINER if 启用
+                       else ft.Colors.SURFACE_CONTAINER_HIGH)
+        lab.color = (ft.Colors.ON_PRIMARY_CONTAINER if 启用
+                     else ft.Colors.ON_SURFACE_VARIANT)
+        lab.value = "远控 开" if 启用 else "远控 关"
+        btn.tooltip = ("手机/外部设备可访问 (Tailscale)"
+                       if 启用 else
+                       "远控已停用——手机端将无法访问, 点击启用")
+
+    lab = txt("远控 开", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE)
+    btn = ft.Container(
+        content=ft.Row(
+            [ft.Icon(ft.Icons.WIFI_TETHERING, size=14), lab],
+            spacing=6, tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+        border_radius=16,
+        on_click=on_click,
+        ink=True,
+    )
+    _外观(True)
+    return btn, _外观
+
+
+def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) -> ft.Container:
     """构建 Fluent 顶栏 (48px 高, 匹配设计稿 titlebar)
 
     布局: [📖 小说爬虫] ──────────────────── [🌙 夜间]
@@ -105,7 +136,8 @@ def build_top_bar(page, title_text: str, theme_toggle_btn) -> ft.Container:
 
     bar = ft.Container(
         content=ft.Row(
-            [app_icon, app_title, ft.Container(expand=True), theme_toggle_btn],
+            [app_icon, app_title, ft.Container(expand=True)]
+            + list(extra_controls or []) + [theme_toggle_btn],
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
