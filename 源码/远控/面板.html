@@ -78,7 +78,7 @@ function api(path, opt) {
   取token();
   var sep = path.includes('?') ? '&' : '?';
   opt = opt || {};
-  opt.headers = { 'Authorization': 'Bearer ' + token };
+  opt.headers = Object.assign({ 'Authorization': 'Bearer ' + token }, opt.headers || {});
   return fetch(path + sep + '_=' + Date.now(), opt).then(function (r) {
     if (r.status === 401) {
       localStorage.removeItem('远控token'); token = '';
