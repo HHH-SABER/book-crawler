@@ -12,7 +12,7 @@ import os
 import secrets
 import threading
 
-from _path_utils import get_app_base_dir
+from _path_utils import get_state_root
 
 _CONFIG_LOCK = threading.Lock()
 _CONFIG: dict | None = None
@@ -49,7 +49,7 @@ def _合并默认(cfg: dict) -> dict:
 
 
 def _配置路径() -> str:
-    base = get_app_base_dir()
+    base = get_state_root()
     return os.path.join(base, "数据", _CONFIG_NAME)
 
 

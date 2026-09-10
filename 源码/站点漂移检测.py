@@ -28,7 +28,7 @@ _ALPHA = 0.3  # EMA 平滑系数
 def _path():
     try:
         import _path_utils
-        d = os.path.join(_path_utils.get_app_base_dir(), "数据")
+        d = os.path.join(_path_utils.get_state_root(), "数据")
     except Exception:
         d = os.path.dirname(os.path.abspath(__file__))
     try:

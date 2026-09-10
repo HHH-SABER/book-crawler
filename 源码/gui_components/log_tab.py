@@ -16,7 +16,7 @@ import flet as ft
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
-from _path_utils import get_app_base_dir  # noqa: E402
+from _path_utils import get_state_root  # noqa: E402
 
 # UI 主题系统
 from .ui_theme import (make_card, tonal_btn,
@@ -33,7 +33,7 @@ _MAX_DISPLAY_LINES = 3000   # 大文件只显示尾部 N 行
 
 def get_log_dir() -> str:
     """日志目录（与 日志.py 保持一致）"""
-    return os.path.join(get_app_base_dir(), "日志")
+    return os.path.join(get_state_root(), "日志")
 
 
 def list_log_files() -> list:
@@ -359,7 +359,7 @@ class LogTab:
         try:
             import time as _t
             fname = f"日志导出_{_t.strftime('%Y%m%d_%H%M%S')}.txt"
-            out = Path(get_app_base_dir()) / '日志' / fname
+            out = Path(get_state_root()) / '日志' / fname
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
             self._notify(f"已导出 {len(lines)} 行 → 日志/{fname}")

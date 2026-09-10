@@ -34,7 +34,7 @@ from typing import Optional
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from _path_utils import get_default_output_dir, get_app_base_dir
+from _path_utils import get_default_output_dir, get_state_root
 from .配置 import 取配置
 
 app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
@@ -534,7 +534,7 @@ def _解析章节(item: dict) -> list:
 
 def _读进度(book_id: str) -> int:
     try:
-        with open(os.path.join(get_app_base_dir(), "数据", "阅读进度.json"),
+        with open(os.path.join(get_state_root(), "数据", "阅读进度.json"),
                   "r", encoding="utf-8") as f:
             return int(json.load(f).get(book_id, 0))
     except (OSError, ValueError, TypeError):
@@ -542,7 +542,7 @@ def _读进度(book_id: str) -> int:
 
 
 def _写进度(book_id: str, chapter: int) -> None:
-    path = os.path.join(get_app_base_dir(), "数据", "阅读进度.json")
+    path = os.path.join(get_state_root(), "数据", "阅读进度.json")
     with _进度锁:
         data = {}
         try:

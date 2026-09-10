@@ -100,8 +100,8 @@ UPGRADE_CONSEC_OK = 30            # 最近连续成功章节数
 # 画像缓存路径: 用 BASE_DIR (EXE 旁 / 项目根) 而非 __file__ 推导,
 # 否则 onefile EXE 会把缓存写进 _MEIPASS 临时解包目录, 每次运行都重跑基准
 try:
-    from _path_utils import get_app_base_dir as _get_app_base_dir
-    _PROFILE_CACHE = Path(_get_app_base_dir()) / '数据' / '速度画像.json'
+    from _path_utils import get_state_root as _get_state_root
+    _PROFILE_CACHE = Path(_get_state_root()) / '数据' / '速度画像.json'
 except Exception:
     _PROFILE_CACHE = Path(__file__).resolve().parent.parent / '数据' / '速度画像.json'
 _PROFILE_TTL = 7 * 24 * 3600      # 画像缓存 7 天 (设备硬件不会频繁变化)
