@@ -31,7 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
 from _path_utils import get_default_output_dir, get_app_base_dir
@@ -284,8 +284,6 @@ async def 任务日志流(task_id: str, after: int = 0,
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
 
-
-_app = app  # 别名 (语义可读)
 
 _已扫中断 = False
 _章节缓存: dict = {}      # txt路径 -> (mtime, [ {标题, 内容} ])
