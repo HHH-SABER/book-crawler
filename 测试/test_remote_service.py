@@ -215,6 +215,33 @@ class Test远控服务(unittest.TestCase):
             self.client.delete('/api/v1/tasks/t9?k=testtoken').status_code,
             404)
 
+    # ------------------------------------------------------------ 三期: 推送
+    def test_终态推送_触发一次且去重_中断项不推(self):
+        import time as _t
+        from gui_components.task_manager import TaskInfo
+        已发 = []
+        with mock.patch.object(服务, '_发送推送',
+                               lambda 标题, 内容: 已发.append((标题, 内容))):
+            # 1) running → completed 的翻转: 推一次, 二次扫描去重
+            t = TaskInfo(task_id='p1', url='https://example.com/b/1',
+                         title='某书', status='running')
+            t.progress_current, t.progress_total = 10, 10
+            t.metrics.end_time = _t.time()          # _set_terminal 的痕迹
+            t.status = 'completed'
+            self.mgr.tasks['p1'] = t
+            服务._已推终态.clear()
+            fired = 服务._扫描终态()
+            self.assertEqual(fired, [('p1', 'completed')])
+            self.assertEqual(len(已发), 1)
+            self.assertIn('某书', 已发[0][0])
+            self.assertEqual(服务._扫描终态(), [], '重复扫描不得重复推送')
+            # 2) 启动恢复的 interrupted (end_time=0) 不推
+            r = TaskInfo(task_id='resume_x', url='https://example.com/b/2',
+                         title='旧书', status='interrupted')
+            self.mgr.tasks['resume_x'] = r
+            self.assertEqual(服务._扫描终态(), [], 'interrupted 项不得触发推送')
+            self.assertEqual(len(已发), 1)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
