@@ -103,12 +103,28 @@ def _state_path():
     return os.path.join(_log_dir(), "域状态.json")
 
 
+# 性能优化: 域状态内存缓存 (旧实现每次读写都整文件 JSON parse)。
+# mtime 守卫保证跨进程可见 — 桌面 GUI 与远控服务是不同进程, 各写各的
+# 域状态文件, 纯内存缓存会读到陈旧冷却; 文件 mtime 变化即失效重载。
+_状态缓存 = {"数据": None, "mtime": None}
+
+
 def _load_state():
+    p = _state_path()
     try:
-        with open(_state_path(), "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
+        m = os.path.getmtime(p)   # 单次 stat 远廉于整文件 parse
+    except OSError:
+        _状态缓存["数据"], _状态缓存["mtime"] = {}, None
         return {}
+    if _状态缓存["数据"] is not None and _状态缓存["mtime"] == m:
+        return dict(_状态缓存["数据"])   # 浅拷贝: 调用方只改顶层键, 改不到缓存
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            st = json.load(f)
+    except Exception:
+        st = {}
+    _状态缓存["数据"], _状态缓存["mtime"] = st, m
+    return dict(st)
 
 
 def get_domain_cooldown(domain: str) -> float:
@@ -129,6 +145,10 @@ def _save_state(st):
     tmp = p.with_name(p.name + '.tmp')
     tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, p)
+    try:   # 回写缓存: 保存后无需再 parse (mtime 同步, 防自身写入被误判失效)
+        _状态缓存["数据"], _状态缓存["mtime"] = dict(st), os.path.getmtime(p)
+    except OSError:
+        _状态缓存["数据"], _状态缓存["mtime"] = None, None
 
 
 def set_domain_cooldown(domain: str, seconds: float, reason: str = ""):
