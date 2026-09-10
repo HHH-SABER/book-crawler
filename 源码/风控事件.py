@@ -32,7 +32,7 @@ _ENABLED = True       # 全局开关 (占位: 当前无置 False 的入口, 保�
 def _log_dir():
     try:
         import _path_utils
-        base = _path_utils.get_app_base_dir()
+        base = _path_utils.get_state_root()
     except Exception:
         base = os.path.dirname(os.path.abspath(__file__))
     d = os.path.join(base, "数据")

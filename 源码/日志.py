@@ -7,7 +7,7 @@
 - 保留最近 30 天日志, 启动时自动清理过期文件
 - 级别: DEBUG / INFO / WARN / ERROR
 - 格式: [HH:MM:SS.mmm] [级别] [来源] 消息
-- 定位路径复用 _path_utils.get_app_base_dir() (EXE 旁或项目根)
+- 定位路径复用 _path_utils.get_state_root() (EXE 旁或项目根)
 """
 import os
 import sys
@@ -34,7 +34,7 @@ def get_log_dir() -> str:
     """日志目录: BASE_DIR/日志 (自动创建)"""
     try:
         import _path_utils
-        base = _path_utils.get_app_base_dir()
+        base = _path_utils.get_state_root()
     except Exception:
         base = os.path.dirname(os.path.abspath(__file__))
     log_dir = os.path.join(base, "日志")

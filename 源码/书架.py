@@ -13,17 +13,17 @@ import threading
 from pathlib import Path
 
 try:
-    from _path_utils import get_app_base_dir
+    from _path_utils import get_state_root
 except Exception:
-    get_app_base_dir = None
+    get_state_root = None
 
 _io_lock = threading.Lock()
 
 
 def 书架路径() -> str:
     """数据/书架.json (BASE_DIR 下的运行时数据目录)"""
-    if get_app_base_dir is not None:
-        base = get_app_base_dir()
+    if get_state_root is not None:
+        base = get_state_root()
     else:
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     p = os.path.join(base, "数据", "书架.json")

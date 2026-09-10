@@ -50,6 +50,44 @@ def get_default_output_dir() -> str:
     return path
 
 
+# ---- 状态数据根（跨更新/重装持久）--------------------------------------
+# 历史记录/书架/风控状态/阅读进度/日志 等"使用痕迹"存到用户级稳定目录,
+# 换 EXE、换安装目录、重装都不会丢; 抓取结果/站点适配/站点配置 仍留在
+# EXE 旁边 (用户要直接看到、要手改)。
+_STATE_ROOT = None
+_状态根锁 = None
+
+
+def get_state_root() -> str:
+    """状态数据根目录: %LOCALAPPDATA%/小说爬虫 (无则该变量时回退 BASE_DIR)。
+
+    首次调用执行一次性迁移: 旧位置 BASE_DIR/数据、BASE_DIR/日志 → 新根
+    (复制而非移动, 迁移失败也不影响旧数据继续可用)。幂等、线程安全。"""
+    global _STATE_ROOT, _状态根锁
+    if _STATE_ROOT:
+        return _STATE_ROOT
+    import threading
+    if _状态根锁 is None:
+        _状态根锁 = threading.Lock()
+    with _状态根锁:
+        if _STATE_ROOT:
+            return _STATE_ROOT
+        base = get_app_base_dir()
+        local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        root = os.path.join(local, "小说爬虫") if local else base
+        try:
+            os.makedirs(root, exist_ok=True)
+            for name in ("数据", "日志"):
+                old = os.path.join(base, name)
+                new = os.path.join(root, name)
+                if os.path.isdir(old) and not os.path.exists(new):
+                    shutil.copytree(old, new)
+        except OSError:
+            pass  # 迁移/建目录失败 → 仍然返回 root, 各模块自身兜底
+        _STATE_ROOT = root
+        return _STATE_ROOT
+
+
 def resolve_output_dir(output_dir) -> str:
     """对调用方传入的 output_dir 做规范化。
     相对路径一律相对于 BASE_DIR 解析，创建并返回绝对路径。

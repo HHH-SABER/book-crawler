@@ -115,7 +115,7 @@ class 爬取历史:
     def _取存储路径() -> str:
         try:
             import _path_utils
-            base = _path_utils.get_app_base_dir()
+            base = _path_utils.get_state_root()
         except Exception:
             base = os.path.dirname(os.path.abspath(__file__))
         data_dir = os.path.join(base, '数据')
