@@ -37,12 +37,25 @@ def probe_site(url: str, timeout: int = 15) -> dict:
         'anti_evidence': '', 'error': '',
     }
     t0 = time.time()
+    # SSRF 防护: 探测 URL 来自站点管理页的用户输入, 与抓取同标准 (AGENTS.md 规约)。
+    # 修复: 旧实现在此处完全没校验, 用户填内网/环回地址即可让本机发起请求。
+    try:
+        from sites_config import validate_public_url
+        validate_public_url(url)
+    except ImportError:
+        pass
+    except ValueError as _e_url:
+        result['error'] = f'URL 未通过公网校验: {_e_url}'
+        result['elapsed'] = round(time.time() - t0, 2)
+        return result
+
     headers = {'User-Agent': _PROBE_UA,
                'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
                'Accept-Encoding': 'gzip, deflate'}
 
     # ---- 第一步: requests 探测 ----
     resp = None
+    s = None
     try:
         import requests
         s = requests.Session()
@@ -101,6 +114,18 @@ def probe_site(url: str, timeout: int = 15) -> dict:
     if resp is not None and not result['ok'] and not result['error']:
         result['error'] = f"HTTP {result['status_code']}"
     result['elapsed'] = round(time.time() - t0, 2)
+    # 资源释放 (修复): 探测用的 Session 与响应此前从不关闭, 每次"测试连接"
+    # 泄漏一个连接池 (含 HTTPAdapter)。关闭失败不影响返回结果。
+    try:
+        if resp is not None:
+            resp.close()
+    except Exception:
+        pass
+    try:
+        if s is not None:
+            s.close()
+    except Exception:
+        pass
     return result
 
 

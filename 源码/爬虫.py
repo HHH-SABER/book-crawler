@@ -3903,8 +3903,12 @@ class NovelSpider:
                 r'novel_content\s*:\s*(\"[^\"]+\")'
             ]
                         
+            # 性能: response.text 是属性, 每次访问都会按推断编码重新解码整个
+            # body (无缓存)。旧实现在 7 条模式的循环里反复取, 同一页最多被
+            # 整页解码 7 次 —— 循环外取一次即可, 语义不变。
+            _resp_text = response.text
             for pattern in json_patterns:
-                match = re.search(pattern, response.text)
+                match = re.search(pattern, _resp_text)
                 if match:
                     _log.info(f"找到JSON数据: {pattern}")
                     try:
@@ -6013,6 +6017,15 @@ class NovelSpider:
         # ===== 章节范围过滤 =====
         if chapter_range:
             sr, er = chapter_range
+            # 修复: 旧实现不校验 sr > er, 经下面 max(end_idx, start_idx+1) 兜底后
+            # 会"静默只抓 1 章"且不报错 (如 CLI --start 10 --end 3)。此处显式
+            # 规整为合法区间并告警, 同时把非正起始序号抬到 1。
+            if sr > er or sr < 1:
+                _规整开始 = min(max(1, sr), max(1, er))
+                _规整结束 = max(max(1, sr), max(1, er))
+                _log.info(f"⚠️ [章节范围] 区间不合法或反转 ({sr} ~ {er})，已规整为 "
+                          f"第 {_规整开始} ~ {_规整结束} 章 (旧实现会静默只抓 1 章)")
+                sr, er = _规整开始, _规整结束
             total_all = len(chapters)
             start_idx = max(0, sr - 1)
             end_idx = min(total_all, er)
@@ -6468,29 +6481,30 @@ def _resolve_unique_title(novel_title: str, output_dir: str,
             if pattern.fullmatch(stem):
                 used.add(stem)
 
-    # 合并进程级注册表: 并发任务已分配但尚未写盘的标题
+    # 合并进程级注册表 + 决策 + 登记, 三者必须在同一把锁内完成。
+    # 修复(TOCTOU): 旧实现"读注册表"(上一段)与"登记注册表"(下一段)分两次加锁,
+    # 两个并发同名任务会各自扫到相同的 used 集、算出同一个 resolved, 双双登记 →
+    # 后启动的任务覆盖先写盘的输出文件 (数据丢失)。合并临界区后互斥成立。
     with _TITLE_REGISTRY_LOCK:
         for stem in _TITLE_REGISTRY:
             if pattern.fullmatch(stem):
                 used.add(stem)
 
-    if base not in used:
-        resolved = novel_title
-    else:
-        # 找最小可用序号
-        resolved = novel_title
-        for idx in range(1, 10000):
-            candidate_stem = f"{base}({idx})"
-            if candidate_stem not in used:
-                # 尽量保留原书名；若原书名超长被截断则返回截断后的形式
-                if len(novel_title) <= 80:
-                    resolved = f"{novel_title}({idx})"
-                else:
-                    resolved = candidate_stem.replace('_', '')
-                break
+        if base not in used:
+            resolved = novel_title
+        else:
+            # 找最小可用序号
+            resolved = novel_title
+            for idx in range(1, 10000):
+                candidate_stem = f"{base}({idx})"
+                if candidate_stem not in used:
+                    # 尽量保留原书名；若原书名超长被截断则返回截断后的形式
+                    if len(novel_title) <= 80:
+                        resolved = f"{novel_title}({idx})"
+                    else:
+                        resolved = candidate_stem.replace('_', '')
+                    break
 
-    # 登记到进程级注册表, 防止并发任务同时选中同一标题
-    with _TITLE_REGISTRY_LOCK:
         _TITLE_REGISTRY.add(_safe_filename_part(resolved))
     return resolved
 

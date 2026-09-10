@@ -87,31 +87,38 @@ class TaskLogRedirector:
         if text.strip():
             timestamp = time.strftime('%H:%M:%S')
             for line in text.strip().split('\n'):
-                if line.strip():
-                    self._log_to_file(line.strip())
+                s = line.strip()
+                if s:
+                    self._log_to_file(s)
                     self.task.logs.append({
                         'time': timestamp,
-                        'msg': line.strip()
+                        'msg': s
                     })
                     # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
-                    self._parse_progress(line.strip())
+                    self._parse_progress(s)
                     # 解析小说名称: "提取到小说名称: XXX"
-                    m = re.search(r'提取到小说名称:\s*(.+)', line.strip())
-                    if m:
-                        self.task.title = m.group(1).strip()
+                    # 性能: 每条日志行都会经过这里, 先用子串做廉价预判再跑正则
+                    # (子串是正则能够匹配的必要条件, 语义完全等价)
+                    if '提取到小说名称' in s:
+                        m = re.search(r'提取到小说名称:\s*(.+)', s)
+                        if m:
+                            self.task.title = m.group(1).strip()
                     # 解析完成: "抓取完成，共X章"
-                    m = re.search(r'抓取完成.*共(\d+)章', line.strip())
-                    if m:
-                        self.task.progress_current = self.task.progress_total
-                        self.task.status = "completed"
-                        if self.task.metrics:
-                            self.task.metrics.end_time = time.time()
-                        # 质检列兜底回填 (修复质检列空白): 逐行解析可能漏检,
-                        # 完成时从 站点历史.json 取该书最近质检摘要回填
-                        self._backfill_quality(self.task)
+                    if '抓取完成' in s:
+                        m = re.search(r'抓取完成.*共(\d+)章', s)
+                        if m:
+                            self.task.progress_current = self.task.progress_total
+                            self.task.status = "completed"
+                            if self.task.metrics:
+                                self.task.metrics.end_time = time.time()
+                            # 质检列兜底回填 (修复质检列空白): 逐行解析可能漏检,
+                            # 完成时从 站点历史.json 取该书最近质检摘要回填
+                            self._backfill_quality(self.task)
             # 保留最近500条日志
+            # (原地截断: 旧实现用 logs[-500:] 整体切片, 一旦超过 500 条,
+            #  每来一行日志都要重建一个 500 元素的新列表)
             if len(self.task.logs) > 500:
-                self.task.logs = self.task.logs[-500:]
+                del self.task.logs[:-500]
         # 同时输出到控制台（调试用）
         try:
             self.original.write(text)
@@ -125,28 +132,36 @@ class TaskLogRedirector:
             pass
 
     def _parse_progress(self, line: str):
-        """从日志行中解析进度信息"""
+        """从日志行中解析进度信息
+
+        性能: 每条日志行都会走这里, 故对每条正则先用子串做廉价预判。
+        子串是正则匹配的必要条件 → 语义完全等价, 只是省掉必然失败的匹配。
+        """
         # 匹配 "正在抓取第 X/Y 章"
-        m = re.search(r'正在抓取第\s+(\d+)/(\d+)\s+章', line)
-        if m:
-            self.task.progress_current = int(m.group(1))
-            self.task.progress_total = int(m.group(2))
-            return
+        if '正在抓取第' in line:
+            m = re.search(r'正在抓取第\s+(\d+)/(\d+)\s+章', line)
+            if m:
+                self.task.progress_current = int(m.group(1))
+                self.task.progress_total = int(m.group(2))
+                return
         # 匹配进度条 "X/Y (Z%)"
-        m = re.search(r'(\d+)/(\d+)\s*\((\d+(?:\.\d+)?)%\)', line)
-        if m:
-            self.task.progress_current = int(m.group(1))
-            self.task.progress_total = int(m.group(2))
-            return
+        if '%' in line:
+            m = re.search(r'(\d+)/(\d+)\s*\((\d+(?:\.\d+)?)%\)', line)
+            if m:
+                self.task.progress_current = int(m.group(1))
+                self.task.progress_total = int(m.group(2))
+                return
         # 匹配 "共找到 X 个章节"
-        m = re.search(r'共(?:找到|提取)\s*(\d+)\s*(?:个)?章节', line)
-        if m:
-            self.task.progress_total = int(m.group(1))
-            return
+        if '章节' in line:
+            m = re.search(r'共(?:找到|提取)\s*(\d+)\s*(?:个)?章节', line)
+            if m:
+                self.task.progress_total = int(m.group(1))
+                return
         # 匹配输出文件路径
-        m = re.search(r'已保存至(.+\.txt)', line)
-        if m:
-            self.task.output_file = m.group(1).strip()
+        if '已保存至' in line:
+            m = re.search(r'已保存至(.+\.txt)', line)
+            if m:
+                self.task.output_file = m.group(1).strip()
         # ---- 运行时指标解析 (引擎/反爬/质检/增量) ----
         self._parse_metrics(line)
 
@@ -165,6 +180,14 @@ class TaskLogRedirector:
           [增量] 跳过第 X/Y 章 (未变化)          → 增量跳过计数
         """
         mt = self.task.metrics
+
+        # 性能: 本函数每条日志行都会被调用, 而绝大多数行不含任何指标标记。
+        # 先做一次整体短路, 避免每行白跑 10+ 条必然失败的正则。
+        # 下列子串覆盖本函数全部分支的前置必要条件 ('[反爬' 同时覆盖
+        # '[反爬]' 与 '[反爬检测]'), 故不影响任何解析结果。
+        if not ('[反爬' in line or '[引擎]' in line or '[质检]' in line
+                or '[增量]' in line or 'JS cookie校验' in line):
+            return
 
         # 引擎: 成功
         m = re.search(r'\[反爬\]\s*✅\s*(\S+)\s*引擎请求成功', line)
@@ -620,6 +643,21 @@ class TaskManager:
                     return t
         return None
 
+    @staticmethod
+    def _任务排序键(t):
+        """任务排序键: 兼容 "task_N" 与远控写入的 "resume_<md5>" 等非数字后缀。
+
+        修复: 旧实现 int(task_id.split('_')[-1]) 遇到远控恢复中断任务时写入的
+        "resume_<md5>" 会抛 ValueError, 该异常从 get_all_tasks 冒出后被 GUI 的
+        刷新循环外层 try 吞掉 → 任务表/状态栏/远控页整体静默停摆 (重启才恢复)。
+        数字后缀仍按数值排序 (保住 M5 修复: task_2 排在 task_10 之前)。
+        """
+        tid = str(getattr(t, 'task_id', '') or '')
+        前缀, _, 后缀 = tid.rpartition('_')
+        if 后缀.isdigit():
+            return (前缀, 0, int(后缀), '')
+        return (前缀, 1, 0, 后缀)
+
     def get_all_tasks(self) -> list:
         """获取所有任务列表（按创建序号排序）
 
@@ -627,5 +665,4 @@ class TaskManager:
         之前 (批量导入必现); 改按数字序号排序。
         """
         with self._lock:
-            return sorted(self.tasks.values(),
-                          key=lambda t: int(t.task_id.split('_')[-1]))
+            return sorted(self.tasks.values(), key=self._任务排序键)

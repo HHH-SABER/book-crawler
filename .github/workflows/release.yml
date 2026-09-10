@@ -50,7 +50,10 @@ jobs:
         shell: bash
         run: |
           .venv/Scripts/python.exe -m pip install maturin
-          (cd rust_core_poc/pyo3_ext && ../.venv/Scripts/python.exe -m maturin build --release) \
+          # 路径修正: 该命令从 rust_core_poc/pyo3_ext 出发, ../.venv 会解析到
+          # rust_core_poc/.venv(不存在) → 旧写法必然失败, 又被 || 静默吞掉,
+          # 导致 CI 发布的 EXE 永远没有 Rust 加速。须回退两级到仓库根的 .venv。
+          (cd rust_core_poc/pyo3_ext && ../../.venv/Scripts/python.exe -m maturin build --release) \
             || { echo "[WARN] rust_core 编译失败, 本次发布为纯 Python"; exit 0; }
           .venv/Scripts/python.exe -c "
           import glob, zipfile, shutil

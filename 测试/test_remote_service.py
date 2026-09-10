@@ -257,6 +257,45 @@ class Test远控服务(unittest.TestCase):
             self.assertEqual(len(已发), 1)
 
 
+    def test_章节缓存并发淘汰不抛异常(self):
+        """并发读章节时缓存淘汰须互斥。
+
+        回归背景: 旧实现在 len(_章节缓存) > 8 时执行
+        pop(next(iter(_章节缓存))), len() 与 pop 之间无锁 — 另一线程把缓存
+        清空后 next(iter({})) 抛 StopIteration, 或迭代中被改抛 RuntimeError,
+        两者都没被捕获 → 阅读页 500。
+        """
+        import tempfile
+        import threading
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            items = []
+            for i in range(12):     # 12 > 缓存上限 8, 必然触发淘汰
+                p = tmp / f'b{i}.txt'
+                p.write_text('## 第一章\n\n内容。\n', encoding='utf-8')
+                items.append({'路径': str(p), '标题': f'b{i}'})
+            with 服务._章节缓存锁:
+                服务._章节缓存.clear()
+            self.addCleanup(服务._章节缓存.clear)
+
+            errs = []
+
+            def _work():
+                try:
+                    for it in items:
+                        服务._解析章节(it)
+                except Exception as e:          # noqa: BLE001
+                    errs.append(f'{type(e).__name__}: {e}')
+
+            ts = [threading.Thread(target=_work) for _ in range(6)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(timeout=20)
+            self.assertEqual(errs, [])
+            self.assertLessEqual(len(服务._章节缓存), 8)
+
+
 class Test远控开关与生命周期(unittest.TestCase):
     """v2.4.3 新增: 开关后端 (保存配置/设置启用) 与 服务生命周期。
 

@@ -25,7 +25,9 @@ from pathlib import Path
 _FLUSH_SIZE = 60
 _MAX_BUFFER = 600     # 落盘失败时缓冲保留上限 (防无限积压)
 _BUFFER = []
-_LOCK = threading.Lock()
+# RLock: _load_state 会在 set_domain_cooldown 已持锁的情况下被调用 (读-改-写),
+# 用普通 Lock 会自死锁, 故此处必须可重入。
+_LOCK = threading.RLock()
 _ENABLED = True       # 全局开关 (占位: 当前无置 False 的入口, 保留作紧急停用点)
 
 
@@ -110,6 +112,18 @@ _状态缓存 = {"数据": None, "mtime": None}
 
 
 def _load_state():
+    """读域状态 (持锁)。
+
+    修复: 旧实现读路径完全不持锁, 而 set_domain_cooldown 持锁改写同一份内存
+    缓存 (_状态缓存['数据'] 与 ['mtime'] 两个键), 并发下读方可能拿到"新数据 +
+    旧 mtime"或"旧数据 + 新 mtime"的错配组合 → 偶发读到错误冷却值。
+    _LOCK 已改 RLock, 故写路径内部再调本函数不会自死锁。
+    """
+    with _LOCK:
+        return _load_state_locked()
+
+
+def _load_state_locked():
     p = _state_path()
     try:
         m = os.path.getmtime(p)   # 单次 stat 远廉于整文件 parse
