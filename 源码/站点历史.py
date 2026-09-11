@@ -47,6 +47,19 @@ from urllib.parse import urlparse
 _MAX_BOOKS_PER_SITE = 50   # 每站点最多保留的书籍记录条数
 
 
+def _安全整数(v, 缺省=0):
+    """int() 容错 (U6): 状态文件被手改成非数字时不抛异常。
+
+    旧实现直接 int(站点.get('任务数', 0)) / int(汇总.get(k, 0)),
+    JSON 被手改或损坏会在任务收尾路径上抛 ValueError/TypeError。
+    """
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 缺省
+
+
+
 class 站点历史:
     """站点抓取历史 (单例, 线程安全)"""
 
@@ -110,33 +123,76 @@ class 站点历史:
             pass
 
     def flush(self):
-        """对外强制刷盘入口 (任务收尾调用)"""
+        """对外强制刷盘入口 (任务收尾调用; U17: 锁外落盘)"""
         with self._io_lock:
-            if self._脏:
-                self._写入()
+            快照 = self._快照(force=True) if self._脏 else None
+        if 快照:
+            self._落盘(快照)
 
     _最小落盘间隔 = 5.0   # 秒 (M1 防抖窗口)
 
-    def _保存(self, force=False):
-        """防抖写入: 非强制时若距上次落盘不足窗口则仅标脏; 任务收尾/退出时 flush 兜底。"""
+    def _合并磁盘新数据(self):
+        """(须持 _io_lock) 磁盘被另一进程改过时, 按顶层 (域名) 键合并进内存 (U16)。
+
+        与 爬取历史.py 同一处理: 桌面 GUI 与远控服务是两个进程, 后写方会整片
+        覆盖先写方的记录。写前比对 mtime, 把"我们没有的域"补进来。
+        同域两端并发更新仍是后写覆盖先写 (逐条合并属独立设计项)。
+        """
+        try:
+            mtime = os.path.getmtime(self._file)
+        except OSError:
+            return
+        if mtime <= getattr(self, '_磁盘时间', 0.0):
+            return
+        try:
+            with open(self._file, 'r', encoding='utf-8') as f:
+                磁盘 = json.load(f)
+        except Exception:
+            return
+        if not isinstance(磁盘, dict):
+            return
+        for 域名, 记录 in 磁盘.items():
+            if 域名 not in self._数据:
+                self._数据[域名] = 记录
+        self._磁盘时间 = mtime
+
+    def _快照(self, force=False):
+        """(须持 _io_lock) 防抖判定 + 生成一致快照; None = 本次不落盘 (U17 第一段)"""
         now = time.time()
         if not force and now - self._上次落盘 < self._最小落盘间隔:
             self._脏 = True
-            return
-        self._写入()
+            return None
+        self._合并磁盘新数据()      # U16: 先吸收另一进程的新记录再序列化
+        try:
+            return json.dumps(self._数据, ensure_ascii=False, indent=2)
+        except Exception as e:
+            _log.info(f"[站点历史] 序列化失败: {type(e).__name__}: {e}")
+            return None
 
-    def _写入(self):
-        """真正落盘 (原子写入; 调用方须持 _io_lock 或确保单线程)"""
+    def _落盘(self, 快照):
+        """(锁外调用) 原子写盘 —— U17 第二段: 不在临界区内做文件 IO"""
+        if not 快照:
+            return
         try:
             fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
-            tmp = fobj.with_name(fobj.name + '.tmp')
-            tmp.write_text(json.dumps(self._数据, ensure_ascii=False, indent=2),
-                           encoding='utf-8')
+            # U16: 临时文件名带 pid, 避免两个进程共用 .tmp 互相截断出损坏文件
+            tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}')
+            tmp.write_text(快照, encoding='utf-8')
             os.replace(tmp, fobj)   # 原子替换, 避免写一半损坏
             self._上次落盘 = time.time()
             self._脏 = False
+            try:
+                self._磁盘时间 = os.path.getmtime(fobj)
+            except OSError:
+                pass
         except OSError as e:
             _log.info(f"[站点历史] 保存失败: {e}")
+
+    def _保存(self, force=False):
+        """防抖写入入口 (供不持锁的调用方使用; U17: 锁外落盘)"""
+        with self._io_lock:
+            快照 = self._快照(force)
+        self._落盘(快照)
 
     # ------------------------------------------------------------------
     # 对外 API
@@ -178,7 +234,7 @@ class 站点历史:
             if not 站点.get('首次抓取'):
                 站点['首次抓取'] = now
             站点['最近抓取'] = now
-            站点['任务数'] = int(站点.get('任务数', 0)) + 1
+            站点['任务数'] = _安全整数(站点.get('任务数', 0)) + 1
 
             记录 = {
                 '书名': book_title,
@@ -191,7 +247,7 @@ class 站点历史:
                 记录['反爬统计'] = dict(反爬统计)
                 汇总 = 站点.setdefault('反爬统计', {})
                 for k, v in 反爬统计.items():
-                    汇总[k] = int(汇总.get(k, 0)) + v
+                    汇总[k] = _安全整数(汇总.get(k, 0)) + v
             if 质检摘要:
                 记录['质检摘要'] = dict(质检摘要)
 
@@ -201,7 +257,8 @@ class 站点历史:
             站点['书籍'].append(记录)
             if len(站点['书籍']) > _MAX_BOOKS_PER_SITE:
                 站点['书籍'] = 站点['书籍'][-_MAX_BOOKS_PER_SITE:]
-            self._保存()
+            快照 = self._快照()          # 防抖判定 + 一致快照 (锁内)
+        self._落盘(快照)                 # U17: 锁外原子落盘, 不阻塞其他 worker
 
     def 查站点(self, url) -> dict:
         """查询某站点的历史信息 (返回副本, 无记录返回 {})"""

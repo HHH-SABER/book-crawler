@@ -96,17 +96,21 @@ class 爬取历史:
     def _atexit_flush(self):
         """进程退出时强制刷盘 (防抖期间未落盘的记录不丢失)"""
         try:
-            with self._io_lock:
-                if self._脏:
-                    self._写入()
+            self.flush()
         except Exception:
             pass
 
     def flush(self):
-        """对外强制刷盘入口 (任务收尾调用)"""
+        """对外强制刷盘入口 (任务收尾调用)。
+
+        修复(U17): 锁内只取快照, 落盘放到锁外 —— 旧实现在持 _io_lock 期间做
+        dumps + write_text + os.replace, 451KB 的整文件写会把所有并发 worker
+        的 记录() 一起阻塞。
+        """
         with self._io_lock:
-            if self._脏:
-                self._写入()
+            快照 = self._快照(force=True) if self._脏 else None
+        if 快照:
+            self._落盘(快照)
 
     # ------------------------------------------------------------------
     # 存储层
@@ -137,27 +141,80 @@ class 爬取历史:
 
     _最小落盘间隔 = 5.0   # 秒 (M1: 防抖窗口)
 
-    def _保存(self, force=False):
-        """防抖写入 (M1): 非强制时若距上次落盘不足 _最小落盘间隔 则仅标脏;
-        任务收尾/进程退出时 flush(force=True) 兜底。失败只打印日志。"""
+    def _合并磁盘新数据(self):
+        """(须持 _io_lock) 磁盘被另一进程改过时, 按顶层 (域名) 键合并进内存。
+
+        修复(U16): 桌面 GUI 与远控服务是两个进程, 各持一份内存副本整文件覆盖 ——
+        后写的一方会把另一方新抓的记录整片抹掉。写前先比对文件 mtime, 若被外部
+        改过就把"我们没有的域"补进来, 消除这种粗粒度丢数据。
+
+        粒度说明: 同一域名两端同时更新时仍是"后写覆盖先写"。做逐 URL 级合并需要
+        变更追踪, 属独立设计项 (见 文档/修复台账 §2.3)。
+        """
+        try:
+            mtime = os.path.getmtime(self._file)
+        except OSError:
+            return
+        if mtime <= getattr(self, '_磁盘时间', 0.0):
+            return
+        try:
+            with open(self._file, 'r', encoding='utf-8') as f:
+                磁盘 = json.load(f)
+        except Exception:
+            return
+        if not isinstance(磁盘, dict):
+            return
+        for 域名, 记录 in 磁盘.items():
+            if 域名 not in self._数据:
+                self._数据[域名] = 记录
+        self._磁盘时间 = mtime
+
+    def _快照(self, force=False):
+        """(须持 _io_lock) 防抖判定 + 生成一致快照; None = 本次不落盘。
+
+        U17 第一段: 序列化必须在锁内 (否则边改边序列化会写出撕裂的状态),
+        但它是纯 CPU, 远快于文件 IO。
+        """
         now = time.time()
         if not force and now - self._上次落盘 < self._最小落盘间隔:
             self._脏 = True
-            return
-        self._写入()
+            return None
+        self._合并磁盘新数据()      # U16: 先吸收另一进程的新记录再序列化
+        try:
+            return json.dumps(self._数据, ensure_ascii=False)
+        except Exception as e:
+            _log.info(f"[爬取历史] 序列化失败: {type(e).__name__}: {e}")
+            return None
 
-    def _写入(self):
-        """真正落盘 (原子写入; 须持 _io_lock 或确认单线程调用)"""
+    def _落盘(self, 快照):
+        """(锁外调用) 原子写盘 —— U17 第二段: 不在临界区内做文件 IO"""
+        if not 快照:
+            return
         try:
             fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
-            tmp = fobj.with_name(fobj.name + '.tmp')
-            tmp.write_text(json.dumps(self._数据, ensure_ascii=False),
-                           encoding='utf-8')
+            # U16: 临时文件名带 pid —— 两个进程写同一目录时, 共用一个 .tmp
+            # 会互相截断, 可能 replace 出一个"半 A 半 B"的损坏文件
+            tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}')
+            tmp.write_text(快照, encoding='utf-8')
             os.replace(tmp, fobj)
             self._上次落盘 = time.time()
             self._脏 = False
+            try:
+                self._磁盘时间 = os.path.getmtime(fobj)   # 记下自己的写入, 免得被当外部改动回灌
+            except OSError:
+                pass
         except OSError as e:
             _log.info(f"[爬取历史] 保存失败: {e}")
+
+    def _保存(self, force=False):
+        """防抖写入入口 (供不持锁的调用方使用; U17: 锁外落盘)
+
+        非强制时若距上次落盘不足 _最小落盘间隔 则仅标脏;
+        任务收尾/进程退出时 flush(force=True) 兜底。
+        """
+        with self._io_lock:
+            快照 = self._快照(force)
+        self._落盘(快照)
 
     # ------------------------------------------------------------------
     # 工具方法
@@ -283,7 +340,8 @@ class 爬取历史:
                     for k, _ in 旧项:
                         urls.pop(k, None)
 
-                self._保存()
+                快照 = self._快照()          # 防抖判定 + 一致快照 (锁内)
+            self._落盘(快照)                 # U17: 锁外原子落盘, 不阻塞其他 worker
         except Exception as e:
             # 任何异常都不能影响主流程
             _log.info(f"[爬取历史] 记录异常: {e}")

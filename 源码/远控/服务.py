@@ -294,9 +294,15 @@ def 停止任务(task_id: str, k: Optional[str] = None,
             authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     mgr = _任务管理器()
-    if mgr.get_task(task_id) is None:
+    task = mgr.get_task(task_id)
+    if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
-    mgr.stop_task(task_id)   # 该方法无返回值 (GUI 直接调用语义), 不能按 bool 判断
+    # 修复(U5): 只停 running/pending; 已终态的任务拒绝改写状态 (旧实现会把
+    # "已完成"改写成"已停止", 手机端随即收到一次错误的完成推送)
+    if not mgr.stop_task(task_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"任务已处于终态({task.status}), 不能停止")
     return {"ok": True}
 
 

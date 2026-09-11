@@ -13,6 +13,14 @@ on:
 permissions:
   contents: write
 
+# 修复(U12): 同一时间只允许一个发布在跑。
+# 旧实现无并发控制 —— 两个 tag 相近推送 (或 tag 推送与手动触发撞车) 会并发构建,
+# 争抢同一 Release 资产并可能双双覆盖 CHANGELOG 版本号。
+# cancel-in-progress=false: 发布不可中途取消, 后来的排队等前一个结束。
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   # 质量门禁: 发布前离线回归必须全绿 (test.yml 以 workflow_call 被本流程复用)
   test:
