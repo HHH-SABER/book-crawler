@@ -437,13 +437,18 @@ class SiteManagePage:
         if not os.path.isdir(adapter_dir):
             return out
         try:
-            from sites_config import load_adapters, ADAPTERS
+            from sites_config import load_adapters
+            import sites_config as _sc
             load_adapters()
             files = sorted(f for f in os.listdir(adapter_dir)
                            if f.endswith('.py') and not f.startswith('_'))
             for fn in files:
                 domain, catalog, content, paginate, error = '', False, False, False, ''
-                for d, entry in ADAPTERS.items():
+                # 修复(v2.4.20): 必须读 sites_config.ADAPTERS 的**当前属性** ——
+                # 旧写法 `from sites_config import ADAPTERS` 按值绑定加载前的
+                # 旧 dict, 而 load_adapters() 是整体换引用 (M3), 结果页面永远
+                # 看到空表 -> 全部插件误报"加载失败或未注册" (EXE 新会话必现)
+                for d, entry in _sc.ADAPTERS.items():
                     if entry.get('source', '').replace('\\', '/').endswith('/' + fn):
                         domain = d
                         catalog = bool(entry.get('parse_catalog'))
