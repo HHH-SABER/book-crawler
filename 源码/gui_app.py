@@ -580,6 +580,9 @@ def main(page: ft.Page):
         )
 
         记住 = ft.Checkbox(value=False)
+        # 埋点: 冒烟脚本(测试/冒烟_关闭关键路径.py)以日志行为断言依据,
+        # 同时给生产日志留运行痕迹 (v2.4.19 教训: 关键路径需要可观测性)
+        app_log.info("关闭", "弹出关闭确认弹窗")
 
         def _弹层关闭():
             try:
@@ -607,6 +610,7 @@ def main(page: ft.Page):
             page.run_task(_彻底退出)
 
         def _取消(e):
+            app_log.info("关闭", "用户取消关闭, 窗口保持")
             _弹层关闭()
 
         rows = [txt("要最小化到系统托盘（远控保持运行），还是直接退出？",
