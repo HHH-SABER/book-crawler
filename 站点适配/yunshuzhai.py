@@ -70,6 +70,12 @@ def extract_content(soup, page_url, base_url, **kw):
     return None
 
 
+def paginate(current_url, page_index, **kw):
+    """单页正文, 无章节内分页 (显式声明, 免得通用规则瞎猜 _1.html 续页 404:
+    2026-09-12 实测 /book/{id}/{n}_1.html 均为 404)。"""
+    return None
+
+
 def get_title(soup, catalog_url, base_url):
     """书名: 目录页 <title> 形如
     '我的美母教师最新章节_wdw5201314著_全文免费阅读 - 云书斋'"""

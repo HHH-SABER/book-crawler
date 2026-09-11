@@ -5964,17 +5964,9 @@ class NovelSpider:
             仅在 incremental=True 时生效。
         """
         # 章节页 URL → 目录页 (适配器可选能力 catalog_from_chapter):
-        # 用户常把章节页 URL 当任务 URL, 通用管线把章节页当目录页解析会
-        # 只剩"目录"链接 1 个"章节", 把详情页当正文抓导致整单失败
-        # (2026-09-11 yunshuzhai 实测)。在书名提取前规范化, 书名也随之修正。
-        if SITES_CONFIG_AVAILABLE:
-            try:
-                _目录URL = resolve_catalog_from_chapter(catalog_url)
-                if _目录URL and _目录URL != catalog_url:
-                    _log.info(f"[适配器] 章节URL规范化到目录页: {catalog_url} → {_目录URL}")
-                    catalog_url = _目录URL
-            except Exception as _e_cat:
-                _log.info(f"[适配器] 章节URL规范化异常, 按原URL继续: {_e_cat}")
+        # 用户常把章节页 URL 当任务 URL (详见 _规范化目录URL docstring)。
+        # 在书名提取前规范化, 书名也随之修正。
+        catalog_url = _规范化目录URL(catalog_url)
 
         # 提取小说名称 (调用方已提供时直接使用, 避免重复请求)
         title_from_caller = novel_title is not None
@@ -6627,6 +6619,27 @@ def _resolve_unique_title(novel_title: str, output_dir: str,
     return resolved
 
 
+def _规范化目录URL(catalog_url):
+    """章节页 URL → 目录页 (适配器可选能力 catalog_from_chapter)。
+
+    用户常把章节页 URL 当任务 URL, 通用管线把章节页当目录页解析会只剩
+    "目录"链接 1 个"章节", 把详情页当正文抓导致整单失败 (2026-09-11
+    yunshuzhai 实测)。适配器未声明/推导失败/异常时按原 URL 返回 (幂等)。
+    run_crawl 与 run() 都要调用: 前者的 unique_title 标题预取发生在 run() 之前,
+    不规范化会把章节页标题当书名 (2026-09-12 批量实测)。
+    """
+    if not SITES_CONFIG_AVAILABLE:
+        return catalog_url
+    try:
+        _u = resolve_catalog_from_chapter(catalog_url)
+        if _u and _u != catalog_url:
+            _log.info(f"[适配器] 章节URL规范化到目录页: {catalog_url} → {_u}")
+            return _u
+    except Exception as _e_cat:
+        _log.info(f"[适配器] 章节URL规范化异常, 按原URL继续: {_e_cat}")
+    return catalog_url
+
+
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
               resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
               stop_event=None, unique_title=False, export_epub=False, incremental=False):
@@ -6691,6 +6704,9 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     except ValueError as e:
         _log.info(f"⚠️ URL 校验失败: {e}")
         return
+
+    # 章节页 → 目录页规范化 (必须在标题预取/目录解析前; 幂等, run() 内会再调一次)
+    catalog_url = _规范化目录URL(catalog_url)
 
     base_url = get_base_url(catalog_url)
     _log.info(f"提取到基础URL: {base_url}")
