@@ -73,6 +73,43 @@ class TaskLogRedirector:
     def __init__(self, task_info: TaskInfo, original_stdout):
         self.task = task_info
         self.original = original_stdout
+        # U19 第二阶段决策依据: 统计"事件通道"与"正则兜底"各自真正改动了多少次状态。
+        # 跑一轮真实抓取后看 覆盖率摘要(): 若正则兜底始终为 0, 说明事件已覆盖全部路径,
+        # 那时才能安全删除正则; 若某个字段频繁靠正则兜底, 说明该字段还缺事件发出点。
+        self.事件应用数 = 0
+        self.正则兜底数 = 0
+        self.正则兜底字段 = set()
+
+    # 状态指纹用的字段名 (与 _状态指纹 顺序一一对应)
+    _指纹字段 = ('title', 'progress_current', 'progress_total', 'output_file',
+                 'status', 'engine', 'engine_fallback_chain', 'anti_spider_type',
+                 'quality_score', 'quality_passed', 'incremental_skipped')
+
+    def _状态指纹(self):
+        m = self.task.metrics
+        return (self.task.title, self.task.progress_current, self.task.progress_total,
+                self.task.output_file, self.task.status, m.engine,
+                len(m.engine_fallback_chain), m.anti_spider_type,
+                m.quality_score, m.quality_passed, m.incremental_skipped)
+
+    def 覆盖率摘要(self) -> str:
+        """诊断一行: 事件通道覆盖是否完整 (供真实运行后判断能否删除正则)。
+
+        **指标口径要说清**（避免误读）: `正则兜底数` 统计的是"正则路径实际改动了状态"的次数,
+        它是个**上界** —— 事件与正则会同时命中同一条语义 (事件在前或在后),
+        因此 >0 **不一定**代表"该字段缺事件发出点", 只代表"正则仍在改写状态"。
+
+        可靠的推论只有单向的:
+          · 正则兜底 == 0  → 正则从未改动状态 → **可以安全删除**;
+          · 正则兜底 > 0   → 需结合 `测试/test_event_channel.py` 的等价表与该轮日志,
+                             逐个字段确认是"事件缺失"还是"两者重叠"。
+        """
+        if not self.正则兜底数:
+            return (f'事件通道覆盖完整 (事件生效 {self.事件应用数} 次, '
+                    f'正则兜底 0 次) —— 具备删除正则的条件')
+        return (f'正则仍在改写状态 {self.正则兜底数} 次, 涉及字段 '
+                f'{sorted(self.正则兜底字段)} (事件生效 {self.事件应用数} 次) '
+                f'—— 这是上界, 需逐字段确认是"事件缺失"还是"两者重叠"')
 
     def _log_to_file(self, line: str):
         """将日志行同步落盘 (统一日志系统), 失败不影响主流程"""
@@ -95,6 +132,7 @@ class TaskLogRedirector:
                         'msg': s
                     })
                     # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
+                    _前 = self._状态指纹()      # U19: 统计正则兜底是否仍在起作用
                     self._parse_progress(s)
                     # 解析小说名称: "提取到小说名称: XXX"
                     # 性能: 每条日志行都会经过这里, 先用子串做廉价预判再跑正则
@@ -114,6 +152,12 @@ class TaskLogRedirector:
                             # 质检列兜底回填 (修复质检列空白): 逐行解析可能漏检,
                             # 完成时从 站点历史.json 取该书最近质检摘要回填
                             self._backfill_quality(self.task)
+                    # U19: 正则路径若确实改动了状态, 记一笔 (含改了哪些字段)
+                    _后 = self._状态指纹()
+                    if _后 != _前:
+                        self.正则兜底数 += 1
+                        self.正则兜底字段.update(
+                            n for n, a, b in zip(self._指纹字段, _前, _后) if a != b)
             # 保留最近500条日志
             # (原地截断: 旧实现用 logs[-500:] 整体切片, 一旦超过 500 条,
             #  每来一行日志都要重建一个 500 元素的新列表)
@@ -245,6 +289,7 @@ class TaskLogRedirector:
         —— `测试/test_event_channel.py` 用"同一语义的日志行 vs 事件"双向断言,
         保证两条通道不会漂移。
         """
+        self.事件应用数 += 1
         if 类型 == '标题':
             标题 = (数据.get('标题') or '').strip()
             if 标题:
@@ -585,6 +630,12 @@ class TaskManager:
             try:
                 import 任务事件
                 任务事件.退订(重定向器)      # U19: 退订, 防线程复用/重复注册
+            except Exception:
+                pass
+            try:
+                # U19 诊断: 一轮任务的"事件 vs 正则兜底"统计, 供判断能否删除正则
+                if app_log is not None:
+                    app_log.info(f"任务{task.task_id}", 重定向器.覆盖率摘要())
             except Exception:
                 pass
 
