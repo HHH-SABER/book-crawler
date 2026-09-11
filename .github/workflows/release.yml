@@ -56,6 +56,11 @@ jobs:
       # (M12: 旧发布产物永远纯 Python 且无人知晓; 失败不阻塞, 仅纯 Python 发布)
       - name: Build rust_core.pyd (Rust 加速, best-effort)
         shell: bash
+        env:
+          # CI 控制台是 cp1252: 内联 Python print 中文会 UnicodeEncodeError,
+          # 把编译成功的 best-effort 步骤打成硬失败中止发布 (v2.4.18 首发即命中),
+          # 与 test.yml 的 PYTHONUTF8 同款修复
+          PYTHONUTF8: '1'
         run: |
           .venv/Scripts/python.exe -m pip install maturin
           # 路径修正: 该命令从 rust_core_poc/pyo3_ext 出发, ../.venv 会解析到
