@@ -309,6 +309,16 @@ def main():
     if os.path.isfile(captcha_config_src):
         add_data_list.append(f"{captcha_config_src}:.")
         log(f"[OK] Bundling captcha_config.json")
+    # 内嵌远控页面 (v2.4.20: onefile 不自动收集数据文件, 缺失时手机访问面板
+    # 返回 {"detail":"面板文件缺失"}) — 远控.服务 以 __file__ 同目录定位,
+    # 故 dest 必须是 远控/ 目录
+    for _rc_html in ("面板.html", "阅读.html"):
+        _rc_path = os.path.join(ROOT, "源码", "远控", _rc_html)
+        if os.path.isfile(_rc_path):
+            add_data_list.append(f"{_rc_path}:远控")
+            log(f"[OK] Bundling 远控/{_rc_html}")
+        else:
+            log(f"[ERROR] 源码/远控/{_rc_html} 不存在, EXE 内远控面板将不可用!")
     # ddddocr 模型（WAF 图片验证码识别必需；onnx 模型不会被 PyInstaller 自动收集，
     # 缺包时 EXE 内报 模型文件不存在: common_old.onnx，识别失败导致 401 0章）
     ddddocr_dir = os.path.join(ROOT, ".venv", "Lib", "site-packages", "ddddocr")
