@@ -49,9 +49,8 @@ def _探测_cloudscraper():
 
 _curl_cffi = _探测_curl_cffi()
 _cloudscraper = _探测_cloudscraper()
-
-# 建议的引擎请求顺序 (降级链尾)
-_引擎顺序 = ('curl_cffi', 'cloudscraper')
+# (U25) 原此处有 `_引擎顺序 = ('curl_cffi', 'cloudscraper')` —— 全仓库零引用,
+# 已删除。降级链的实际顺序由 _选择引擎() 与各 _请求_* 实现决定。
 
 
 @dataclass
@@ -131,6 +130,10 @@ class 请求引擎管理器:
         # 可能丢 cookie (破坏 P1-8 的会话隔离)。引擎路径本身低频 (仅反爬机制命中),
         # 用进程级锁串行化, 保留连接复用同时消除竞态
         self._requests_lock = threading.Lock()
+        # 修复(U15): 会话缓存曾"锁外建连" —— get 到 set 之间无保护, 并发 worker
+        # 会各自 new 一个同 host 会话, 后被覆盖的那个永久泄漏 (无人 close)。
+        # 单开一把锁保护三个缓存的读-改-写, 不与请求锁耦合。
+        self._会话缓存锁 = threading.Lock()
         self._统计: Dict[str, int] = {}            # {引擎: 成功请求次数}
 
     def close(self):
@@ -171,12 +174,20 @@ class 请求引擎管理器:
             return None
         响应 = 方法(url, headers=headers, timeout=timeout,
                   cookies=cookies, proxies=proxies, 支持重定向=支持重定向)
-        if 响应 is not None:
-            if 响应.成功:
-                self._统计[引擎] = self._统计.get(引擎, 0) + 1
-                self._失败计数[引擎] = 0
-            else:
-                self._失败计数[引擎] = self._失败计数.get(引擎, 0) + 1
+        if 响应 is None:
+            # 修复(U1): 引擎"抛异常→返回 None"也必须计入失败。
+            # 旧实现只在 `响应 is not None` 分支里累计失败, 于是连接级失败
+            # (超时/DNS 解析失败/拒绝连接) 永不触发降级 —— cloudscraper 一直失败,
+            # 却永远轮不到 _选择引擎() 把它切到 curl_cffi。
+            self._失败计数[引擎] = self._失败计数.get(引擎, 0) + 1
+            _log.info(f"[引擎] {引擎} 请求未成功(连接级), 连续失败 "
+                      f"{self._失败计数[引擎]}/{self._降级阈值}")
+            return None
+        if 响应.成功:
+            self._统计[引擎] = self._统计.get(引擎, 0) + 1
+            self._失败计数[引擎] = 0
+        else:
+            self._失败计数[引擎] = self._失败计数.get(引擎, 0) + 1
         return 响应
 
     def 报告(self) -> str:
@@ -218,9 +229,12 @@ class 请求引擎管理器:
             host = self._取host(url)
             会话 = self._requests_sessions.get(host)
             if 会话 is None:
-                会话 = requests.Session()
-                会话.trust_env = False
-                self._requests_sessions[host] = 会话
+                with self._会话缓存锁:          # 双检: 并发下同 host 只建一个会话
+                    会话 = self._requests_sessions.get(host)
+                    if 会话 is None:
+                        会话 = requests.Session()
+                        会话.trust_env = False
+                        self._requests_sessions[host] = 会话
             with self._requests_lock:
                 resp = 会话.get(url, headers=headers, timeout=timeout, cookies=cookies,
                                 proxies=proxies, allow_redirects=支持重定向)
@@ -239,10 +253,13 @@ class 请求引擎管理器:
             host = self._取host(url)
             会话 = self._curl_sessions.get(host)
             if 会话 is None:
-                # impersonate 显式指定具体 Chrome 版本指纹 (P2-1): 泛 'chrome' 可能
-                # 映射到较旧指纹被新站点识破; chrome124 为 curl_cffi 内置的稳定档
-                会话 = self._curl_cffi.Session(impersonate='chrome124')
-                self._curl_sessions[host] = 会话
+                with self._会话缓存锁:          # 双检: 并发下同 host 只建一个会话
+                    会话 = self._curl_sessions.get(host)
+                    if 会话 is None:
+                        # impersonate 显式指定具体 Chrome 版本指纹 (P2-1): 泛 'chrome'
+                        # 可能映射到较旧指纹被新站点识破; chrome124 为稳定档
+                        会话 = self._curl_cffi.Session(impersonate='chrome124')
+                        self._curl_sessions[host] = 会话
             resp = 会话.get(url, headers=headers, timeout=timeout, cookies=cookies,
                             proxies=proxies, allow_redirects=支持重定向)
             return 引擎响应(
@@ -260,9 +277,12 @@ class 请求引擎管理器:
             host = self._取host(url)
             会话 = self._cloudscraper_sessions.get(host)
             if 会话 is None:
-                # create_scraper 自带 Cloudflare 质询求解能力
-                会话 = self._cloudscraper.create_scraper()
-                self._cloudscraper_sessions[host] = 会话
+                with self._会话缓存锁:          # 双检: 并发下同 host 只建一个会话
+                    会话 = self._cloudscraper_sessions.get(host)
+                    if 会话 is None:
+                        # create_scraper 自带 Cloudflare 质询求解能力
+                        会话 = self._cloudscraper.create_scraper()
+                        self._cloudscraper_sessions[host] = 会话
             resp = 会话.get(url, headers=headers, timeout=timeout, cookies=cookies,
                             proxies=proxies, allow_redirects=支持重定向)
             return 引擎响应(
@@ -282,11 +302,22 @@ class 请求引擎管理器:
 
 
 _默认管理器 = None
+_管理器锁 = threading.Lock()
 
 
 def 获取引擎管理器() -> 请求引擎管理器:
-    """获取全局单例"""
+    """获取全局单例 (线程安全; 首次创建时注册退出清理)"""
     global _默认管理器
     if _默认管理器 is None:
-        _默认管理器 = 请求引擎管理器()
+        with _管理器锁:
+            if _默认管理器 is None:        # 双检: 并发首调只创建一个实例
+                _默认管理器 = 请求引擎管理器()
+                # 修复(U15b): close() 此前全项目零调用, 会话池只能等进程回收。
+                # atexit 覆盖 CLI/测试路径; GUI 走 os._exit 不触发 atexit,
+                # 故 gui_app 的退出流程里另有一处显式 close。
+                try:
+                    import atexit
+                    atexit.register(_默认管理器.close)
+                except Exception:
+                    pass
     return _默认管理器

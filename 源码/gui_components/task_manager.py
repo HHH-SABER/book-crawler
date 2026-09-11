@@ -513,19 +513,35 @@ class TaskManager:
         finally:
             _THREAD_STDOUT.unregister()
 
-    def stop_task(self, task_id: str):
-        """停止指定任务（通过设置停止标志，爬虫循环检查后退出）"""
+    def stop_task(self, task_id: str) -> bool:
+        """停止指定任务（通过设置停止标志，爬虫循环检查后退出）。
+
+        修复(U5): 只允许停止 running/pending 状态的任务。旧实现不校验状态,
+        对已 completed/failed/stopped 的任务同样执行 —— 把"已完成"改写成
+        "已停止"; 远控共用此入口, 手机端会看到错误终态并触发一次错误的
+        完成推送。
+
+        Returns:
+            True = 已受理停止; False = 任务不存在或已处于终态(无需停止)
+        """
+        受理 = False
         with self._lock:
             task = self.tasks.get(task_id)
-            if task:
+            if task and task.status in ("running", "pending"):
                 task.stop_flag.set()
                 self._set_terminal(task, "stopped")
                 task.logs.append({
                     'time': time.strftime('%H:%M:%S'),
                     'msg': "[用户停止] 任务已被用户手动停止"
                 })
+                受理 = True
         if app_log is not None:
-            app_log.info(f"任务{task_id}", f"任务已停止: {task_id}")
+            if 受理:
+                app_log.info(f"任务{task_id}", f"任务已停止: {task_id}")
+            else:
+                app_log.info(f"任务{task_id}",
+                             f"停止请求被忽略: 任务不存在或已处于终态")
+        return 受理
 
     def delete_task(self, task_id: str, delete_file: bool = False) -> bool:
         """删除任务 (从任务列表移除)。

@@ -61,13 +61,16 @@ class AppLogger:
     def __init__(self):
         if getattr(self, "_ready", False):
             return
-        self._ready = True
+        # 修复(U10): 先建锁、再置 _ready。旧实现 `_ready = True` 写在
+        # `self._lock = threading.Lock()` 之前 —— 极窄窗口内另一线程的 __init__
+        # 会看到 _ready=True 直接返回, 随后写入路径访问 self._lock → AttributeError。
         self._lock = threading.Lock()
         self._mirror_local = threading.local()  # console 镜像防递归标志 (线程本地)
         self._file = None
         self._file_path = None
         self._cur_date = None
         self._level = _DEFAULT_LEVEL
+        self._ready = True
         self._cleanup_old_logs()
 
     # ---------------------------------------------------------------- 路径

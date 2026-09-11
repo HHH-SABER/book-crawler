@@ -88,8 +88,11 @@ def probe_site(url: str, timeout: int = 15) -> dict:
             not (200 <= result['status_code'] < 400):
         # 用成熟引擎再试一次 (机制驱动引擎选择)
         try:
-            from 请求引擎 import 请求引擎管理器
-            mgr = 请求引擎管理器()
+            # 修复(U11): 复用模块级单例。旧实现每次探测都 new 一个请求引擎管理器
+            # (各自持有会话池) 且从不 close —— 反复点"测试连接"会持续累积
+            # 未释放的 Session/HTTPAdapter。单例由模块统一管理生命周期。
+            from 请求引擎 import 获取引擎管理器
+            mgr = 获取引擎管理器()
             eng_resp = mgr.请求(url, headers=headers, timeout=timeout,
                                 机制=机制)
             # 记录降级链 (按可用引擎推断)

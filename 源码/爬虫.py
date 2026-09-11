@@ -673,6 +673,8 @@ class NovelSpider:
         try:
             from captcha_module import build_manager
             self._captcha_manager, self._avoidance = build_manager(ua_provider=self.ua)
+            # U14: 注入人工兜底所需的可见浏览器工厂 (原先全项目零注入)
+            注入人工浏览器工厂(self._captcha_manager)
             _log.info("[验证码模块] 已加载 (策略: {})".format(
                 self._captcha_manager.current_strategy()))
         except Exception as e:
@@ -6493,6 +6495,33 @@ def _单页等待秒(档位间隔=0.0, 抖动=None, 取较大值=None):
     if 取较大值:
         return max(抖动, 档位间隔 or 0.0)
     return 抖动 + (档位间隔 or 0.0)
+
+
+def 注入人工浏览器工厂(管理器) -> bool:
+    """给验证码管理器注入"可见浏览器工厂" (U14)。
+
+    背景: `manual`(人工兜底) 策略在 `handle()` 里要 `factory()` 出一个可见浏览器
+    让用户手输验证码, 而 `driver_factory` 全项目**从未被注入过** —— 每次都抛
+    "未配置可见浏览器工厂", 人工兜底形同虚设。当自动识别按合规要求默认关闭时,
+    人工兜底就是验证码唯一的处理路径, 所以这个缺口实质等于"验证码无法处理"。
+
+    这里用项目自己的 Playwright 驱动 (visible=True) 作为工厂; 浏览器由策略在
+    处理结束后 quit(), 不常驻。
+
+    Returns:
+        True = 注入成功; False = 浏览器驱动不可用 (仍保留原降级行为)
+    """
+    if 管理器 is None:
+        return False
+    try:
+        from browser_driver import create_driver
+        管理器.driver_factory = lambda: create_driver(
+            engine='playwright', visible=True)
+        return True
+    except Exception as e:
+        _log.info(f"[验证码模块] 可见浏览器工厂注入失败 (人工兜底不可用): "
+                  f"{type(e).__name__}: {e}")
+        return False
 
 
 def _resolve_unique_title(novel_title: str, output_dir: str,

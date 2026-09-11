@@ -19,6 +19,7 @@ import ipaddress
 import json
 import socket
 import ssl
+import threading
 import time
 import urllib.request
 from urllib.parse import urlencode, urlparse
@@ -33,6 +34,10 @@ _CACHE_TTL = 600  # DoH 结果缓存 10 分钟
 
 _doh_cache = {}          # host -> (ip, ts)
 _polluted_hosts = set()  # 已确认污染的域名 (避免重复打印)
+# 修复(U3): 缓存的读-改-写加锁。getaddrinfo 会被任意线程调用, 无锁时并发首查
+# 会重复发起 DoH 查询 (惊群), "_polluted_hosts 判断-添加-打印"也会重复刷屏。
+# 锁的获取开销 (~百纳秒) 相对一次 DoH 查询 (毫秒级) 可忽略。
+_缓存锁 = threading.Lock()
 _orig_getaddrinfo = None
 # 模块导入时的真·原函数备份 (打补丁前的快照)。
 # 修复: install() 原实现备份"调用那一刻的 socket.getaddrinfo", 若此前已有代码
@@ -108,17 +113,24 @@ def _patched_getaddrinfo(host, port, *args, **kwargs):
             results = None  # 解析失败 (如 Errno 11004) → 走下方 DoH 回退
 
         # 系统解析失败或被污染 → DoH 回退
-        cached = _doh_cache.get(host)
         now = time.time()
+        with _缓存锁:
+            cached = _doh_cache.get(host)
         if cached and now - cached[1] < _CACHE_TTL:
             ip = cached[0]
         else:
-            ip = _doh_query(host)
-            _doh_cache[host] = (ip, now) if ip else (None, now - _CACHE_TTL + 30)
+            ip = _doh_query(host)          # 网络调用, 不持锁 (勿把 ms 级 IO 放进临界区)
+            with _缓存锁:
+                _doh_cache[host] = (ip, now) if ip else (None, now - _CACHE_TTL + 30)
         if ip:
             # 仅首次污染时打印提示 (避免刷屏)
-            if host not in _polluted_hosts:
-                _polluted_hosts.add(host)
+            # 修复(U3): "判断-添加-打印"必须在锁内原子完成, 否则并发首查会重复打印
+            首次污染 = False
+            with _缓存锁:
+                if host not in _polluted_hosts:
+                    _polluted_hosts.add(host)
+                    首次污染 = True
+            if 首次污染:
                 try:
                     import 日志 as _app_log
                     _app_log.get('DNS').info(
