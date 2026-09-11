@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""GUI print 正则数据通道契约测试 (M11)。
+"""GUI 日志正则数据通道契约测试 (M11)。
 
-TaskManager 以爬虫 print 文本的正则解析为唯一数据通道 (task_manager.py
-TaskLogRedirector) — 爬虫侧改动以下任何文案都会**静默失效** (进度冻结/
-指标列空白/"删除文件"失灵)。本文件把契约固化为单测: 改动爬虫文案或
-task_manager 正则时, 必须同步更新这里, CI 门禁才会放行。
+> **U19 后的定位变化 (2026-09-11)**: 正则通道已**默认停用**
+> (`TaskLogRedirector.启用正则兜底 = False`), GUI 的运行时数据改由
+> "结构化任务事件"供给 (见 `源码/任务事件.py` 与 `测试/test_event_channel.py`)。
+> 本文件因此变成**回退通道的契约**: 它显式打开 `启用正则兜底` 再验正则行为 ——
+> 保留它有两个用处: ①回退时正则仍然可靠; ②作为"事件 vs 正则"等价性的对照组。
+
+TaskManager 原本以爬虫 print 文本的正则解析为唯一数据通道 —
+爬虫侧改动以下任何文案都会**静默失效** (进度冻结/指标列空白/"删除文件"失灵)。
+本文件把该契约固化为单测, 改动爬虫文案或 task_manager 正则时须同步更新这里。
 
 运行方式 (项目根目录):
     python -m unittest discover -s 测试 -v
@@ -26,9 +31,13 @@ def _new_task() -> tm.TaskInfo:
 
 
 def _feed(lines) -> tm.TaskInfo:
-    """走真实 write() 管道喂入日志行 (含 标题/完成 终态解析)。"""
+    """走真实 write() 管道喂入日志行 (含 标题/完成 终态解析)。
+
+    **显式打开正则兜底** (U19 后默认关闭): 本文件测的是正则通道本身。
+    """
     task = _new_task()
     rd = tm.TaskLogRedirector(task, Path(os.devnull).open('w', encoding='utf-8'))
+    rd.启用正则兜底 = True
     for ln in lines:
         rd.write(ln + '\n')
     rd.original.close()

@@ -80,6 +80,15 @@ class TaskLogRedirector:
         self.正则兜底数 = 0
         self.正则兜底字段 = set()
 
+    # U19 第二阶段开关: 正则兜底**默认停用**(False)。
+    # 依据 2026-09-11 的两组实验:
+    #   ① 离线端到端: 停用正则后事件通道仍正确填充 title/进度/输出文件/增量跳过;
+    #   ② 真实运行差分(322zw.com 51 章): 停用正则后最终状态与开启时完全一致
+    #      (status=completed / 进度 51/51 / 质检 100.0 通过 / 输出文件正确),
+    #      事件生效 54 次, 正则改写从 54 次降到 2 次(仅剩内联两段, 已由"完成"事件覆盖)。
+    # 置 True 可一行回退到"日志正则解析"的旧行为(代码与契约测试都保留着)。
+    启用正则兜底 = False
+
     # 状态指纹用的字段名 (与 _状态指纹 顺序一一对应)
     _指纹字段 = ('title', 'progress_current', 'progress_total', 'output_file',
                  'status', 'engine', 'engine_fallback_chain', 'anti_spider_type',
@@ -92,8 +101,17 @@ class TaskLogRedirector:
                 len(m.engine_fallback_chain), m.anti_spider_type,
                 m.quality_score, m.quality_passed, m.incremental_skipped)
 
+    def _应用完成终态(self):
+        """完成终态的统一落点 (正则路径与 '完成' 事件共用同一实现, 避免两处漂移)"""
+        self.task.progress_current = self.task.progress_total
+        self.task.status = 'completed'
+        if self.task.metrics:
+            self.task.metrics.end_time = time.time()
+        # 质检列兜底回填 (逐章解析可能漏检): 完成时从 站点历史.json 取该书最近质检摘要
+        self._backfill_quality(self.task)
+
     def 覆盖率摘要(self) -> str:
-        """诊断一行: 事件通道覆盖是否完整 (供真实运行后判断能否删除正则)。
+        """诊断一行: 事件通道覆盖是否完整 (供判断能否删除正则)。
 
         **指标口径要说清**（避免误读）: `正则兜底数` 统计的是"正则路径实际改动了状态"的次数,
         它是个**上界** —— 事件与正则会同时命中同一条语义 (事件在前或在后),
@@ -103,7 +121,13 @@ class TaskLogRedirector:
           · 正则兜底 == 0  → 正则从未改动状态 → **可以安全删除**;
           · 正则兜底 > 0   → 需结合 `测试/test_event_channel.py` 的等价表与该轮日志,
                              逐个字段确认是"事件缺失"还是"两者重叠"。
+
+        **注意**: `启用正则兜底=False` 时该计数恒为 0 (纯属构造), 此时不构成"可删"的证据 ——
+        本方法会显式区分这两种情况, 避免自证式误读 (2026-09-11 自查发现)。
         """
+        if not getattr(self, '启用正则兜底', True):
+            return (f'正则兜底已停用(U19 第二阶段); 事件生效 {self.事件应用数} 次, '
+                    f'状态全由事件驱动 —— 此计数为 0 是配置所致, 不能作为"可删"的证据')
         if not self.正则兜底数:
             return (f'事件通道覆盖完整 (事件生效 {self.事件应用数} 次, '
                     f'正则兜底 0 次) —— 具备删除正则的条件')
@@ -131,27 +155,23 @@ class TaskLogRedirector:
                         'time': timestamp,
                         'msg': s
                     })
-                    # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
-                    _前 = self._状态指纹()      # U19: 统计正则兜底是否仍在起作用
-                    self._parse_progress(s)
-                    # 解析小说名称: "提取到小说名称: XXX"
-                    # 性能: 每条日志行都会经过这里, 先用子串做廉价预判再跑正则
-                    # (子串是正则能够匹配的必要条件, 语义完全等价)
-                    if '提取到小说名称' in s:
-                        m = re.search(r'提取到小说名称:\s*(.+)', s)
-                        if m:
-                            self.task.title = m.group(1).strip()
-                    # 解析完成: "抓取完成，共X章"
-                    if '抓取完成' in s:
-                        m = re.search(r'抓取完成.*共(\d+)章', s)
-                        if m:
-                            self.task.progress_current = self.task.progress_total
-                            self.task.status = "completed"
-                            if self.task.metrics:
-                                self.task.metrics.end_time = time.time()
-                            # 质检列兜底回填 (修复质检列空白): 逐行解析可能漏检,
-                            # 完成时从 站点历史.json 取该书最近质检摘要回填
-                            self._backfill_quality(self.task)
+                    # U19: 统计正则兜底是否仍在起作用 (正则停用时这里恒不计数)
+                    _前 = self._状态指纹()
+                    if self.启用正则兜底:
+                        # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
+                        self._parse_progress(s)
+                        # 解析小说名称: "提取到小说名称: XXX"
+                        # 性能: 每条日志行都会经过这里, 先用子串做廉价预判再跑正则
+                        # (子串是正则能够匹配的必要条件, 语义完全等价)
+                        if '提取到小说名称' in s:
+                            m = re.search(r'提取到小说名称:\s*(.+)', s)
+                            if m:
+                                self.task.title = m.group(1).strip()
+                        # 解析完成: "抓取完成，共X章"
+                        if '抓取完成' in s:
+                            m = re.search(r'抓取完成.*共(\d+)章', s)
+                            if m:
+                                self._应用完成终态()
                     # U19: 正则路径若确实改动了状态, 记一笔 (含改了哪些字段)
                     _后 = self._状态指纹()
                     if _后 != _前:
@@ -280,7 +300,7 @@ class TaskLogRedirector:
             return
 
     # ------------------------------------------------------------------
-    # U19 · 结构化任务事件通道 (与 _parse_* 正则并行; 事件优先, 正则兜底)
+    # U19 · 结构化任务事件通道（**主通道**；正则路径默认停用，仅作回退）
     # ------------------------------------------------------------------
     def 处理任务事件(self, 类型: str, 数据: dict):
         """消费爬虫发布的结构化事件, 直接更新任务状态。
@@ -290,6 +310,10 @@ class TaskLogRedirector:
         保证两条通道不会漂移。
         """
         self.事件应用数 += 1
+        if 类型 == '完成':
+            # 与正则路径共用 _应用完成终态(), 保证两条通道语义严格一致
+            self._应用完成终态()
+            return
         if 类型 == '标题':
             标题 = (数据.get('标题') or '').strip()
             if 标题:

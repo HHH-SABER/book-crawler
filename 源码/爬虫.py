@@ -5900,6 +5900,9 @@ class NovelSpider:
             else:
                 _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
             _任务事件.发布('输出文件', 路径=output_file)      # U19 结构化事件
+            # U19: 完成终态也走事件 (此前只有 write() 里内联的 "抓取完成" 正则会置
+            # status=completed, 是删正则的最后一道障碍)
+            _任务事件.发布('完成', 章节数=total)
             # EPUB 导出 (可选): 有内容且开启时, 把结果 txt 一并转为 .epub
             if export_epub and output_file and os.path.isfile(output_file) \
                     and (total - len(failed)) > 0:
