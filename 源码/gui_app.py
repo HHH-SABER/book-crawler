@@ -500,6 +500,12 @@ def main(page: ft.Page):
                     显示=lambda: page.run_task(_显示主窗),
                     退出=lambda: page.run_task(_彻底退出))
                 app_log.info("托盘", "已最小化到托盘 (远控保持运行; 双击图标恢复)")
+                # 首次最小化给一条系统气泡: Windows 11 默认把新托盘图标收进
+                # "^" 折叠区, 用户容易以为"托盘没出现/最小化失效"
+                try:
+                    _托盘["对象"].notify("已最小化到托盘，双击托盘图标恢复主窗口")
+                except Exception:
+                    pass
             except Exception as _e_tray:
                 app_log.info("托盘", f"托盘不可用, 取消隐藏以保持可操作: {_e_tray}")
                 try:
@@ -509,35 +515,100 @@ def main(page: ft.Page):
                     pass
                 return
         page.window.visible = False
+        # 显式 update: window 属性变更须 update 才下发到客户端 (与 _显示主窗 对称)。
+        # 旧实现缺这一句, "最小化到托盘"点击后窗口不隐藏 —— 托盘其实建好了,
+        # 但用户视角就是"没反应/失效"
+        try:
+            page.update()
+        except Exception:
+            pass
 
     def _关闭询问():
-        记住 = ft.Checkbox(label="记住我的选择", value=False)
+        """关闭确认弹窗 (Fluent 风格)。
 
-        def _选托盘(e):
+        交互设计:
+          - 默认焦点在"最小化到托盘" (安全动作, Enter 直接触发; 直接退出必须显式点击);
+          - "直接退出"用错误色 TextButton 弱化, 且离主按钮最远防误点;
+          - 弹窗为 modal, 配显式"取消" —— 遮罩点击不再静默吞掉关闭意图;
+          - 有运行中任务时展示警示条 (退出可断点续传), 帮用户做对选择;
+          - "记住我的选择"整行可点 (Checkbox 无 label 参数, 文字用 GestureDetector 接管)。
+        弹窗内全部文字显式设色: 打包环境下 dialog 文字样式缺 color 会渲染成不可见。
+        """
+        from gui_components.ui_fluent import (
+            txt, SIZE_SUBTITLE, WEIGHT_SUBTITLE,
+            MORANDI_ON_SURFACE, MORANDI_ON_SURFACE_VARIANT,
+        )
+
+        记住 = ft.Checkbox(value=False)
+
+        def _弹层关闭():
             try:
                 page.pop_dialog()
             except Exception:
                 pass
+
+        def _切换记住(e):
+            记住.value = not 记住.value
+            try:
+                记住.update()
+            except Exception:
+                pass
+
+        def _选托盘(e):
+            _弹层关闭()
             if 记住.value:
                 _写关闭行为("托盘")
             _隐藏到托盘()
 
         def _选退出(e):
-            try:
-                page.pop_dialog()
-            except Exception:
-                pass
+            _弹层关闭()
             if 记住.value:
                 _写关闭行为("退出")
             page.run_task(_彻底退出)
 
+        def _取消(e):
+            _弹层关闭()
+
+        rows = [txt("要最小化到系统托盘（远控保持运行），还是直接退出？",
+                    color=MORANDI_ON_SURFACE)]
+        # 运行中任务警示: 直接退出会中断抓取 (进度已存盘, 可断点续传)
+        try:
+            运行数 = sum(1 for _t in task_manager.tasks.values()
+                        if _t.status == "running")
+        except Exception:
+            运行数 = 0
+        if 运行数:
+            rows.append(ft.Container(
+                content=txt(f"⚠ 有 {运行数} 个任务正在运行，直接退出将中断抓取"
+                            f"（已抓进度已保存，可断点续传）",
+                            size=SIZE_SMALL, color=ft.Colors.ON_TERTIARY_CONTAINER),
+                bgcolor=ft.Colors.TERTIARY_CONTAINER,
+                border_radius=4,
+                padding=ft.Padding(10, 8, 10, 8),
+            ))
+        rows.append(ft.Row(
+            [记住,
+             ft.GestureDetector(
+                 content=txt("记住我的选择，以后不再询问", color=MORANDI_ON_SURFACE),
+                 on_tap=_切换记住)],
+            spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+
         dlg = ft.AlertDialog(
-            title=ft.Text("关闭窗口"),
-            content=ft.Column(
-                [ft.Text("最小化到系统托盘 (远控保持运行), 还是直接退出?"),
-                 记住], tight=True, spacing=10),
-            actions=[ft.TextButton("最小化到托盘", on_click=_选托盘),
-                     ft.TextButton("直接退出", on_click=_选退出)],
+            modal=True,
+            title=ft.Row(
+                [ft.Icon(ft.Icons.LOGOUT, size=20, color=MORANDI_ON_SURFACE_VARIANT),
+                 txt("关闭窗口", size=SIZE_SUBTITLE, weight=WEIGHT_SUBTITLE,
+                     color=MORANDI_ON_SURFACE)],
+                spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            content=ft.Container(
+                content=ft.Column(rows, tight=True, spacing=12), width=430),
+            actions=[
+                ft.TextButton("直接退出", on_click=_选退出,
+                              style=ft.ButtonStyle(color=MORANDI_ERROR)),
+                ft.TextButton("取消", on_click=_取消),
+                ft.FilledButton("最小化到托盘", on_click=_选托盘, autofocus=True),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         page.show_dialog(dlg)
 
@@ -552,10 +623,16 @@ def main(page: ft.Page):
                 else:
                     _关闭询问()
         except Exception as _e_cl:
-            # 保险: 关闭处理自身异常时直接退出 — 绝不因处理失败而吞掉关闭
-            # (prevent_close 已置位, 吞掉即"关不掉")
-            app_log.info("关闭", f"关闭处理异常, 直接退出以免卡死: {_e_cl}")
-            page.run_task(_彻底退出)
+            # 兜底降级 (v2.4.19 教训): 弹窗/配置处理自身异常时**不再直接退出** ——
+            # 此前一个 import 错误就让"关闭"变成无确认强退。改为退到托盘:
+            # 关闭意图仍被执行 (窗口消失), 应用可从托盘菜单退出, 完全可恢复。
+            # 若托盘也建不成, _隐藏到托盘 会保持窗口可见, 不会"关不掉"。
+            app_log.info("关闭", f"关闭处理异常, 降级为最小化到托盘: {_e_cl}")
+            try:
+                _隐藏到托盘()
+            except Exception as _e_cl2:
+                app_log.info("关闭", f"托盘降级也失败, 直接退出以免卡死: {_e_cl2}")
+                page.run_task(_彻底退出)
 
     page.window.prevent_close = True
     page.window.on_event = _处理关闭
