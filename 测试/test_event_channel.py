@@ -310,5 +310,42 @@ class Test事件覆盖契约(unittest.TestCase):
         self.assertIn("发布('标题'", inspect.getsource(爬虫))
 
 
+class Test覆盖率诊断(unittest.TestCase):
+    """U19 第二阶段决策依据: 统计"事件生效"与"正则仍在改写状态"的次数"""
+
+    def test_只用事件时摘要报覆盖完整(self):
+        t = _新任务()
+        r = _重定向器(t)
+        r.处理任务事件('进度', {'当前': 5, '总数': 10})
+        self.assertEqual(r.正则兜底数, 0)
+        self.assertGreaterEqual(r.事件应用数, 1)
+        self.assertIn('覆盖完整', r.覆盖率摘要())
+
+    def test_正则改动状态会被计数并记录字段(self):
+        t = _新任务()
+        r = _重定向器(t)
+        r.write('=== 正在抓取第 2/10 章: 第二章 ===\n')
+        self.assertEqual(r.正则兜底数, 1)
+        self.assertIn('progress_current', r.正则兜底字段)
+        self.assertIn('progress_total', r.正则兜底字段)
+        self.assertIn('正则仍在改写状态', r.覆盖率摘要())
+
+    def test_事件与正则值相同时不重复计数(self):
+        """事件先填好状态后, 随后的同值日志行不应被计为"正则改动了状态" """
+        t = _新任务()
+        r = _重定向器(t)
+        r.处理任务事件('进度', {'当前': 7, '总数': 20})
+        基线 = r.正则兜底数
+        r.write('=== 正在抓取第 7/20 章: 第七章 ===\n')   # 同值, 状态未变
+        self.assertEqual(r.正则兜底数, 基线, '同值日志行不应被计为兜底')
+        self.assertGreaterEqual(r.事件应用数, 1)
+
+    def test_摘要口径说明已写清上界语义(self):
+        """防止后人误把 ">0" 直接读成"该字段缺事件" (指标是上界)"""
+        doc = (tm.TaskLogRedirector.覆盖率摘要.__doc__ or '').replace(' ', '')
+        self.assertIn('上界', doc)
+        self.assertIn('==0', doc)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
