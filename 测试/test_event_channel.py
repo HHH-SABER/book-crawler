@@ -244,8 +244,8 @@ class Test接线存在(unittest.TestCase):
         """抽查爬虫侧确实发出了事件 (防发出点被误删)"""
         import 爬虫
         源码 = inspect.getsource(爬虫)
-        for 类型 in ('进度', '章节总数', '输出文件', '增量跳过',
-                     '引擎成功', '引擎失败', '反爬', '质检'):
+        for 类型 in ('进度', '章节总数', '输出文件', '增量跳过', '完成',
+                     '引擎成功', '引擎失败', '反爬', '质检', '标题'):
             self.assertIn(f"发布('{类型}'", 源码, f'爬虫未发布 {类型} 事件')
 
 
@@ -316,14 +316,27 @@ class Test覆盖率诊断(unittest.TestCase):
     def test_只用事件时摘要报覆盖完整(self):
         t = _新任务()
         r = _重定向器(t)
+        r.启用正则兜底 = True            # 本用例测的是"开启时"的诊断口径
         r.处理任务事件('进度', {'当前': 5, '总数': 10})
         self.assertEqual(r.正则兜底数, 0)
         self.assertGreaterEqual(r.事件应用数, 1)
         self.assertIn('覆盖完整', r.覆盖率摘要())
 
+    def test_停用时不把构造出的0当作可删证据(self):
+        """自查发现的漏洞: 开关关掉后计数恒为 0, 不能据此宣称'覆盖完整可删正则'"""
+        t = _新任务()
+        r = _重定向器(t)                  # 默认停用
+        r.处理任务事件('进度', {'当前': 5, '总数': 10})
+        self.assertEqual(r.正则兜底数, 0)
+        摘要 = r.覆盖率摘要()
+        self.assertIn('已停用', 摘要)
+        self.assertNotIn('具备删除正则的条件', 摘要,
+                         '停用时不得输出"可删"结论 (自证式误读)')
+
     def test_正则改动状态会被计数并记录字段(self):
         t = _新任务()
         r = _重定向器(t)
+        r.启用正则兜底 = True          # U19 后默认停用, 本用例显式打开
         r.write('=== 正在抓取第 2/10 章: 第二章 ===\n')
         self.assertEqual(r.正则兜底数, 1)
         self.assertIn('progress_current', r.正则兜底字段)
@@ -334,6 +347,7 @@ class Test覆盖率诊断(unittest.TestCase):
         """事件先填好状态后, 随后的同值日志行不应被计为"正则改动了状态" """
         t = _新任务()
         r = _重定向器(t)
+        r.启用正则兜底 = True
         r.处理任务事件('进度', {'当前': 7, '总数': 20})
         基线 = r.正则兜底数
         r.write('=== 正在抓取第 7/20 章: 第七章 ===\n')   # 同值, 状态未变
@@ -345,6 +359,68 @@ class Test覆盖率诊断(unittest.TestCase):
         doc = (tm.TaskLogRedirector.覆盖率摘要.__doc__ or '').replace(' ', '')
         self.assertIn('上界', doc)
         self.assertIn('==0', doc)
+
+
+class Test正则停用(unittest.TestCase):
+    """U19 第二阶段: 正则兜底默认停用 —— 日志文案从此不再是数据协议。
+
+    依据: ①离线端到端(停用正则后事件仍正确驱动状态);
+          ②真实运行差分(322zw.com 51 章, 停用后终态与开启时完全一致)。
+    置 True 可一行回退, 故正则代码与 test_log_contract.py 都保留着。
+    """
+
+    def test_默认停用(self):
+        self.assertIs(tm.TaskLogRedirector.启用正则兜底, False,
+                      '正则兜底应默认停用 (U19 第二阶段)')
+
+    def test_停用时日志行不再改动状态(self):
+        """核心: 停用后, 契约日志行走 write() 也不得影响任务状态"""
+        t = _新任务()
+        r = _重定向器(t)
+        r.write('=== 正在抓取第 2/10 章: 第二章 ===\n')
+        r.write('共找到 10 个章节\n')
+        r.write('抓取完成，共10章，已保存至D:\\out\\书.txt\n')
+        self.assertEqual(t.progress_current, 0)
+        self.assertEqual(t.progress_total, 0)
+        self.assertEqual(t.output_file, '')
+        self.assertNotEqual(t.status, 'completed')
+        self.assertEqual(r.正则兜底数, 0)
+
+    def test_停用时事件仍能驱动同一批字段(self):
+        t = _新任务()
+        r = _重定向器(t)
+        r.处理任务事件('进度', {'当前': 2, '总数': 10})
+        r.处理任务事件('输出文件', {'路径': r'D:\out\书.txt'})
+        r.处理任务事件('完成', {'章节数': 10})
+        self.assertEqual(t.progress_current, 10)
+        self.assertEqual(t.progress_total, 10)
+        self.assertEqual(t.output_file, r'D:\out\书.txt')
+        self.assertEqual(t.status, 'completed')
+
+    def test_完成事件与正则完成终态等价(self):
+        """两条通道的"完成"语义必须一致 (都走 _应用完成终态)"""
+        t1 = _新任务()
+        t1.progress_total = 7
+        r1 = _重定向器(t1)
+        r1.启用正则兜底 = True
+        r1.write('抓取完成，共7章\n')
+
+        t2 = _新任务()
+        t2.progress_total = 7
+        r2 = _重定向器(t2)
+        r2.处理任务事件('完成', {'章节数': 7})
+
+        self.assertEqual(_快照(t1), _快照(t2), '完成语义两条通道不一致')
+        self.assertEqual(t1.status, 'completed')
+        self.assertEqual(t2.status, 'completed')
+
+    def test_启用开关可回退(self):
+        """回退路径: 置 True 后正则立刻恢复工作"""
+        t = _新任务()
+        r = _重定向器(t)
+        r.启用正则兜底 = True
+        r.write('=== 正在抓取第 3/10 章: 第三章 ===\n')
+        self.assertEqual(t.progress_current, 3)
 
 
 if __name__ == '__main__':
