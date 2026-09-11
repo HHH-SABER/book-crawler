@@ -235,6 +235,59 @@ class TaskLogRedirector:
             mt.incremental_skipped += 1
             return
 
+    # ------------------------------------------------------------------
+    # U19 · 结构化任务事件通道 (与 _parse_* 正则并行; 事件优先, 正则兜底)
+    # ------------------------------------------------------------------
+    def 处理任务事件(self, 类型: str, 数据: dict):
+        """消费爬虫发布的结构化事件, 直接更新任务状态。
+
+        字段语义与 `_parse_progress` / `_parse_metrics` 的正则路径**逐字段等价**
+        —— `测试/test_event_channel.py` 用"同一语义的日志行 vs 事件"双向断言,
+        保证两条通道不会漂移。
+        """
+        if 类型 == '进度':
+            self.task.progress_current = int(数据.get('当前') or 0)
+            总数 = int(数据.get('总数') or 0)
+            if 总数:
+                self.task.progress_total = 总数
+            return
+        if 类型 == '章节总数':
+            总数 = int(数据.get('总数') or 0)
+            if 总数:
+                self.task.progress_total = 总数
+            return
+        if 类型 == '输出文件':
+            路径 = (数据.get('路径') or '').strip()
+            if 路径:
+                self.task.output_file = 路径
+            return
+        if 类型 == '增量跳过':
+            self.task.metrics.incremental_skipped += 1
+            return
+        if 类型 == '引擎成功':
+            引擎 = 数据.get('引擎') or ''
+            if 引擎:
+                self.task.metrics.engine = 引擎
+            return
+        if 类型 == '引擎失败':
+            引擎 = 数据.get('引擎') or ''
+            链路 = self.task.metrics.engine_fallback_chain
+            if 引擎 and 引擎 not in 链路:
+                链路.append(引擎)
+            return
+        if 类型 == '反爬':
+            机制 = 数据.get('机制') or ''
+            if 机制:
+                self.task.metrics.anti_spider_type = 机制
+            return
+        if 类型 == '质检':
+            try:
+                self.task.metrics.quality_score = float(数据.get('得分'))
+            except (TypeError, ValueError):
+                pass        # 得分缺失/非数字 → 保持原值 (与正则不匹配时同语义)
+            self.task.metrics.quality_passed = bool(数据.get('通过'))
+            return
+
     def _backfill_quality(self, task):
         """任务完成时, 从 站点历史.json 回填质检得分 (逐行解析的可靠兜底)。
 
@@ -472,7 +525,19 @@ class TaskManager:
                   incremental: bool = False):
         """在子线程中执行 run_crawl，重定向 print 到任务日志"""
         # 注册到线程感知 stdout 调度器 (不再直接替换全局 sys.stdout, 避免多任务互踩)
-        _THREAD_STDOUT.register(TaskLogRedirector(task, sys.__stdout__))
+        重定向器 = TaskLogRedirector(task, sys.__stdout__)
+        _THREAD_STDOUT.register(重定向器)
+        # U19: 同时订阅结构化任务事件 —— 与日志正则并行的显式数据通道。
+        # 事件优先 (有则直接赋值), 正则兜底 (覆盖尚未发出事件的路径);
+        # 两者都按线程隔离, 故多任务并发不会串台。
+        try:
+            import 任务事件
+            任务事件.订阅(重定向器)
+        except Exception as _e_ev:
+            if app_log is not None:
+                app_log.info(f"任务{task.task_id}",
+                             f"任务事件通道订阅失败 (仅影响事件通道, 正则兜底仍在): "
+                             f"{type(_e_ev).__name__}: {_e_ev}")
         try:
             # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
             sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -512,6 +577,11 @@ class TaskManager:
                 app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
         finally:
             _THREAD_STDOUT.unregister()
+            try:
+                import 任务事件
+                任务事件.退订(重定向器)      # U19: 退订, 防线程复用/重复注册
+            except Exception:
+                pass
 
     def stop_task(self, task_id: str) -> bool:
         """停止指定任务（通过设置停止标志，爬虫循环检查后退出）。
