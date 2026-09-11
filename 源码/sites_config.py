@@ -511,6 +511,10 @@ def load_adapters():
           kw 提供 page_index。
       - paginate(current_url, page_index, **kw) -> str | None
           返回下一页 URL（相对路径自动补全）；返回 None 表示停止分页。
+      - catalog_from_chapter(chapter_url, base_url=None) -> str | None
+          章节页 URL → 目录页 URL 的纯字符串推导（不发请求）；返回 None
+          表示无法推导。供通用层在目录解析前把用户误当任务 URL 的章节页
+          规范化到目录页 (resolve_catalog_from_chapter)。
 
     安全提示: 这些 .py 文件会被 import 执行，等同直接运行代码，
     请只放入可信来源的适配器（信任级别与修改主程序代码一致）。
@@ -548,9 +552,10 @@ def load_adapters():
                 entry = {
                     'source': path, 'parse_catalog': None,
                     'extract_content': None, 'paginate': None,
-                    'get_title': None,
+                    'get_title': None, 'catalog_from_chapter': None,
                 }
-                for attr in ('parse_catalog', 'extract_content', 'paginate', 'get_title'):
+                for attr in ('parse_catalog', 'extract_content', 'paginate',
+                             'get_title', 'catalog_from_chapter'):
                     fn = getattr(mod, attr, None)
                     if callable(fn):
                         entry[attr] = fn
@@ -624,6 +629,29 @@ def get_adapter(url_or_domain):
         if d and d in key:
             return entry
     return None
+
+
+def resolve_catalog_from_chapter(url, base_url=None):
+    """章节页 URL → 目录页 URL (适配器可选能力 catalog_from_chapter)。
+
+    用户常把章节页 URL 当任务 URL; 若适配器声明了 catalog_from_chapter
+    (纯字符串推导, 不发请求), 返回推导出的目录页 URL; 无法推导 (非章节页 /
+    适配器未声明 / 推导异常) 时返回 None, 调用方按原 URL 继续。
+    """
+    try:
+        adapter = get_adapter(url)
+    except Exception:
+        return None
+    if not adapter:
+        return None
+    fn = adapter.get('catalog_from_chapter')
+    if not callable(fn):
+        return None
+    try:
+        return fn(url, base_url)
+    except Exception as e:
+        _log.info(f"[适配器] catalog_from_chapter 异常: {e}")
+        return None
 
 
 def reload_adapters():

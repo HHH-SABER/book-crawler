@@ -19,6 +19,19 @@ SITE = {
 _章节链接RE = re.compile(r'/book/\d+/\d+\.html$')
 _导航词 = ('开始阅读', '最新章节', '上一章', '下一章', '目录', '加入书架',
            '投推荐票', '章节列表', '查看更多')
+_章节页RE = re.compile(r'^(https?://[^/]+)/book/(\d+)/\d+\.html$')
+
+
+def catalog_from_chapter(chapter_url, base_url=None):
+    """章节页 /book/{id}/{n}.html → 目录(详情)页 /book/{id}/ (纯字符串推导)。
+
+    用户常把章节页 URL 当任务 URL (2026-09-11 实测): 通用管线把章节页当
+    目录页解析, 章节链接被导航过滤后只剩"目录"链接 1 个"章节", 把详情页
+    当正文抓 → 整单失败。本函数由通用层在目录解析前调用 (sites_config.
+    resolve_catalog_from_chapter)。
+    """
+    m = _章节页RE.match((chapter_url or '').strip())
+    return f"{m.group(1)}/book/{m.group(2)}/" if m else None
 
 
 def parse_catalog(soup, catalog_url, base_url, **kw):

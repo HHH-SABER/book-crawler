@@ -536,5 +536,109 @@ class TestRustFallbackParity(unittest.TestCase):
         self.assertIn(FEATURE_OPENING, on[0])
 
 
+# ============================================================
+# 5. yunshuzhai: 章节页→目录页规范化 + 样本解析契约 (2026-09-11 事故)
+# ============================================================
+
+def _load_yunshuzhai_adapter():
+    """直接按路径加载适配器模块 (不依赖 ADAPTERS 注册表, 与加载路径解耦)"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'site_adapter_yunshuzhai_test',
+        str(_PROJECT_ROOT / '站点适配' / 'yunshuzhai.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestYunshuzhaiCatalogFromChapter(unittest.TestCase):
+    """用户把章节页 URL 当任务 URL: 通用管线把章节页当目录页解析, 只剩
+    "目录"链接 1 个"章节", 把详情页当正文抓 → 整单失败 (09-11 实测)。
+    适配器用 catalog_from_chapter 声明章节页→目录页推导, run() 在解析前调用。"""
+
+    def test_chapter_url_to_catalog(self):
+        f = _load_yunshuzhai_adapter().catalog_from_chapter
+        self.assertEqual(
+            f('https://www.yunshuzhai.com/book/3432/1.html'),
+            'https://www.yunshuzhai.com/book/3432/')
+        self.assertEqual(
+            f('https://yunshuzhai.com/book/7/99.html'),
+            'https://yunshuzhai.com/book/7/')
+
+    def test_non_chapter_urls_return_none(self):
+        f = _load_yunshuzhai_adapter().catalog_from_chapter
+        self.assertIsNone(f('https://www.yunshuzhai.com/book/3432/'))  # 目录页本身
+        self.assertIsNone(f('https://www.yunshuzhai.com/search.html'))
+        self.assertIsNone(f(''))
+        self.assertIsNone(f(None))
+        # 域名无关纯路径推导 (域名限定由 resolve 分发层按注册表保证), 主机保留
+        self.assertEqual(f('https://other.com/book/1/2.html'),
+                         'https://other.com/book/1/')
+
+    def test_resolve_dispatch_via_registry(self):
+        """resolve_catalog_from_chapter 按 ADAPTERS 注册表分发:
+        未声明/无匹配域名 → None; 异常 → None (不阻断抓取)。"""
+        import sites_config
+        saved = dict(sites_config.ADAPTERS)
+
+        def fake_fn(url, base_url=None):
+            return 'https://x.example/book/1/'
+
+        entry_ok = {'source': 't', 'parse_catalog': None,
+                    'extract_content': None, 'paginate': None,
+                    'get_title': None, 'catalog_from_chapter': fake_fn}
+        entry_none = dict(entry_ok, catalog_from_chapter=None)
+        try:
+            sites_config.ADAPTERS = {'example.com': entry_ok}
+            self.assertEqual(
+                sites_config.resolve_catalog_from_chapter(
+                    'https://www.example.com/book/1/2.html'),
+                'https://x.example/book/1/')
+            sites_config.ADAPTERS = {'example.com': entry_none}
+            self.assertIsNone(sites_config.resolve_catalog_from_chapter(
+                'https://www.example.com/book/1/2.html'))
+            sites_config.ADAPTERS = {'other.org': entry_ok}
+            self.assertIsNone(sites_config.resolve_catalog_from_chapter(
+                'https://unknown.example.com/book/1/2.html'))
+        finally:
+            sites_config.ADAPTERS = saved
+
+
+class TestYunshuzhaiSamples(unittest.TestCase):
+    """真实页面快照契约: 目录解析 / 正文提取 / 书名 (09-10/09-11 两轮修复)。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = _load_yunshuzhai_adapter()
+        from bs4 import BeautifulSoup
+        cls._bs4 = BeautifulSoup
+
+    def test_catalog_sample_yields_chapter_list(self):
+        soup = self._bs4(_read('yunshuzhai_catalog.html'), 'html.parser')
+        links = self.mod.parse_catalog(
+            soup, 'https://www.yunshuzhai.com/book/3432/',
+            'https://www.yunshuzhai.com')
+        self.assertIsNotNone(links, '目录样本应解析出章节列表')
+        self.assertGreater(len(links), 5, f'章节数过少: {len(links)}')
+        for it in links:
+            self.assertIn('/book/3432/', it['url'])
+            self.assertLess(len(it['title']), 41)
+
+    def test_content_sample_yields_body(self):
+        soup = self._bs4(_read('yunshuzhai_content.html'), 'html.parser')
+        text = self.mod.extract_content(
+            soup, 'https://www.yunshuzhai.com/book/3432/1.html',
+            'https://www.yunshuzhai.com')
+        self.assertIsNotNone(text, '正文样本应提取出内容')
+        self.assertGreater(len(text), 1000, f'正文过短: {len(text)}')
+
+    def test_title_from_catalog_sample(self):
+        soup = self._bs4(_read('yunshuzhai_catalog.html'), 'html.parser')
+        title = self.mod.get_title(
+            soup, 'https://www.yunshuzhai.com/book/3432/',
+            'https://www.yunshuzhai.com')
+        self.assertEqual(title, '我的美母教师')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
