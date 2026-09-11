@@ -6,7 +6,7 @@
 
 ***
 
-## \[2.4.18] - 2026-09-11 (未发布)
+## \[2.4.18] - 2026-09-11
 
 ### 修复 — 状态根建目录加固 (交接待办④ 防回归加固)
 
@@ -16,6 +16,9 @@
   `No such file or directory`
 - 新增 测试/test_path_utils.py 2 例 (空状态根子目录必存在且可写 /
   copytree 失败后子目录仍存在); 手写回归脚本同步验证通过
+- **CI 修复**: release.yml 的 rust_core.pyd 步骤注入 PYTHONUTF8=1 — cp1252 控制台下
+  内联 Python print 中文曾致 UnicodeEncodeError, 把编译成功的 best-effort 步骤打成
+  硬失败中止发布 (v2.4.18 首次 tag 触发即命中, wheel 实际已产出)
 
 ## \[2.4.16] - 2026-09-11 (未发布)
 
