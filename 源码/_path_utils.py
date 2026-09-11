@@ -78,13 +78,23 @@ def get_state_root() -> str:
         root = os.path.join(local, "小说爬虫") if local else base
         try:
             os.makedirs(root, exist_ok=True)
-            for name in ("数据", "日志"):
-                old = os.path.join(base, name)
-                new = os.path.join(root, name)
-                if os.path.isdir(old) and not os.path.exists(new):
-                    shutil.copytree(old, new)
         except OSError:
-            pass  # 迁移/建目录失败 → 仍然返回 root, 各模块自身兜底
+            pass  # 建目录失败 → 仍然返回 root
+        for name in ("数据", "日志"):
+            old = os.path.join(base, name)
+            new = os.path.join(root, name)
+            if os.path.isdir(old) and not os.path.exists(new):
+                try:
+                    shutil.copytree(old, new)
+                except OSError:
+                    pass  # 迁移失败不影响新根可用 (旧数据留在原处)
+            # 防回归加固: 无旧数据可迁 (如 LOCALAPPDATA 被外部重定向到空目录)
+            # 或迁移失败时, 也必须保证子目录存在 —— 否则爬取历史等直接 open
+            # 落盘会报 No such file or directory
+            try:
+                os.makedirs(new, exist_ok=True)
+            except OSError:
+                pass
         _STATE_ROOT = root
         return _STATE_ROOT
 
