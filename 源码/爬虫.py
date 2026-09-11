@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 import 日志 as _app_log
 _log = _app_log.get('爬虫')
+# U19: 结构化任务事件通道 (GUI 用它直接取字段, 不再只依赖日志文案解析)。
+# 无订阅方时 发布() 立即返回, CLI/纯爬虫场景零开销; 订阅方异常不会外溢。
+import 任务事件 as _任务事件
 
 """
 小说爬虫主程序
@@ -994,6 +997,7 @@ class NovelSpider:
                             pass
                     _log.info(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
                           f"(第{self._限频连续次数}次连续限频)")
+                    _任务事件.发布('反爬', 机制='rate_limit')      # U19 结构化事件
                     time.sleep(等待)
                     response = self.session.get(url, headers=headers, timeout=timeout)
                 elif 结果.机制 == 'ua_block':
@@ -1004,6 +1008,7 @@ class NovelSpider:
                     # curl_cffi 模拟 TLS 指纹; 成功则替换 response, 由下方反爬层校验
                     if self._引擎管理器 is not None:
                         _log.info(f"[反爬] 命中 {结果.机制}, 尝试成熟反爬库引擎重发...")
+                        _任务事件.发布('反爬', 机制=结果.机制)      # U19 结构化事件
                         引擎响应 = self._引擎管理器.请求(
                             url, headers=headers, timeout=timeout, 机制=结果.机制)
                         if 引擎响应 is not None:
@@ -1012,10 +1017,12 @@ class NovelSpider:
                                     self._引擎统计.get(引擎响应.引擎, 0) + 1
                                 _log.info(f"[反爬] ✅ {引擎响应.引擎} 引擎请求成功 "
                                       f"(状态 {引擎响应.status_code}), 交由反爬层校验")
+                                _任务事件.发布('引擎成功', 引擎=引擎响应.引擎)   # U19
                                 response = 引擎响应
                             else:
                                 _log.info(f"[反爬] ⚠️ {引擎响应.引擎} 引擎请求失败 "
                                       f"(状态 {引擎响应.status_code}), 保留原响应走现有流程")
+                                _任务事件.发布('引擎失败', 引擎=引擎响应.引擎)   # U19
             else:
                 self._限频连续次数 = 0  # 正常响应, 重置退避档位
             # 同一 UA 连续 403/406 计数 (ua_block "连续失败"判据)
@@ -2956,6 +2963,7 @@ class NovelSpider:
             _log.info("保持原目录顺序，不进行自动排序")
 
         _log.info(f"\n共找到 {len(chapters)} 个章节（已去重并排序）")
+        _任务事件.发布('章节总数', 总数=len(chapters))        # U19 结构化事件
         # 打印章节列表
         for i, chap in enumerate(chapters):
             _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
@@ -5538,9 +5546,11 @@ class NovelSpider:
             if 报告.有效:
                 if attempt > 0:
                     _log.info(f"[质检] 第{attempt}次重试后通过: {报告.摘要()}")
+                    _任务事件.发布('质检', 得分=报告.得分, 通过=报告.有效)   # U19
                 self._质检记录.append(报告)
                 return content
             _log.info(f"[质检] {报告.摘要()}")
+            _任务事件.发布('质检', 得分=报告.得分, 通过=报告.有效)   # U19 结构化事件
             if attempt < max_retries:
                 _log.info(f"[质检] 未通过, 清除模式缓存并轮换UA后重试 ({attempt+1}/{max_retries})...")
                 self._detected_pattern = None  # 强制下次重新检测内容模式
@@ -5886,6 +5896,7 @@ class NovelSpider:
                 _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
             else:
                 _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
+            _任务事件.发布('输出文件', 路径=output_file)      # U19 结构化事件
             # EPUB 导出 (可选): 有内容且开启时, 把结果 txt 一并转为 .epub
             if export_epub and output_file and os.path.isfile(output_file) \
                     and (total - len(failed)) > 0:
@@ -6153,6 +6164,7 @@ class NovelSpider:
                                     self._增量跳过数 += 1
                                     _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
                                           f"{chapters[i]['title']}")
+                                    _任务事件.发布('增量跳过')          # U19 结构化事件
                                     continue
                                 _log.info(f"[增量] 第 {i+1}/{total} 章旧正文缺失, 改为重抓: "
                                       f"{chapters[i]['title']}")
@@ -6197,6 +6209,7 @@ class NovelSpider:
                                                       export_epub, 正常完成=False)
                             chap = chapters[i]
                             _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
+                            _任务事件.发布('进度', 当前=i + 1, 总数=total)   # U19 结构化事件
                             try:
                                 # P1-2 超时防线: 单章 result 最长等 180s, 防站点挂起卡死整个 run
                                 # (concurrent.futures.TimeoutError 即内置 TimeoutError)
@@ -6252,6 +6265,7 @@ class NovelSpider:
                             if start > 0 or chap['title'] in 增量旧内容:
                                 self._增量跳过数 += 1
                                 _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
+                                _任务事件.发布('增量跳过')          # U19 结构化事件
                                 if start == 0:
                                     f.write(f"## {chap['title']}\n\n")
                                     f.write(增量旧内容[chap['title']] + "\n\n")
@@ -6262,6 +6276,7 @@ class NovelSpider:
                                 continue
                             _log.info(f"[增量] 第 {i+1}/{total} 章旧正文缺失, 改为重抓: {chap['title']}")
                         _log.info(f"\n=== 正在抓取第 {i+1}/{total} 章: {chap['title']} ===")
+                        _任务事件.发布('进度', 当前=i + 1, 总数=total)   # U19 结构化事件
                         _spd = getattr(self, '_speed_ctrl', None)
                         _t0 = time.perf_counter() if _spd is not None else 0.0
                         content = self._fetch_with_retry(chap)
