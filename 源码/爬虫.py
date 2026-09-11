@@ -99,6 +99,7 @@ try:
         PATTERN_HTML_SELECTOR,
         get_site_pattern, build_paged_url,
         extract_content as extract_content_by_pattern,
+        resolve_catalog_from_chapter,
         validate_public_url,
     )
     SITES_CONFIG_AVAILABLE = True
@@ -5962,6 +5963,19 @@ class NovelSpider:
         incremental_max_age_hours: 增量模式的时间窗口 (小时), 默认 24。
             仅在 incremental=True 时生效。
         """
+        # 章节页 URL → 目录页 (适配器可选能力 catalog_from_chapter):
+        # 用户常把章节页 URL 当任务 URL, 通用管线把章节页当目录页解析会
+        # 只剩"目录"链接 1 个"章节", 把详情页当正文抓导致整单失败
+        # (2026-09-11 yunshuzhai 实测)。在书名提取前规范化, 书名也随之修正。
+        if SITES_CONFIG_AVAILABLE:
+            try:
+                _目录URL = resolve_catalog_from_chapter(catalog_url)
+                if _目录URL and _目录URL != catalog_url:
+                    _log.info(f"[适配器] 章节URL规范化到目录页: {catalog_url} → {_目录URL}")
+                    catalog_url = _目录URL
+            except Exception as _e_cat:
+                _log.info(f"[适配器] 章节URL规范化异常, 按原URL继续: {_e_cat}")
+
         # 提取小说名称 (调用方已提供时直接使用, 避免重复请求)
         title_from_caller = novel_title is not None
         if novel_title is None:
