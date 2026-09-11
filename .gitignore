@@ -267,3 +267,7 @@ NVIDIA Corporation/
 
 /dist_v2.3.1/
 /build_v2.3.1/
+
+# ============ 跨 Agent 交接文件 (本地协作文件, 按 HANDOFF.md 自身规则不入库) ============
+# 2026-09-11: 此前被 `git add -A` 误提交并推送, 已从索引移除并在此忽略
+HANDOFF.md
