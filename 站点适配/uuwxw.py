@@ -54,6 +54,22 @@ def _chapter_sort_key(chap):
     return 9999
 
 
+def _同域(url, 基准):
+    """netloc 级同域判断 (U7)。
+
+    旧实现用 startswith(基准) 做前缀比对, 会被
+    https://uuwxw.cc.evil.com/... 这类伪装 URL 绕过 (前缀确实匹配但域不同),
+    进而把跨域 URL 拼进目录抓取。改按 urlparse().netloc 严格比较。
+    """
+    try:
+        from urllib.parse import urlparse
+        a = (urlparse(url).netloc or '').lower()
+        b = (urlparse(基准).netloc or '').lower()
+        return bool(a) and a == b
+    except Exception:
+        return False
+
+
 def parse_catalog(soup, catalog_url, base_url, **kw):
     """悠悠书城 (uuwxw.cc) 目录解析。
 
@@ -92,7 +108,9 @@ def parse_catalog(soup, catalog_url, base_url, **kw):
                 page_urls.append(v)
     if not page_urls:
         # 兜底: 仅当前目录页
-        if catalog_url.startswith(base_url):
+        # 修复(U7): 用 netloc 判同域, 旧实现 startswith 会被
+        # https://uuwxw.cc.evil.com/ 这类伪装 URL 绕过
+        if _同域(catalog_url, base_url):
             page_urls = [catalog_url[len(base_url):]]
         else:
             page_urls = [catalog_url]
@@ -104,6 +122,11 @@ def parse_catalog(soup, catalog_url, base_url, **kw):
             page_soup = soup
         else:
             page_url = base_url + rel
+            # 修复(U7): 拼接后再验一次同域 —— option 的 value 若被站点改成
+            # "//evil.com/x" 或绝对 URL, 这里会把目录抓取引到跨域地址
+            if not _同域(page_url, base_url):
+                _log.info(f"[uuwxw] 跳过跨域目录页: {page_url}")
+                continue
             _log.info(f"[uuwxw] 抓取目录第{i+1}页: {page_url}")
             page_soup = fetch(page_url) if fetch else None
         if page_soup is None:

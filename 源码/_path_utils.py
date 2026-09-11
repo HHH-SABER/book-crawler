@@ -55,7 +55,11 @@ def get_default_output_dir() -> str:
 # 换 EXE、换安装目录、重装都不会丢; 抓取结果/站点适配/站点配置 仍留在
 # EXE 旁边 (用户要直接看到、要手改)。
 _STATE_ROOT = None
-_状态根锁 = None
+# 修复(U9): 锁改为模块级直接创建。旧实现是惰性创建 (if _状态根锁 is None: ...),
+# "判断-创建"本身非原子 —— 两个线程可各自 new 出一把锁并同时进入临界区,
+# 触发并发 copytree 迁移 (重复复制 / 半成品目录)。
+import threading as _threading
+_状态根锁 = _threading.Lock()
 
 
 def get_state_root() -> str:
@@ -63,12 +67,9 @@ def get_state_root() -> str:
 
     首次调用执行一次性迁移: 旧位置 BASE_DIR/数据、BASE_DIR/日志 → 新根
     (复制而非移动, 迁移失败也不影响旧数据继续可用)。幂等、线程安全。"""
-    global _STATE_ROOT, _状态根锁
+    global _STATE_ROOT
     if _STATE_ROOT:
         return _STATE_ROOT
-    import threading
-    if _状态根锁 is None:
-        _状态根锁 = threading.Lock()
     with _状态根锁:
         if _STATE_ROOT:
             return _STATE_ROOT

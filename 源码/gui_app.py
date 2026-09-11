@@ -457,6 +457,13 @@ def main(page: ft.Page):
         except Exception as _e:
             app_log.info("退出", f"风控事件 flush 失败: {type(_e).__name__}: {_e}")
         try:
+            # 修复(U15b): 请求引擎单例的会话池此前无人 close。
+            # os._exit 不跑 atexit, 所以必须在这里显式释放。
+            from 请求引擎 import 获取引擎管理器
+            获取引擎管理器().close()
+        except Exception as _e:
+            app_log.info("退出", f"引擎会话释放失败: {type(_e).__name__}: {_e}")
+        try:
             app_log.close()
         except Exception:
             pass

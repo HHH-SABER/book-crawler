@@ -42,13 +42,17 @@ def benchmark_sample(url, sample=1024*1024, timeout=20):
     _p = urllib.parse.urlparse(url)
     if _p.scheme not in ('http', 'https') or (_p.hostname or '').lower() not in _ALLOWED_DL_HOSTS:
         raise ValueError(f"非法下载地址: {url}")
+    # 修复(U8): 旧实现把 ip_address() 的解析失败与"内网地址"的 raise 放在同一个
+    # try/except ValueError: pass 里 —— 于是自己刚抛的内网校验被自己吞掉, 该检查
+    # 形同虚设。现只忽略"hostname 不是 IP 字面量"这一种情况, 内网判定改为显式抛出。
     try:
         _ip = _ipa.ip_address(_p.hostname)
-        if _ip.is_private or _ip.is_loopback or _ip.is_link_local \
-                or _ip.is_reserved or _ip.is_multicast or _ip.is_unspecified:
-            raise ValueError(f"内网地址: {url}")
     except ValueError:
-        pass
+        _ip = None      # 非 IP 字面量 → 交给域名白名单兜底
+    if _ip is not None and (_ip.is_private or _ip.is_loopback or _ip.is_link_local
+                            or _ip.is_reserved or _ip.is_multicast
+                            or _ip.is_unspecified):
+        raise ValueError(f"内网地址: {url}")
     ctx = ssl.create_default_context()
     req = urllib.request.Request(url, headers={"Range": f"bytes=0-{sample-1}"})
     t0 = time.time()
