@@ -15,6 +15,30 @@
   EPUB·中断续传·完成推送·API 一览·任务生命周期时序图）/ FAQ 9 条 / 故障排除
   （排查三板斧 + 症状表）/ 安全合规须知
 - README 新增"手机远控"小节（完整教程链接 + 30 秒上手），文档目录清单同步
+- **加固 check_undefined_refs（v2.4.19 教训落地）**: 新增 **from-import 名字解析校验**
+  —— symtable 把 from-import 标为合法绑定，名字在目标模块不存在也查不出
+  （首发事故 `MORANDI_TERTIARY_CONTAINER` 即此类）。现对所有 from-import
+  （含函数体内）校验名字在目标模块/包再导出/子模块中真实存在；星号导入与
+  标准库/三方包跳过（不做 import 探测，零副作用）；支持 try/except 兜底 def
+  与相对导入；诊断输出补相对导入前导点。新增 测试/test_check_undefined_refs.py
+  4 例（含"真实源码全量扫描必须为空"契约测试）
+
+### 修复 — 四项用户反馈（远控面板 / 适配器误报 / 云书斋 / 版本号）
+
+- **EXE 远控面板缺失**：手机访问面板返回 `{"detail":"面板文件缺失"}` —— onefile
+  不自动收集数据文件，`远控/面板.html` 与 `阅读.html` 未打包。build_exe 显式
+  add-data 到 `远控/` 目录（与 `__file__` 同目录定位约定一致）
+- **站点管理页适配器全部误报"加载失败或未注册"**（EXE 新会话必现）：
+  `_adapter_status` 里 `from sites_config import ADAPTERS` 按值绑定了加载前的
+  旧 dict，而 `load_adapters()` 是整体换引用（M3）——页面永远看到空表。
+  改为读 `sites_config.ADAPTERS` 当前属性。日志证实加载实际全部成功，纯显示层误报
+- **yunshuzhai.com 正文提取失败**：适配器缺 `extract_content`/`get_title`。
+  实测站点为 Tailwind 布局，正文容器 `#novel-content`（单页章节 ~5300 字，
+  无章节内分页）；补 `extract_content` + `get_title`（书名取自
+  `<title>` 前段，如"我的美母教师"），真实样本离线验证通过
+  （样本入 测试样本/yunshuzhai_*.html）
+- **GUI 版本号显示**：顶栏应用名与窗口标题追加版本号 —— EXE 读版本资源
+  ProductVersion（ctypes），源码模式读 `脚本/版本.json`；失败静默退化为纯应用名
 
 ## \[2.4.19] - 2026-09-11
 

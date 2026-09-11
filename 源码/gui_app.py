@@ -75,9 +75,49 @@ except Exception:
     pass
 
 
+def _读显示版本() -> str:
+    """界面显示版本号: EXE 读版本资源 (ProductVersion), 源码读 脚本/版本.json。
+
+    失败返回 '' (调用方拼接时自然退化为纯应用名, 不阻断启动)。
+    """
+    try:
+        if getattr(sys, "frozen", False):
+            import ctypes
+            size = ctypes.windll.version.GetFileVersionInfoSizeW(
+                sys.executable, None)
+            if size:
+                data = ctypes.create_string_buffer(size)
+                if ctypes.windll.version.GetFileVersionInfoW(
+                        sys.executable, 0, size, data):
+                    ptr = ctypes.c_void_p()
+                    ln = ctypes.c_uint()
+                    if ctypes.windll.version.VerQueryValueW(
+                            data, '\\VarFileInfo\\Translation',
+                            ctypes.byref(ptr), ctypes.byref(ln)) and ln.value >= 4:
+                        pair = ctypes.cast(
+                            ptr, ctypes.POINTER(ctypes.c_uint16 * 2)).contents
+                        key = (f'\\StringFileInfo\\{pair[0]:04x}{pair[1]:04x}'
+                               f'\\ProductVersion')
+                        if ctypes.windll.version.VerQueryValueW(
+                                data, key, ctypes.byref(ptr), ctypes.byref(ln)):
+                            return ctypes.wstring_at(ptr.value).strip()
+        else:
+            import json as _j
+            p = os.path.normpath(os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                '..', '脚本', '版本.json'))
+            with open(p, encoding='utf-8') as f:
+                return str(_j.load(f).get('版本', '')).strip()
+    except Exception:
+        pass
+    return ''
+
+
 def main(page: ft.Page):
     """Flet 应用入口"""
-    page.title = "小说爬虫"
+    _版本 = _读显示版本()
+    _应用名 = f"小说爬虫 v{_版本}" if _版本 else "小说爬虫"
+    page.title = _应用名
     # 窗口尺寸按屏幕自适应 (修复: 写死 1280x800 在小屏/高DPI缩放下内容截断)
     try:
         import ctypes
@@ -637,7 +677,7 @@ def main(page: ft.Page):
     page.window.prevent_close = True
     page.window.on_event = _处理关闭
 
-    top_bar = build_top_bar(page, '小说爬虫', _theme_toggle_btn[0],
+    top_bar = build_top_bar(page, _应用名, _theme_toggle_btn[0],
                             extra_controls=[_远控按钮])
 
     # ---- 整体布局 (Fluent 三段式: 顶栏 + 侧边导航 + 主内容) ----
