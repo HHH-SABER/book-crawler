@@ -53,6 +53,8 @@ def _重定向器(task):
 
 # (说明, 日志行, 事件类型, 事件字段)
 _等价对 = [
+    ('标题', '提取到小说名称: 宿命之环',
+     '标题', {'标题': '宿命之环'}),
     ('进度', '=== 正在抓取第 7/20 章: 第七章 ===',
      '进度', {'当前': 7, '总数': 20}),
     ('进度(进度条格式)', '  7/20 (35%)',
@@ -245,6 +247,67 @@ class Test接线存在(unittest.TestCase):
         for 类型 in ('进度', '章节总数', '输出文件', '增量跳过',
                      '引擎成功', '引擎失败', '反爬', '质检'):
             self.assertIn(f"发布('{类型}'", 源码, f'爬虫未发布 {类型} 事件')
+
+
+class Test事件覆盖契约(unittest.TestCase):
+    """U19 第二阶段准备: 逐条核对日志契约的"事件覆盖"状态。
+
+    摘除正则路径的前提是"每条契约都有事件覆盖"。本表把该判断显式化 ——
+    **新增一条契约却忘了决定它的事件覆盖, `test_覆盖表与契约测试同步` 会红**。
+    """
+
+    # (契约用例名, 是否有事件通道, 说明)
+    覆盖表 = {
+        'test_novel_title': (True, "事件 '标题' (爬虫在确认书名后发布)"),
+        'test_chapter_progress': (True, "事件 '进度'"),
+        'test_progress_bar_format': (True, "同 '进度' —— 解析的是同一对字段; "
+                                          "进度条本身由 print_progress_bar 打印, 无需单独事件"),
+        'test_total_found': (True, "事件 '章节总数' 发布在 get_chapter_list 的公共出口, "
+                                  "覆盖全部站点分支 (各站 '[站点] 共提取 N 个章节' 只是中间日志)"),
+        'test_saved_to_and_completed': (True, "事件 '输出文件'; completed 终态由 "
+                                             "_set_terminal 直接置位, 不经文案"),
+        'test_stopped_wont_mark_completed': (False, "与事件无关: 停止语义由 stop_task "
+                                                   "的状态白名单保证 (U5)"),
+        'test_engine_success': (True, "事件 '引擎成功'"),
+        'test_engine_fallback_chain': (True, "事件 '引擎失败'"),
+        'test_anti_spider_types': (True, "事件 '反爬' —— 5 种机制值均有发出点"),
+        'test_quality_score': (True, "事件 '质检'"),
+        'test_incremental_skip_counts_per_line': (True, "事件 '增量跳过' 逐次累加 "
+                                                       "(不发送汇总行, 与契约的按行计数一致)"),
+    }
+
+    def test_覆盖表与契约测试同步(self):
+        """契约测试新增/改名内容必须在本表里表态, 否则这里失败"""
+        契约文件 = _根 / '测试' / 'test_log_contract.py'
+        文本 = 契约文件.read_text(encoding='utf-8')
+        import re
+        用例 = set(re.findall(r'def (test_\w+)\(self\)', 文本))
+        契约用例 = {n for n in 用例
+                    if n.startswith(('test_novel', 'test_chapter', 'test_progress',
+                                     'test_total', 'test_saved', 'test_stopped',
+                                     'test_engine', 'test_anti', 'test_quality',
+                                     'test_incremental'))}
+        未表态 = 契约用例 - set(self.覆盖表)
+        多余 = set(self.覆盖表) - 契约用例
+        self.assertEqual(未表态, set(),
+                         f'这些契约用例没有表态事件覆盖: {sorted(未表态)}')
+        self.assertEqual(多余, set(),
+                         f'覆盖表里有已不存在的契约用例: {sorted(多余)}')
+
+    def test_反爬机制值都有发出点(self):
+        """契约里的 5 种机制值, 爬虫侧必须真的发得出来"""
+        import 爬虫
+        源码 = inspect.getsource(爬虫)
+        for 值 in ('rate_limit', 'waf_captcha', 'waf_js_challenge', 'js_cookie'):
+            self.assertIn(f"发布('反爬', 机制='{值}'", 源码,
+                          f'爬虫未发布 {值} 机制事件')
+        # 'dynamic_token' 等由 结果.机制 变量透传, 无法字面匹配 → 断言变量形式存在
+        self.assertIn("发布('反爬', 机制=结果.机制)", 源码,
+                      '爬虫未发布"按识别结果"透传的反爬机制事件')
+
+    def test_标题事件有发出点(self):
+        import 爬虫
+        self.assertIn("发布('标题'", inspect.getsource(爬虫))
 
 
 if __name__ == '__main__':

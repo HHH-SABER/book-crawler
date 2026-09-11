@@ -245,6 +245,11 @@ class TaskLogRedirector:
         —— `测试/test_event_channel.py` 用"同一语义的日志行 vs 事件"双向断言,
         保证两条通道不会漂移。
         """
+        if 类型 == '标题':
+            标题 = (数据.get('标题') or '').strip()
+            if 标题:
+                self.task.title = 标题
+            return
         if 类型 == '进度':
             self.task.progress_current = int(数据.get('当前') or 0)
             总数 = int(数据.get('总数') or 0)

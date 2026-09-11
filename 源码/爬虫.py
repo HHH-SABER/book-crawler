@@ -1052,6 +1052,7 @@ class NovelSpider:
                 if _now_t - self._waf_last_try > 10:
                     try:
                         _log.info(f"[反爬检测] 命中 WAF 图片验证码页 ({len(response.text)}字节)，尝试自动解决...")
+                        _任务事件.发布('反爬', 机制='waf_captcha')     # U19 结构化事件
                         if solve_waf_captcha(self.session, url, headers=headers, log=print):
                             self._waf_last_try = 0.0  # 成功: 允许后续立即重试
                             response = self.session.get(url, headers=headers, timeout=timeout)
@@ -1070,6 +1071,7 @@ class NovelSpider:
                     self._waf_js_last_try = _now_t
                     try:
                         _log.info("[反爬检测] 命中 WAF JS 挑战页, 用浏览器渲染获取令牌 cookie...")
+                        _任务事件.发布('反爬', 机制='waf_js_challenge')   # U19 结构化事件
                         if self._solve_waf_js_challenge(url):
                             self._waf_js_last_try = 0.0
                             # 令牌 cookie 绑定浏览器 UA, 重试时用同步后的 UA
@@ -1087,6 +1089,7 @@ class NovelSpider:
             if not any(m.encode() in raw for m in challenge_markers):
                 break
             _log.info(f"[反爬检测] 第{retry+1}次请求命中JS cookie校验页面({len(raw)}字节)，提取cookie后重试...")
+            _任务事件.发布('反爬', 机制='js_cookie')       # U19 结构化事件
             m = re.search(rb'document\.cookie\s*=\s*"([^"]+)"', raw)
             if m:
                 cookie_str = m.group(1).decode('utf-8', errors='ignore')
@@ -5969,6 +5972,7 @@ class NovelSpider:
             novel_title = _resolve_unique_title(novel_title, output_dir_abs)
 
         _log.info(f"提取到小说名称: {novel_title}")
+        _任务事件.发布('标题', 标题=novel_title)          # U19 结构化事件
 
         # P0-2 限速自适应: 依据该域近期风控命中/冷却, 放大请求间隔 (run 内只算一次)
         try:
