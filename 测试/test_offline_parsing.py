@@ -632,6 +632,12 @@ class TestYunshuzhaiSamples(unittest.TestCase):
         self.assertIsNotNone(text, '正文样本应提取出内容')
         self.assertGreater(len(text), 1000, f'正文过短: {len(text)}')
 
+    def test_paginate_declares_single_page(self):
+        """单页章节: paginate 返回 None 显式停止, 通用规则不再瞎猜 _1.html
+        续页 (瞎猜会 404 并污染爬取历史失败统计, 09-12 实测)。"""
+        mod = _load_yunshuzhai_adapter()
+        self.assertIsNone(mod.paginate('https://www.yunshuzhai.com/book/3432/1.html', 1))
+
     def test_title_from_catalog_sample(self):
         soup = self._bs4(_read('yunshuzhai_catalog.html'), 'html.parser')
         title = self.mod.get_title(
