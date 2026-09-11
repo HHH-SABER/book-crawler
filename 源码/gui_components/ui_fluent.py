@@ -144,8 +144,13 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
         shape=ft.RoundedRectangleBorder(radius=8),
         elevation=8,
         title_text_style=ft.TextStyle(
-            size=SIZE_SUBTITLE, weight=WEIGHT_SUBTITLE, font_family=FONT_STACK),
-        content_text_style=_body_ts,
+            size=SIZE_SUBTITLE, weight=WEIGHT_SUBTITLE, font_family=FONT_STACK,
+            # 显式给色: 文字样式缺 color 时, 打包环境 (EXE/Flutter 渲染) 下
+            # 弹窗标题/正文/复选框文字会渲染成不可见, 只有自带主色的按钮可见
+            color=cs_kwargs.get('on_surface', MORANDI_ON_SURFACE)),
+        content_text_style=ft.TextStyle(
+            size=SIZE_BODY, weight=WEIGHT_BODY, font_family=FONT_STACK,
+            color=cs_kwargs.get('on_surface', MORANDI_ON_SURFACE)),
     )
 
     divider_theme = ft.DividerTheme(
