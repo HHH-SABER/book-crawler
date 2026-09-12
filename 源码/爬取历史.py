@@ -142,21 +142,22 @@ class 爬取历史:
     _最小落盘间隔 = 5.0   # 秒 (M1: 防抖窗口)
 
     def _合并磁盘新数据(self):
-        """(须持 _io_lock) 磁盘被另一进程改过时, 按顶层 (域名) 键合并进内存。
+        """(须持 _io_lock) 磁盘上别的进程写入的域, 按顶层 (域名) 键合并进内存。
 
         修复(U16): 桌面 GUI 与远控服务是两个进程, 各持一份内存副本整文件覆盖 ——
-        后写的一方会把另一方新抓的记录整片抹掉。写前先比对文件 mtime, 若被外部
-        改过就把"我们没有的域"补进来, 消除这种粗粒度丢数据。
+        后写的一方会把另一方新抓的记录整片抹掉。落盘前先把"我们没有的域"补进来,
+        消除这种粗粒度丢数据。
+
+        (U16-fix, v2.4.26 CI 修复) 旧实现先比对 mtime 决定是否读盘 —— 但 NTFS/CI
+        文件系统在写入句柄关闭后 mtime 查询存在延迟窗口, "刚被外部改写的文件
+        getmtime 仍返回旧值"导致误判"磁盘没变过"而整片跳过合并 (release CI
+        test_写前合并磁盘上别的进程写入的新域 偶发红, 本机 300 轮不复现)。
+        改为**每次落盘前无条件读盘合并**: 合并是幂等的 (只补内存没有的域,
+        不覆盖已有域), 代价为落盘前一次读盘, 相对整文件写入可忽略。
 
         粒度说明: 同一域名两端同时更新时仍是"后写覆盖先写"。做逐 URL 级合并需要
         变更追踪, 属独立设计项 (见 文档/修复台账 §2.3)。
         """
-        try:
-            mtime = os.path.getmtime(self._file)
-        except OSError:
-            return
-        if mtime <= getattr(self, '_磁盘时间', 0.0):
-            return
         try:
             with open(self._file, 'r', encoding='utf-8') as f:
                 磁盘 = json.load(f)
@@ -167,7 +168,6 @@ class 爬取历史:
         for 域名, 记录 in 磁盘.items():
             if 域名 not in self._数据:
                 self._数据[域名] = 记录
-        self._磁盘时间 = mtime
 
     def _快照(self, force=False):
         """(须持 _io_lock) 防抖判定 + 生成一致快照; None = 本次不落盘。
@@ -199,10 +199,6 @@ class 爬取历史:
             os.replace(tmp, fobj)
             self._上次落盘 = time.time()
             self._脏 = False
-            try:
-                self._磁盘时间 = os.path.getmtime(fobj)   # 记下自己的写入, 免得被当外部改动回灌
-            except OSError:
-                pass
         except OSError as e:
             _log.info(f"[爬取历史] 保存失败: {e}")
 
