@@ -218,6 +218,27 @@ class Test通道自身健壮(unittest.TestCase):
         self.assertEqual(子线程结果, [False], '子线程不应继承主线程的订阅方')
         self.assertEqual(主线程收到, [], '主线程不应收到子线程发布的事件')
 
+    def test_订阅随copy_context传播到worker(self):
+        """H1 回归: 并行抓取时章节 worker 经 copy_context().run 执行 ——
+        订阅方必须随上下文传播, 否则 worker 里发布的 质检/引擎/反爬 事件全部丢失
+        (v2.4.24 增量审查 H1: threading.local 不随 copy_context 传播)。"""
+        收到 = []
+
+        class 收:
+            def 处理任务事件(self, 类型, 数据):
+                收到.append((类型, 数据))
+
+        任务事件.订阅(收())
+        import contextvars as _cv
+
+        def worker():
+            # 与 爬虫.py:6188 同构: 任务线程快照上下文 → worker 内发布事件
+            self.assertTrue(任务事件.有订阅方(), 'worker 应能看见任务线程的订阅方')
+            任务事件.发布('质检', 得分=90, 通过=True)
+
+        _cv.copy_context().run(worker)
+        self.assertEqual(收到, [('质检', {'得分': 90, '通过': True})])
+
     def test_退订全部(self):
         class 收:
             def 处理任务事件(self, 类型, 数据):

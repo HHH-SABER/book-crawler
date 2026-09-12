@@ -41,6 +41,7 @@ import os
 import time
 import base64
 import ipaddress
+import threading
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
@@ -411,6 +412,13 @@ def get_site_pattern(url):
 # ============================================================
 _RUNTIME_APPLIED = False
 _RUNTIME_APPENDED = set()   # 由 JSON 追加 (非内置) 的域名, 重载时先移除防重复
+# G-M3 (GUI 专项审查): 重放全程持 RLock。防两类竞态:
+#   ① 两个调用方并发重放 → _RUNTIME_APPENDED 记账交错, 追加条目重复/丢失且
+#      持续到重启 (真实损害);
+#   ② 重放中途被并发 get_site_pattern 读到中间态 (enabled 标志短暂丢失等) ——
+#      该残留窗口为微秒级且自愈, 读侧仍无锁 (保住抓取热路径零开销), 属已接受的
+#      弱一致性。
+_重载锁 = threading.RLock()
 
 
 def _apply_runtime_config():
@@ -424,9 +432,18 @@ def _apply_runtime_config():
     H7 修复: 支持 reload_runtime_config() 强制重放 —— 旧实现 _RUNTIME_APPLIED
     一次性置位后, GUI 站点管理页的启用/禁用与新增在当前进程内永不生效。
     """
-    global _RUNTIME_APPLIED, _RUNTIME_APPENDED
+    global _RUNTIME_APPLIED
     if _RUNTIME_APPLIED:
         return
+    with _重载锁:
+        if _RUNTIME_APPLIED:    # 双检: 并发进入只重放一次
+            return
+        _执行重放()
+
+
+def _执行重放():
+    """(须持 _重载锁) 重放本体: 记账/复位/upsert 全部在此 (竞态说明见 _重载锁)"""
+    global _RUNTIME_APPLIED, _RUNTIME_APPENDED
     # 重放前先移除上次由 JSON 追加的域名条目 (覆盖型条目会被再次覆盖, 无需移除)
     if _RUNTIME_APPENDED:
         SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
@@ -480,10 +497,14 @@ def reload_runtime_config():
 
     GUI 站点管理页保存/切换启用开关后调用, 使改动在当前进程内立即生效
     (无需重启程序)。
+
+    G-M3: 复位+重放整体持 _重载锁 —— 若锁外只复位标志, 与并发重放的收尾
+    置位交错会导致本次保存被双检误判"已应用"而跳过。
     """
-    global _RUNTIME_APPLIED
-    _RUNTIME_APPLIED = False
-    _apply_runtime_config()
+    with _重载锁:
+        global _RUNTIME_APPLIED
+        _RUNTIME_APPLIED = False
+        _apply_runtime_config()
 
 
 # ============================================================

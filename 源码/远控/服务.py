@@ -377,14 +377,6 @@ _章节缓存锁 = threading.Lock()   # 同步端点跑在 Starlette 线程池, 
 _已推终态: set = set()    # (task_id, status, end_time) — 防重复推送
 
 
-def _书id_from输出(task) -> Optional[str]:
-    """任务的输出文件 → 书籍 id (用于推送/面板直达链接); 无效返回 None"""
-    path = (task.output_file or "").strip()
-    if not path or not os.path.isfile(path):
-        return None
-    return hashlib.md5(os.path.abspath(path).encode("utf-8")).hexdigest()[:12]
-
-
 def _发送推送(标题: str, 内容: str) -> None:
     """完成推送 (④): Bark / ntfy, 按配置二选一或都发; 失败仅记日志不抛"""
     cfg = 取配置().get("推送") or {}
@@ -451,9 +443,10 @@ def _扫描终态() -> list:
         链接 = ""
         前 = (取配置().get("外链前缀") or "").rstrip("/")
         if 前:
-            bid = _书id_from输出(t)
-            if bid:
-                链接 = f"\n阅读: {前}/reader/{bid}?k={取配置().get('token','')}"
+            # G-H2 (GUI 专项审查): 推送正文禁止携带 token —— Bark/ntfy 是
+            # 第三方通道, 全权限 token 内嵌 ?k= 会随推送离开本机。
+            # 改为指到面板根 (token 已存面板本地), 用户从面板进阅读页, 不损失可达性。
+            链接 = f"\n面板: {前}/"
         状态词 = {"completed": "抓取完成", "failed": "抓取失败",
                   "stopped": "已停止"}.get(t.status, t.status)
         _发送推送(f"{t.title or t.url} · {状态词}",

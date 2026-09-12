@@ -164,6 +164,16 @@ function 拉日志() {
         j.entries.forEach(function (e) {
           box.appendChild(document.createTextNode(e.msg + '\n'));
         });
+        // G-M2 (GUI 专项审查): 防 DOM 无限增长 —— 服务端虽 500 条截断,
+        // 客户端收过的节点只增不删, 长任务挂机一晚内存持续上涨。
+        // 上限 2000 条; 非贴底(用户上翻)时按高度差补偿 scrollTop 保持视口稳定
+        var 超量 = box.childNodes.length - 2000;
+        if (超量 > 0) {
+          var 高度差 = box.scrollHeight;
+          for (var i = 0; i < 超量; i++) box.removeChild(box.firstChild);
+          高度差 -= box.scrollHeight;
+          if (!atBottom) box.scrollTop -= 高度差;
+        }
         if (atBottom) box.scrollTop = box.scrollHeight;
         日志指针 = j.total;
       }
