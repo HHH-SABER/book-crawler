@@ -15,7 +15,8 @@ from .ui_theme import make_card, status_chip, status_color
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE,
                          WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR,
-                         MORANDI_WARNING, open_dialog, close_dialog)
+                         MORANDI_WARNING, MORANDI_ON_SURFACE,
+                         open_dialog, close_dialog)
 from .row_detail import build_row_detail, _fmt_elapsed
 
 try:
@@ -373,9 +374,14 @@ class TaskTable:
         fname = os.path.basename(task.output_file)
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("删除任务"),
+            # G-H1 (GUI 专项审查): 打包 EXE 中 dialog 文字缺显式 color 会渲染成
+            # 不可见 (v2.4.19 教训, 关闭弹窗已修, 此处同类漏网) —— 这是
+            # "是否同时删除本地文件"的确认框, 文字不可见会放大误删风险
+            title=ft.Text("删除任务", color=MORANDI_ON_SURFACE,
+                          font_family=FONT_STACK),
             content=ft.Text(f"任务输出文件:\n{fname}\n\n是否同时删除本地文件?",
-                            size=SIZE_SMALL, font_family=FONT_STACK),
+                            size=SIZE_SMALL, font_family=FONT_STACK,
+                            color=MORANDI_ON_SURFACE),
             actions=[
                 ft.TextButton("取消",
                               on_click=lambda _: close_dialog(self.page, dialog)),

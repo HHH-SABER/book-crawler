@@ -6,6 +6,38 @@
 
 ***
 
+## \[2.4.25] - 2026-09-12 (未发布)
+
+### 修复 — 增量审查 H1 + GUI 前端专项审查（2 高 4 中）
+
+来源：`文档/增量审查-v2.4.24-2026-09-12.md` 与 `文档/GUI前端专项审查-2026-09-12.md`。
+
+- **H1 · U19 事件通道并行失明**：`任务事件.py` 原用 `threading.local` 存订阅方，
+  不随 `copy_context().run` 传播到 ThreadPoolExecutor 章节 worker ——
+  threads>1 时 质检/引擎成功/引擎失败/反爬(WAF/JS挑战/限频) 事件全部静默丢失,
+  而正则兜底已默认停用, GUI 指标列失明；串行不受影响故差分验证未暴露。
+  改用 `contextvars.ContextVar`（与 `_WRITER_CTX` 同机制）；
+  +1 例 `copy_context` 传播回归测试（原测试只测线程隔离, 恰漏传播语义）
+- **G-H1 · 两弹窗文字无显式色值**（v2.4.19"EXE 文字不可见"同类漏网）：
+  删除任务确认框（task_table）/新建适配器弹窗（site_manage_page）补
+  `MORANDI_ON_SURFACE` —— 前者文字不可见会放大误删文件风险
+- **G-M1 · 弹窗开/关 API 不对称**：`close_dialog` 改 `page.pop_dialog()`
+  （与 `open_dialog` 的 `show_dialog` 对称）+ overlay 兜底；旧式 `open=False`
+  对 dialog 栈弹窗不生效会残留 overlay
+- **G-H2 · 推送正文去 token**：终态推送（Bark/ntfy）链接不再内嵌 `?k=<token>`
+  （第三方通道导致全权限 token 离开本机）；改指面板根；删无引用的
+  `_书id_from输出`；远控教程 4 处描述同步
+- **G-M3 · 站点配置热重放加锁**：`_apply_runtime_config` 重放本体抽
+  `_执行重放()` 全程持 `_重载锁`（RLock）—— 防并发重放记账交错致
+  追加条目重复/丢失（持续到重启）；读侧仍无锁（微秒级中间态自愈, 已接受）
+- **G-M4 · 站点配置原子写**：`_save_configs`/导出 改 tmp+`os.replace` ——
+  旧直写中断会留下残缺 JSON, 启动解析失败静默回退内置配置, 用户自定义站点
+  全丢无提示；导出同时补 `_json_clean`（含函数字段时 dumps 抛错）
+- **G-M2 · 远控面板日志 DOM 截断**：上限 2000 条丢头部（客户端节点此前只增
+  不删, 长任务挂机内存无上限）；非贴底时按高度差补偿 scrollTop 保持视口
+
+***
+
 ## \[2.4.24] - 2026-09-12 (未发布)
 
 ### 修复 — 章节页 URL 当任务 URL 时整单失败（yunshuzhai 实测）

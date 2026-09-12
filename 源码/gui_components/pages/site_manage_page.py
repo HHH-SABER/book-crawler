@@ -25,7 +25,7 @@ from ..ui_fluent import (open_dialog, close_dialog,
                           SIZE_SMALL, SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
-                          MORANDI_WARNING, MORANDI_ACCENT)
+                          MORANDI_WARNING, MORANDI_ACCENT, MORANDI_ON_SURFACE)
 from . import history_data
 
 try:
@@ -211,13 +211,20 @@ class SiteManagePage:
             return []
 
     def _save_configs(self) -> bool:
-        """保存配置到 JSON (先过滤不可序列化的内置函数字段)"""
+        """保存配置到 JSON (先过滤不可序列化的内置函数字段)。
+
+        G-M4 (GUI 专项审查): tmp + os.replace 原子写 —— 旧实现 write_text 直写,
+        写盘中断会留下残缺 JSON, 下次启动解析失败静默回退内置配置,
+        用户全部自定义站点丢失且无提示。"""
         try:
             from pathlib import Path
             cleaned = _json_clean(self.configs)
-            Path(self.config_file).write_text(
+            p = Path(self.config_file)
+            tmp = p.with_name(p.name + f'.tmp.{os.getpid()}')
+            tmp.write_text(
                 json.dumps(cleaned, ensure_ascii=False, indent=2),
                 encoding='utf-8')
+            os.replace(tmp, p)
             # H7: 强制重放运行时合并, 使启用/禁用与新增立即在当前进程生效
             # (旧实现 _RUNTIME_APPLIED 一次性置位, 改动须重启程序才生效)
             from sites_config import reload_runtime_config
@@ -533,10 +540,14 @@ class SiteManagePage:
             return
         domain_field = ft.TextField(label="域名 (如 example.com)", dense=True, width=280,
                                     text_style=ft.TextStyle(size=SIZE_BODY,
-                                                            font_family=FONT_STACK))
+                                                            font_family=FONT_STACK,
+                                                            color=MORANDI_ON_SURFACE))
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("新建适配器模板"),
+            # G-H1 (GUI 专项审查): 打包 EXE 中 dialog 文字缺显式 color 会渲染成
+            # 不可见 (v2.4.19 教训, 关闭弹窗已修, 此处同类漏网)
+            title=ft.Text("新建适配器模板", color=MORANDI_ON_SURFACE,
+                          font_family=FONT_STACK),
             content=ft.Column([domain_field], spacing=6, tight=True, width=320),
             actions=[
                 ft.TextButton("取消",
@@ -1157,9 +1168,13 @@ class SiteManagePage:
             from pathlib import Path
             export_path = os.path.join(
                 os.path.dirname(self.config_file), default_name)
-            Path(export_path).write_text(
-                json.dumps(self.configs, ensure_ascii=False, indent=2),
+            # G-M4: 原子写 + _json_clean (含函数字段时旧实现 dumps 直接抛错)
+            p = Path(export_path)
+            tmp = p.with_name(p.name + f'.tmp.{os.getpid()}')
+            tmp.write_text(
+                json.dumps(_json_clean(self.configs), ensure_ascii=False, indent=2),
                 encoding='utf-8')
+            os.replace(tmp, p)
             self._info_text.value = f"已导出: {export_path}"
             _log("站点管理", f"导出配置 → {export_path}")
         except Exception as ex:
