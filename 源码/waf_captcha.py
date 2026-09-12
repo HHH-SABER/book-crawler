@@ -87,6 +87,117 @@ def is_waf_captcha_page(status_code: int, text: str) -> bool:
     return False
 
 
+def _解_表单验证页(session, url: str, 页面文本: str, headers, timeout: int,
+                  log, max_tries: int) -> bool:
+    """通用表单式验证码页自动求解 (als1010 类: HTTP 200 "访问验证" 页)。
+
+    实测结论 (2026-09-12 实网取证): 该站 WAF 为会话 cookie 制 (无 UA 绑定),
+    页面内 `code` 输入框 + `/home/chapter/verify.html` 图片 + `check_code.html`
+    表单; ddddocr 识别后按原表单字段 POST 即获放行 cookie, 重取目标 URL 通过。
+
+    做法: 每轮**重新请求被拦页**取新图 (验证码是一次性的), 从页面提取
+    图片/表单/隐藏域/输入框名, 识别 → 提交 → 重取目标 URL 验证。
+
+    合规: ddddocr 未显式开启 (strategies.ddddocr.enabled) 时直接拒绝 —
+    分发模板与代码默认仍为关闭, 与全局合规边界一致。
+    """
+    if not _ddddocr_enabled():
+        log("[WAF验证码-表单] 自动识别未开启 (captcha_config.json 的 "
+            "strategies.ddddocr.enabled=false) → 转人工兜底")
+        return False
+    from urllib.parse import urljoin
+    try:
+        import ddddocr
+        ocr = ddddocr.DdddOcr(show_ad=False)
+    except Exception as e:
+        log(f"[WAF验证码-表单] ddddocr 不可用: {e}")
+        return False
+
+    for attempt in range(1, max_tries + 1):
+        try:
+            页 = session.get(url, headers=headers, timeout=timeout)
+        except Exception as e:
+            log(f"[WAF验证码-表单] 请求拦截页失败: {e}")
+            return False
+        文本 = 页.text or ''
+        if not is_waf_captcha_page(页.status_code, 文本):
+            log("[WAF验证码-表单] 页面已非验证页 (证书已放行)")
+            return True
+        图 = re.search(r'src=["\']([^"\']*(?:verify|captcha|code)[^"\']*)["\']',
+                       文本, re.I)
+        表单 = re.search(r'<form[^>]+action=["\']([^"\']+)["\']', 文本, re.I)
+        if not (图 and 表单):
+            log("[WAF验证码-表单] 页面结构不匹配 (无图片/表单), 放弃自动求解")
+            return False
+        隐藏域 = {}
+        输入名 = None
+        for m in re.finditer(r'<input\b[^>]*>', 文本, re.I):
+            tag = m.group(0)
+            nm = re.search(r'name=["\']([^"\']+)["\']', tag)
+            if not nm:
+                continue
+            vm = re.search(r'value=["\']([^"\']*)["\']', tag)
+            if 'hidden' in tag.lower():
+                隐藏域[nm.group(1)] = vm.group(1) if vm else ''
+            elif 输入名 is None:
+                输入名 = nm.group(1)
+        if not 输入名:
+            log("[WAF验证码-表单] 未找到验证码输入框, 放弃")
+            return False
+        图片URL = urljoin(url, 图.group(1))
+        表单URL = urljoin(url, 表单.group(1))
+        try:
+            from sites_config import validate_public_url
+            validate_public_url(图片URL)
+            validate_public_url(表单URL)
+        except Exception as e:
+            log(f"[WAF验证码-表单] 子请求 URL 校验失败: {e}")
+            return False
+        try:
+            图响应 = session.get(图片URL, headers=headers, timeout=timeout)
+            if 图响应.status_code != 200 or not 图响应.content:
+                raise ValueError(f"状态 {图响应.status_code}")
+        except Exception as e:
+            log(f"[WAF验证码-表单] 验证码图片获取失败: {e}")
+            time.sleep(1.0)
+            continue
+        try:
+            answer = ocr.classification(图响应.content) or \
+                ocr.classification(_preprocess(图响应.content))
+        except Exception as e:
+            log(f"[WAF验证码-表单] 识别异常: {e}")
+            answer = None
+        if not answer:
+            log(f"[WAF验证码-表单] 第{attempt}次识别为空, 重试")
+            time.sleep(1.0)
+            continue
+        log(f"[WAF验证码-表单] 第{attempt}次识别: {answer!r}")
+        data = dict(隐藏域)
+        data[输入名] = answer
+        try:
+            session.post(表单URL, data=data,
+                         headers={**dict(headers or {}), 'Referer': url,
+                                  'Content-Type':
+                                      'application/x-www-form-urlencoded'},
+                         timeout=timeout, allow_redirects=True)
+        except Exception as e:
+            log(f"[WAF验证码-表单] 提交失败: {e}")
+            time.sleep(1.0)
+            continue
+        # 以目标 URL 重取验证放行 (提交接口常返回列表页/重定向页, 不作判据)
+        try:
+            验证 = session.get(url, headers=headers, timeout=timeout)
+            if not is_waf_captcha_page(验证.status_code, 验证.text or ''):
+                log("[WAF验证码-表单] ✅ 验证码通过, 已获得放行 cookie")
+                return True
+        except Exception as e:
+            log(f"[WAF验证码-表单] 放行验证请求异常: {e}")
+        log(f"[WAF验证码-表单] 第{attempt}次未通过, 重试...")
+        time.sleep(1.2)
+    log("[WAF验证码-表单] 多次识别未通过 (验证码可能较难或被拉黑), 转人工兜底")
+    return False
+
+
 def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
                       log=print, max_tries: int = 5) -> bool:
     """解决 WAF 图片验证码并让 session 携带放行 cookie
@@ -113,6 +224,17 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
     base = f"{parsed.scheme}://{parsed.netloc}"
     # 所有子请求带原始 headers (WAF 放行 cookie 与 UA 绑定, 无 UA 会被持续拦截)
     hdrs = dict(headers or {})
+
+    # 内容型表单验证码页 (als1010 类 200 状态"访问验证"页): 走通用表单求解分支
+    # (2026-09-12 实网实测: 该形态自动识别可用, 无需弹浏览器人工输入)
+    try:
+        _首 = session.get(url, headers=hdrs, timeout=timeout)
+        if is_waf_captcha_page(_首.status_code, _首.text or '') and \
+                '访问验证' in (_首.text or '') and 'check_code' in (_首.text or ''):
+            return _解_表单验证页(session, url, _首.text or '', headers,
+                                 timeout, log, max_tries)
+    except Exception:
+        pass
 
     for attempt in range(1, max_tries + 1):
         # 1. 请求拦截页, 提取验证码图片地址
