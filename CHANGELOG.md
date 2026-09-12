@@ -24,10 +24,16 @@
   任务在抓（对齐 run_batch 的"同站最多 1 本并行"），GUI 批量 / 手机远控
   任务同进程共享；排队任务保持 running 且日志显示"[排队]"，stop 可打断
   等待（未获得不 release，绝不误放他人闸门）。
-- 样本入库 `测试样本/als1010_访问验证页.html`；新增 10 例离线回归
-  （test_waf_verify_page ×5 / test_domain_gate ×5），全量 217 tests OK +
-  静态检查干净；**实网取证**：对正在拦截的 als1010 章节页实测命中
-  `waf_verify_page`（置信度 0.9）+ WAF 分支判定 True。
+- **通用表单式验证码自动求解**（waf_captcha）: 实网取证发现该站 WAF 为会话
+  cookie 制（无 UA 绑定）——新增 `_解_表单验证页`：每轮重取被拦页取新图
+  （验证码一次性），从页面提取 图片/表单/隐藏域/输入框名，ddddocr 识别后按
+  原表单字段 POST，再以目标 URL 重取验证放行；ddddocr 未开启时**明确拒绝**
+  转人工（合规边界不变）。实测：als1010 拦截页首轮识别即通过。
+- 样本入库 `测试样本/als1010_访问验证页.html`；新增 13 例离线回归
+  （test_waf_verify_page ×5 / test_domain_gate ×5 / test_waf_form_solver ×3），
+  全量 220 tests OK + 静态检查干净；**实网取证**：对正在拦截的 als1010 章节页
+  实测命中 `waf_verify_page`（置信度 0.9）+ WAF 分支判定 True + 自动求解放行；
+  11 URL 验收批次实跑中已完书全部 100 分（含 waf_verify_page×6 的书）。
 
 ## \[2.4.26] - 2026-09-12
 
