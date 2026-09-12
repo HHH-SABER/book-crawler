@@ -6,6 +6,27 @@
 
 ***
 
+## \[2.4.26] - 2026-09-12 (未发布)
+
+### 增强 — 验证码"自动 5 次 → 人工兜底"机制（用户需求）
+
+- **本机配置**：`retry_limit` 3→5 —— CaptchaManager auto 链中 ddddocr 对同一
+  验证码独立识别+提交 5 次（每轮重新截图），仍失败降级人工可见浏览器
+  （manual.enabled=true + driver_factory 已注入）
+- **WAF 图片验证码路径补人工兜底**：`solve_waf_captcha`（max_tries=5，原本
+  已是 5 次）失败后新增 `solve_waf_captcha_manual` —— 弹 Playwright 反检测
+  **可见**浏览器打开被拦 URL，用户手动输入验证码，通过后浏览器 cookie 回灌
+  requests session（新增 `回灌cookie` 纯函数，+3 例离线测试）
+- **防轰炸**：每任务人工兜底最多弹一次 —— 人工也失败/超时则本任务不再弹窗
+  （`_waf_manual_failed` 记忆），自动识别在冷却后继续尝试；并行 worker 由
+  模块级锁串行化，同时只弹一个浏览器
+- **合规说明**：这是**本机显式开启**（根 captcha_config.json
+  ddddocr.enabled=true + retry_limit=5，gitignore 不入库）；分发模板
+  `配置/captcha_config.json` 与代码默认仍为关闭，符合 AGENTS.md
+  "自动识别**默认**必须关闭"边界（显式开启属正当路径）
+
+***
+
 ## \[2.4.25] - 2026-09-12
 
 ### 修复 — 增量审查 H1 + GUI 前端专项审查（2 高 4 中）
