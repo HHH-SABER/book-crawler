@@ -286,9 +286,16 @@ def open_dialog(page, ctrl):
 
 
 def close_dialog(page, ctrl):
-    """关闭对话框 (flet 0.86 兼容: Page 无 .close)"""
+    """关闭对话框 (G-M1, GUI 专项审查): 与 open_dialog 的 show_dialog 对称,
+    关闭必须走 pop_dialog —— 旧式 `ctrl.open=False` 对压入 dialog 栈的弹窗
+    不生效, 会残留 overlay。overlay 兜底路径 (show_dialog 失败时) 仍走旧式。"""
     try:
-        ctrl.open = False
-        page.update()
+        page.pop_dialog()
+    except Exception:
+        pass
+    try:
+        if ctrl.open:
+            ctrl.open = False
+            page.update()
     except Exception:
         pass

@@ -13,52 +13,62 @@ GUI 的运行时数据 (进度 / 引擎 / 反爬类型 / 质检分 / 增量跳�
 
 ## 渐进式策略 (不一次性替换)
 
-正则解析**保留为兜底**, 与事件并行:
+正则解析保留为兜底 (U19 二阶段起默认停用, 置 True 一行回退):
 
-    GUI 状态 = 事件(优先, 有则直接赋值) ⊕ 正则(兜底, 覆盖尚未发出事件的路径)
+    GUI 状态 = 事件(优先, 有则直接赋值) ⊕ 正则(兜底, 默认停用)
 
-因此第一版只需给高价值路径接上事件即可, 覆盖不全也不会退化 —— 但**迁移完成后**
-`测试/test_log_contract.py` 里的契约文案将不再是"数据协议", 改文案才真正安全。
+## 线程模型 (修复 H1: 并行抓取时 worker 事件丢失)
+
+订阅发生在任务子线程; 但并行抓取 (threads>1) 时章节 worker 在
+ThreadPoolExecutor 里经 `copy_context().run(...)` 执行 —— **threading.local
+不随 copy_context 传播**, worker 里发布的 质检/引擎/反爬 事件曾全部静默丢失
+(v2.4.24 增量审查 H1; 串行不受影响, 故当时的差分验证未暴露)。
+
+改用 `contextvars.ContextVar` (与 task_manager 的 `_WRITER_CTX` 同机制):
+
+- 任务线程 `订阅()` → `copy_context()` 快照含订阅列表 → worker 里 `发布()` 可见;
+- 未订阅的裸线程 / CLI → `get()` 返回默认值 None → `发布()` 零成本直返;
+- 退订发生在 `with ThreadPoolExecutor` 退出之后 (run_crawl 返回 → finally),
+  无快照失效竞态。
 
 ## 约束 (与项目线程纪律一致)
 
 - **无订阅方时零成本**: CLI / 纯爬虫场景直接 return, 不引入任何开销;
 - **订阅方异常绝不外溢**: 逐个 try/except, 回调抛错不能影响抓取主流程;
-- **按线程隔离**: 每个 worker 只发给"本线程注册的订阅方",
-  与 `_ThreadAwareStdout` 的线程模型一致, 多任务并发互不串台。
+- **按上下文隔离**: 未注册的线程/上下文收不到事件, 多任务并发互不串台。
 """
-import threading
+import contextvars
 
-_线程槽 = threading.local()
+_订阅槽 = contextvars.ContextVar('任务事件_订阅方', default=None)
 
 
 def 订阅(接收方) -> None:
-    """把接收方注册到**当前线程**。
+    """把接收方注册到**当前上下文** (随 copy_context 传播到章节 worker)。
 
     接收方需实现 `处理任务事件(类型: str, 数据: dict)`。
     重复注册同一对象不会重复接收。
     """
-    接收方列表 = getattr(_线程槽, '接收方', None)
+    接收方列表 = _订阅槽.get()
     if 接收方列表 is None:
-        _线程槽.接收方 = [接收方]
+        _订阅槽.set([接收方])
     elif all(接收方 is not x for x in 接收方列表):
         接收方列表.append(接收方)
 
 
 def 退订(接收方=None) -> None:
-    """退订; 不传参数则清空当前线程的全部订阅方"""
+    """退订; 不传参数则清空当前上下文的全部订阅方"""
     if 接收方 is None:
-        _线程槽.接收方 = []
+        _订阅槽.set([])
         return
-    接收方列表 = getattr(_线程槽, '接收方', None)
+    接收方列表 = _订阅槽.get()
     if not 接收方列表:
         return
-    _线程槽.接收方 = [x for x in 接收方列表 if x is not 接收方]
+    _订阅槽.set([x for x in 接收方列表 if x is not 接收方])
 
 
 def 有订阅方() -> bool:
-    """当前线程是否有订阅方 (供调用方跳过昂贵的字段计算)"""
-    return bool(getattr(_线程槽, '接收方', None))
+    """当前上下文是否有订阅方 (供调用方跳过昂贵的字段计算)"""
+    return bool(_订阅槽.get())
 
 
 def 发布(类型: str, **数据) -> None:
@@ -68,7 +78,7 @@ def 发布(类型: str, **数据) -> None:
         类型: 事件类型, 见 TaskManager.处理任务事件 的分发表
         数据: 事件字段 (全部为基本类型)
     """
-    接收方列表 = getattr(_线程槽, '接收方', None)
+    接收方列表 = _订阅槽.get()
     if not 接收方列表:
         return
     for 接收方 in list(接收方列表):
