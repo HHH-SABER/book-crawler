@@ -71,10 +71,17 @@ def extract_content(soup, page_url, base_url, **kw):
         return None
     # WAF 验证码拦截页检测: 章节页被"访问验证"图片验证码拦截时, 提示清晰原因
     try:
-        page_text = soup.get_text(' ', strip=True)[:200] if hasattr(soup, 'get_text') else ''
-        if '访问验证' in page_text or (soup.title and '访问验证' in soup.title.get_text(strip=True)):
+        page_text = soup.get_text(' ', strip=True) if hasattr(soup, 'get_text') else ''
+        if '访问验证' in page_text[:200] or (soup.title and '访问验证' in soup.title.get_text(strip=True)):
             _log.info("[als1010] ⚠️ 章节页被 WAF 验证码拦截 (访问验证/check_code), "
                       "请求被反爬拦截, 无法自动获取正文; 请稍后重试或降低并发")
+            return None
+        # 软限频页 (2026-09-12 实测: 整个 IP 被"请稍后再试"页拦截):
+        # 旧行为会把它当正文提取出 ~342 字符垃圾 (质检 62 分失败入库);
+        # 现直接返回 None 交上层退避/冷却, 章节存空占位可断点续传补抓
+        if '请稍后再试' in page_text:
+            _log.info("[als1010] ⚠️ 站点软限频页 (请稍后再试), 本页无正文; "
+                      "交给上层退避/域冷却后重试")
             return None
     except Exception:
         pass

@@ -993,7 +993,9 @@ class NovelSpider:
                             import 风控事件 as _event
                             _m = _re.match(r'https?://([^/:]+)', getattr(self, 'base_url', '') or '')
                             if _m:
-                                _event.set_domain_cooldown(_m.group(1), 300, 'rate_limit')
+                                _event.set_domain_cooldown(
+                                    _m.group(1), _站点冷却秒(_m.group(1)),
+                                    'rate_limit')
                         except Exception:
                             pass
                     _log.info(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
@@ -6345,6 +6347,15 @@ class NovelSpider:
         # 共用同一份收尾逻辑, 保证健康度监控/风控聚合/历史刷盘全路径覆盖
         return self._收尾汇总(output_file, catalog_url, novel_title,
                               total, failed, export_epub, 正常完成=True)
+
+
+def _站点冷却秒(域名: str) -> float:
+    """限频后写入的域冷却秒数。
+
+    站点可覆写: als1010.space 软限频恢复极慢 (2026-09-12 实测静默 24 分钟
+    仍未解除), 默认 300s 不足以冷却 → 900s, 防封后立刻重撞。
+    """
+    return 900 if 'als1010.space' in (域名 or '') else 300
 
 
 def get_base_url(url):
