@@ -21,6 +21,7 @@ import re
 import sys
 import json
 import time
+import threading
 from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -166,3 +167,88 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
 
     log("[WAF验证码] 多次尝试仍未通过, 可稍后重试")
     return False
+
+
+# 人工兜底并发闸: 并行 worker 同时遇 WAF 失败时, 只弹一个浏览器
+_人工锁 = threading.Lock()
+
+
+def 回灌cookie(session, cookies: list) -> int:
+    """把浏览器 cookie 列表合并进 requests.Session (纯逻辑, 可离线测试)。
+
+    Args:
+        cookies: Playwright get_cookies() 格式 [{name, value, domain, path, ...}]
+    Returns:
+        成功写入条数
+    """
+    n = 0
+    for c in cookies or []:
+        try:
+            session.cookies.set(
+                c['name'], c['value'],
+                domain=c.get('domain') or None,
+                path=c.get('path') or '/')
+            n += 1
+        except Exception:
+            try:
+                session.cookies.set(c['name'], c['value'])
+                n += 1
+            except Exception:
+                pass
+    return n
+
+
+def solve_waf_captcha_manual(session, url: str, log=print,
+                             wait_minutes: int = 5) -> bool:
+    """自动识别 max_tries 次失败后的人工兜底 (用户需求: 自动5次→人工)。
+
+    流程:
+      1. Playwright 反检测**可见**浏览器打开被拦 URL
+      2. 轮询页面内容, 直到用户手动输入验证码并通过 (不再是拦截页特征)
+      3. 导出浏览器 cookie 回灌 requests session (回灌后原请求可重试)
+
+    注意: WAF 放行 cookie 可能与 UA 绑定 —— 浏览器 UA 与爬虫 UA 不同时,
+    回灌后仍可能被拦; 此时由调用方继续走冷却/重试路径 (本函数只负责人工通过)。
+
+    Returns:
+        True=用户通过验证码且 cookie 已回灌; False=超时/浏览器不可用/用户放弃
+    """
+    try:
+        from sites_config import validate_public_url
+        validate_public_url(url)
+    except Exception as e:
+        log(f"[WAF验证码-人工] URL 校验失败: {e}")
+        return False
+    try:
+        from browser_driver import create_driver
+    except Exception as e:
+        log(f"[WAF验证码-人工] 浏览器驱动不可用: {e}")
+        return False
+
+    with _人工锁:
+        log(f"[WAF验证码-人工] 自动识别未通过 → 打开可见浏览器, "
+            f"请在窗口中手动输入验证码并提交 (最长等待 {wait_minutes} 分钟)...")
+        driver = None
+        try:
+            driver = create_driver(visible=True)
+            driver.get(url)
+            截止 = time.time() + wait_minutes * 60
+            while time.time() < 截止:
+                src = driver.page_source or ''
+                # 拦截页特征消失 = 用户已通过 (浏览器侧无状态码, 按内容判断)
+                if '__wafcaptcha' not in src or '验证码' not in src:
+                    n = 回灌cookie(session, driver.get_cookies())
+                    log(f"[WAF验证码-人工] ✅ 验证码通过, 已回灌 {n} 条 cookie 到 session")
+                    return True
+                time.sleep(3)
+            log("[WAF验证码-人工] ⏳ 等待超时, 放弃人工兜底")
+            return False
+        except Exception as e:
+            log(f"[WAF验证码-人工] 异常: {e}")
+            return False
+        finally:
+            if driver is not None:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass

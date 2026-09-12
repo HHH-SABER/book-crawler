@@ -301,5 +301,74 @@ class Test人工浏览器工厂注入(unittest.TestCase):
         self.assertFalse(注入人工浏览器工厂(None))
 
 
+class TestWAF人工兜底(unittest.TestCase):
+    """用户需求: WAF 验证码自动识别 5 次失败 → 可见浏览器人工输入 → cookie 回灌"""
+
+    def test_回灌cookie写入条数与域路径(self):
+        import waf_captcha
+
+        class 假Jar:
+            def __init__(self):
+                self.calls = []
+
+            def set(self, name, value, domain=None, path=None):
+                self.calls.append((name, value, domain, path))
+
+        class 假Session:
+            def __init__(self):
+                self.cookies = 假Jar()
+
+        s = 假Session()
+        n = waf_captcha.回灌cookie(s, [
+            {'name': 'waform', 'value': 'ok1', 'domain': '.example.com', 'path': '/'},
+            {'name': 'uid', 'value': 'u2'},                      # 缺 domain/path
+        ])
+        self.assertEqual(n, 2)
+        self.assertEqual(s.cookies.calls[0], ('waform', 'ok1', '.example.com', '/'))
+        self.assertEqual(s.cookies.calls[1][0:2], ('uid', 'u2'))
+
+    def test_回灌cookie空列表与坏条目不抛异常(self):
+        import waf_captcha
+
+        class 假Jar:
+            def __init__(self):
+                self.calls = []
+
+            def set(self, name, value, domain=None, path=None):
+                if name == 'bad':
+                    raise RuntimeError('模拟 set 失败')
+                self.calls.append(name)
+
+        class 假Session:
+            def __init__(self):
+                self.cookies = 假Jar()
+
+        s = 假Session()
+        self.assertEqual(waf_captcha.回灌cookie(s, None), 0)
+        self.assertEqual(waf_captcha.回灌cookie(s, []), 0)
+        n = waf_captcha.回灌cookie(s, [{'name': 'bad', 'value': 'x'},
+                                       {'name': 'good', 'value': 'y'}])
+        self.assertEqual(n, 1)          # bad 双路径均失败被跳过, good 正常
+        self.assertEqual(s.cookies.calls, ['good'])
+
+    def test_爬虫WAF分支接线了人工兜底(self):
+        """防"加了函数没人调": 爬虫 WAF 分支必须调用 solve_waf_captcha_manual"""
+        import inspect
+        import 爬虫
+        源码 = inspect.getsource(爬虫)
+        self.assertIn('solve_waf_captcha_manual', 源码,
+                      '爬虫 WAF 分支未接线人工兜底')
+        self.assertIn('_waf_manual_failed', 源码,
+                      '人工兜底缺少每任务一次的弹窗记忆')
+
+    def test_人工兜底模块可导入且签名完备(self):
+        import inspect
+        import waf_captcha
+        sig = inspect.signature(waf_captcha.solve_waf_captcha_manual)
+        self.assertIn('session', sig.parameters)
+        self.assertIn('url', sig.parameters)
+        self.assertEqual(sig.parameters['wait_minutes'].default, 5)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

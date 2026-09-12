@@ -1060,6 +1060,23 @@ class NovelSpider:
                             continue  # 解决成功, 进入下一轮检查是否还有反爬层
                         else:
                             self._waf_last_try = time.time()  # 失败: 10 秒冷却
+                            # 人工兜底 (用户需求): 自动识别 max_tries=5 次失败 →
+                            # 弹可见浏览器让用户手输验证码, cookie 回灌 session。
+                            # 每任务最多弹一次: 人工也失败/超时则本任务不再弹
+                            # (防止无人值守时反复弹浏览器打断抓取)
+                            if not getattr(self, '_waf_manual_failed', False):
+                                try:
+                                    from waf_captcha import solve_waf_captcha_manual
+                                    if solve_waf_captcha_manual(self.session, url, log=print):
+                                        self._waf_last_try = 0.0
+                                        response = self.session.get(url, headers=headers, timeout=timeout)
+                                        continue  # 人工通过, 进入下一轮反爬层检查
+                                    self._waf_manual_failed = True
+                                    _log.info("[反爬检测] WAF 人工兜底未通过, 本任务不再弹窗 "
+                                              "(自动识别将在冷却后继续尝试)")
+                                except Exception as e_manual:
+                                    _log.info(f"[反爬检测] WAF 人工兜底异常: {e_manual}")
+                                    self._waf_manual_failed = True
                     except Exception as e:
                         _log.info(f"[反爬检测] WAF 验证码处理异常: {e}")
 
