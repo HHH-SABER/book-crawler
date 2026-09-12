@@ -508,6 +508,61 @@ if not isinstance(sys.stdout, _ThreadAwareStdout):
     sys.stdout = _THREAD_STDOUT
 
 
+# ---------------------------------------------------------------- 同域闸门
+# 同域任务串行 (对齐 run_batch 的"同站最多 1 本并行"): GUI 批量 / 手机远控
+# 创建的任务同进程共享同一闸门表。排队中的任务保持 running 并在日志显示
+# "[排队]"; stop 置位可打断等待 (未获得=不 release, 绝不误放他人闸门)。
+_域闸门_表: dict = {}
+_域闸门_锁 = threading.Lock()
+
+
+def _取域闸门(url: str):
+    """按域名取(建)信号量; 解析不出域名返回 None (直接放行)"""
+    from urllib.parse import urlparse
+    try:
+        host = (urlparse(url or '').hostname or '').lower()
+    except Exception:
+        host = ''
+    if not host:
+        return None
+    with _域闸门_锁:
+        if host not in _域闸门_表:
+            _域闸门_表[host] = threading.Semaphore(1)
+        return _域闸门_表[host]
+
+
+def _获取域闸门(闸门, stop_flag=None, 占用提示=None) -> bool:
+    """stop-aware 获取同域闸门。
+
+    返回 True=已获得 (调用方必须 release); False=排队中 stop 置位而放弃
+    (未获得, 不得 release)。闸门为 None 视为放行。
+    """
+    if 闸门 is None:
+        return True
+    if 闸门.acquire(blocking=False):
+        return True
+    if 占用提示 is not None:
+        try:
+            占用提示()
+        except Exception:
+            pass
+    while not 闸门.acquire(timeout=1.0):
+        if stop_flag is not None and stop_flag.is_set():
+            return False
+    return True
+
+
+def _排队提示(task) -> None:
+    """同域排队时的可见提示 (任务日志 + 应用日志)"""
+    task.logs.append({'time': time.strftime('%H:%M:%S'),
+                      'msg': '[排队] 同站已有任务在运行, 等待轮转 (同域串行防封)'})
+    if app_log is not None:
+        try:
+            app_log.info(f"任务{task.task_id}", "[排队] 同站已有任务在运行, 等待轮转")
+        except Exception:
+            pass
+
+
 class TaskManager:
     """多任务管理器：创建、停止、查询爬虫任务"""
 
@@ -621,21 +676,33 @@ class TaskManager:
                 app_log.info(f"任务{task.task_id}",
                              f"任务启动: {url} 模式={mode} 线程={threads} 延迟={delay} 续传={resume}"
                              + (" 增量=开" if incremental else ""))
-            run_crawl(
-                catalog_url=url,
-                mode=mode,
-                sort_chapters=True,
-                output_dir=output_dir,
-                resume=resume,
-                show_progress=True,
-                chapter_range=chapter_range,
-                threads=threads,
-                delay=delay,
-                stop_event=task.stop_flag,
-                unique_title=unique_title,
-                export_epub=task.export_epub,
-                incremental=incremental or task.incremental,
-            )
+            # 同域闸门: 同一站点最多 1 个任务在抓 (对齐 run_batch 限流)。
+            # als1010 事故 (2026-09-12): GUI 批量 11 URL 同站并发 → WAF 拦截;
+            # 排队期间任务保持 running, 日志可见, 可被停止打断。
+            同域闸门 = _取域闸门(url)
+            已获闸 = _获取域闸门(同域闸门, task.stop_flag,
+                                占用提示=lambda: _排队提示(task))
+            if not 已获闸:
+                return  # 排队等待中被停止 (stop_task 已置终态)
+            try:
+                run_crawl(
+                    catalog_url=url,
+                    mode=mode,
+                    sort_chapters=True,
+                    output_dir=output_dir,
+                    resume=resume,
+                    show_progress=True,
+                    chapter_range=chapter_range,
+                    threads=threads,
+                    delay=delay,
+                    stop_event=task.stop_flag,
+                    unique_title=unique_title,
+                    export_epub=task.export_epub,
+                    incremental=incremental or task.incremental,
+                )
+            finally:
+                if 同域闸门 is not None:
+                    同域闸门.release()
             # 如果状态还是running且没有标记completed，标记为completed
             if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")

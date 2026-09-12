@@ -67,10 +67,24 @@ def _ddddocr_enabled() -> bool:
 
 
 def is_waf_captcha_page(status_code: int, text: str) -> bool:
-    """判断响应是否为 WAF 图片验证码拦截页"""
-    if status_code not in (401, 403, 429) or not text:
+    """判断响应是否为 WAF 图片验证码拦截页
+
+    两类形态:
+    - 经典 __wafcaptcha (401/403/429 + 标记);
+    - 内容型"访问验证"页 (als1010 等站点以 **HTTP 200** 返回图片验证码表单,
+      状态码层不可区分, 只能靠内容特征: 标题"访问验证" + check_code 接口 +
+      页短; 样本 测试样本/als1010_访问验证页.html)。
+    命中第二类会进入爬虫既有 WAF 处理分支: 自动识别不适用时转人工兜底。
+    """
+    if not text:
         return False
-    return ('__wafcaptcha' in text and '验证码' in text)
+    if status_code in (401, 403, 429) and \
+            '__wafcaptcha' in text and '验证码' in text:
+        return True
+    if status_code == 200 and len(text) < 16384 and \
+            '访问验证' in text and 'check_code' in text:
+        return True
+    return False
 
 
 def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
@@ -110,7 +124,11 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
             return False
         m = re.search(r"/__wafcaptcha\?[0-9]+", r.text)
         if not m:
-            log("[WAF验证码] 页面未包含验证码接口, 可能已放行")
+            if '访问验证' in r.text and 'check_code' in r.text:
+                log("[WAF验证码] 该站为内容型验证页 (非 __wafcaptcha 表单, "
+                    "如 als1010), 自动识别不适用 → 交由人工兜底流程处理")
+            else:
+                log("[WAF验证码] 页面未包含验证码接口, 可能已放行")
             return False
         captcha_url = base + m.group(0)
         try:
