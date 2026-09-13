@@ -5444,8 +5444,21 @@ class NovelSpider:
             'total': total,
             'updated': time.strftime('%Y-%m-%d %H:%M:%S'),
         }
-        Path(ck_path).write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+        # M2: 原子写 —— tmp + os.replace, 不得直写最终路径。
+        # 旧实现 write_text 直写 ck_path, 写入途中被杀/断电/磁盘满会留下半截 JSON,
+        # 而 _load_checkpoint 遇损坏即返回 None -> 整本进度丢失只能重抓。
+        # 范式同 爬取历史.py:_落盘 (U17): os.replace 同盘内原子, 检查点要么旧版完整
+        # 要么新版完整, 无中间态。tmp 名带 pid —— GUI 与远控是两个进程, 共用一个
+        # .tmp 会互相截断 replace 出损坏文件 (U16 教训); 4 个调用点均在主线程串行,
+        # pid 足够无需线程 id。tmp 与目标同目录, 否则 os.replace 跨盘抛 OSError。
+        try:
+            fobj = Path(ck_path).resolve()   # pathlib 锚定, 防路径穿越
+            tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}')
+            tmp.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            os.replace(tmp, fobj)
+        except OSError as e:
+            _log.debug(f'检查点原子写失败: {type(e).__name__}: {e}')
 
     def _remove_checkpoint(self, output_file):
         """抓取全部完成后删除检查点"""

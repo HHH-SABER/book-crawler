@@ -83,6 +83,77 @@
   搜索、极速 8 线程、连续失败快速跳过、非连续失败仍补试、历史页关联反查与
   书名过滤）。全量 **247 tests OK** + 静态检查干净。
 
+### 修复 — 检查点原子写（M2）：防断电/被杀留半截 JSON 致进度丢失
+
+- **根因**：`_save_checkpoint` 每章调用一次，旧实现 `Path(ck_path).write_text(...)`
+  **直写最终路径**。写入途中若进程被杀/断电/磁盘满，会留下**半截 JSON**；而
+  `_load_checkpoint` 遇损坏即返回 None → 整本断点续传进度丢失，只能从头重抓。
+- **修复**：改为 **tmp + `os.replace` 原子写**（范式同 `爬取历史.py:_落盘` U17）——
+  `os.replace` 同盘内原子，检查点要么是旧版完整、要么是新版完整，无中间态。
+  tmp 名**带 pid**（GUI 与远控是两个进程，共用一个 `.tmp` 会互相截断 replace 出
+  损坏文件，U16 教训；4 个调用点均在主线程串行，pid 足够无需线程 id），且 tmp
+  与目标**同目录**（跨盘 `os.replace` 抛 OSError）。失败降级 `_log.debug` 留痕、
+  不中断抓取。改动仅 `爬虫.py` 一处（15+/2-），未碰其他逻辑。
+
+### 测试 — 补齐 decrypt/epub/checkpoint 三处单测盲区（M13）
+
+- **`test_decrypt_utils.py` ×22**：6 种正文解密机制（std_base64/custom_base64/
+  xor/char_map/str_concat/eval_obfuscated）+ 统一入口 `decrypt_content` + 负向用例。
+  真实样本只覆盖 2 种机制（std_base64=zhiruo/qiqishu、str_concat=ltbook），其余 4 种
+  无快照，在测试内**现场构造加密 HTML** 补全（构造逻辑先经探针验证可解出再固化为断言）。
+  锁定隐式契约：**eval_obfuscated 明文须 ≥100 字符**才触发（源码正则 `{100,}`），
+  短明文不命中是设计如此。
+- **`test_epub_exporter.py` ×17**：txt 章节解析 + 导出往返（ebooklib 读回验证章节数/
+  标题/中文正文）+ 失败路径（缺文件/无章节/ebooklib 缺失 mock）。关键契约：导出的
+  EPUB 读回时 document 项数 = 章节数 + 1（nav 项），断言须排除 nav。
+- **`test_checkpoint_atomic.py` ×12**：锁定上面的 M2 原子写契约（经 os.replace 落盘/
+  tmp 带 pid/与目标同目录/无残留/连续多章可读回）+ `_load_checkpoint` 对损坏 JSON、
+  URL 不匹配的容错。**TDD 红→绿**：改源码前 3 个原子写用例失败（os.replace 未调用），
+  改后全绿。
+- 全量 **298 tests OK**（247 基线 + 22 + 17 + 12）+ 静态检查 `check_undefined_refs.py`
+  干净；`git diff --stat 源码` 仅 `爬虫.py` 一处改动。
+
+### 修复 — 验证码配置原子写：防用户设置静默回退默认
+
+- **根因**：`captcha_module.Config.save()` 写 `captcha_config.json`（验证码模块用户
+  配置）时 `Path.write_text(...)` **直写最终路径**。写入途中被杀/断电/磁盘满会留下
+  半截 JSON；下次 `Config.load()` 解析失败 → `_merge` 拿不到内容 → **静默回退全默认
+  配置**。后果严重且隐蔽：用户显式开启的 ddddocr 自动识别等设置"凭空消失"，而
+  `load()` 只 `_log.info` 一句、不报错，用户无从察觉。
+- **修复**：改为 **tmp + `os.replace` 原子写**（范式同 `爬取历史.py:_落盘` U17 与本批
+  M2）；tmp 名带 pid（GUI 与远控双进程防互相截断，U16）、与目标同目录（跨盘
+  `os.replace` 抛 OSError）、失败降级 `_log.info` 留痕不中断。
+- **非原子写全量核实（grep 出 6 处直写点逐个判定，只此 1 处该改）**：
+  cookie 持久化（`captcha_module.py:1080`）/ 速度画像缓存（`速度自适应.py:275`）/
+  日志导出（`log_tab.py:364`）/ 质检报告（`爬虫.py:5666`）/ 新建适配器模板
+  （`site_manage_page.py:586`）—— 均为**缓存或一次性写入**，损坏可自愈或下次重生成，
+  按"小状态文件别乱改原子写、会破坏 mtime 守卫语义"的既有约定不动。
+- 回归锁定：`test_captcha_config_atomic.py` ×8（os.replace 落盘 / tmp 带 pid /
+  同目录 / 无残留 / 连续 save / `path=None` 安全 / 自定义 path）。**TDD 红→绿**：
+  改源码前 4 个原子写用例失败，改后全绿。
+
+### 工程 — 依赖精确锁定（requirements-lock.txt）+ CI 接入
+
+- **问题**：`requirements.txt` 全是 `>=`、**无 lock 文件**，CI 每次发布都现场
+  `pip install` + 现场编译 Rust + onefile 打包 —— 上游依赖跳一个版本就可能让
+  "今天能打的 EXE 下周打不出"，且本机装的是旧版、失败现场难复现。
+- **方案（pip constraints，侵入最小）**：新增 `requirements-lock.txt`（**75 包精确
+  钉版**，由本机 `.venv` 的 `pip freeze --exclude-editable` 导出；平台 Windows +
+  Python 3.14，与 CI `windows-latest` / `3.14` 一致）。`requirements.txt` **保持不动**，
+  仍是唯一的"意图声明"（带注释与 `<0.87` 等上界）；lock 只钉版本 —— constraints
+  语义保证**不会主动安装**本文件列出但未被依赖的包，故可放心收录完整传递依赖。
+- **CI 接入**：`test.yml` 与 `release.yml` 的安装命令统一改为
+  `pip install -r requirements.txt -c requirements-lock.txt`（release 的
+  `pip install pyinstaller` 同样加 `-c` 约束，否则打包工具本身仍会漂移）。
+- **维护工具**：新增 `脚本/gen_lock.py` —— 生成 + `--check` 离线校验 + 幂等
+  （内容无变化则不写盘）。**本次校验：21 个顶层需求全部满足 lock 钉版，0 处不一致**
+  （接入 CI 不会导致安装失败）。升级依赖后重跑该脚本刷新即可。
+
+全量 **306 tests OK**（247 基线 + 22 decrypt + 17 epub + 12 checkpoint + 8 captcha）
++ 静态检查干净；**源码改动仅 `爬虫.py`（M2）与 `captcha_module.py` 两处**。
+另附 `文档/项目升级方向与开源对标-2026-09-13.md`（6 个开源爬虫项目 GitHub API
+实测对标 + 三层升级方向评估）。
+
 ## \[2.4.27] - 2026-09-12 (未发布)
 
 ### 适配 — als1010.space 站点专项（EXE 低成功率根因 + 软限频防护）
