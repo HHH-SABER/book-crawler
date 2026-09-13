@@ -22,6 +22,29 @@ python 脚本\build_exe.py
 注意:`测试/回归测试_修复验证.py`、`_test_gui_v3.py`、`_test_task_metrics.py` 是手写
 `__main__` 脚本,不被 unittest discover 收集,需单独 `python 测试\xxx.py` 运行。
 
+## 文件上传规约 (2026-09-13 定稿, 所有会话必须遵守)
+
+**入库白名单** — 只有以下内容允许 `git add`(新文件先对照本表,不在表内 = 不入库):
+
+| 目录/模式 | 性质 |
+|---|---|
+| `源码/`、`测试/`、`站点适配/`、`脚本/` | 源码与工具脚本 |
+| `测试样本/` | 离线测试 fixture (删除会破坏测试) |
+| `文档/`、`界面设计预览/` | 项目文档与设计资源 |
+| `配置/`(模板)、`.github/` | 分发配置模板与 CI |
+| 根级 `README/CHANGELOG/AGENTS/LICENSE/requirements.txt/.gitignore`、`启动*.bat`、`脚本/图标.ico` | 项目元文件 |
+
+**禁止入库** (即使 `git status` 显示 untracked 也不得 add;已在 .gitignore 则勿改):
+1. **运行时用户数据**: `数据/*`(仅 .gitkeep 入库)、`抓取结果*`、根级 `站点配置.json`/`captcha_config.json`(用户本机配置)、`日志/`、`HANDOFF.md`、`/提示词.txt`
+2. **会话私有目录**: `.workbuddy/`、`.zcode/`、`.idea/`、`.mimosa/`、`.trae/`、`.vscode/` —— AI 会话的记忆/审查缓存/IDE 配置,一律不入库;**会话结束前应清理自己产生的此类临时文件**
+3. **编译/打包产物**: `dist/`、`build/`、`rust_core_poc/**/target/`、`*.spec`、`build_log.txt`、根级 `*.zip`、`小说爬虫.exe`
+4. **大体积工具链**: 任何 toolchain/SDK 缓存不得入库或提交 (`rust_core_poc/.toolchain/` 经用户裁决本地保留)
+
+**提交纪律**:
+- `git add` 一律**指定文件路径**,禁止 `git add -A` / `git add .`(历史两次误提交 HANDOFF 的根因)
+- 提交前 `git status -s` 逐行确认: 出现自己没创建的文件 = 其他会话在途内容,**不得一并提交**
+- 新增依赖/模型/大二进制(>1MB)入库前先说明用途征得同意
+
 ## 模块地图 (源码/)
 
 | 模块 | 职责 |
