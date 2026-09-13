@@ -162,6 +162,14 @@ def main(page: ft.Page):
     except Exception:
         pass
 
+    # ---- 网站清单启动自检 (缺失自动生成模板; EXE 迁移/换机后同样生效) ----
+    try:
+        from 网站清单 import 自动生成若缺失
+        自动生成若缺失()
+    except Exception as _e_清单:
+        app_log.debug("系统", f"网站清单自检失败 (不影响主流程): "
+                              f"{type(_e_清单).__name__}")
+
     # ---- 全局任务管理器 ----
     task_manager = TaskManager(page)
 

@@ -89,3 +89,67 @@ def site_prior(domain: str) -> dict:
         return 取站点历史().查站点(f"https://{domain}") or {}
     except Exception:
         return {}
+
+
+# ======================================================================
+# 网站清单关联 (v2.4.28): URL → 网站名/书名反查 + 书名关键词过滤。
+# 清单由 网站清单.py 自动维护 (抓取成功即记录, 按网址去重)。
+# ======================================================================
+try:
+    from 网站清单 import 查 as _清单查, 按小说名搜索 as _清单书名搜索, \
+        读取 as _清单读取, 域名网站名 as _清单域名网站名
+    _清单可用 = True
+except Exception:
+    _清单可用 = False
+
+
+def 网站清单可用() -> bool:
+    """网站清单模块是否可用"""
+    return _清单可用
+
+
+def 补网站信息(rows: list) -> list:
+    """给 URL 明细行补 网站名/小说名 (按 URL 精确反查清单)。
+
+    清单中未命中时: 书名留空 (显示 —), 网站名回退为项自带的域名。
+    不影响原列表结构, 字典浅拷贝返回值。
+    """
+    if not _清单可用 or not rows:
+        return rows
+    try:
+        out = []
+        for r in rows:
+            d = dict(r)
+            url = d.get('url', '')
+            info = _清单查(url) if url else {}
+            if info:
+                d.setdefault('网站名', info.get('网站名', ''))
+                d.setdefault('小说名', info.get('小说名', ''))
+            else:
+                d.setdefault('网站名', _清单域名网站名(
+                    d.get('域名', '') or url))
+                d.setdefault('小说名', '')
+            out.append(d)
+        return out
+    except Exception:
+        return rows
+
+
+def 按书名过滤(rows: list, 关键词: str) -> list:
+    """按书名关键词过滤 URL 明细行 (匹配 清单 中该书所有 URL)。
+
+    清单未命中 (历史早于清单功能上线) 时退化: URL 自身含关键词也算命中。
+    """
+    关键词 = (关键词 or '').strip()
+    if not 关键词:
+        return rows
+    if not _清单可用:
+        return [r for r in rows if 关键词 in (r.get('url', '') or '')]
+    try:
+        命中urls = {x['网址'] for x in _清单书名搜索(关键词)}
+        out = [r for r in rows
+               if (r.get('url', '') in 命中urls
+                   or 关键词 in (r.get('url', '') or ''))]
+        return out
+    except Exception:
+        return rows
