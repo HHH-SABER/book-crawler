@@ -325,6 +325,10 @@ fn qa_质检_nogil(py: Python<'_>, text: &str) -> PyResult<(f64, bool, Vec<Strin
 // 供 Python 端直接构造质检报告, 保证报告结构与纯 Python 实现逐字段一致。
 fn 质检_full_core(text: &str) -> (f64, bool, Vec<String>, usize, usize, f64, f64, f64, f64, f64) {
     let (得分, 有效, 原因) = 质检_core(text);
+    if text.trim().is_empty() {
+        // 与 Python 空文本分支一致: 走 _空统计 (净0/行0/中0/乱1/重1/标0/空白0)
+        return (得分, 有效, 原因, 0, 0, 0.0, 1.0, 1.0, 0.0, 0.0);
+    }
     let s = 统计(text);
     let nl = text.matches('\n').count();
     let 空白 = if nl > 0 {
