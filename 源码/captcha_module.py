@@ -128,8 +128,21 @@ class Config:
         if path:
             self.path = path
         if self.path:
-            Path(self.path).write_text(
-                json.dumps(self.data, ensure_ascii=False, indent=2), encoding='utf-8')
+            # 批1: 原子写 —— tmp + os.replace, 不得直写最终路径。
+            # 旧实现 write_text 直写, 写入途中被杀/断电会留半截 JSON; 下次 load()
+            # 解析失败 -> _merge 拿不到内容 -> 静默回退全默认 (用户显式开启的
+            # ddddocr 等设置"凭空消失", 且 load 只 _log.info 不报错, 极隐蔽)。
+            # 范式同 爬取历史.py:_落盘(U17) 与本批 M2 检查点。tmp 名带 pid 防
+            # GUI/远控双进程互相截断 (U16); tmp 与目标同目录否则 os.replace 跨盘抛错。
+            try:
+                fobj = Path(self.path).resolve()   # pathlib 锚定, 防路径穿越
+                tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}')
+                tmp.write_text(
+                    json.dumps(self.data, ensure_ascii=False, indent=2),
+                    encoding='utf-8')
+                os.replace(tmp, fobj)
+            except OSError as e:
+                _log.info(f"[验证码模块] 配置原子写失败: {e}")
         return self
 
     def reload(self):
