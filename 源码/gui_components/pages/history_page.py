@@ -78,6 +78,15 @@ class HistoryPage:
         self._result_chips_row = ft.Row(spacing=4)
         self._rebuild_result_chips()
 
+        # v2.4.28: 书名关键词搜索框 (对 URL 明细按书名筛选; 数据源为 网站清单)
+        self._book_filter = ft.TextField(
+            label="按书名搜索", dense=True, width=170,
+            hint_text="书名关键词",
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
+            on_submit=lambda e: self.refresh(),
+            on_change=lambda e: self.refresh(),
+        )
+
         refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self.refresh())
         # P2: 一键更新书架 (对已抓取小说增量抓取)
@@ -110,7 +119,8 @@ class HistoryPage:
             ft.Column([
                 self._stat_row,
                 ft.Row([self._domain_dd, self._days_dd,
-                        self._result_chips_row, refresh_btn, update_btn],
+                        self._book_filter, self._result_chips_row,
+                        refresh_btn, update_btn],
                        spacing=6, wrap=True),
                 self._shelf_info,
             ], spacing=10),
@@ -308,13 +318,22 @@ class HistoryPage:
         return ft.Row(cells, spacing=6)
 
     def _build_urls_table(self, domain, start, end, result):
-        """URL 明细表"""
+        """URL 明细表 (v2.4.28: 先按书名关键词过滤, 再补 网站名/书名 两列)"""
         rows = history_data.query_history(域名=domain, 起始时间=start,
                                          结束时间=end, 结果=result)
+        # v2.4.28: 书名搜索框过滤 (匹配 网站清单 中该书名对应的所有 URL)
+        try:
+            关键词 = (self._book_filter.value or '').strip()
+        except Exception:
+            关键词 = ''
+        if 关键词:
+            rows = history_data.按书名过滤(rows, 关键词)
+        # v2.4.28: 按 URL 反查 网站名/小说名 (清单未命中则回退域名/留空)
+        rows = history_data.补网站信息(rows)
         self._table_view.controls.clear()
         self._table_view.controls.append(self._table_header(
-            ["URL", "最后抓取", "状态码", "耗时", "字节", "结果", "错误原因"],
-            [36, 14, 7, 7, 9, 8, 19]))
+            ["书名", "网站", "URL", "最后抓取", "状态码", "耗时", "字节", "结果", "错误原因"],
+            [16, 11, 22, 11, 6, 6, 7, 7, 14]))
         if not rows:
             self._append_empty("暂无历史记录 (启动抓取后自动记录)")
             return
@@ -327,28 +346,37 @@ class HistoryPage:
             self._table_view.controls.append(self._url_row(r, color))
 
     def _url_row(self, r: dict, color) -> ft.Control:
-        """URL 明细行"""
+        """URL 明细行 (含 书名/网站名 前两列)"""
         def _cell(content, flex, text_style=None):
             return ft.Container(content=content, expand=flex,
                                  alignment=ft.Alignment(-1, 0))
-        def _t(v, color=None, mono=False):
-            return ft.Text(v, size=SIZE_TINY, weight=WEIGHT_BODY,
+        def _t(v, color=None, bold=False):
+            return ft.Text(v, size=SIZE_TINY, weight=(WEIGHT_SUBTITLE if bold
+                                                      else WEIGHT_BODY),
                            color=color, font_family=FONT_STACK,
                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                            selectable=True)
         err = r.get('错误原因', '')
+        书名 = r.get('小说名', '') or ''
+        网站 = r.get('网站名', '') or ''
         return ft.Container(
             content=ft.Row([
-                _cell(_t(r.get('url', '')), 36),
-                _cell(_t(r.get('最后抓取', '')[:16]), 14),
+                _cell(_t(书名 if 书名 else "—",
+                         MORANDI_SECONDARY if 书名 else
+                         ft.Colors.ON_SURFACE_VARIANT, bold=bool(书名)), 16),
+                _cell(_t(网站 if 网站 else "—",
+                         MORANDI_ACCENT if 网站 else
+                         ft.Colors.ON_SURFACE_VARIANT), 11),
+                _cell(_t(r.get('url', '')), 22),
+                _cell(_t(r.get('最后抓取', '')[:16]), 11),
                 _cell(_t(str(r.get('状态码', '')),
                          MORANDI_ERROR if r.get('状态码', 0) and
-                         int(r.get('状态码', 200)) >= 400 else None), 7),
-                _cell(_t(f"{r.get('耗时秒', 0):.1f}s" if r.get('耗时秒') else "—"), 7),
-                _cell(_t(self._fmt_size(r.get('字节大小', 0))), 9),
-                _cell(_t(r.get('结果', ''), color), 8),
+                         int(r.get('状态码', 200)) >= 400 else None), 6),
+                _cell(_t(f"{r.get('耗时秒', 0):.1f}s" if r.get('耗时秒') else "—"), 6),
+                _cell(_t(self._fmt_size(r.get('字节大小', 0))), 7),
+                _cell(_t(r.get('结果', ''), color), 7),
                 _cell(_t(err[:40] if err else "—",
-                         MORANDI_ERROR if err else None), 19),
+                         MORANDI_ERROR if err else None), 14),
             ], spacing=6),
             padding=ft.Padding.symmetric(horizontal=8, vertical=3),
             border_radius=6,

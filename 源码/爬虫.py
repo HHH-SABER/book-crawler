@@ -720,6 +720,7 @@ class NovelSpider:
         self._限频最大退避 = 0     # 本次任务最大退避秒数 (汇总报告用)
         self._反爬统计 = {}        # 本次任务反爬机制命中统计 {机制: 次数}
         self._质检记录 = []        # 本次任务各章质检报告 (整书汇总用)
+        self._连续失败章数 = 0     # 连续失败章计数 (≥3 时 _fetch_with_retry 快速跳过外层补试)
         self._引擎管理器 = _引擎管理器   # 多引擎请求 (curl_cffi/cloudscraper, 可为 None)
         self._引擎统计 = {}        # 本次任务多引擎成功请求统计 {引擎: 次数}
         # ===== 爬取历史记录 (按 URL 维度, 增量爬取支持) =====
@@ -922,7 +923,7 @@ class NovelSpider:
         _log.info(f"[tanmixs] 验证码解决后页面长度: {len(page_source)} 字符")
         return page_source
 
-    def _get_with_js_challenge(self, url, headers=None, timeout=30):
+    def _get_with_js_challenge(self, url, headers=None, timeout=15):
         """发起GET请求并处理JS cookie校验反爬(如zhiruo.org的ge_js_validator)。
         首次响应可能是一个通过<script>设置cookie后window.location.reload的校验页面，
         这里提取document.cookie并重试，直到拿到真实内容。返回最终的response对象。
@@ -953,7 +954,7 @@ class NovelSpider:
             _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         return response
 
-    def _get_with_js_challenge_impl(self, url, headers=None, timeout=30):
+    def _get_with_js_challenge_impl(self, url, headers=None, timeout=15):
         """_get_with_js_challenge 的实际请求逻辑 (缓存包装层见上)"""
         validate_public_url(url)  # 安全校验: 仅允许公网 http/https
         _t0 = time.time()
@@ -1392,7 +1393,7 @@ class NovelSpider:
                     _log.info(f"请求失败({_attempt}/{_conn_retries}): {e}")
                     if _attempt >= _conn_retries:
                         break
-                    time.sleep(3)
+                    time.sleep(1.0)   # v2.4.28: 3→1s. 失败路径只求快速判定, 不拖延 (超长书提速)
             if response is None:
                 _log.info("请求重试耗尽, 返回空页面(交由调用方Selenium兜底)")
                 return BeautifulSoup('', 'lxml')
@@ -4979,7 +4980,7 @@ class NovelSpider:
                     _配额 = _spd0.current_delay() if _spd0 is not None else 0.0
                     time.sleep(_单页等待秒(_配额))
                     
-                    response = self.session.get(current_url, headers=headers, timeout=30)
+                    response = self.session.get(current_url, headers=headers, timeout=15)
 
                     # 检查状态码
                     if response.status_code == 404:
@@ -5016,7 +5017,7 @@ class NovelSpider:
                                 self.session.cookies.set(ck_name.strip(), ck_val.strip())
                                 _log.info(f"[反爬检测] 已设置cookie: {ck_name.strip()}")
                             time.sleep(2)
-                        response = self.session.get(current_url, headers=headers, timeout=30)
+                        response = self.session.get(current_url, headers=headers, timeout=15)
 
                     # 爬取历史记录: 分页请求最终响应 (覆盖挑战解决后的真实内容)
                     self._记录请求(current_url, response, 0)
@@ -5522,15 +5523,22 @@ class NovelSpider:
         """P1-2: 章节抓取外层兜底重试。
 
         _fetch_with_qc 内部已做 UA 轮换+清缓存重试 (质检层); 本层在它仍返回
-        空内容时, 间隔 3s 再补试 (限速/瞬时抖动层), 与内部重试互补。
+        空内容时, 间隔 1.5s 再补试 (限速/瞬时抖动层), 与内部重试互补。
         返回最终 content (可能为空, 由调用方记为 failed)。
         """
         import time as _t
         content = self._fetch_with_qc(chap)
+        # 连续失败快速跳过: 本任务已连续失败 ≥3 章 (站点大概率整体拒连/被限频,
+        # 如书海阁 RemoteDisconnected), 外层补试只徒增等待, 直接返回空占位,
+        # 由断点续传稍后补抓 (v2.4.28 超长书提速)
+        if not content and self._连续失败章数 >= 3:
+            _log.info(f"[跳过] 连续 {self._连续失败章数} 章失败, 跳过本层重试直接占位: "
+                      f"{chap.get('title', '')[:30]}")
+            return content
         for attempt in range(max_retries):
             if content:
                 break
-            _t.sleep(3 * (attempt + 1))
+            _t.sleep(1.5 * (attempt + 1))
             _log.info(f"[重试] 第{attempt + 1}次补试: {chap.get('title', '')[:30]}")
             self._清请求缓存(chap.get('url', ''))
             try:
@@ -5569,7 +5577,7 @@ class NovelSpider:
             if 报告.有效:
                 if attempt > 0:
                     _log.info(f"[质检] 第{attempt}次重试后通过: {报告.摘要()}")
-                    _任务事件.发布('质检', 得分=报告.得分, 通过=报告.有效)   # U19
+                _任务事件.发布('质检', 得分=报告.得分, 通过=报告.有效)   # U19
                 self._质检记录.append(报告)
                 return content
             _log.info(f"[质检] {报告.摘要()}")
@@ -5895,6 +5903,14 @@ class NovelSpider:
             _log.info(f"[质检] 汇总报告生成异常: {e}")
         self._记录站点历史(catalog_url, novel_title, total, failed,
                             output_file, 质检摘要=质检摘要)
+        # v2.4.28: 抓取结束 → 自动记录 网站清单 (网址+站名+书名, 去重)。
+        # CLI/GUI 全路径覆盖; 书名平时只在抓取完成后非空, 其余用站名占位
+        try:
+            from 网站清单 import 记录 as _记清单, 域名网站名
+            _小说名 = (novel_title or '').strip()
+            _记清单(catalog_url, 域名网站名(catalog_url), _小说名)
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__} (网站清单记录失败)')
         # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史/站点历史不丢失)
         if _站点历史可用:
             try:
@@ -6260,9 +6276,11 @@ class NovelSpider:
                             f.write(f"## {chap['title']}\n\n")
                             f.write(content + "\n\n")
                             if content:
+                                self._连续失败章数 = 0
                                 _log.info(f"成功: {len(content)} 字符")
                             else:
                                 failed.append(i + 1)
+                                self._连续失败章数 = self._连续失败章数 + 1
                                 _log.info("失败: 未提取到内容")
                             # 每章完成后更新检查点（中断后可从断点续传）
                             self._save_checkpoint(output_file, catalog_url,
@@ -6319,9 +6337,11 @@ class NovelSpider:
                         f.write(f"## {chap['title']}\n\n")
                         f.write(content + "\n\n")
                         if content:
+                            self._连续失败章数 = 0
                             _log.info(f"成功: {len(content)} 字符")
                         else:
                             failed.append(i + 1)
+                            self._连续失败章数 = self._连续失败章数 + 1
                             _log.info("失败: 未提取到内容")
                         # 每章完成后更新检查点（中断后可从断点续传）
                         self._save_checkpoint(output_file, catalog_url,

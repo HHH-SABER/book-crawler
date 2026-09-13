@@ -74,7 +74,7 @@ class SpeedTier:
 
 TIER_STANDARD = SpeedTier(0, "标准", 1, 1.0)
 TIER_FAST = SpeedTier(1, "快速", 3, 0.5)
-TIER_TURBO = SpeedTier(2, "极速", 6, 0.2)
+TIER_TURBO = SpeedTier(2, "极速", 8, 0.2)   # v2.4.28: 6→8 线程 (超长书提速)
 _TIERS = [TIER_STANDARD, TIER_FAST, TIER_TURBO]
 
 
