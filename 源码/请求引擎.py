@@ -150,7 +150,7 @@ class 请求引擎管理器:
     # ------------------------------------------------------------------
     # 对外 API
     # ------------------------------------------------------------------
-    def 请求(self, url, headers=None, timeout=30, 引擎='auto', 机制='none',
+    def 请求(self, url, headers=None, timeout=15, 引擎='auto', 机制='none',
              cookies=None, proxies=None, 支持重定向=True) -> Optional[引擎响应]:
         """按指定引擎 (或按反爬机制自动选择) 发起请求。
 

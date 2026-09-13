@@ -706,6 +706,17 @@ class TaskManager:
             # 如果状态还是running且没有标记completed，标记为completed
             if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")
+                # v2.4.28: 抓取成功 → 自动记录 网站清单 (网址+站名+书名, 去重)。
+                # 任务可能因站点异常只抓到部分章节 (failed>0 也算已尽力跑完),
+                # 书名由 '标题' 事件回填; 未拿到书名时仍记录网址+网站名占位
+                try:
+                    from 网站清单 import 记录 as _记清单, 域名网站名
+                    _记清单(url, 域名网站名(url), (task.title or '').strip())
+                except Exception as _e_清单:
+                    if app_log is not None:
+                        app_log.debug(f"任务{task.task_id}",
+                                      f"网站清单记录失败 (不影响抓取结果): "
+                                      f"{type(_e_清单).__name__}")
         except Exception as e:
             if self._is_task_thread_owner(task):
                 self._set_terminal(task, "failed")
