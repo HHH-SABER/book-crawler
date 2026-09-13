@@ -44,13 +44,15 @@ jobs:
 
       # build_exe.py 依赖 .venv/ 路径 (找 pyinstaller 与 ddddocr 模型目录),
       # 因此 CI 必须建虚拟环境, 不能直接用系统 python
+      # -c requirements-lock.txt: 钉精确版本, 防上游跳版本致发布不可复现
+      # (CI 现场编译 Rust + onefile 打包对依赖版本敏感; 刷新见 脚本/gen_lock.py)
       - name: Create venv & install deps
         shell: bash
         run: |
           python -m venv .venv
           .venv/Scripts/python.exe -m pip install --upgrade pip
-          .venv/Scripts/pip.exe install -r requirements.txt
-          .venv/Scripts/pip.exe install pyinstaller
+          .venv/Scripts/pip.exe install -r requirements.txt -c requirements-lock.txt
+          .venv/Scripts/pip.exe install pyinstaller -c requirements-lock.txt
 
       # Rust 加速扩展: pyd 不入库 (gitignore), CI 现场编译后打进 EXE
       # (M12: 旧发布产物永远纯 Python 且无人知晓; 失败不阻塞, 仅纯 Python 发布)
