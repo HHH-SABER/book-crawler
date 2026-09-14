@@ -10,6 +10,20 @@
 组件应逐步改用 ui_theme 的语义封装, 避免直接引用色值常量。
 """
 import flet as ft
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 # ====================================================================
 # 一、统一字体规范 (Fluent: Segoe UI 优先, 中文回退微软雅黑)
@@ -281,8 +295,8 @@ def open_dialog(page, ctrl):
             page.overlay.append(ctrl)
             ctrl.open = True
             page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("UI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def close_dialog(page, ctrl):
@@ -291,11 +305,11 @@ def close_dialog(page, ctrl):
     不生效, 会残留 overlay。overlay 兜底路径 (show_dialog 失败时) 仍走旧式。"""
     try:
         page.pop_dialog()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("UI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     try:
         if ctrl.open:
             ctrl.open = False
             page.update()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("UI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')

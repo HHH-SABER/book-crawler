@@ -76,7 +76,7 @@ async def 执行退出(page,
         try:
             记录(m)
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     结果 = {"停远控": False, "停托盘": False, "运行中任务数": 0,
             "等检查点": False, "收尾钩子数": 0, "收尾钩子失败": 0,

@@ -36,7 +36,7 @@ class RemotePage:
             self._btn_lab.update()
             self._btn_dot.update()
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(同步外观(), 逐行/每秒级), 补日志会刷屏
 
     def build(self):
         self._btn_dot = ft.Icon(ft.Icons.CIRCLE, size=9, color=MORANDI_SUCCESS)
@@ -114,7 +114,7 @@ class RemotePage:
                 self._addr.value = info.get("地址") or "—"
                 self._token.value = info.get("token") or "—"
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
         try:
             tasks = [t for t in self.task_manager.get_all_tasks()
                      if getattr(t, '来源', '本机') == '手机']
@@ -141,4 +141,4 @@ class RemotePage:
             if self.page is not None:
                 self._rows.update()
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
