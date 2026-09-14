@@ -154,6 +154,28 @@
 另附 `文档/项目升级方向与开源对标-2026-09-13.md`（6 个开源爬虫项目 GitHub API
 实测对标 + 三层升级方向评估）。
 
+### 可观测性 — 批2A：GUI 三个重灾区文件 59 处静默异常处置（42 补留痕 + 17 有意静默）
+
+- **背景**：AST 全项目基线 191 处"纯 pass 无留痕"except，违反 AGENTS.md 规约
+  （裸 except 必须留痕），集中在 GUI 层——异常被吞后界面表现为"就是不动"，排障无
+  任何线索。批 2 按文件分批治理（2A 起），并配守卫测试防增量回归（2E 收尾加）。
+- **批2A 范围**：`gui_app.py`(23) + `task_manager.py`(16) + `site_manage_page.py`(20)。
+  处置结果：**42 处补 debug 留痕**（except 补 `as _e`，输出异常类型+消息）；
+  **17 处保留静默但补原因注释**——日志链路兜底 7 处（except 的 try 块本身在写日志，
+  再加日志会递归，如 `site_manage_page._log()` 内部）、高频路径 9 处
+  （`_refresh_loop`/`_status_loop` 每秒循环、`TaskLogRedirector.write/flush` 每条
+  日志、`refresh()`——DEBUG 默认落盘，补日志会刷屏）、其余为原已带注释项。
+- **三文件日志通道各不相同，逐一核查后适配**（防盲改引入 AttributeError）：
+  `gui_app.py` 用模块级 `app_log.debug("GUI", msg)`；`task_manager.py` 的 app_log
+  可能为 None（容错导入）→ 全部带 `if app_log:` 守卫；`site_manage_page.py` 的
+  `_log` **是函数不是 logger**（`def _log(source, message)`）→ 用 `_log("站点管理", msg)`。
+- 工具化执行：AST 定位 + 按文件策略生成 + 落盘前自动备份 + 五重验证（语法/换行符
+  保持（site_manage_page 1195 行 CRLF）/防线注释/插值配对/全量门禁）。首版工具三处
+  缺陷（f-string 未插值丢异常消息、`refresh_log()` 子串误判日志调用、按最外层函数
+  误判热路径）经干跑审查全部修正后回滚重做。
+- 验证：**306 tests OK**（行为无变化，纯加留痕）+ 静态检查干净；全项目"无留痕"
+  基线由 191 降至 **118**（待 2B-2E 清零 + 守卫测试钉住）。
+
 ## \[2.4.27] - 2026-09-12 (未发布)
 
 ### 适配 — als1010.space 站点专项（EXE 低成功率根因 + 软限频防护）
