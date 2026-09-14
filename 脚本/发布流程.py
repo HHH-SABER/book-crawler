@@ -133,7 +133,7 @@ def 打包(参数):
             try:
                 备.rename(原)
             except Exception:
-                pass
+                pass  # 刻意静默: 失败回滚改名异常留给产物目录人工检查暴露, 不中断失败上报
         print('\n❌ 步骤④失败: 打包未成功, 已中止 (未提交, 工作区保持可修状态)。')
         # 高发原因: 构建前的 dist/ 清理撞上沙箱的批量删除确认
         if 'SAFE_DELETE_BULK_CONFIRM_REQUIRED' in out:
@@ -145,7 +145,7 @@ def 打包(参数):
         try:
             备.unlink()
         except Exception:
-            pass
+            pass  # 刻意静默: 成功路径删除旧产物备份失败无功能影响, 残留备份人工可见
     if not 产物:
         print('\n❌ 步骤④失败: 打包命令报成功但 dist/ 下没有 .exe 产物, 已中止。')
         return False
