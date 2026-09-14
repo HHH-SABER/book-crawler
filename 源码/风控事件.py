@@ -21,6 +21,20 @@ import os
 import threading
 import time
 from pathlib import Path
+try:
+    import 日志 as _app_log          # 批2D: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 _FLUSH_SIZE = 60
 _MAX_BUFFER = 600     # 落盘失败时缓冲保留上限 (防无限积压)
@@ -40,8 +54,8 @@ def _log_dir():
     d = os.path.join(base, "数据")
     try:
         os.makedirs(d, exist_ok=True)
-    except OSError:
-        pass
+    except OSError as _e:
+        _dbg("风控事件", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return d
 
 
@@ -59,8 +73,8 @@ def add(event_type: str, fields: dict):
             _BUFFER.append(rec)
             if len(_BUFFER) >= _FLUSH_SIZE:
                 _flush_locked()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("风控事件", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def flush():
@@ -68,8 +82,8 @@ def flush():
     try:
         with _LOCK:
             _flush_locked()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("风控事件", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def _flush_locked():
@@ -176,8 +190,8 @@ def set_domain_cooldown(domain: str, seconds: float, reason: str = ""):
             st[domain] = {"冷却截止": time.time() + max(seconds, 0),
                           "最后命中": reason}
             _save_state(st)
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("风控事件", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def clear_domain_cooldown(domain: str):
@@ -187,8 +201,8 @@ def clear_domain_cooldown(domain: str):
             if domain in st:
                 del st[domain]
                 _save_state(st)
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("风控事件", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def delay_factor(domain: str, hours: int = 24) -> float:
@@ -211,8 +225,8 @@ def delay_factor(domain: str, hours: int = 24) -> float:
             return 2.0
         if rl >= 1:
             return 1.5
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("风控事件", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return 1.0
 
 

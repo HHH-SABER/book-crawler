@@ -94,7 +94,7 @@ def get_state_root() -> str:
             try:
                 os.makedirs(new, exist_ok=True)
             except OSError:
-                pass
+                pass  # 刻意静默: 刻意静默: 本模块被 日志.py 依赖, 引入日志会循环导入; 失败回退默认路径即可
         _STATE_ROOT = root
         return _STATE_ROOT
 

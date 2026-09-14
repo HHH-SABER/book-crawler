@@ -99,8 +99,8 @@ class 站点历史:
         data_dir = os.path.join(base, '数据')
         try:
             os.makedirs(data_dir, exist_ok=True)
-        except OSError:
-            pass
+        except OSError as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return os.path.join(data_dir, '站点历史.json')
 
     def _加载(self) -> dict:
@@ -109,8 +109,8 @@ class 站点历史:
                 data = json.load(f)
             if isinstance(data, dict):
                 return data
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            pass
+        except (FileNotFoundError, json.JSONDecodeError, OSError) as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return {}
 
     def _atexit_flush(self):
@@ -119,8 +119,8 @@ class 站点历史:
             with self._io_lock:
                 if self._脏:
                     self._写入()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def flush(self):
         """对外强制刷盘入口 (任务收尾调用; U17: 锁外落盘)"""
@@ -183,8 +183,8 @@ class 站点历史:
             self._脏 = False
             try:
                 self._磁盘时间 = os.path.getmtime(fobj)
-            except OSError:
-                pass
+            except OSError as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         except OSError as e:
             _log.info(f"[站点历史] 保存失败: {e}")
 

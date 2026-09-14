@@ -90,4 +90,4 @@ def 发布(类型: str, **数据) -> None:
                 _app_log.get('任务事件').debug(
                     f'订阅方处理事件失败: {type(e).__name__}: {e} (类型={类型})')
             except Exception:
-                pass
+                pass  # 刻意静默: 日志链路自身兜底: try 体是 _app_log.get(...).debug(...) 链式写入, 再加日志会递归
