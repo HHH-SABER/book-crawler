@@ -258,7 +258,7 @@ def decrypt_str_concat(html):
                 except Exception:
                     continue
         except Exception:
-            pass
+            pass  # 刻意静默: 控制流: 拼接结果非 base64 时必然失败, 继续走反转分支, 静默是设计
     # 方式2: split('')+reverse+join('') 反转 (字符顺序倒置)
     reversed_txt = joined[::-1]
     if _looks_like_content(reversed_txt):
