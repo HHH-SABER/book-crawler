@@ -84,7 +84,7 @@ def extract_content(soup, page_url, base_url, **kw):
                       "交给上层退避/域冷却后重试")
             return None
     except Exception:
-        pass
+        pass  # 刻意静默: 上方 _log.info 已留痕软限频页, 解析兜底 return None 交上层退避重试
     selectors = [
         '.read-content',            # PC 单容器
         'div#chapterContent',       # 移动 总容器
