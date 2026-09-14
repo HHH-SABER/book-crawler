@@ -833,7 +833,7 @@ def extract_content_ajax_two_step(session, current_url, pattern, base_url, heade
     return text, True
 
 
-def extract_content_html_selector(html, selectors, extractor=None):
+def extract_content_html_selector(html, selectors, extractor=None, domain=''):
     """通过 BeautifulSoup 选择器提取正文
 
     Args:
@@ -842,6 +842,9 @@ def extract_content_html_selector(html, selectors, extractor=None):
         extractor: 专用提取器标记 (可选)
             - 'yunquge_p_filter': 云趣阁按 <p> 逐行过滤广告/导航行
             - 'yqyp_nav_strip': 言情一品书 (yqyp.net) 导航/推荐剥离
+        domain: 站点域名 (可选, 批3 PoC-A)。选择器全部落空时触发选择器自愈,
+            产出**待审建议** (数据/选择器建议.json)。不自动改配置、不影响
+            本函数返回值与下方兜底逻辑; 自愈异常一律旁路, 绝不断主流程。
 
     Returns:
         正文文本
@@ -874,6 +877,15 @@ def extract_content_html_selector(html, selectors, extractor=None):
         text = el.get_text('\n', strip=True)
         if len(text) > 200:
             return text
+    # ===== 批3 PoC-A: 规则选择器全部落空 -> 自愈重定位 (只产出待审建议, 方案A) =====
+    # 下方"最长文本容器"兜底仍照旧返回, 本次抓取行为零变化; 建议由人工审核后
+    # 才并入 站点配置.json。自愈任何异常一律旁路 (只留痕), 绝不断主流程。
+    if domain:
+        try:
+            import 选择器自愈
+            选择器自愈.try_heal(soup, domain, selectors)
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     # 兜底: 找最长文本容器
     candidates = []
     for el in soup.find_all(True):
@@ -1096,6 +1108,7 @@ def extract_content(session, current_url, pattern, base_url, headers, inspect_pa
             html,
             pattern.get('content_selectors', ['#content', '.content']),
             extractor=pattern.get('content_extractor'),
+            domain=pattern.get('domain', ''),
         )
         return text, len(text) > 100
     
