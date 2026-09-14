@@ -12,6 +12,20 @@ import json
 import os
 import threading
 from pathlib import Path
+try:
+    import 日志 as _app_log          # 批2C: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 _LOCK = threading.Lock()
 
@@ -33,8 +47,8 @@ def _path():
         d = os.path.dirname(os.path.abspath(__file__))
     try:
         os.makedirs(d, exist_ok=True)
-    except OSError:
-        pass
+    except OSError as _e:
+        _dbg("漂移检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return os.path.join(d, "站点基线.json")
 
 
@@ -55,8 +69,8 @@ def _save(st):
         tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1),
                        encoding="utf-8")
         os.replace(tmp, p)
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("漂移检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def _ema(old, new):
@@ -105,20 +119,20 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int) ->
                 new["样本数"] = (base or {}).get("样本数", 0) + 1
             st[domain] = new
             _save(st)
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("漂移检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     if alarms:
         try:
             import 日志 as _app_log
             for a in alarms:
                 _app_log.warn("漂移检测", a)
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
         try:
             import 风控事件 as _event
             _event.add("content_issue", {"域名": domain, "告警": "; ".join(alarms)})
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("漂移检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return alarms
 
 

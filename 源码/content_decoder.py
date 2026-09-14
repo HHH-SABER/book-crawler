@@ -274,8 +274,8 @@ def decode_data(raw):
                 # content 可能是纯文本
                 if _looks_like_content(content):
                     return content, 'json_content'
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # 2. 直接 JSON 对象
     try:
@@ -285,8 +285,8 @@ def decode_data(raw):
                 val = data.get(key)
                 if isinstance(val, str) and _looks_like_content(val):
                     return val, f'json.{key}'
-    except Exception:
-        pass
+    except Exception as _e:
+        _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # 3. 纯文本
     if _looks_like_content(stripped):
@@ -302,8 +302,8 @@ def decode_data(raw):
                     return text, 'base64'
             except Exception:
                 continue
-    except Exception:
-        pass
+    except Exception as _e:
+        _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     return None, None
 
