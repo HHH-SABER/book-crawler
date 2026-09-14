@@ -36,6 +36,20 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from _path_utils import get_default_output_dir, get_state_root
 from .配置 import 取配置
+try:
+    import 日志 as _app_log          # 批2D: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -104,8 +118,8 @@ def 停止后台() -> None:
     if srv is not None:
         try:
             srv.should_exit = True
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     _server_thread = None
 
 
@@ -120,7 +134,7 @@ def _日志留痕(msg: str) -> None:
         import 日志 as _alog
         _alog.get("远控").info(msg)
     except Exception:
-        pass
+        pass  # 刻意静默: 日志链路兜底: _日志留痕 的 try 体写任务日志, 再加日志会递归
 
 
 # ---------------------------------------------------------------- 鉴权
@@ -178,8 +192,8 @@ def _书架标题映射() -> dict:
             f = (it.get("输出文件") or "").strip()
             if f:
                 mapping[os.path.basename(f)] = it.get("标题") or ""
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return mapping
 
 
@@ -260,8 +274,8 @@ def 创建任务(body: dict, k: Optional[str] = None,
         t = _任务管理器().get_task(task_id)
         if t is not None:
             t.来源 = "手机"
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return {"task_id": task_id}
 
 
@@ -413,8 +427,8 @@ def _发送推送(标题: str, 内容: str) -> None:
         try:
             from 日志 import get as _日志取
             _日志取("远控").info(f"[推送] {标题} → {' '.join(渠道结果)}")
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def _扫描终态() -> list:
@@ -464,8 +478,8 @@ async def _终态监视():
     while True:
         try:
             await asyncio.to_thread(_扫描终态)
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         await asyncio.sleep(3)
 
 
@@ -589,8 +603,8 @@ def _写进度(book_id: str, chapter: int) -> None:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as _e:
+            _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         data[book_id] = max(0, int(chapter))
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

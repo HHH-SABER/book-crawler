@@ -97,8 +97,8 @@ class 爬取历史:
         """进程退出时强制刷盘 (防抖期间未落盘的记录不丢失)"""
         try:
             self.flush()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def flush(self):
         """对外强制刷盘入口 (任务收尾调用)。
@@ -125,8 +125,8 @@ class 爬取历史:
         data_dir = os.path.join(base, '数据')
         try:
             os.makedirs(data_dir, exist_ok=True)
-        except OSError:
-            pass
+        except OSError as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return os.path.join(data_dir, '爬取历史.json')
 
     def _加载(self) -> dict:
@@ -135,8 +135,8 @@ class 爬取历史:
                 data = json.load(f)
             if isinstance(data, dict):
                 return data
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            pass
+        except (FileNotFoundError, json.JSONDecodeError, OSError) as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return {}
 
     _最小落盘间隔 = 5.0   # 秒 (M1: 防抖窗口)

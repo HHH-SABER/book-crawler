@@ -5,6 +5,20 @@
 纯网络 IO, 调用方须放线程池 (避免阻塞 Flet 主线程)。
 """
 import time
+try:
+    import 日志 as _app_log          # 批2D: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 # 标准桌面 UA (探测用)
 _PROBE_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -43,7 +57,7 @@ def probe_site(url: str, timeout: int = 15) -> dict:
         from sites_config import validate_public_url
         validate_public_url(url)
     except ImportError:
-        pass
+        pass  # 刻意静默: 探测式导入: 依赖缺失时功能降级, 静默是设计
     except ValueError as _e_url:
         result['error'] = f'URL 未通过公网校验: {_e_url}'
         result['elapsed'] = round(time.time() - t0, 2)
@@ -77,8 +91,8 @@ def probe_site(url: str, timeout: int = 15) -> dict:
             机制 = getattr(r, '机制', 'none')
             result['anti_spider'] = 机制
             result['anti_evidence'] = (getattr(r, '证据', '') or '')[:120]
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("站点探测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # ---- 第三步: 命中反爬 → 请求引擎重试 ----
     if resp is not None and 200 <= result['status_code'] < 400 \
@@ -122,13 +136,13 @@ def probe_site(url: str, timeout: int = 15) -> dict:
     try:
         if resp is not None:
             resp.close()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("站点探测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     try:
         if s is not None:
             s.close()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("站点探测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return result
 
 

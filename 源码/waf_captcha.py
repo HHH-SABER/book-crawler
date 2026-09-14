@@ -23,6 +23,20 @@ import json
 import time
 import threading
 from pathlib import Path
+try:
+    import 日志 as _app_log          # 批2D: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -62,7 +76,7 @@ def _ddddocr_enabled() -> bool:
             _USE_DDDDOCR = bool(
                 data.get('strategies', {}).get('ddddocr', {}).get('enabled'))
     except Exception:
-        pass
+        pass  # 刻意静默: 探测式判断: ddddocr 不可用即视为未开启, 静默是设计
     return _USE_DDDDOCR
 
 
@@ -233,8 +247,8 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
                 '访问验证' in (_首.text or '') and 'check_code' in (_首.text or ''):
             return _解_表单验证页(session, url, _首.text or '', headers,
                                  timeout, log, max_tries)
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("WAF", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     for attempt in range(1, max_tries + 1):
         # 1. 请求拦截页, 提取验证码图片地址
@@ -333,8 +347,8 @@ def 回灌cookie(session, cookies: list) -> int:
             try:
                 session.cookies.set(c['name'], c['value'])
                 n += 1
-            except Exception:
-                pass
+            except Exception as _e:
+                _dbg("WAF", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return n
 
 
@@ -390,5 +404,5 @@ def solve_waf_captcha_manual(session, url: str, log=print,
             if driver is not None:
                 try:
                     driver.quit()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    _dbg("WAF", f'裸 except 吞异常: {type(_e).__name__}: {_e}')

@@ -375,8 +375,8 @@ class CaptchaHandler(ABC):
                 '类型': str(kind), '结果': 'success' if success else 'fail',
                 '方式': method or self.name,
             })
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 class ManualCaptchaHandler(CaptchaHandler):
@@ -396,8 +396,8 @@ class ManualCaptchaHandler(CaptchaHandler):
             _log.info("[验证码-人工] 检测到验证码页面, 自动识别不可用或失败, 转人工处理")
             try:
                 driver.quit()
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             factory = getattr(self, 'driver_factory', None)
             if factory is None:
                 raise RuntimeError("未配置可见浏览器工厂 (driver_factory)")
@@ -416,7 +416,7 @@ class ManualCaptchaHandler(CaptchaHandler):
                         _log.info(f"[验证码-人工] ✅ 验证码已解决 (等待了 {(wait_round + 1) * 5} 秒)")
                         break
                 except Exception:
-                    pass
+                    pass  # 刻意静默: 日志链路兜底: try 体在写日志, 再加日志会递归
                 if (wait_round + 1) % 12 == 0:
                     _log.info(f"[验证码-人工] 仍在等待验证码解决... (已等待 {(wait_round + 1) * 5} 秒)")
 
@@ -824,8 +824,8 @@ class ThirdPartyCaptchaHandler(CaptchaHandler):
             try:
                 btn = driver.find_element(By.CSS_SELECTOR, 'button[type="submit"], input[type="submit"]')
                 btn.click()
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             time.sleep(2)
             return driver.page_source
         except Exception:
@@ -950,8 +950,8 @@ class PointClickCaptchaHandler(CaptchaHandler):
                                 elif v and isinstance(v[0], dict) and 'message' in v[0]:
                                     text = v[0]['message'].get('content', '') or text
                                 break
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             if not points:
                 m = _re.search(r'\[\[(\s*\d+\s*,\s*\d+\s*,?\s*)+\]\]', text) or \
                     _re.search(r'\[(\s*\d+\s*,\s*\d+\s*)\]', text)
@@ -988,8 +988,8 @@ class PointClickCaptchaHandler(CaptchaHandler):
             btn = driver.find_element(_By.CSS_SELECTOR,
                                       'button[type="submit"], input[type="submit"], .verify-btn')
             btn.click()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         import time as _t
         _t.sleep(2)
         return driver.page_source
@@ -1049,8 +1049,8 @@ class AvoidanceStrategy:
         if self._ua_provider is not None:
             try:
                 session.headers['User-Agent'] = self._ua_provider.random
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return session
 
     # ---- IP 轮换 (代理池) ----

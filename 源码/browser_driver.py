@@ -22,6 +22,20 @@
 """
 
 import time
+try:
+    import 日志 as _app_log          # 批2D: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 # ============================================================
 # stealth 初始化脚本 (在页面任何脚本执行前注入)
@@ -244,8 +258,8 @@ class PlaywrightDriver:
         self._ensure_started()
         try:
             self._context.add_cookies(cookies)
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("浏览器驱动", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # ---- 元素查找 (兼容 Selenium By) ----
     def find_element(self, by, value):
@@ -322,17 +336,17 @@ class PlaywrightDriver:
         try:
             if self._context:
                 self._context.close()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("浏览器驱动", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         try:
             if self._browser:
                 self._browser.close()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("浏览器驱动", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         try:
             self._pw.stop()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("浏览器驱动", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         self._started = False
         self._context = None
         self._browser = None

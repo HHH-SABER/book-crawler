@@ -489,7 +489,7 @@ def _执行重放():
         try:
             _log.info(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
         except Exception:
-            pass
+            pass  # 刻意静默: 日志链路兜底: try 体在写日志 (热重放告警), 再加日志会递归
 
 
 def reload_runtime_config():
