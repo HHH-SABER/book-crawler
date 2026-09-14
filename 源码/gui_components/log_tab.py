@@ -27,6 +27,20 @@ from .ui_theme import (make_card, tonal_btn,
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          SIZE_BODY, WEIGHT_BODY,
                          MORANDI_ERROR, open_dialog)
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 _MAX_DISPLAY_LINES = 3000   # 大文件只显示尾部 N 行
 
@@ -159,8 +173,8 @@ class LogTab:
         # 初始加载（首次构建即刷新下拉与内容）
         try:
             self._reload()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
         header = page_header(
             "运行日志", "查看系统运行日志，便于排查问题与追踪状态")
@@ -177,8 +191,8 @@ class LogTab:
         log_dir = get_log_dir()
         try:
             os.makedirs(log_dir, exist_ok=True)
-        except OSError:
-            pass
+        except OSError as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         try:
             if os.name == 'nt':
                 os.startfile(log_dir)
@@ -191,7 +205,7 @@ class LogTab:
                 import 日志 as _app_log
                 _app_log.warn('日志页', f"无法打开日志目录: {ex}")
             except Exception:
-                pass
+                pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     def _reload(self):
         """刷新日期下拉 + 加载选中日期的日志内容"""
@@ -217,10 +231,10 @@ class LogTab:
             if self.page is not None:
                 try:
                     self.page.update()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as _e:
+                    _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        except Exception as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _load_file(self, filename: str):
         """读取单个日志文件 (M11: 只读尾部 2MB, 避免大文件冻结 UI; 超出部分
@@ -286,8 +300,8 @@ class LogTab:
         self._render_lines()
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _visible_lines(self):
         """应用 来源+级别+关键词 三维过滤, 返回可见行列表"""
@@ -373,11 +387,11 @@ class LogTab:
             self.status_text.value = "已清空显示 (重新加载即可恢复)"
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _notify(self, msg: str):
         try:
             open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')

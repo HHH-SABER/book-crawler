@@ -176,6 +176,27 @@
 - 验证：**306 tests OK**（行为无变化，纯加留痕）+ 静态检查干净；全项目"无留痕"
   基线由 191 降至 **118**（待 2B-2E 清零 + 守卫测试钉住）。
 
+### 可观测性 — 批2B：GUI 其余 10 组件文件 40 处静默异常处置（27 留痕 + 13 有意静默）
+
+- **范围**：`log_tab`(8) / `input_bar`(6) / `task_table`(6) / `detail_drawer`(4) /
+  `icon_rail`(4) / `history_page`(4) / `remote_page`(3) / `ui_fluent`(3) /
+  `tray`(1) / `退出流程`(1)。处置：**27 处补 `_dbg()` 留痕**（except 补 `as _e`，
+  输出类型+消息）；**9 处高频路径保留静默+注释**（`task_table._refresh/refresh/
+  refresh_ui`、`detail_drawer._update/update_views`、`history_page.refresh`、
+  `remote_page.refresh/同步外观`——每秒/2s 刷新链路）；**4 处日志桥兜底保留静默**
+  （`log_tab/input_bar/task_table` 的 `_log()` 桥与 `退出流程._记()`——try 块本身
+  在写日志，加日志会递归；`退出流程._记` 的 try 体是 `记录(m)` 回调，已被识别）。
+- **留痕统一 `_dbg(source, msg)` 走 DEBUG 级**（`日志.py` 的 DEBUG 只落盘、不
+  console 镜像）——若用 info 级，每条留痕会进 GUI 日志页与 CLI 输出，变成新噪音。
+  连带**把批2A 在 `site_manage_page.py` 的 18 处 `_log()`(info) 留痕改为 `_dbg()`
+  (debug)**（本批修正，2A 时的通道选择缺陷）。
+- 7 个无通道文件自动插入统一 `_dbg` 桥模板（容错 `import 日志 as _app_log`，同
+  `input_bar._log` 桥模式）；零留痕文件不插模板（防死代码）。
+- 干跑审查修正两处：模板插入条件（`退出流程`/`remote_page` 留痕=0 不应插模板）、
+  `_try_is_import_only` 参数类型错误。
+- 验证：306 tests OK + 静态检查干净 + 换行符主导风格无漂移 + 插值配对 0 异常 +
+  未插值残留 0；全项目无留痕基线 **118 → 78**（2C-2E 继续清零）。
+
 ## \[2.4.27] - 2026-09-12 (未发布)
 
 ### 适配 — als1010.space 站点专项（EXE 低成功率根因 + 软限频防护）

@@ -16,6 +16,20 @@ from ..ui_fluent import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           WEIGHT_SUBTITLE, WEIGHT_BODY,
                           MORANDI_PRIMARY, MORANDI_SECONDARY, MORANDI_SUCCESS,
                           MORANDI_ERROR, MORANDI_WARNING, MORANDI_ACCENT)
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 # 结果类型 → 展示色
 _RESULT_COLORS = {
@@ -151,16 +165,16 @@ class HistoryPage:
                 self._shelf_info.value = f"书架读取失败: {ex}"
             try:
                 self.page.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                _dbg("历史页", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             return
         if not books:
             if self._shelf_info:
                 self._shelf_info.value = "书架为空 (尚无已抓取小说); 抓取成功后自动登记"
             try:
                 self.page.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                _dbg("历史页", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             return
         created = 0
         for it in books:
@@ -175,8 +189,8 @@ class HistoryPage:
             self._shelf_info.value = f"已为 {created} 本书创建更新任务 (增量抓取, 见任务列表)"
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("历史页", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _rebuild_result_chips(self):
         """重建结果类型过滤 chips"""
@@ -275,7 +289,7 @@ class HistoryPage:
             try:
                 self.page.update()
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
 
     def _build_stat_cards(self, stats: dict):
         """重建 5 张统计卡"""

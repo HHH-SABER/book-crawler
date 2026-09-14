@@ -5,6 +5,20 @@
 page.run_task 回到 flet 主循环) — 与项目"跨线程只调度不碰控件"的纪律一致。
 """
 import threading
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 
 def 启动托盘(图标路径: str, 显示, 退出):
@@ -34,5 +48,5 @@ def 停止托盘(icon) -> None:
     try:
         if icon is not None:
             icon.stop()
-    except Exception:
-        pass
+    except Exception as _e:
+        _dbg("托盘", f'裸 except 吞异常: {type(_e).__name__}: {_e}')

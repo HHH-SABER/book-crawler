@@ -52,7 +52,21 @@ def _log(source: str, message: str):
         try:
             app_log.info(source, message)
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 
 class TaskTable:
@@ -141,7 +155,7 @@ class TaskTable:
         try:
             self._count_text.value = f"共 {len(tasks)} 个任务"
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(_refresh(), 逐行/每秒级), 补日志会刷屏
 
         self._list_view.controls.clear()
         if not tasks:
@@ -397,8 +411,8 @@ class TaskTable:
         """确认框回调: 关闭对话框后执行删除"""
         try:
             close_dialog(self.page, dialog)
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         self._do_delete(task_id, delete_file)
 
     def _do_delete(self, task_id: str, delete_file: bool):
@@ -412,8 +426,8 @@ class TaskTable:
     def _notify(self, msg: str):
         try:
             open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # 对外刷新入口 (主线程)
     def refresh(self):
@@ -422,7 +436,7 @@ class TaskTable:
             try:
                 self.page.update()
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
 
     # 子树级刷新入口 (gui_app 刷新循环用, H6: 避免 page.update() 整页 diff)
     def refresh_ui(self):
@@ -431,4 +445,4 @@ class TaskTable:
             self._list_view.update()
             self._count_text.update()
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(refresh_ui(), 逐行/每秒级), 补日志会刷屏

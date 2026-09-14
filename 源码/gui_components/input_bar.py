@@ -36,7 +36,21 @@ def _log(source: str, message: str):
         try:
             app_log.info(source, message)
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 
 def _validate_url(url: str):
@@ -198,16 +212,16 @@ class InputBar:
         self.end_chapter.visible = is_range
         try:
             e.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _notify(self, msg: str):
         """轻提示 (通过日志系统 + 控制台, 无 snackbar 依赖)"""
         _log("GUI", msg)
         try:
             open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # --------------------------------------------------------- 单任务启动
     def on_start_click(self, e):
@@ -352,8 +366,8 @@ class InputBar:
         self._pending_invalid = []
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_batch_parse(self, e):
         raw = self.batch_input.value or ""
@@ -370,8 +384,8 @@ class InputBar:
         self.batch_cancel_btn.visible = False
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _parse_urls(self, raw_text):
         """解析并校验 URL 列表, 返回 (有效列表, 无效列表[(url, 原因)])"""
@@ -410,8 +424,8 @@ class InputBar:
         self.batch_panel.visible = True
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _start_batch(self, urls, ev=None):
         """批量创建抓取任务: 每个 URL 一个独立任务 (速度自适应, 无手动选项)"""
