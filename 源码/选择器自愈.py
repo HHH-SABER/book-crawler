@@ -26,6 +26,7 @@ import json
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 import 日志 as _app_log
@@ -119,6 +120,7 @@ def try_heal(soup, domain: str, old_selectors) -> dict | None:
             "置信度": round(score, 3),
             "容器中文数": _cn_len(node.get_text()),
             "段落数": len(node.find_all('p')),
+            "生成时间": time.strftime('%Y-%m-%d %H:%M:%S'),
             "说明": "规则选择器全部落空时启发式重定位产出; 人工核实后手动并入 站点配置.json 的 content_selectors",
         }
         # 幂等去重: 每章都可能落空, 同域同建议不重复写盘 (防 IO churn/日志刷屏)
@@ -171,3 +173,125 @@ def 取待审建议(domain: str = None):
     except Exception:
         return {} if domain is None else None
     return data.get(domain) if domain else data
+
+
+def 列出待审() -> list:
+    """审核清单 (按置信度降序): [{域名, 建议选择器, 原选择器, 置信度, 生成时间, ...}]"""
+    data = 取待审建议() or {}
+    return sorted(data.values(), key=lambda s: -float(s.get("置信度", 0)))
+
+
+# ============================================================
+# 审核闭环 (批3 PoC-B, 方案 A 的"人工确认"一步)
+# ============================================================
+
+def _配置路径():
+    """读写用的 站点配置.json 路径 (与 sites_config 运行时重放同一文件)。
+
+    优先 resolve_data_file (EXE 旁/BASE_DIR 契约); 不可用时退到项目根同名文件。
+    """
+    try:
+        from _path_utils import resolve_data_file
+        return resolve_data_file("站点配置.json",
+                                 copy_default_from_resource_if_missing=False)
+    except Exception:
+        return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "站点配置.json")
+
+
+def 采纳建议(domain: str) -> tuple:
+    """把该域建议并入 站点配置.json 的 content_selectors 并热重载生效。
+
+    步骤 (任一步失败即中止, 建议保留待重试):
+    1. 读配置 JSON (列表); 找到该域条目。条目不存在 → 拒绝操作并说明
+       (建议来自已禁用的站点时宁可让人工处理, 不擅自新建站点)。
+    2. 新选择器**前插**进 content_selectors (自愈容器优先尝试, 旧选择器保留
+       兜底 —— 改版只换 id/class 的常见情形下, 旧的仍可能对别的子页有效);
+       去重 (同选择器不重复出现)。
+    3. tmp + os.replace 原子写回 (G-M4 范式)。
+    4. reload_runtime_config() 热重放, 当前进程立即生效 (H7 通道)。
+       热重载失败不回滚配置 —— 下次启动 _apply_runtime_config 仍会加载;
+       但会如实返回提示。
+    5. 从待审清单移除该域。
+
+    Returns: (是否成功, 人读消息)
+    """
+    sug = 取待审建议(domain)
+    if not sug:
+        return False, f"无该域待审建议: {domain}"
+    p = Path(_配置路径())
+    if not p.is_file():
+        return False, f"站点配置文件不存在, 无法并入: {p}"
+    try:
+        items = json.loads(p.read_text(encoding='utf-8'))
+    except Exception as e:
+        return False, f"配置 JSON 读取失败, 中止 (建议已保留): {e}"
+    if not isinstance(items, list):
+        return False, "配置 JSON 顶层不是列表, 中止 (建议已保留)"
+    entry = next((it for it in items
+                  if isinstance(it, dict) and it.get('domain') == domain), None)
+    if entry is None:
+        return False, (f"配置中无站点 {domain} (可能是内置站被删或建议来自旧站), "
+                       f"不擅自新建条目; 请人工在站点管理页添加后再采纳。建议已保留。")
+    sel = sug.get("建议选择器") or ""
+    if not sel:
+        return False, "建议缺少选择器字段, 已保留待人工处理"
+    sels = entry.get('content_selectors') or ['#content', '.content']
+    if sel in sels:
+        _log.info(f"[自愈审核] {domain}: 选择器 {sel!r} 已在配置中, 仅移除建议")
+    else:
+        # 前插, 旧选择器保留兜底; 不碰 enabled —— 用户禁用中的站点被悄悄启用
+        # 正是"静默污染"的一种, 若站点禁用中, 保持原样由人工在站点管理页处理。
+        entry['content_selectors'] = [sel] + sels
+    # 原子写回 (G-M4 范式; 本函数低频人工操作, 无需 _json_clean —— 我们只读写过 JSON)
+    try:
+        tmp = p.with_name(p.name + f'.tmp.{os.getpid()}')
+        tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2),
+                       encoding='utf-8')
+        os.replace(tmp, p)
+    except OSError as e:
+        return False, f"配置写盘失败, 中止 (建议已保留): {e}"
+    # 热重放 (失败不回滚: 下次启动仍会加载, 如实报告)
+    重载提示 = ""
+    try:
+        import sites_config
+        sites_config.reload_runtime_config()
+    except Exception as e:
+        重载提示 = f" (热重载失败 {type(e).__name__}: {e}, 将在下次启动生效)"
+    # 移除建议
+    try:
+        with _LOCK:
+            data = json.loads(Path(_建议文件()).read_text(encoding='utf-8'))
+            data.pop(domain, None)
+            tmp2 = Path(_建议文件()).with_name(f'.tmp.{os.getpid()}')
+            tmp2.write_text(json.dumps(data, ensure_ascii=False, indent=1),
+                            encoding='utf-8')
+            os.replace(tmp2, Path(_建议文件()))
+    except Exception as e:
+        _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e}')  # 建议文件移除失败仅噪音
+    msg = (f"已并入 {domain} 的 content_selectors: {sel!r} 前插"
+           f" (旧选择器保留兜底){重载提示}")
+    _log.info(f"[自愈审核] 采纳 {domain}: {msg}")
+    return True, msg
+
+
+def 拒绝建议(domain: str) -> tuple:
+    """仅从待审清单移除该域建议 (配置不动)。用于误报/已知不修场景。"""
+    if not 取待审建议(domain):
+        return False, f"无该域待审建议: {domain}"
+    with _LOCK:
+        p = Path(_建议文件())
+        try:
+            data = json.loads(p.read_text(encoding='utf-8'))
+        except Exception:
+            data = {}
+        data.pop(domain, None)
+        tmp = p.with_name(p.name + f'.tmp.{os.getpid()}')
+        try:
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1),
+                           encoding='utf-8')
+            os.replace(tmp, p)
+        except OSError as e:
+            return False, f"建议文件写盘失败: {e}"
+    _log.info(f"[自愈审核] 拒绝 {domain} 的建议 (配置未动)")
+    return True, f"已移除 {domain} 的待审建议 (配置未改动)"

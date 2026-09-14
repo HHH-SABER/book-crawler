@@ -150,5 +150,114 @@ class Test挂载点行为(unittest.TestCase):
         self.assertTrue(ok2, '命中路径行为应与旧版一致')
 
 
+class Test审核闭环(unittest.TestCase):
+    """批3 PoC-B: 采纳/拒绝建议 (核心函数层; CLI 脚本只做展示不单测)。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sug_file = os.path.join(self.tmp.name, '选择器建议.json')
+        self.cfg_file = os.path.join(self.tmp.name, '站点配置.json')
+        self._p1 = mock.patch.object(heal, '_建议文件', return_value=self.sug_file)
+        self._p2 = mock.patch.object(heal, '_配置路径', return_value=self.cfg_file)
+        self._p1.start(); self._p2.start()
+
+    def tearDown(self):
+        self._p1.stop(); self._p2.stop()
+        self.tmp.cleanup()
+
+    def _seed(self, cfg_items, suggestion):
+        Path(self.cfg_file).write_text(json.dumps(cfg_items, ensure_ascii=False),
+                                       encoding='utf-8')
+        heal.记录建议(suggestion)
+
+    def test_采纳_前插并移除建议_不碰enabled(self):
+        self._seed(
+            [{"domain": "a.com", "content_selectors": ["#old"], "pattern": "html_selector"}],
+            {"域名": "a.com", "建议选择器": "#new", "原选择器": ["#old"], "置信度": 0.9})
+        with mock.patch('sites_config.reload_runtime_config') as rl:
+            ok, msg = heal.采纳建议('a.com')
+        self.assertTrue(ok, msg)
+        cfg = json.loads(Path(self.cfg_file).read_text(encoding='utf-8'))
+        self.assertEqual(cfg[0]['content_selectors'], ['#new', '#old'],
+                         '新选择器应前插且保留旧选择器兜底')
+        self.assertNotIn('enabled', cfg[0], '不得擅改 enabled (禁用中站点不悄悄启用)')
+        rl.assert_called_once()
+        self.assertIsNone(heal.取待审建议('a.com'), '采纳后建议应移除')
+
+    def test_采纳_禁用中站点保持禁用(self):
+        self._seed([{"domain": "b.com", "content_selectors": ["#old"], "enabled": False}],
+                   {"域名": "b.com", "建议选择器": "#new", "置信度": 0.8})
+        with mock.patch('sites_config.reload_runtime_config'):
+            ok, _ = heal.采纳建议('b.com')
+        self.assertTrue(ok)
+        cfg = json.loads(Path(self.cfg_file).read_text(encoding='utf-8'))
+        self.assertIs(False, cfg[0]['enabled'], 'enabled=False 必须原样保留')
+
+    def test_采纳_配置无该域_保留建议中止(self):
+        heal.记录建议({"域名": "ghost.com", "建议选择器": "#x", "置信度": 0.9})
+        Path(self.cfg_file).write_text('[]', encoding='utf-8')
+        ok, msg = heal.采纳建议('ghost.com')
+        self.assertFalse(ok)
+        self.assertIn('无站点', msg)
+        self.assertIsNotNone(heal.取待审建议('ghost.com'), '失败时建议必须保留可重试')
+
+    def test_采纳_选择器已存在仅清理建议(self):
+        self._seed([{"domain": "c.com", "content_selectors": ["#dup", "#old"]}],
+                   {"域名": "c.com", "建议选择器": "#dup", "置信度": 0.7})
+        with mock.patch('sites_config.reload_runtime_config'):
+            ok, _ = heal.采纳建议('c.com')
+        self.assertTrue(ok)
+        cfg = json.loads(Path(self.cfg_file).read_text(encoding='utf-8'))
+        self.assertEqual(cfg[0]['content_selectors'], ['#dup', '#old'], '不应重复前插')
+        self.assertIsNone(heal.取待审建议('c.com'))
+
+    def test_采纳_热重载失败仍算成功并提示(self):
+        self._seed([{"domain": "d.com", "content_selectors": ["#old"]}],
+                   {"域名": "d.com", "建议选择器": "#new", "置信度": 0.9})
+        with mock.patch('sites_config.reload_runtime_config',
+                        side_effect=RuntimeError('boom')):
+            ok, msg = heal.采纳建议('d.com')
+        self.assertTrue(ok, '配置已落盘, 热重载失败不回滚 (下次启动生效)')
+        self.assertIn('热重载失败', msg)
+        cfg = json.loads(Path(self.cfg_file).read_text(encoding='utf-8'))
+        self.assertEqual(cfg[0]['content_selectors'][0], '#new')
+
+    def test_采纳_配置坏JSON中止保留建议(self):
+        Path(self.cfg_file).write_text('{不是json', encoding='utf-8')
+        heal.记录建议({"域名": "e.com", "建议选择器": "#new", "置信度": 0.9})
+        ok, msg = heal.采纳建议('e.com')
+        self.assertFalse(ok)
+        self.assertIn('读取失败', msg)
+        self.assertIsNotNone(heal.取待审建议('e.com'))
+
+    def test_拒绝_配置不动仅移除建议(self):
+        self._seed([{"domain": "f.com", "content_selectors": ["#old"]}],
+                   {"域名": "f.com", "建议选择器": "#new", "置信度": 0.9})
+        before = Path(self.cfg_file).read_text(encoding='utf-8')
+        ok, _ = heal.拒绝建议('f.com')
+        self.assertTrue(ok)
+        self.assertEqual(before, Path(self.cfg_file).read_text(encoding='utf-8'),
+                         '拒绝不得触碰站点配置')
+        self.assertIsNone(heal.取待审建议('f.com'))
+
+    def test_拒绝_无建议返回False(self):
+        ok, _ = heal.拒绝建议('nope.com')
+        self.assertFalse(ok)
+
+    def test_列出待审_置信度降序(self):
+        heal.记录建议({"域名": "low.com", "建议选择器": "#l", "置信度": 0.6})
+        heal.记录建议({"域名": "high.com", "建议选择器": "#h", "置信度": 0.95})
+        items = heal.列出待审()
+        self.assertEqual([i['域名'] for i in items], ['high.com', 'low.com'])
+
+    def test_采纳后建议文件无tmp残留(self):
+        self._seed([{"domain": "g.com", "content_selectors": ["#old"]}],
+                   {"域名": "g.com", "建议选择器": "#new", "置信度": 0.9})
+        with mock.patch('sites_config.reload_runtime_config'):
+            heal.采纳建议('g.com')
+        left = [f for f in os.listdir(self.tmp.name) if '.tmp' in f]
+        self.assertEqual(left, [], f'不应残留 tmp: {left}')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
