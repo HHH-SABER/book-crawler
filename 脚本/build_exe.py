@@ -21,7 +21,7 @@ for _s in (sys.stdout, sys.stderr):
     try:
         _s.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        pass
+        pass  # 刻意静默: stdout 已被重定向时 reconfigure 必然失败, 仅丢 UTF-8 优化不影响构建
 
 # 安全: 使用 Path.resolve() 规范化脚本所在目录, 再上溯到项目根,
 # 保证 ROOT/LOG 均为规范化绝对路径, 不含 ../ 穿越
@@ -470,7 +470,7 @@ def main():
         os.remove(version_file)
         log("[CLEAN] Removed temp version file")
     except OSError:
-        pass
+        pass  # 刻意静默: 临时版本文件删除失败无功能影响 (构建已结束, 残留由下次清理)
     # 自动清理 PyInstaller 编译中间产物 build/ (打包过程中重新生成, 无保留价值)
     if os.path.isdir(build_dir) and not os.environ.get("WBC_SKIP_CLEAN"):
         try:

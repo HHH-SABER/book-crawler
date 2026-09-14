@@ -41,7 +41,7 @@ def get_log_dir() -> str:
     try:
         os.makedirs(log_dir, exist_ok=True)
     except OSError:
-        pass
+        pass  # 刻意静默: 日志目录创建失败时回退使用, 真正写入时才暴露; 本模块即日志设施, 不能再调自身
     return log_dir
 
 
@@ -102,7 +102,7 @@ class AppLogger:
                 try:
                     self._file.close()
                 except Exception:
-                    pass
+                    pass  # 刻意静默: 关闭旧日志文件句柄失败无资源可回收 (进程内仅一份), 换文件继续
             self._file_path = path
             self._file = open(path, 'a', encoding='utf-8', buffering=1)  # 行缓冲
             self._cur_date = today
@@ -136,7 +136,7 @@ class AppLogger:
             try:
                 print(message, flush=True)
             except Exception:
-                pass
+                pass  # 刻意静默: console 镜像写失败仅丢回显, 落盘不受影响; 此处若再打日志会在 _write 内递归
             finally:
                 self._mirror_local.in_mirror = False
 
@@ -180,9 +180,9 @@ class AppLogger:
                     if os.path.getmtime(fp) < cutoff:
                         os.remove(fp)
                 except OSError:
-                    pass
+                    pass  # 刻意静默: 旧日志清理是尽力而为, 单文件删除失败下轮清理再试
         except Exception:
-            pass
+            pass  # 刻意静默: 同上, 清理循环整体不容错会中断日志轮转
 
     def close(self):
         with self._lock:
@@ -190,7 +190,7 @@ class AppLogger:
                 try:
                     self._file.close()
                 except Exception:
-                    pass
+                    pass  # 刻意静默: 退出时关句柄失败无功能影响 (进程即将结束)
                 self._file = None
 
 
@@ -259,7 +259,7 @@ def install_global_excepthook():
                 for line in stack.rstrip().split('\n'):
                     AppLogger().error("系统", line)
         except Exception:
-            pass
+            pass  # 刻意静默: 全局异常钩子里再写日志若失败必须静默, 否则钩子自死循环
         # 保留原始行为
         sys.__excepthook__(exc_type, exc_value, exc_tb)
 
