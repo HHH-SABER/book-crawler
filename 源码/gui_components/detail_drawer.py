@@ -23,6 +23,20 @@ from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
 from _path_utils import get_default_output_dir  # noqa: E402
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 # 面板宽度 (常驻)
 _WIDTH_OPEN = 320
@@ -128,8 +142,8 @@ class DetailDrawer:
         try:
             self.refresh()      # 详情视图立即填充
             self.refresh_log()  # 日志视图立即填充
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return self.container
 
     # ------------------------------------------------------------- 视图路由
@@ -172,7 +186,7 @@ class DetailDrawer:
         try:
             self.page.update()
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(_update(), 逐行/每秒级), 补日志会刷屏
 
     # ----------------------------------------------------------- 实时日志视图
     # 语义着色: [引擎]/[反爬]/[质检]/[增量]/[速度] 等前缀着不同颜色
@@ -257,7 +271,7 @@ class DetailDrawer:
                 self._file_list.update()
                 self._file_content.update()
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(update_views(), 逐行/每秒级), 补日志会刷屏
 
     # ----------------------------------------------------------- 详情刷新
     def refresh(self):
@@ -374,8 +388,8 @@ class DetailDrawer:
                 subprocess.Popen(['open', d])
             else:
                 subprocess.Popen(['xdg-open', d])
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # ----------------------------------------------------------- 文件预览
     def _scan_files(self):

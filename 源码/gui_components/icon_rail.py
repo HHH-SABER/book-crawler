@@ -23,6 +23,20 @@ from .ui_fluent import (
     WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
     MORANDI_SIDEBAR_BG, MORANDI_SIDEBAR_HOVER, MORANDI_SIDEBAR_ACTIVE,
 )
+try:
+    import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 
 # ====================================================================
@@ -77,8 +91,8 @@ def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
         btn._label_ref.value = '夜间' if is_dark_now else '日间'
         try:
             btn.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     btn.update_theme_state = update_theme_state
     return btn
@@ -184,8 +198,8 @@ class IconRail:
         try:
             if self._control:
                 self._control.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def toggle_theme_icon(self, is_dark: bool):
         # 兼容保留: 主题按钮的实际刷新由 build_theme_toggle.update_theme_state
@@ -241,8 +255,8 @@ class IconRail:
         try:
             if self._control:
                 self._control.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         if self._on_nav:
             self._on_nav(key)
 
@@ -255,8 +269,8 @@ class IconRail:
             else:
                 self._update_btn_style(btn, is_active)
             btn.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def build(self) -> ft.Control:
         """构建 220px 宽侧边栏"""
