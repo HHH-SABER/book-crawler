@@ -142,7 +142,7 @@ class TaskLogRedirector:
         try:
             app_log.info(f"任务{self.task.task_id}", line)
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     def write(self, text):
         if text.strip():
@@ -187,13 +187,13 @@ class TaskLogRedirector:
         try:
             self.original.write(text)
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(write(), 逐行/每秒级), 补日志会刷屏
 
     def flush(self):
         try:
             self.original.flush()
         except Exception:
-            pass
+            pass  # 刻意静默: 高频路径(flush(), 逐行/每秒级), 补日志会刷屏
 
     def _parse_progress(self, line: str):
         """从日志行中解析进度信息
@@ -380,8 +380,9 @@ class TaskLogRedirector:
             try:
                 import _path_utils
                 _cands.append(_Path(_path_utils.resolve_data_file('站点历史.json')))
-            except Exception:
-                pass
+            except Exception as _e:
+                if app_log:
+                    app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             _root = _Path(__file__).resolve().parents[2]
             _cands.append(_root / '数据' / '站点历史.json')
             _cands.append(_root / '站点历史.json')
@@ -408,8 +409,9 @@ class TaskLogRedirector:
                 return
             mt.quality_score = float(平均分)
             mt.quality_passed = (摘要.get('通过', 0) >= 摘要.get('未通过', 0))
-        except Exception:
-            pass
+        except Exception as _e:
+            if app_log:
+                app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 # 任务 writer 的 contextvar: register() 时写入, worker 线程经 copy_context 继承
@@ -443,8 +445,9 @@ class _ThreadAwareStdout:
         # 同步写入 contextvars, 供 ThreadPoolExecutor worker 经 copy_context 继承
         try:
             _WRITER_CTX.set(writer)
-        except Exception:
-            pass
+        except Exception as _e:
+            if app_log:
+                app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def unregister(self):
         """当前线程注销 writer (爬虫线程结束时调用)"""
@@ -452,8 +455,9 @@ class _ThreadAwareStdout:
             self._writers.pop(threading.get_ident(), None)
         try:
             _WRITER_CTX.set(None)
-        except Exception:
-            pass
+        except Exception as _e:
+            if app_log:
+                app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _get_writer(self):
         with self._lock:
@@ -473,12 +477,12 @@ class _ThreadAwareStdout:
             try:
                 w.write(text)
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(write(), 逐行/每秒级), 补日志会刷屏
         else:
             try:
                 self._default.write(text)
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(write(), 逐行/每秒级), 补日志会刷屏
 
     def flush(self):
         w = self._get_writer()
@@ -486,12 +490,12 @@ class _ThreadAwareStdout:
             try:
                 w.flush()
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(flush(), 逐行/每秒级), 补日志会刷屏
         else:
             try:
                 self._default.flush()
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(flush(), 逐行/每秒级), 补日志会刷屏
 
     # 兼容: 部分库会访问这些属性
     def isatty(self):
@@ -544,8 +548,9 @@ def _获取域闸门(闸门, stop_flag=None, 占用提示=None) -> bool:
     if 占用提示 is not None:
         try:
             占用提示()
-        except Exception:
-            pass
+        except Exception as _e:
+            if app_log:
+                app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     while not 闸门.acquire(timeout=1.0):
         if stop_flag is not None and stop_flag.is_set():
             return False
@@ -560,7 +565,7 @@ def _排队提示(task) -> None:
         try:
             app_log.info(f"任务{task.task_id}", "[排队] 同站已有任务在运行, 等待轮转")
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
 
 class TaskManager:
@@ -732,14 +737,15 @@ class TaskManager:
             try:
                 import 任务事件
                 任务事件.退订(重定向器)      # U19: 退订, 防线程复用/重复注册
-            except Exception:
-                pass
+            except Exception as _e:
+                if app_log:
+                    app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             try:
                 # U19 诊断: 一轮任务的"事件 vs 正则兜底"统计, 供判断能否删除正则
                 if app_log is not None:
                     app_log.info(f"任务{task.task_id}", 重定向器.覆盖率摘要())
             except Exception:
-                pass
+                pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     def stop_task(self, task_id: str) -> bool:
         """停止指定任务（通过设置停止标志，爬虫循环检查后退出）。

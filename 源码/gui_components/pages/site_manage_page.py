@@ -48,7 +48,7 @@ def _log(source: str, message: str):
         try:
             app_log.info(source, message)
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
 
 def _is_jsonable(v) -> bool:
@@ -201,8 +201,8 @@ class SiteManagePage:
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         try:
             sys.path.insert(0, _HERE)
             from sites_config import SITE_PATTERNS
@@ -531,8 +531,8 @@ class SiteManagePage:
         if self.page is not None:
             try:
                 self.page.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_new_adapter_click(self, e):
         """新建适配器: 弹窗输入域名, 生成模板 .py"""
@@ -563,8 +563,8 @@ class SiteManagePage:
         if self.page is not None:
             try:
                 close_dialog(self.page, dialog)
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         domain = (field.value or '').strip().lower()
         if not domain:
             self._adapter_info.value = "域名不能为空"
@@ -823,11 +823,11 @@ class SiteManagePage:
                 fn()
                 try:
                     self.page.update()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             self.page.run_task(_runner)
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_toggle_enabled(self, idx: int, e):
         """启用/禁用站点 (写入 enabled 字段)"""
@@ -843,8 +843,8 @@ class SiteManagePage:
         self._refresh_table()
         try:
             e.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_probe_site(self, idx: int):
         """测试连接 (后台线程探测)"""
@@ -857,8 +857,8 @@ class SiteManagePage:
         self._info_text.value = f"正在探测 {domain} ..."
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
         def _worker():
             try:
@@ -913,8 +913,8 @@ class SiteManagePage:
         self._edit_card.visible = True
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_add_click(self, e):
         """新增站点: 展开空白编辑卡"""
@@ -930,15 +930,15 @@ class SiteManagePage:
         self._info_text.value = "新增站点: 填写后点击保存"
         try:
             e.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _hide_edit(self):
         self._edit_card.visible = False
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_save_edit(self, e):
         """保存编辑卡内容 (新增或更新)"""
@@ -947,8 +947,8 @@ class SiteManagePage:
             self._info_text.value = "域名不能为空"
             try:
                 self.page.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             return
         entry = {
             'domain': domain,
@@ -969,8 +969,8 @@ class SiteManagePage:
             self._info_text.value = speed_err + " (留空 = 自适应)"
             try:
                 self.page.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             return
         if delay is not None:
             entry['delay'] = delay
@@ -998,8 +998,8 @@ class SiteManagePage:
         self._refresh_table()
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _on_delete_site(self, idx: int):
         """删除站点 (从 JSON 配置移除; 内置站点下次仍会用内置默认)"""
@@ -1013,8 +1013,8 @@ class SiteManagePage:
         self._refresh_table()
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     async def _on_import_click(self, e):
         """导入站点配置: 支持 JSON 配置文件 或 txt 网址清单 (每行一个URL)"""
@@ -1031,8 +1031,8 @@ class SiteManagePage:
             self._info_text.value = f"打开文件选择器失败: {ex}"
             try:
                 self.page.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             return
         if not files:
             return  # 用户取消
@@ -1056,8 +1056,8 @@ class SiteManagePage:
             self._info_text.value = f"导入失败: {ex}"
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _merge_configs(self, items: list) -> int:
         """按域名合并导入配置条目, 返回新增数"""
@@ -1100,8 +1100,8 @@ class SiteManagePage:
             from sites_config import SITE_PATTERNS
             builtin_by_domain = {p.get('domain'): p for p in SITE_PATTERNS
                                  if p.get('domain')}
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
         def _covered_by(host: str, domains) -> bool:
             """host 是否已被某域名覆盖 (自身或主域子域)"""
@@ -1181,8 +1181,8 @@ class SiteManagePage:
             self._info_text.value = f"导出失败: {ex}"
         try:
             self.page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            _log("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # 对外刷新入口
     def refresh(self):
@@ -1192,4 +1192,4 @@ class SiteManagePage:
             try:
                 self.page.update()
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏

@@ -70,9 +70,9 @@ try:
     import gui_components.pages.history_data  # noqa: F401
     import gui_components.pages.history_page  # noqa: F401
     import gui_components.pages.site_manage_page  # noqa: F401
-except Exception:
+except Exception as _e:
     # 允许在未装所有爬虫依赖时 GUI 仍可启动（可预览/配置，抓取按钮点时报错）
-    pass
+    app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
 
 def _读显示版本() -> str:
@@ -108,8 +108,8 @@ def _读显示版本() -> str:
                 '..', '脚本', '版本.json'))
             with open(p, encoding='utf-8') as f:
                 return str(_j.load(f).get('版本', '')).strip()
-    except Exception:
-        pass
+    except Exception as _e:
+        app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return ''
 
 
@@ -124,8 +124,8 @@ def main(page: ft.Page):
         _user32 = ctypes.windll.user32
         try:
             _user32.SetProcessDPIAware()
-        except Exception:
-            pass
+        except Exception as _exc:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_exc).__name__}: {_exc}')
         _sw, _sh = _user32.GetSystemMetrics(0), _user32.GetSystemMetrics(1)
     except Exception:
         _sw, _sh = 1920, 1080
@@ -160,7 +160,7 @@ def main(page: ft.Page):
         app_log.info("系统", f"程序启动 (模式: {_mode}, Python {platform.python_version()})")
         app_log.info("系统", f"EXE/项目目录: {os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, 'frozen', False) else os.getcwd()}")
     except Exception:
-        pass
+        pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     # ---- 网站清单启动自检 (缺失自动生成模板; EXE 迁移/换机后同样生效) ----
     try:
@@ -274,22 +274,22 @@ def main(page: ft.Page):
         if key == "history":
             try:
                 history_page.refresh()
-            except Exception:
-                pass
+            except Exception as _e:
+                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         elif key == "log":
             try:
                 log_tab._reload()
-            except Exception:
-                pass
+            except Exception as _e:
+                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         elif key == "remote":
             try:
                 remote_page.refresh()
-            except Exception:
-                pass
+            except Exception as _e:
+                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         try:
             page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # ---- 底部状态栏 ----
     # - 开发模式 (python gui_app.py)         : 项目根/抓取结果
@@ -336,7 +336,7 @@ def main(page: ft.Page):
                 if pages_map["remote"].visible:
                     remote_page.refresh()        # 远控页: 手机端记录实时呈现
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(_refresh_loop(), 逐行/每秒级), 补日志会刷屏
             await asyncio.sleep(1)
 
     # 状态栏动态刷新: 每秒汇总任务状态 (H4: 唯一状态刷新处; H6: 局部 update)
@@ -367,7 +367,7 @@ def main(page: ft.Page):
                     status_dot.update()
                     status_text.update()
             except Exception:
-                pass
+                pass  # 刻意静默: 高频路径(_status_loop(), 逐行/每秒级), 补日志会刷屏
             await asyncio.sleep(1)
 
     page.run_task(_refresh_loop)
@@ -380,8 +380,8 @@ def main(page: ft.Page):
         _远控按钮更新(启用)
         try:
             page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _切远控(e):
         """开关点击入口: 只做调度。
@@ -424,8 +424,8 @@ def main(page: ft.Page):
     try:
         import 远控.服务 as _远控初
         _更新远控外观(_远控初.运行中())
-    except Exception:
-        pass
+    except Exception as _exc:
+        app_log.debug("GUI", f'裸 except 吞异常: {type(_exc).__name__}: {_exc}')
 
     # 远控页接线: 开关与顶栏同一实现; 访问信息同源 (运行状态/地址/token)
     remote_page.切换远控 = _切远控
@@ -461,8 +461,8 @@ def main(page: ft.Page):
             with open(tmp, "w", encoding="utf-8") as f:
                 _j.dump({"关闭行为": v}, f, ensure_ascii=False)
             os.replace(tmp, _关闭配置)
-        except OSError:
-            pass
+        except OSError as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     _托盘 = {"对象": None}
 
@@ -471,8 +471,8 @@ def main(page: ft.Page):
         page.window.minimized = False
         try:
             page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _停远控服务():
         """停内嵌远控 (非阻塞: 只置 should_exit, 由 daemon 线程自行收尾)"""
@@ -514,7 +514,7 @@ def main(page: ft.Page):
         try:
             app_log.close()
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     async def _彻底退出():
         """**唯一**的退出出口 —— 步骤顺序不可改, 详见 gui_components/退出流程.py
@@ -555,15 +555,15 @@ def main(page: ft.Page):
                 # "^" 折叠区, 用户容易以为"托盘没出现/最小化失效"
                 try:
                     _托盘["对象"].notify("已最小化到托盘，双击托盘图标恢复主窗口")
-                except Exception:
-                    pass
+                except Exception as _e:
+                    app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             except Exception as _e_tray:
                 app_log.info("托盘", f"托盘不可用, 取消隐藏以保持可操作: {_e_tray}")
                 try:
                     page.show_dialog(ft.SnackBar(
                         ft.Text("系统托盘不可用, 已取消关闭; 建议再点关闭并选直接退出")))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
                 return
         page.window.visible = False
         # 显式 update: window 属性变更须 update 才下发到客户端 (与 _显示主窗 对称)。
@@ -571,8 +571,8 @@ def main(page: ft.Page):
         # 但用户视角就是"没反应/失效"
         try:
             page.update()
-        except Exception:
-            pass
+        except Exception as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _关闭询问():
         """关闭确认弹窗 (Fluent 风格)。
@@ -598,15 +598,15 @@ def main(page: ft.Page):
         def _弹层关闭():
             try:
                 page.pop_dialog()
-            except Exception:
-                pass
+            except Exception as _e:
+                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
         def _切换记住(e):
             记住.value = not 记住.value
             try:
                 记住.update()
-            except Exception:
-                pass
+            except Exception as _e:
+                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
         def _选托盘(e):
             _弹层关闭()
@@ -725,16 +725,16 @@ def main(page: ft.Page):
             for t in task_manager.get_all_tasks():
                 if t.status in ("running", "pending"):
                     t.stop_flag.set()
-        except Exception:
-            pass
+        except Exception as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         try:
             app_log.close()
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
     try:
         page.on_disconnect = _on_disconnect
-    except Exception:
-        pass
+    except Exception as _exc:
+        app_log.debug("GUI", f'裸 except 吞异常: {type(_exc).__name__}: {_exc}')
 
 
 if __name__ == "__main__":
