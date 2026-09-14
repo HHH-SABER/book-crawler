@@ -91,8 +91,8 @@ class 引擎响应:
                 结果 = chardet.detect(self.content)
                 if 结果 and 结果.get('encoding'):
                     return 结果['encoding']
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return 'utf-8'
 
     @property
@@ -101,8 +101,8 @@ class 引擎响应:
         if self._编码 and self.content:
             try:
                 return self.content.decode(self._编码, errors='replace')
-            except (LookupError, UnicodeDecodeError):
-                pass
+            except (LookupError, UnicodeDecodeError) as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return self._text
 
     @text.setter
@@ -143,8 +143,8 @@ class 请求引擎管理器:
             for s in list(d.values()):
                 try:
                     s.close()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             d.clear()
 
     # ------------------------------------------------------------------
@@ -318,6 +318,6 @@ def 获取引擎管理器() -> 请求引擎管理器:
                 try:
                     import atexit
                     atexit.register(_默认管理器.close)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return _默认管理器

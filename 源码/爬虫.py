@@ -605,8 +605,8 @@ class NovelSpider:
                             import re as _re_px
                             _m_px = _re_px.match(r'https?://([^/:]+)', base_url or '')
                             _host = _m_px.group(1) if _m_px else ''
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
                         _pd = _px.get(_host)
                         if _pd:
                             self.session.proxies.update(_pd)
@@ -997,8 +997,8 @@ class NovelSpider:
                                 _event.set_domain_cooldown(
                                     _m.group(1), _站点冷却秒(_m.group(1)),
                                     'rate_limit')
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
                     _log.info(f"[反爬] 频率限制, 退避 {等待:.0f} 秒后重试 "
                           f"(第{self._限频连续次数}次连续限频)")
                     _任务事件.发布('反爬', 机制='rate_limit')      # U19 结构化事件
@@ -1186,7 +1186,7 @@ class NovelSpider:
                 _log.info(f"[反爬] 内置池轮换 User-Agent (fake-useragent 不可用): {新ua[:60]}...")
                 return True
             except Exception:
-                pass
+                pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
             _log.info(f"[反爬] UA轮换失败: {e}")
             return False
 
@@ -3136,8 +3136,8 @@ class NovelSpider:
             # 4) 重复标点收敛 (保留最多 3 个)
             content = re.sub(r'([!！?？。…~～])\1{2,}', r'\1\1\1', content)
             content = re.sub(r'  +', ' ', content)
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return content
 
     def clean_content(self, content):
@@ -6101,7 +6101,7 @@ class NovelSpider:
                     threads = _st
                     _log.info(f"[站点级配置] {_site_pat.get('domain', '')} 固定线程: {threads}")
         except Exception:
-            pass
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
         # 站点历史先验: 打印该站点历史反爬情况, 给出延迟建议
         delay = self._打印站点历史先验(catalog_url, delay)
@@ -6725,8 +6725,8 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
     try:
         _app_log.enable_console()
-    except Exception:
-        pass
+    except Exception as _e:
+        _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     # P2-3: 跨 run 域级冷却 —— 上次任务被限频/封禁时礼貌等待再开工
     try:
         import re as _re_cd
@@ -6747,7 +6747,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                     time.sleep(1)
                     _已等 += 1
     except Exception:
-        pass
+        pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
     # 统一输出目录 -> 绝对路径, 避免多套结果目录
     if output_dir is None:
         output_dir = _DEFAULT_OUTPUT_DIR
@@ -7106,8 +7106,8 @@ if __name__ == "__main__":
         if sys.argv[1] == "--update":
             try:
                 _app_log.enable_console()   # CLI 屏幕镜像
-            except Exception:
-                pass
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             opts = _parse_batch_opts(sys.argv, 2)
             try:
                 from 书架 import 列出 as _书架列出

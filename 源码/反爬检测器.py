@@ -22,6 +22,20 @@
 import re
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
+try:
+    import 日志 as _app_log          # 批2C: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 
 # 指数退避序列 (秒): 5s → 10s → 20s → 60s
 BACKOFF_SEQUENCE = [5, 10, 20, 60]
@@ -102,16 +116,16 @@ class 反爬检测器:
                     u = getattr(response, 'url', '') or ''
                     m = _re.match(r'https?://([^/:]+)', u)
                     _域名 = m.group(1) if m else ''
-                except Exception:
-                    pass
+                except Exception as _e:
+                    _dbg("反爬检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
                 _event.add('anti_spider', {
                     '域名': _域名,
                     '类型': str(机制),
                     '状态码': getattr(response, 'status_code', 0),
                     '建议': getattr(result, '建议策略', {}) or {},
                 })
-        except Exception:
-            pass
+        except Exception as _e:
+            _dbg("反爬检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return result
 
     # ------------------------------------------------------------------
@@ -224,8 +238,8 @@ class 反爬检测器:
                 return None
             try:
                 return float(val)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _e:
+                _dbg("反爬检测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
             # HTTP 日期格式: 解析为距今秒数
             from email.utils import parsedate_to_datetime
             from datetime import datetime, timezone
