@@ -31,6 +31,14 @@ import 选择器自愈 as heal  # noqa: E402
 
 
 def _fmt(item: dict) -> str:
+    if item.get('类型') == '加密变更':
+        fns = '、'.join(item.get('新增加密函数') or [])
+        return (f"  域名      : {item.get('域名')}\n"
+                f"  类型      : ⚠ 加密变更线索 (无法一键采纳)\n"
+                f"  未识别调用: {fns}\n"
+                f"  处理      : 扩展 decrypt_utils 正则或写适配器后, "
+                f"reject 清除线索\n"
+                f"  发现时间  : {item.get('生成时间', '(旧条目)')}\n")
     旧 = ', '.join(item.get('原选择器') or []) or '—'
     return (f"  域名      : {item.get('域名')}\n"
             f"  建议选择器: {item.get('建议选择器')}\n"

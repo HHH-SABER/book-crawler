@@ -9,6 +9,7 @@
 
 依赖 测试样本/ 快照: ltbook_content.html (明文#rtext), qiqishu_content.html (加密负样本)。
 """
+import base64
 import json
 import os
 import sys
@@ -257,6 +258,137 @@ class Test审核闭环(unittest.TestCase):
             heal.采纳建议('g.com')
         left = [f for f in os.listdir(self.tmp.name) if '.tmp' in f]
         self.assertEqual(left, [], f'不应残留 tmp: {left}')
+
+
+class Test加密变更线索(unittest.TestCase):
+    """批3 任务3: qsbs 分支提取为空时, 探测解密函数名轮换线索 (类型=加密变更)。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.sug_file = os.path.join(self.tmp.name, '选择器建议.json')
+        self._p = mock.patch.object(heal, '_建议文件', return_value=self.sug_file)
+        self._p.start()
+
+    def tearDown(self):
+        self._p.stop()
+        self.tmp.cleanup()
+
+    def _页(self, fn='dark.dec'):
+        b64 = 'QUJDREVG' * 30   # 240 字符合法 base64 形态
+        return f'<html><body><script>{fn}("{b64}");</script></body></html>'
+
+    def test_识别未知解密函数(self):
+        sug = heal.加密变更线索(self._页(), 'enc.example')
+        self.assertIsNotNone(sug)
+        self.assertEqual(sug['类型'], '加密变更')
+        self.assertIn('dark.dec', sug['新增加密函数'])
+        # 落盘且可回读
+        self.assertEqual(heal.取待审建议('enc.example')['类型'], '加密变更')
+
+    def test_已覆盖特征不出线索(self):
+        big = 'QUJDREVG' * 30
+        # qsbs.bb / str_decode / atob 均在解密链白名单; writeln 包裹同样豁免
+        for fn in ('qsbs.bb', 'str_decode', 'atob'):
+            self.assertIsNone(heal.加密变更线索(
+                f'<html><script>{fn}("{big}");</script></html>', 'known.example'),
+                f'{fn} 是已知解密函数, 不应报警')
+        self.assertIsNone(heal.加密变更线索(
+            f'<html><script>document.writeln(m.x("{big}"));</script></html>',
+            'known.example'), 'writeln 包裹已被 std_base64 链覆盖')
+
+    def test_幂等_同候选不重复落盘(self):
+        heal.加密变更线索(self._页(), 'idem.example')
+        first = Path(self.sug_file).read_text(encoding='utf-8')
+        heal.加密变更线索(self._页(), 'idem.example')   # 第二次: 线索未变
+        self.assertEqual(first, Path(self.sug_file).read_text(encoding='utf-8'),
+                         '候选未变不应重写文件')
+
+    def test_空线索与短参数不产出(self):
+        self.assertIsNone(heal.加密变更线索('<html><body>纯明文无脚本</body></html>',
+                                            'plain.example'))
+        self.assertIsNone(heal.加密变更线索('', 'x.example'))
+        self.assertIsNone(heal.加密变更线索(self._页(), ''))  # 无域名不产出
+
+    def test_qsb分支提取空时触发线索(self):
+        """sites_config qsbs 分支集成: 提取<=100 -> 探测; 正常解出 -> 零接触。"""
+        import sites_config as sc
+        calls = []
+        orig = heal.加密变更线索
+        heal.加密变更线索 = lambda html, dom: calls.append((len(html), dom)) or None
+        try:
+            big = 'QUJDREVG' * 30
+            page = f'<html><script>brand.newfn("{big}");</script></html>'.encode()
+
+            class _R:
+                content = page
+
+            pat = {'pattern': sc.PATTERN_QSBS_BB, 'domain': 'int.example'}
+            text, ok = sc.extract_content(None, 'https://int.example/c/1.html',
+                                          pat, 'https://int.example', {},
+                                          lambda u, h: _R())
+            self.assertEqual(calls, [(len(page.decode()), 'int.example')],
+                             '提取为空必须触发线索探测且传域名')
+            self.assertFalse(ok)
+            # 对照: 正常 qsbs.bb 可解页不触发
+            calls.clear()
+            _b64 = base64.b64encode(('<p>' + '正文内容' * 60 + '</p>').encode('utf-8')).decode()
+            good = f"<html><script>qsbs.bb('{_b64}');</script></html>".encode()
+
+            class _G:
+                content = good
+
+            text2, ok2 = sc.extract_content(None, 'https://int.example/c/2.html',
+                                            pat, 'https://int.example', {},
+                                            lambda u, h: _G())
+            self.assertTrue(ok2, '正常解密应成功')
+            self.assertEqual(calls, [], '成功路径不得触碰线索探测')
+        finally:
+            heal.加密变更线索 = orig
+
+
+class Test祖先去重(unittest.TestCase):
+    """批3 任务4 (PoC-A 边界①): 大容器裹单一正文子块时, 外层降权、内层顶上来。"""
+
+    def _造页(self, 内占比高=True):
+        正文 = '这是足够长的中文正文内容用于通过验证' * 25   # 单块 ~625 中文
+        if 内占比高:
+            # outer = nav(~20字) + inner(全部正文) → inner/outer ≈ 0.96 ≥ 90%
+            nav = '导航一二三' * 4
+            return (f'<div class="outer">{nav}<div class="inner">{正文}</div></div>')
+        # outer 含两块大正文, 无单一子块占 90% → 外层不被降权
+        half = '这是足够长的中文正文内容用于通过验证' * 12
+        return (f'<div class="outer"><div class="part1">{half}</div>'
+                f'<div class="part2">{half}</div></div>')
+
+    def test_单一正文子块_内层上浮(self):
+        soup = BeautifulSoup(self._造页(内占比高=True), 'lxml')
+        cands = heal.score_candidates(soup)
+        self.assertTrue(cands)
+        top_node = cands[0][1]
+        self.assertEqual(top_node.get('class'), ['inner'],
+                         '包裹复制文本的外层应被降权, top1=内层正文容器')
+
+    def test_多块正文_外层不降权(self):
+        soup = BeautifulSoup(self._造页(内占比高=False), 'lxml')
+        cands = heal.score_candidates(soup)
+        self.assertTrue(cands)
+        self.assertEqual(cands[0][1].get('class'), ['outer'],
+                         '真含多块正文的外层应仍居 top1 (去重只罚单一子块复制)')
+
+    def test_真实快照top1更内聚(self):
+        """回归 yunshuzhai 案例: 明文快照的 top1 不应是被降权的大壳。"""
+        p = os.path.join(_SAMPLES, 'yunshuzhai_content.html')
+        if not os.path.exists(p):
+            self.skipTest('缺 yunshuzhai 快照')
+        soup = BeautifulSoup(Path(p).read_text(encoding='utf-8', errors='replace'), 'lxml')
+        cands = heal.score_candidates(soup)
+        self.assertTrue(cands)
+        s, node = cands[0]
+        # 内聚性代理指标: top1 的直接块级子节点里, 不应存在中文占其 90%+ 的单一子块
+        cn = heal._cn_len(node.get_text())
+        大子块 = [k for k in node.find_all(heal._BLOCK_TAGS, recursive=False)
+                 if heal._cn_len(k.get_text()) >= cn * 0.9]
+        self.assertEqual([], 大子块, f'top1 仍是外层壳: {node}')
 
 
 if __name__ == '__main__':

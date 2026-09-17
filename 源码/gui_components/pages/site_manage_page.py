@@ -614,6 +614,31 @@ class SiteManagePage:
         for sug in items:
             domain = sug.get('域名', '—')
             busy = domain in self._heal_busy
+            # 加密变更线索: 无配置可改, 不给采纳按钮 (处理=改解密链/写适配器, 完事点忽略)
+            if sug.get('类型') == '加密变更':
+                fns = '、'.join(sug.get('新增加密函数') or [])
+                self._heal_view.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.ENCRYPTION_OUTLINED, size=14, color=MORANDI_WARNING),
+                        ft.Text(domain, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                                color=MORANDI_SECONDARY, font_family=FONT_STACK),
+                        ft.Text(f"未识别的加密调用: {fns}", size=SIZE_TINY,
+                                color=MORANDI_WARNING, font_family=FONT_STACK,
+                                expand=True, max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.IconButton(
+                            icon=ft.Icons.CLOSE, icon_size=16,
+                            tooltip=f"已处理/忽略该线索 (配置不动)",
+                            disabled=busy,
+                            on_click=lambda e, dm=domain: self._on_heal_reject(dm),
+                            style=ft.ButtonStyle(
+                                padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                                color=ft.Colors.ON_SURFACE)),
+                    ], spacing=6),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=3),
+                    border_radius=6, bgcolor=ft.Colors.SURFACE_CONTAINER_LOW))
+                continue
             adopt_btn = ft.IconButton(
                 icon=ft.Icons.CHECK, icon_size=16,
                 tooltip=f"采纳并并入 {domain} 的选择器",
