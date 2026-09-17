@@ -197,6 +197,12 @@ class SiteManagePage:
         self._adapter_info = None
         self._adapter_card = None
         self._adapter_sig = None
+        # 自愈建议审核区 UI (批3 PoC-C)
+        self._heal_view = None
+        self._heal_info = None
+        self._heal_card = None
+        self._heal_sig = None
+        self._heal_busy = set()   # 采纳/处理中的域名 (防双击重复并入)
         # 编辑表单字段
         self._domain_field = None
         self._pattern_field = None
@@ -287,6 +293,9 @@ class SiteManagePage:
         # 站点适配插件卡 (免重新打包扩展新站)
         adapter_card = self._build_adapter_card()
 
+        # 自愈建议审核卡 (批3 PoC-C: 选择器失效时自动产出的建议, 一键采纳/忽略)
+        heal_card = self._build_heal_card()
+
         # 站点表格 (4 主列 + 操作列)
         self._table_view = ft.ListView(expand=True, spacing=3, auto_scroll=True)
         table_card = make_card(
@@ -299,7 +308,8 @@ class SiteManagePage:
 
         self._refresh_table()
         banner = self._build_alarm_banner()
-        return ft.Column([header, banner, toolbar, adapter_card, table_card, self._edit_card],
+        return ft.Column([header, banner, toolbar, adapter_card, table_card,
+                          heal_card, self._edit_card],
                          expand=True, spacing=10,
                          horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
@@ -540,6 +550,153 @@ class SiteManagePage:
                 border_radius=6,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
             ))
+
+    # ---------------------------------------------------- 自愈建议审核卡 (批3 PoC-C)
+    def _build_heal_card(self) -> ft.Control:
+        """自愈建议审核卡: 规则选择器落空时自动产出的容器建议, 一键采纳/忽略。"""
+        self._heal_view = ft.ListView(spacing=4)
+        self._heal_info = ft.Text("", size=SIZE_TINY,
+                                  color=ft.Colors.ON_SURFACE_VARIANT,
+                                  font_family=FONT_STACK)
+        refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
+                                on_click=lambda e: self._dispatch(self._render_heal_suggestions))
+        card = make_card(
+            ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.AUTO_FIX_HIGH, size=18, color=MORANDI_ACCENT),
+                    ft.Text("选择器自愈建议 (站点改版自动发现)", size=SIZE_SUBTITLE,
+                            weight=WEIGHT_TITLE, font_family=FONT_STACK),
+                ], spacing=6),
+                ft.Row([refresh_btn], spacing=6),
+                self._heal_info,
+                ft.Container(self._heal_view, height=150),
+            ], spacing=8),
+            padding=10,
+        )
+        self._heal_card = card
+        self._render_heal_suggestions()
+        return card
+
+    def _heal_文件签名(self):
+        """(mtime, size) 轻量签名: refresh 每秒调用, 未变则不读文件。"""
+        try:
+            import 选择器自愈 as _heal
+            p = _heal._建议文件()
+            st = os.stat(p)
+            return (round(st.st_mtime, 3), st.st_size)
+        except OSError:
+            return None   # 文件不存在 = 空签名
+
+    def _render_heal_suggestions(self):
+        """重建建议列表 (签名比对跳过无变化重建; 采纳/忽略后由回调强制刷新)。"""
+        if self._heal_view is None:
+            return
+        sig = self._heal_文件签名()
+        # 控件为空必绘 (首绘占位说明); 已绘过且签名未变才跳过 —— refresh 每秒调用
+        if sig == self._heal_sig and not self._heal_busy and self._heal_view.controls:
+            return
+        self._heal_sig = sig
+        items = []
+        try:
+            import 选择器自愈 as _heal
+            items = _heal.列出待审()
+        except Exception as ex:
+            self._heal_info.value = f"读取建议失败: {ex}"
+            self._heal_view.controls.clear()
+            return
+        self._heal_view.controls.clear()
+        if not items:
+            self._heal_view.controls.append(
+                ft.Text("暂无待审建议 · 抓取中站点选择器失效时会自动发现新容器并在此列出",
+                        size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                        font_family=FONT_STACK))
+            return
+        for sug in items:
+            domain = sug.get('域名', '—')
+            busy = domain in self._heal_busy
+            adopt_btn = ft.IconButton(
+                icon=ft.Icons.CHECK, icon_size=16,
+                tooltip=f"采纳并并入 {domain} 的选择器",
+                disabled=busy,
+                on_click=lambda e, dm=domain: self._on_heal_adopt(dm),
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                    bgcolor=MORANDI_SUCCESS, color=ft.Colors.WHITE))
+            reject_btn = ft.IconButton(
+                icon=ft.Icons.CLOSE, icon_size=16,
+                tooltip=f"忽略 {domain} 的建议 (不并入配置)",
+                disabled=busy,
+                on_click=lambda e, dm=domain: self._on_heal_reject(dm),
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                    color=ft.Colors.ON_SURFACE))
+            conf = float(sug.get('置信度', 0) or 0)
+            conf_color = MORANDI_SUCCESS if conf >= 0.85 else (
+                MORANDI_WARNING if conf >= 0.7 else MORANDI_ERROR)
+            self._heal_view.controls.append(ft.Container(
+                content=ft.Row([
+                    ft.Text(domain, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                            color=MORANDI_SECONDARY, font_family=FONT_STACK,
+                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(f"{sug.get('建议选择器', '—')} (中文{sug.get('容器中文数', '?')}"
+                            f"/{sug.get('段落数', '?')}段)", size=SIZE_TINY,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                            font_family=FONT_STACK,
+                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.Text(f"{conf:.2f}", size=SIZE_TINY, weight=WEIGHT_BODY,
+                            color=conf_color, font_family=FONT_STACK),
+                    ft.Container(expand=True),
+                    adopt_btn, reject_btn,
+                ], spacing=6),
+                padding=ft.Padding.symmetric(horizontal=6, vertical=3),
+                border_radius=6,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            ))
+
+    def _on_heal_adopt(self, domain: str):
+        """采纳建议: 前插进该域 content_selectors 并热重载 (核心逻辑在 选择器自愈.采纳建议)"""
+        if domain in self._heal_busy:
+            return
+        self._heal_busy.add(domain)
+
+        def _do():
+            try:
+                import 选择器自愈 as _heal
+                ok, msg = _heal.采纳建议(domain)
+            except Exception as ex:
+                ok, msg = False, f"采纳异常: {ex}"
+            def _done():
+                self._heal_busy.discard(domain)
+                self._heal_sig = None   # 强制重绘 (采纳会改建议文件)
+                self._heal_info.value = ("✔ " if ok else "✘ ") + msg
+                if ok:
+                    # 配置已变: 重读并重建站点表格, 用户立即可见新选择器
+                    self.configs = self._load_configs()
+                    self._refresh_table()
+                self._render_heal_suggestions()
+            self._dispatch(_done)
+        threading.Thread(target=_do, name=f'heal-adopt-{domain}', daemon=True).start()
+
+    def _on_heal_reject(self, domain: str):
+        """忽略建议: 仅移除建议条目, 配置零触碰"""
+        if domain in self._heal_busy:
+            return
+        self._heal_busy.add(domain)
+
+        def _do():
+            try:
+                import 选择器自愈 as _heal
+                ok, msg = _heal.拒绝建议(domain)
+            except Exception as ex:
+                ok, msg = False, f"忽略异常: {ex}"
+            def _done():
+                self._heal_busy.discard(domain)
+                self._heal_sig = None
+                self._heal_info.value = ("✔ " if ok else "✘ ") + msg
+                self._render_heal_suggestions()
+            self._dispatch(_done)
+        threading.Thread(target=_do, name=f'heal-reject-{domain}', daemon=True).start()
 
     def _page_update(self):
         if self.page is not None:
@@ -1202,6 +1359,7 @@ class SiteManagePage:
     def refresh(self):
         self._refresh_table()
         self._render_adapters()  # 签名比对, 有变化才重建
+        self._render_heal_suggestions()  # 同样签名比对 (建议文件低频变化)
         if self.page is not None:
             try:
                 self.page.update()
