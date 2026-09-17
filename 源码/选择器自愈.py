@@ -72,7 +72,21 @@ def score_candidates(soup):
         s -= min(len(node.find_all(_BLOCK_TAGS, recursive=False)), 10) * 0.005
         out.append((s, node))
     out.sort(key=lambda x: -x[0])
-    return out
+    # ===== 祖先去重 (PoC-A 边界①): 大容器裹住真值容器时, 外层降权 =====
+    # 判据 (探针 yunshuzhai 案例): 外层与内层"直接块级子容器互含"且
+    # 内层中文数 >= 外层的 90% → 内层才是正文本体, 外层文本只是包裹复制;
+    # 外层分 *0.6 沉底, 内层顶上来。真含多块正文的容器 (多 <p> 群) 不受影响
+    # (它们没有单一占绝大多数的子块)。
+    cn_of = {id(n): _cn_len(n.get_text()) for _, n in out}
+    result = []
+    for s, node in out:
+        cn_o = cn_of[id(node)]
+        demote = any(n2 is not node and node in n2.parents
+                     and cn_of[id(n2)] >= cn_o * 0.9
+                     for _, n2 in out)
+        result.append((s * (0.6 if demote else 1.0), node))
+    result.sort(key=lambda x: -x[0])
+    return result
 
 
 def make_selector(node, soup):
@@ -115,6 +129,7 @@ def try_heal(soup, domain: str, old_selectors) -> dict | None:
             return None
         suggestion = {
             "域名": domain,
+            "类型": "选择器",
             "建议选择器": sel,
             "原选择器": list(old_selectors or []),
             "置信度": round(score, 3),
@@ -130,6 +145,65 @@ def try_heal(soup, domain: str, old_selectors) -> dict | None:
             return suggestion
         记录建议(suggestion)
         _log.info(f"[自愈] {domain}: 产出待审建议 {sel!r} (置信 {score:.3f}) —— 见 数据/选择器建议.json")
+        return suggestion
+    except Exception as _e:
+        _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        return None
+
+
+# ---- 加密变更线索 (任务3 / PoC-A 边界②) ----
+# 页面上形如 fn('大段base64') 的调用 (参数 >=120 字符且 base64 形态)
+_大B64调用RE = re.compile(
+    r'([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*|[A-Za-z_$][\w$]{2,})\s*\(\s*[\'"]([A-Za-z0-9+/=]{120,})[\'"]')
+# 已被现有解密链覆盖的函数/包裹 (命中则不算"新函数"):
+# std_base64 覆盖 qsbs.bb / str_decode / document.writeln(对象.方法);
+# decrypt_utils 各链按特征正则识别。这里维护**函数名级**白名单即可。
+_已知解密函数 = {'qsbs.bb', 'str_decode', 'atob'}
+
+
+def 加密变更线索(html: str, domain: str) -> dict | None:
+    """qsbs 型站点提取为空时的**加密变更**线索探测 (批3 任务3)。
+
+    加密站的失效方式不是选择器落空, 而是**解密函数名轮换** (如 qsbs.bb 改名)
+    → 现有解密链识别不到新函数 → 静默空章。本探测找页面上"大 base64 实参调用"
+    中未被已知解密链覆盖的函数名, 产出 **类型=加密变更 的线索建议**:
+    - 不可一键采纳 (没有配置字段可改; 处理 = 扩展 decrypt_utils 正则 / 写适配器)
+    - 人工处理后用 拒绝/忽略 清除线索
+    - 幂等: 同域同候选不重复写盘 (每章都可能提取空)
+    """
+    try:
+        if not html or not domain:
+            return None
+        found = []
+        for m in _大B64调用RE.finditer(html):
+            fn = m.group(1)
+            # writeln/write 包裹的已被 decrypt_utils std_base64 链覆盖, 不算线索
+            ctx = html[max(0, m.start() - 40):m.start()]
+            if 'writeln' in ctx or '.write(' in ctx:
+                continue
+            if fn in _已知解密函数 or fn.endswith('.bb'):
+                continue
+            found.append(fn)
+        if not found:
+            return None
+        候选 = sorted(set(found))
+        prev = 取待审建议(domain)
+        if (prev and prev.get('类型') == '加密变更'
+                and prev.get('新增加密函数') == 候选):
+            return prev   # 幂等: 线索未变, 不重复落盘/刷日志
+        suggestion = {
+            "域名": domain,
+            "类型": "加密变更",
+            "新增加密函数": 候选,
+            "置信度": 1.0,
+            "生成时间": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "说明": "提取为空但页面存在未被解密链识别的大段 Base64 调用 — "
+                    "疑似加密函数改名/新编码。需人工处理: 扩展 decrypt_utils 正则"
+                    "或写站点适配器; 无法一键采纳, 处理完点忽略清除线索",
+        }
+        记录建议(suggestion)
+        _log.info(f"[自愈] {domain}: 加密变更线索 {候选} (提取为空) —— "
+                  f"见 数据/选择器建议.json, 需人工适配")
         return suggestion
     except Exception as _e:
         _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
