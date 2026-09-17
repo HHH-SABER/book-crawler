@@ -1094,6 +1094,15 @@ def extract_content(session, current_url, pattern, base_url, headers, inspect_pa
             return '', False
         html = resp.content.decode('utf-8', errors='ignore')
         text = extract_content_qsbs_bb(html)
+        if len(text) <= 100:
+            # 批3 任务3: 提取为空 ≠ 无事发生 —— 探测"解密函数名轮换"线索
+            # (如 qsbs.bb 改名), 产出 类型=加密变更 的待审建议供人工适配。
+            # 旁路: 线索探测任何异常不得影响本分支返回。
+            try:
+                import 选择器自愈
+                选择器自愈.加密变更线索(html, pattern.get('domain', ''))
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return text, len(text) > 100
     
     elif pat == PATTERN_AJAX_TWO_STEP:
