@@ -383,5 +383,45 @@ class Test远控开关与生命周期(unittest.TestCase):
         self.assertTrue(self._等健康(端口2), '重启后服务未可访问')
 
 
+class Test推送Scheme校验(unittest.TestCase):
+    """_发送推送 的推送服务器地址仅允许 http/https (2026-09-26 加固)。
+
+    远控配置的 bark/ntfy 地址可经配置 API 写入, 任意 scheme 会扩大
+    urllib.urlopen 的攻击面 (file:// 等); 限 http/https 不影响自建
+    局域网推送 (内网 http 地址仍放行)。
+    """
+
+    def _发(self, bark地址=None, ntfy服务器=None):
+        cfg = {'推送': {}}
+        if bark地址 is not None:
+            cfg['推送']['bark'] = {'启用': True, '地址': bark地址}
+        if ntfy服务器 is not None:
+            cfg['推送']['ntfy'] = {'启用': True, '主题': 'books',
+                                   '服务器': ntfy服务器}
+        with mock.patch.object(服务, '取配置', return_value=cfg), \
+                mock.patch('requests.get') as mget, \
+                mock.patch('requests.post') as mpost:
+            服务._发送推送('标题', '内容')
+            return mget, mpost
+
+    def test_非http_scheme拒绝且不发请求(self):
+        mget, mpost = self._发(bark地址='ftp://192.0.2.1/x',
+                               ntfy服务器='file:///tmp/x')
+        mget.assert_not_called()
+        mpost.assert_not_called()
+
+    def test_内网字面IP拒绝且不发请求(self):
+        """validate_public_url 边界: 私网字面 IP 的推送地址不发请求"""
+        mget, mpost = self._发(bark地址='http://192.168.1.5:2586/x')
+        mget.assert_not_called()
+        mpost.assert_not_called()
+
+    def test_http与https公网地址放行(self):
+        mget, mpost = self._发(bark地址='https://bark.example.com/',
+                               ntfy服务器='http://ntfy.example.com:8080')
+        self.assertEqual(1, mget.call_count, 'bark 渠道应发起请求')
+        self.assertEqual(1, mpost.call_count, 'ntfy 渠道应发起请求')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
