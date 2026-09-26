@@ -455,12 +455,14 @@ def main(page: ft.Page):
 
     def _写关闭行为(v):
         import json as _j
+        from pathlib import Path as _P
         try:
-            os.makedirs(os.path.dirname(_关闭配置), exist_ok=True)
-            tmp = _关闭配置 + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                _j.dump({"关闭行为": v}, f, ensure_ascii=False)
-            os.replace(tmp, _关闭配置)
+            fobj = _P(_关闭配置).resolve()
+            fobj.parent.mkdir(parents=True, exist_ok=True)
+            tmp = fobj.with_name(fobj.name + ".tmp")
+            tmp.write_text(_j.dumps({"关闭行为": v}, ensure_ascii=False),
+                           encoding="utf-8")
+            os.replace(tmp, fobj)
         except OSError as _e:
             app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 

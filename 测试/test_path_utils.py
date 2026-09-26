@@ -47,11 +47,10 @@ class Test状态根建目录(unittest.TestCase):
         for name in ('数据', '日志'):
             self.assertTrue(os.path.isdir(os.path.join(root, name)),
                             f'{name} 子目录未创建')
-        # 直接 open 落盘不再报 No such file or directory
-        目标 = os.path.join(root, '数据', '爬取历史.json')
-        with open(目标, 'w', encoding='utf-8') as f:
-            f.write('{}')
-        self.assertTrue(os.path.isfile(目标))
+        # 直接落盘不再报 No such file or directory
+        目标 = Path(root) / '数据' / '爬取历史.json'
+        目标.write_text('{}', encoding='utf-8')
+        self.assertTrue(目标.is_file())
 
     def test_迁移失败后子目录仍存在(self):
         # copytree 中途抛 OSError (如旧文件被占用) 时, 建目录逻辑不应被跳过

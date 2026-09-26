@@ -129,11 +129,12 @@ class 临时状态根:
         return "\n".join(pieces)
 
     def 写关闭行为(self, v):
-        """与 gui_app._写关闭行为 同构: tmp + os.replace 原子写。"""
-        tmp = self.配置路径 + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write('{"关闭行为": "%s"}' % v)
-        os.replace(tmp, self.配置路径)
+        """与 gui_app._写关闭行为 同构: pathlib 锚定 + tmp + os.replace 原子写。"""
+        from pathlib import Path as _P
+        fobj = _P(self.配置路径).resolve()
+        tmp = fobj.with_name(fobj.name + ".tmp")
+        tmp.write_text('{"关闭行为": "%s"}' % v, encoding="utf-8")
+        os.replace(tmp, fobj)
 
     def 清理(self):
         shutil.rmtree(self.父目录, ignore_errors=True)
