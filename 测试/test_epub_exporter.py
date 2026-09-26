@@ -49,10 +49,9 @@ class TestParseTxtChapters(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _写txt(self, content, name='book.txt'):
-        p = os.path.join(self.tmp, name)
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write(content)
-        return p
+        p = Path(self.tmp) / name
+        p.write_text(content, encoding='utf-8')
+        return str(p)
 
     def test_多章解析(self):
         p = self._写txt('## 第一章 开端\n第一段。\n第二段。\n\n## 第二章 转折\n第二段正文。\n')
@@ -100,12 +99,11 @@ class TestTxtToEpub导出往返(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _造多章txt(self):
-        p = os.path.join(self.tmp, '测试书.txt')
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write('## 第一章 开端\n这是第一段。\n这是第二段。\n\n'
-                    '## 第二章 转折\n第二章正文内容。\n\n'
-                    '## 第三章 结局\n第三章正文内容。\n')
-        return p
+        p = Path(self.tmp) / '测试书.txt'
+        p.write_text('## 第一章 开端\n这是第一段。\n这是第二段。\n\n'
+                     '## 第二章 转折\n第二章正文内容。\n\n'
+                     '## 第三章 结局\n第三章正文内容。\n', encoding='utf-8')
+        return str(p)
 
     def test_导出返回存在的路径(self):
         txt = self._造多章txt()
@@ -161,9 +159,8 @@ class TestTxtToEpub导出往返(unittest.TestCase):
     def test_特殊字符标题被转义(self):
         """标题含 <>& 时 html.escape 转义, 导出仍成功且读回原文"""
         from ebooklib import epub as e
-        p = os.path.join(self.tmp, 'b.txt')
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write('## 第一章 <危险> & "引号"\n正文内容测试。\n')
+        p = Path(self.tmp) / 'b.txt'
+        p.write_text('## 第一章 <危险> & "引号"\n正文内容测试。\n', encoding='utf-8')
         ep = ex.txt_to_epub(p, title='书名<>&测试')
         self.assertIsNotNone(ep)
         book = e.read_epub(ep)
@@ -184,16 +181,14 @@ class TestTxtToEpub失败路径(unittest.TestCase):
         self.assertIsNone(ex.txt_to_epub(os.path.join(self.tmp, '不存在.txt')))
 
     def test_无章节txt返回None(self):
-        p = os.path.join(self.tmp, '空书.txt')
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write('没有任何 ## 章节标记的内容。\n')
+        p = Path(self.tmp) / '空书.txt'
+        p.write_text('没有任何 ## 章节标记的内容。\n', encoding='utf-8')
         self.assertIsNone(ex.txt_to_epub(p))
 
     def test_ebooklib缺失时返回None(self):
         """mock _ebooklib_ok=False 验证"未安装则跳过"分支 (合规: 不影响主流程)"""
-        p = os.path.join(self.tmp, '书.txt')
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write('## 第一章\n正文。\n')
+        p = Path(self.tmp) / '书.txt'
+        p.write_text('## 第一章\n正文。\n', encoding='utf-8')
         with mock.patch.object(ex, '_ebooklib_ok', False):
             self.assertIsNone(ex.txt_to_epub(p))
 

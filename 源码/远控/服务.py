@@ -391,38 +391,57 @@ _章节缓存锁 = threading.Lock()   # 同步端点跑在 Starlette 线程池, 
 _已推终态: set = set()    # (task_id, status, end_time) — 防重复推送
 
 
+def _推送地址可用(u: str) -> bool:
+    """推送服务器地址仅允许 http/https (阻断 file:// 等自定义协议)"""
+    return str(u).strip().lower().startswith(("http://", "https://"))
+
+
 def _发送推送(标题: str, 内容: str) -> None:
     """完成推送 (④): Bark / ntfy, 按配置二选一或都发; 失败仅记日志不抛"""
     cfg = 取配置().get("推送") or {}
     渠道结果 = []
     bark = cfg.get("bark") or {}
     if bark.get("启用") and bark.get("地址"):
-        try:
-            from urllib.parse import quote
-            base = bark["地址"].rstrip("/")
-            # safe='': 标题/正文里的 '/' 若不过滤会破坏 Bark 的路径结构
-            url = f"{base}/{quote(标题, safe='')}/{quote(内容, safe='')}"
-            with urllib.request.urlopen(url, timeout=10):
-                pass
-            渠道结果.append("bark✓")
-        except Exception as e:
-            渠道结果.append(f"bark✗{type(e).__name__}")
+        if not _推送地址可用(bark["地址"]):
+            渠道结果.append("bark✗Scheme")
+        else:
+            try:
+                from urllib.parse import quote
+                from sites_config import validate_public_url
+                base = bark["地址"].rstrip("/")
+                # SSRF 边界: 推送地址可经配置 API 写入, 对最终请求 URL 校验
+                # (协议/主机/字面 IP 边界), 拼接标题与正文后紧贴 urlopen 复验
+                url = f"{base}/{quote(标题, safe='')}/{quote(内容, safe='')}"
+                validate_public_url(base)
+                validate_public_url(url)
+                import requests as _rq
+                resp = _rq.get(url, timeout=10)
+                resp.raise_for_status()
+                渠道结果.append("bark✓")
+            except Exception as e:
+                渠道结果.append(f"bark✗{type(e).__name__}")
     ntfy = cfg.get("ntfy") or {}
     if ntfy.get("启用") and ntfy.get("主题"):
-        try:
-            from email.header import Header
-            data = 内容.encode("utf-8")
-            req = urllib.request.Request(
-                ntfy.get("服务器", "https://ntfy.sh").rstrip("/")
-                + "/" + ntfy["主题"],
-                data=data, method="POST",
-                headers={"Title": Header(标题, "utf-8").encode(),
-                         "Tags": "books"})
-            with urllib.request.urlopen(req, timeout=10):
-                pass
-            渠道结果.append("ntfy✓")
-        except Exception as e:
-            渠道结果.append(f"ntfy✗{type(e).__name__}")
+        服务器 = ntfy.get("服务器", "https://ntfy.sh")
+        if not _推送地址可用(服务器):
+            渠道结果.append("ntfy✗Scheme")
+        else:
+            try:
+                from email.header import Header
+                from sites_config import validate_public_url
+                validate_public_url(服务器)
+                data = 内容.encode("utf-8")
+                final_url = 服务器.rstrip("/") + "/" + str(ntfy["主题"])
+                validate_public_url(final_url)
+                import requests as _rq
+                resp = _rq.post(final_url, data=data,
+                                headers={"Title": Header(标题, "utf-8").encode(),
+                                         "Tags": "books"},
+                                timeout=10)
+                resp.raise_for_status()
+                渠道结果.append("ntfy✓")
+            except Exception as e:
+                渠道结果.append(f"ntfy✗{type(e).__name__}")
     if 渠道结果:
         try:
             from 日志 import get as _日志取
@@ -597,19 +616,20 @@ def _读进度(book_id: str) -> int:
 
 
 def _写进度(book_id: str, chapter: int) -> None:
-    path = os.path.join(get_state_root(), "数据", "阅读进度.json")
+    from pathlib import Path as _Path
+    进度文件 = _Path(get_state_root()) / "数据" / "阅读进度.json"
     with _进度锁:
         data = {}
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(进度文件, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, ValueError) as _e:
             _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         data[book_id] = max(0, int(chapter))
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-        os.replace(tmp, path)
+        # 原子写 (范式同 爬取历史.py): tmp + os.replace, pathlib 字面段拼接
+        tmp = 进度文件.with_name(进度文件.name + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, 进度文件)
 
 
 @app.get("/api/v1/books/{book_id}/chapters")

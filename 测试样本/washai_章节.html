@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <title>第1章 重生归来，先抱紧女帝大腿-《禁神之下》-在线阅读-书海阁</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<script>
+(function (doc, win) {
+    try {
+        var path = String((win.location && win.location.pathname) || "").toLowerCase();
+        var root = doc.documentElement;
+        var addRootClass = function (token) {
+            if (!token || !root || new RegExp("(^|\\s)" + token + "(\\s|$)").test(root.className || "")) {
+                return;
+            }
+            root.className = (root.className ? root.className + " " : "") + token;
+        };
+        addRootClass("front-first-paint");
+
+        var nav = "";
+        if (path === "/" || path === "/index" || path === "/index.html") {
+            nav = "home";
+        } else if (path.indexOf("/book/bookclass") === 0) {
+            nav = "bookclass";
+        } else if (path.indexOf("/book/book_ranking") === 0) {
+            nav = "ranking";
+        } else if (path.indexOf("/pay/") === 0 || path === "/pay") {
+            nav = "pay";
+        } else if (path.indexOf("/author/") === 0 || path === "/author") {
+            nav = "author";
+        }
+        if (nav) {
+            addRootClass("front-nav-" + nav);
+        }
+
+        var isReadPage = /^\/book\/\d+\/\d+\.html$/.test(path) || path === "/book/book_content.html";
+        if (isReadPage || !win.localStorage || win.localStorage.getItem("siteThemeMode") !== "dark") {
+            return;
+        }
+        addRootClass("site-dark");
+        var applyBodyDarkClass = function () {
+            var body = doc.body;
+            if (!body) {
+                return false;
+            }
+            if (!/(^|\s)site-dark(\s|$)/.test(body.className || "")) {
+                body.className = (body.className ? body.className + " " : "") + "site-dark";
+            }
+            return true;
+        };
+        if (!applyBodyDarkClass()) {
+            if (win.MutationObserver) {
+                var bodyObserver = new win.MutationObserver(function () {
+                    if (applyBodyDarkClass()) {
+                        bodyObserver.disconnect();
+                    }
+                });
+                bodyObserver.observe(root, {childList: true});
+            }
+            doc.addEventListener("DOMContentLoaded", applyBodyDarkClass, false);
+        }
+    } catch (e) {
+    }
+})(document, window);
+</script>
+
+<style>
+    html{background:#f5f5f5}
+    html.site-dark{background:#11161c;color-scheme:dark}
+    html.front-first-paint body{background:#f5f5f5}
+    html.site-dark.front-first-paint body{background:#11161c;color:#d1d7df}
+    html.front-first-paint .mainNav .nav li a{transition:none!important}
+    html.front-nav-home .mainNav .nav li[data-nav="home"] a,
+    html.front-nav-bookclass .mainNav .nav li[data-nav="bookclass"] a,
+    html.front-nav-ranking .mainNav .nav li[data-nav="ranking"] a,
+    html.front-nav-pay .mainNav .nav li[data-nav="pay"] a,
+    html.front-nav-author .mainNav .nav li[data-nav="author"] a{background:#f8fffb;color:#2c8a63;border-color:rgba(255,255,255,.78)}
+    html.site-dark.front-nav-home .mainNav .nav li[data-nav="home"] a,
+    html.site-dark.front-nav-bookclass .mainNav .nav li[data-nav="bookclass"] a,
+    html.site-dark.front-nav-ranking .mainNav .nav li[data-nav="ranking"] a,
+    html.site-dark.front-nav-pay .mainNav .nav li[data-nav="pay"] a,
+    html.site-dark.front-nav-author .mainNav .nav li[data-nav="author"] a{background:#ecfff5;color:#206046;border-color:rgba(255,255,255,.82)}
+    html,body{max-width:100%}
+    img{max-width:100%;height:auto}
+    .header,.topMain,.mainNav,.main,.channelWrap,.box_center,.leftBox,.rightBox,.picRecommend,.itemsList,.items_txt,.searchBar,.bookShelf{max-width:100%;box-sizing:border-box}
+    .searchBar,.searchBar .search,.searchBar .s_int,.bookShelf,.mainNav .box_center,.mainNav .nav,.mainNav .nav li,.mainNav .nav li a{min-width:0}
+    .mainNav .nav li a,.items_txt h4 a,.items_txt .author a,.items_txt .intro a,.updateTable .name a,.updateTable .chapter a,.updateTable .author a,.updateTable .style a{overflow-wrap:anywhere;word-break:break-word}
+    .updateTable table{width:100%;table-layout:fixed}
+</style>
+<script data-site-name="书海阁" data-site-domain="book.washai.net" data-site-logo="/localPic/2026/05/06/be5dec8d-31af-474e-9b13-2ca535dce417.transparent.png" data-site-logo-dark="/localPic/2026/05/06/be5dec8d-31af-474e-9b13-2ca535dce417.transparent.png" data-site-default-book-cover="/admin-static/img/default-book-cover.png" data-site-default-user-avatar="/localPic/2026/08/09/5bd46fdb-2365-44f6-a164-d6d3db058665.svg">
+(function (script, doc) {
+    if (!script) {
+        return;
+    }
+    function attr(name) {
+        var value = script.getAttribute(name) || "";
+        return /\{\{SITE_[A-Z_]+\}\}/.test(value) ? "" : value;
+    }
+    function meta(name) {
+        var el = doc.querySelector("meta[name='" + name + "']");
+        return el ? (el.getAttribute("content") || "") : "";
+    }
+    window.__frontSiteInfo = {
+        name: attr("data-site-name"),
+        domain: attr("data-site-domain"),
+        keyword: meta("keywords"),
+        description: meta("description"),
+        logo: attr("data-site-logo"),
+        logoDark: attr("data-site-logo-dark"),
+        defaultBookCover: attr("data-site-default-book-cover") || "/admin-static/img/default-book-cover.png",
+        defaultUserAvatar: attr("data-site-default-user-avatar") || "/system-static/default-user-avatar.svg"
+    };
+
+    var avatarColors = ["#3b82f6", "#14b8a6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+    var builtInDefaultAvatars = {
+        "/images/man.png": true,
+        "/system-static/default-user-avatar.svg": true,
+        "/admin-static/img/default-user-avatar.svg": true
+    };
+
+    function avatarName(user) {
+        var source = user || {};
+        return String(source.nickName || source.username || "未知用户").trim() || "未知用户";
+    }
+
+    function avatarInitial(name) {
+        var normalized = String(name || "").trim();
+        return normalized ? Array.from(normalized)[0].toLocaleUpperCase() : "?";
+    }
+
+    function avatarColor(name) {
+        var normalized = String(name || "").trim();
+        var hash = 0;
+        Array.from(normalized).forEach(function (character) {
+            hash = (hash * 31 + (character.codePointAt(0) || 0)) >>> 0;
+        });
+        return avatarColors[hash % avatarColors.length];
+    }
+
+    function isDefaultAvatar(photo) {
+        var value = String(photo || "").trim();
+        var configured = String(window.__frontSiteInfo.defaultUserAvatar || "").trim();
+        return !value || builtInDefaultAvatars[value] || value === configured;
+    }
+
+    function normalizeAvatarPhoto(photo) {
+        var value = String(photo || "").trim();
+        var compact = value.toLowerCase().replace(/\s+/g, "");
+        if (compact.indexOf("javascript:") === 0 || compact.indexOf("data:text/html") === 0) {
+            return "";
+        }
+        return value;
+    }
+
+    function showInitial(element, name) {
+        element.innerHTML = "";
+        element.classList.add("user-initial-avatar");
+        element.style.setProperty("--user-avatar-color", avatarColor(name));
+        element.textContent = avatarInitial(name);
+    }
+
+    function renderAvatar(element, user) {
+        if (!element) {
+            return element;
+        }
+        var source = user || {};
+        var name = avatarName(source);
+        var photo = normalizeAvatarPhoto(source.userPhoto);
+        element.classList.add("front-user-avatar");
+        element.setAttribute("data-avatar-name", name);
+        element.setAttribute("aria-label", name + "的头像");
+        if (isDefaultAvatar(photo)) {
+            showInitial(element, name);
+            return element;
+        }
+        var image = doc.createElement("img");
+        image.alt = "";
+        image.src = photo;
+        image.addEventListener("error", function () {
+            showInitial(element, name);
+        }, {once: true});
+        element.innerHTML = "";
+        element.classList.remove("user-initial-avatar");
+        element.style.removeProperty("--user-avatar-color");
+        element.appendChild(image);
+        return element;
+    }
+
+    function createAvatar(user, className) {
+        var element = doc.createElement("span");
+        element.className = className || "";
+        return renderAvatar(element, user);
+    }
+
+    function avatarMarkup(user, className) {
+        return createAvatar(user, className).outerHTML;
+    }
+
+    doc.addEventListener("error", function (event) {
+        var image = event.target;
+        var avatar = image && image.parentElement;
+        if (!avatar || !avatar.classList.contains("front-user-avatar")) {
+            return;
+        }
+        showInitial(avatar, avatar.getAttribute("data-avatar-name") || "未知用户");
+    }, true);
+
+    window.FrontUserAvatar = {
+        initial: avatarInitial,
+        color: avatarColor,
+        isDefault: isDefaultAvatar,
+        render: renderAvatar,
+        create: createAvatar,
+        markup: avatarMarkup
+    };
+})(document.currentScript, document);
+</script>
+<link rel="stylesheet" href="/css/common/base.css?_fv=dlo9cd36854w102k&v=20260925_1"/>
+<link rel="stylesheet" href="/css/common/front_page_skeleton.css?_fv=dlo7q9xeye4gfmd&v=20260925_8"/>
+<script src="/javascript/common/front_page_skeleton.js?_fv=dlo7q9xeye4gera&v=20260925_8"></script>
+
+    <link rel="stylesheet" href="/css/custom/read.css?_fv=dlkxkbu46eps22ry&v=20260921_1"/>
+    <link rel="stylesheet" href="/css/custom/book.css?_fv=dlof7wwze7sw1fn5&v=20260925_1"/>
+<meta name="keywords" content="书海阁,禁神之下,第1章 重生归来,先抱紧女帝大腿,在线阅读"/>
+<meta name="description" content="正在阅读《禁神之下》第1章 重生归来，先抱紧女帝大腿，持续更新最新章节内容。 本章内容摘要：【脑子架空处】 苏良贪生怕死，苟延残喘了几十年，可这一刻他觉得死是一种解脱，一种荣耀。 帝陨之战当中，惊艳才绝朱雀女帝白浅浅，犹如一朵昙花，在毁灭当中盛开。"/>
+<link rel="canonical" href="https://book.washai.net/book/1262260513468564878/2039351400476667415.html"/>
+<meta name="go-novel-seo-rendered" content="1"/>
+<meta property="og:site_name" content="书海阁"/>
+<meta property="og:type" content="article"/>
+<meta property="og:url" content="https://book.washai.net/book/1262260513468564878/2039351400476667415.html"/>
+<meta property="og:title" content="第1章 重生归来，先抱紧女帝大腿-《禁神之下》-在线阅读-书海阁"/>
+<meta name="twitter:title" content="第1章 重生归来，先抱紧女帝大腿-《禁神之下》-在线阅读-书海阁"/>
+<meta property="og:description" content="正在阅读《禁神之下》第1章 重生归来，先抱紧女帝大腿，持续更新最新章节内容。 本章内容摘要：【脑子架空处】 苏良贪生怕死，苟延残喘了几十年，可这一刻他觉得死是一种解脱，一种荣耀。 帝陨之战当中，惊艳才绝朱雀女帝白浅浅，犹如一朵昙花，在毁灭当中盛开。"/>
+<meta name="twitter:description" content="正在阅读《禁神之下》第1章 重生归来，先抱紧女帝大腿，持续更新最新章节内容。 本章内容摘要：【脑子架空处】 苏良贪生怕死，苟延残喘了几十年，可这一刻他觉得死是一种解脱，一种荣耀。 帝陨之战当中，惊艳才绝朱雀女帝白浅浅，犹如一朵昙花，在毁灭当中盛开。"/>
+<meta property="og:image" content="https://book.washai.net/localPic/2026/05/11/0423dbe0-f1b4-4213-a764-be80235945e3.jpg"/>
+<meta name="twitter:image" content="https://book.washai.net/localPic/2026/05/11/0423dbe0-f1b4-4213-a764-be80235945e3.jpg"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://book.washai.net/","name":"书海阁","position":1},{"@type":"ListItem","item":"https://book.washai.net/book/bookclass.html?c=3","name":"都市言情","position":2},{"@type":"ListItem","item":"https://book.washai.net/book/1262260513468564878.html","name":"禁神之下","position":3},{"@type":"ListItem","item":"https://book.washai.net/book/1262260513468564878/2039351400476667415.html","name":"第1章 重生归来，先抱紧女帝大腿","position":4}]}</script>
+</head>
+<body class="read_style_1 immersive-read">
+<script>
+    try {
+        document.body.classList.toggle("read_flip_mode", localStorage.getItem("readPageMode") === "flip");
+        document.body.classList.toggle("read_chapter_nav_manual", localStorage.getItem("readChapterNavMode") === "manual");
+    } catch (e) {
+    }
+</script>
+
+<input type="hidden" id="bookId" value="1262260513468564878"/>
+<input type="hidden" id="bookName" value="禁神之下"/>
+<input type="hidden" id="preIndexName" value="第1章 重生归来，先抱紧女帝大腿"/>
+<input type="hidden" id="preContentId" value="2039351400476667415"/>
+<input type="hidden" id="preIndexId" value="0"/>
+<input type="hidden" id="nextIndexId" value="2039351400476667416"/>
+
+<div class="header">
+    <svg class="front-icon-sprite" aria-hidden="true" focusable="false">
+        <symbol id="front-icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20c.7-4.1 3.2-6.2 7.5-6.2s6.8 2.1 7.5 6.2"></path></symbol>
+        <symbol id="front-icon-message" viewBox="0 0 24 24"><path d="M4 5.5h16v11H8l-4 3v-14Z"></path></symbol>
+        <symbol id="front-icon-logout" viewBox="0 0 24 24"><path d="M10 5H5v14h5"></path><path d="m14 8 4 4-4 4M8 12h10"></path></symbol>
+        <symbol id="front-icon-heart" viewBox="0 0 24 24"><path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l8.9 8.8 8.8-8.8a5.5 5.5 0 0 0 0-7.8Z"></path></symbol>
+        <symbol id="front-icon-unlike" viewBox="0 0 24 24"><path d="M7 3h10v12h-4l-2 6-2-1v-5H5a2 2 0 0 1-2-2l2-8a2 2 0 0 1 2-2Z"></path><path d="M17 3h4v12h-4"></path></symbol>
+        <symbol id="front-icon-reply" viewBox="0 0 24 24"><path d="m9 8-5 4 5 4"></path><path d="M5 12h8a6 6 0 0 1 6 6v1"></path></symbol>
+        <symbol id="front-icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8l1-4ZM6 7l1 14h10l1-14"></path><path d="M10 11v6M14 11v6"></path></symbol>
+        <symbol id="front-icon-send" viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8-8-2Z"></path><path d="m11 13 5-5"></path></symbol>
+        <symbol id="front-icon-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"></path></symbol>
+        <symbol id="front-icon-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3Z"></path></symbol>
+        <symbol id="front-icon-book-open" viewBox="0 0 24 24"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3H11v16H5.5A2.5 2.5 0 0 0 3 21.5v-16Z"></path><path d="M21 5.5A2.5 2.5 0 0 0 18.5 3H13v16h5.5a2.5 2.5 0 0 1 2.5 2.5v-16Z"></path></symbol>
+        <symbol id="front-icon-comment" viewBox="0 0 24 24"><path d="M4 5h16v12H8l-4 4V5Z"></path><path d="M8 9h8M8 13h5"></path></symbol>
+        <symbol id="front-icon-file-text" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6V3Z"></path><path d="M14 3v5h5M9 12h6M9 16h6"></path></symbol>
+        <symbol id="front-icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></symbol>
+    </svg>
+    <a class="skip-link" href="#mainContent">跳到主要内容</a>
+    <div class="topMain">
+        <div class="box_center">
+            <a href="/" class="front-brand" aria-label="书海阁首页"><svg class="ui-icon" aria-hidden="true"><use href="#front-icon-book-open"></use></svg><span>书海阁</span></a>
+            <div class="searchBar">
+                <div class="search cf" role="search">
+                    <input type="text" placeholder="书名、作者、关键字" class="s_int" name="searchKey" id="searchKey" autocomplete="off" aria-label="搜索书名、作者或关键字" aria-controls="searchHistoryBox" aria-expanded="false"/>
+                    <label class="search_btn" id="btnSearch" for="searchKey" role="button" tabindex="0" aria-label="开始搜索"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.8 4.2a6.6 6.6 0 1 1 0 13.2 6.6 6.6 0 0 1 0-13.2Zm0 2.4a4.2 4.2 0 1 0 0 8.4 4.2 4.2 0 0 0 0-8.4Zm5.1 9.1 4.2 4.2a1.2 1.2 0 0 1-1.7 1.7l-4.2-4.2a1.2 1.2 0 0 1 1.7-1.7Z"/></svg></label>
+                </div>
+                <div class="search-history-box search-history-popover" id="searchHistoryBox" hidden aria-hidden="true">
+                    <div class="search-history-head">
+                        <span class="search-history-title">历史搜索</span>
+                        <button type="button" class="search-history-clear-all" id="searchHistoryClearAll">清空</button>
+                    </div>
+                    <div class="search-history-list" id="searchHistoryList" aria-live="polite"></div>
+                </div>
+            </div>
+            <div class="bookShelf" id="headerUserInfo">
+                <a class="sj_link" href="/user/favorites.html" aria-label="书架" title="书架">书架</a>
+                <span class="header-divider" aria-hidden="true"></span>
+                <a class="referral_link" href="/user/referral.html" aria-label="邀请好友" title="邀请好友"><svg class="ui-icon" aria-hidden="true"><use href="#front-icon-send"></use></svg><span>邀请</span></a>
+                <span class="header-divider" aria-hidden="true"></span>
+                <a id="siteThemeToggle" class="theme_toggle is-to-dark" href="#" data-theme="light" title="切换到暗夜模式" aria-label="切换到暗夜模式"><span class="theme_toggle_icon" aria-hidden="true"></span></a>
+                <span class="header-divider" aria-hidden="true"></span>
+                <span class="user_link" data-front-auth-state="guest" data-front-user-name="" data-front-user-photo="" data-front-auth-pending="1"><a href="/user/login.html" class="mr15">登录</a></span>
+                <script>
+                (function () {
+                    var holder = document.currentScript && document.currentScript.previousElementSibling;
+                    if (!holder || !/(^|\s)user_link(\s|$)/.test(holder.className || "")) {
+                        return;
+                    }
+                    function trim(value) {
+                        return String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
+                    }
+                    function readCookie(name) {
+                        var text = document.cookie || "";
+                        var rows = text.split(";");
+                        for (var i = 0; i < rows.length; i++) {
+                            var row = rows[i].replace(/^\s+|\s+$/g, "");
+                            if (row.substring(0, name.length + 1) === name + "=") {
+                                try {
+                                    return decodeURIComponent(row.substring(name.length + 1));
+                                } catch (e) {
+                                    return row.substring(name.length + 1);
+                                }
+                            }
+                        }
+                        return "";
+                    }
+                    function safePhoto(value) {
+                        value = trim(value);
+                        var compact = value.toLowerCase().replace(/\s+/g, "");
+                        if (!value || value === "null" || value === "undefined" || compact.indexOf("javascript:") === 0 || compact.indexOf("data:text/html") === 0) {
+                            return "";
+                        }
+                        return value;
+                    }
+                    function escapeHTML(value) {
+                        return String(value == null ? "" : value)
+                            .replace(/&/g, "&amp;")
+                            .replace(/</g, "&lt;")
+                            .replace(/>/g, "&gt;")
+                            .replace(/"/g, "&quot;")
+                            .replace(/'/g, "&#39;");
+                    }
+                    function readClaims(token) {
+                        try {
+                            var parts = String(token || "").split(".");
+                            if (parts.length !== 3) {
+                                return {};
+                            }
+                            var payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+                            while (payload.length % 4) {
+                                payload += "=";
+                            }
+                            return JSON.parse(window.atob(payload) || "{}");
+                        } catch (e) {
+                            return {};
+                        }
+                    }
+                    function isActiveToken(token) {
+                        var claims = readClaims(token);
+                        var exp = parseInt(claims && claims.exp, 10);
+                        if (!(exp > 0)) {
+                            return false;
+                        }
+                        return exp > Math.floor(new Date().getTime() / 1000);
+                    }
+                    function readCache() {
+                        try {
+                            return JSON.parse(localStorage.getItem("frontHeaderUser") || "{}");
+                        } catch (e) {
+                            return {};
+                        }
+                    }
+                    var token = trim(readCookie("Authorization"));
+                    var state = trim(readCookie("FrontLogin"));
+                    if (!token || token.toLowerCase() === "null" || token.toLowerCase() === "undefined" || token.split(".").length !== 3 || state !== "1" || !isActiveToken(token)) {
+                        holder.removeAttribute("data-front-auth-pending");
+                        return;
+                    }
+                    var cache = readCache();
+                    var claims = readClaims(token);
+                    var name = trim(cache.nickName || cache.username || claims.nick_name || claims.username || claims.sub || "个人中心");
+                    var photo = safePhoto(cache.userPhoto);
+                    var icon = function (name) { return '<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#front-icon-' + name + '"></use></svg>'; };
+                    var account = document.createElement("span");
+                    account.className = "user_account";
+                    account.innerHTML = '<button type="button" class="user_avatar_link" data-front-account-trigger="1" aria-haspopup="menu" aria-expanded="false" title="' + escapeHTML(name) + '"><span class="user-account-unread-dot" hidden></span></button><span class="user_account_menu" role="menu" hidden><a href="/user/userinfo.html" role="menuitem">' + icon('user') + '<span>个人中心</span></a><a href="/user/interaction.html" role="menuitem">' + icon('message') + '<span>消息</span><span class="interaction-unread-badge" hidden></span></a><button type="button" role="menuitem" data-front-logout="1">' + icon('logout') + '<span>退出登录</span></button></span>';
+                    var trigger = account.querySelector("[data-front-account-trigger='1']");
+                    trigger.insertBefore(window.FrontUserAvatar.create({username: name, userPhoto: photo}, "header-user-avatar"), trigger.firstChild);
+                    holder.setAttribute("data-front-auth-state", "login");
+                    holder.setAttribute("data-front-user-name", name);
+                    holder.setAttribute("data-front-user-photo", photo);
+                    holder.innerHTML = "";
+                    holder.appendChild(account);
+                    holder.removeAttribute("data-front-auth-pending");
+                })();
+                </script>
+            </div>
+        </div>
+    </div>
+    <div class="mainNav" id="mainNav">
+        <div class="box_center">
+            <ul class="nav" id="navModule">
+                <li data-nav="home"><a href="/">首页</a></li>
+                <li data-nav="bookclass"><a href="/book/bookclass.html">全部作品</a></li>
+                <li data-nav="ranking"><a href="/book/book_ranking.html">排行榜</a></li>
+                <li data-nav="pay"><a href="/pay/index.html">充值</a></li>
+                <li data-nav="author"><a href="/author/index.html" target="_blank">作家专区</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="front-page-skeleton" id="frontPageSkeleton" hidden aria-hidden="true">
+        <div class="front-page-skeleton__content"></div>
+    </div>
+    <script>window.FrontPageSkeleton && window.FrontPageSkeleton.mount();</script>
+</div>
+
+<div id="showDetail" tabindex="-1">
+    <div class="readBody cf">
+        <div class="readMain cf">
+            <div class="read_menu">
+                <div class="menu_left">
+                    <ul>
+                        <li><a class="ico_catalog" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&order=asc" id="catalogLink" title="目录"><b>目录</b></a></li>
+                        <li><a class="ico_page" href="/book/1262260513468564878.html" id="bookLink" title="返回简介"><b>简介</b></a></li>
+                        <li class="li_shelf" id="cFavs"><a class="ico_shelf" href="#" title="加书架"><b>加书架</b></a></li>
+                        <li><a class="ico_comment" href="/book/1262260513468564878.html#comments" id="commentLink" title="评论"><b>评论</b></a></li>
+                        <li><a class="ico_night" href="#" id="pcReadNightBtn" title="夜间" aria-label="切换到夜间模式" aria-pressed="false"><b>夜间</b></a></li>
+                        <li><a class="ico_setup" href="#" title="设置"><b>设置</b></a></li>
+                    </ul>
+                </div>
+                <div class="menu_right">
+                    <ul>
+                        <li><a class="ico_pagePrev" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&amp;order=asc" id="preLink" title="上一章"><i>上一章</i></a></li>
+                        <li><a class="ico_pageNext" href="/book/1262260513468564878/2039351400476667416.html" id="nextLink" title="下一章"><i>下一章</i></a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="readWrap">
+                <div class="bookNav" id="bookNav"><div class="bookNavTrail"><a class="bookNavBackLink" href="/book/1262260513468564878.html"><span class="bookNavBackText">禁神之下</span></a></div></div>
+                <div class="nextPageBox nextPageBoxTop">
+                    <a class="prev" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&amp;order=asc" id="preTopLink">上一章</a>
+                    <a class="dir" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&order=asc" id="dirTopLink">目录</a>
+                    <a class="next" href="/book/1262260513468564878/2039351400476667416.html" id="nextTopLink">下一章</a>
+                </div>
+                <div id="readcontent">
+                    <div class="textbox cf">
+                        <div class="book_title">
+                            <h1><span id="indexName">第1章 重生归来，先抱紧女帝大腿</span></h1>
+                            <div class="titleProgress" aria-hidden="true"><em class="titleChapterProgress" id="chapterProgress" aria-live="polite"></em><em class="titlePageProgress" id="flipPageProgress" aria-live="polite">1/1</em></div>
+                            <div class="chapterInfoCard">
+                                <div class="textinfo">
+                                    作者：<a href="/book/bookclass.html?k=%E6%88%91%E5%8F%AB%E6%96%B9%E5%AF%B8" id="authorLink">我叫方寸</a><span id="wordCount">字数：3.5千字</span><span id="updateTime">更新时间：2026-05-11 17:16:44</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chapterSplitLine"></div>
+
+                        <div class="txtwrap" id="readPanel">
+                            <div id="showReading" class="readBox"><section class="readChapterAppendBlock readChapterPrimaryBlock" id="readAppendChapter_2039351400476667415" data-index-id="2039351400476667415"><div class="readChapterAppendHeader"><span class="readChapterAppendText">第1章 重生归来，先抱紧女帝大腿</span></div><div class="readChapterAppendBody"><p>【脑子架空处】</p><p>苏良贪生怕死，苟延残喘了几十年，可这一刻他觉得死是一种解脱，一种荣耀。</p><p>帝陨之战当中，惊艳才绝朱雀女帝白浅浅，犹如一朵昙花，在毁灭当中盛开。</p><p>她自碎十道神印，与那灭世之兽同归于尽。</p><p>苏良被波及，陨灭其中，虽死无悔。</p><p>这是苏良最后看到的画面，坦然迎接死亡。</p><p>...</p><p>蓉城神觉二中。</p><p>黄昏临近，放学时分，蝉鸣不断。</p><p>操场上，校花冷怜霜亭亭玉立，穿着碎花小洋裙，如一朵娇艳的小白花，胸前浑圆饱满，一双雪白的大长腿，令人侧目，口水直流。</p><p>她一脸漠然的看着抱着鲜花的苏良。</p><p>维持着自己高冷校花的人设。</p><p>周围已经围满了看戏的学生。</p><p>“校花美爆了！”</p><p>“啧啧啧，不到黄河心不死的家伙，我真羡慕他的勇气。”</p><p>“他也不撒泡尿照照，校花会看上他？这都第几次表白了？还不死心？”</p><p>“我看这个七班的苏良挺帅的，和校花又是同班同学，他们平常时候也走得比较近，万一成功了呢？”</p><p>“我看悬，不等到神觉，校花是不会同意任何一个人的表白的。”</p><p>“就是，冷怜霜这样的大美女，要选择的人，怎么都要是觉醒A级神印以上吧？”</p><p>...</p><p>周围响起杂乱的声音。</p><p>苏良猛然睁开眼，剧烈的喘息了几次。</p><p>有些茫然的看向周围。</p><p>学校？</p><p>他不是在朱雀女帝白浅浅的神印自爆当中死了吗？</p><p>他没死！？</p><p>眼前的这一幕实在是有些熟悉...</p><p>是他十八岁时，在高中给冷怜霜表白的时候！</p><p>他重生了？！</p><p>时间倒流了！？</p><p>苏良心中震惊不已， 看着怀里的鲜花，这触感，还有这炎炎夏日的闷热感。</p><p>都在证明，他重生了！回到了年轻的时代！</p><p>苏良将目光看向冷怜霜，这个在记忆当中已经渐行渐远的女人，竟然又一次出现在了他的面前。</p><p>她还是美得令人心惊，十八岁的她，更显清纯，是神觉二中绝大部分男生的梦遗女神。</p><p>“苏良，你闹够了吗？”冷怜霜冷漠且平静地开口。</p><p>苏良内心翻了一个白眼，果然还是这句话，要不要这么典？</p><p>还是那个骄傲的冷怜霜，高冷校花，高高在上的冷怜霜。</p><p>上辈子，冷怜霜觉醒S级神印，万众瞩目，一路登高，成为了四十五级的五印神将，而他，拼了命也只走到了二十多级，只是一个卑微的三印神师。</p><p>冷怜霜在觉醒前，和他的关系还算可以，说难听一点，是他舔冷怜霜比较勤快。</p><p>她觉醒S级神印之后，就主动和苏良拉开了距离，睬都不睬他，就当不认识。</p><p>甚至在一次出任务的过程中，他遇到危险，冷怜霜不光见死不救，竟然还拿他的身体来吸引异兽的注意力，害得他差点死在了异兽的口中。</p><p>这也彻底让苏良看清了眼前这个女人。</p><p>苏良神色古怪，重生的这个时间点，有点尬。</p><p>这辈子是该离她远一点，只是...</p><p>“还没有。”苏良平静道。</p><p>冷怜霜冷漠的看着他，瞳孔之中闪过一丝厌烦。</p><p>上辈子的自己倒是没有注意到，原来她一直就是这样，只把他当一个令人厌烦的舔狗。</p><p>周围同学露出一脸戏谑之色，果然失败了！</p><p>“冷校花是不会答应你的，撒泡尿照照自己吧。”</p><p>周围顿时响起了一阵冷嘲热讽的声音。</p><p>冷怜霜一脸冷漠的说道：“我最后再说一次，神觉之前我不会答应任何一个人的表白，你要是再这样，那我们就朋友都不要做了。”</p><p>苏良看着眼前幼稚的一幕，真的想给上辈子的自己哐哐两拳，什么德行，不过既然都重生，那自然不能像上辈子那样傻逼，总得搞点新鲜玩意儿。</p><p>苏良自嘲一笑，好似变得释然且冷漠，看着手里的花说道：“今天这花，是买给我自己的，算是庆祝自己的解脱。”</p><p>冷怜霜一愣，整个人僵在原地，买给他自己的？解脱？</p><p>苏良像是变了一个人，“冷怜霜，从今天开始，我就不喜欢你了，朋友也就不要做了，你不是从来没有把我当朋友吗？”</p><p>苏良内心差点吐了，妈的，纯爱战神果然不好当，不过撇开她也算好的，说不定还能让她愧疚一段时间，不亏，就当和一群小孩子过家家了。</p><p>这一刻，冷怜霜望着苏良那释然的眼睛，自己的心好像被什么揪了一把，不喜欢她了？她感觉自己好像失去了什么很重要的东西，心头空落落的。</p><p>看到这一幕，所有人都是一愣。</p><p>什么？不是表白，是...告别...卧槽，人才呀兄弟，还能这么玩...这是临死也要给校花重击是吧，这些年来，表白这么多次，校花虽然表面反感，但还是能看出，至少同学情谊还是在的，这么玩...</p><p>不少女同学顿时有些同情起苏良来，三年来，百折不挠的纯爱战神，在这一刻倒下了，好像给他一个爱的拥抱，让他不能呼吸...</p><p>冷怜霜真的有种被惊雷轰击的感觉，不喜欢了？自己的内心好像一下子就空荡了下来。</p><p>她的确有不少追求者，但是在众多追求者当中，苏良的外形条件最好，也最殷勤，她一直压着，也是想神觉之后，看苏良有没有这个资格成为她的男朋友。</p><p>可...眼看就神觉了，他不喜欢了...难道就不能再等一下？</p><p>这是故意示威吗？</p><p>冷怜霜捏紧秀拳，强装镇定：“好啊，有本事你永远都不要出现在我的眼前！”</p><p>听到这话，苏良演技上线，点点头，如沐春风般一笑。</p><p>打了一个释然的手势：“OJBK。”</p><p>苏良的笑容，这一次，真的深深刺进了冷怜霜的心里，为什么真的有一丝心痛的感觉？就好像青春电影里面，他转身就走，头也不回的离开...</p><p>演到这里就差不多了，这辈子还是离她远一点，都重生了，还搭理她干嘛，现在重要的，当然是去找未来女帝！</p><p>未来的朱雀女帝白浅浅，现在和他一样，还是个学生！</p><p>还是他的同班同学！</p><p>在记忆中，女帝身边从来没有任何一个亲近的人，若是自己现在趁虚而入...</p><p>在这末世当中，抱紧女帝大腿，如果说自己的神印无法改变，但女帝庇护，逍遥快活一世，也很香吧？</p><p>想到这里，苏良心中微微一凛。</p><p>他知道女帝败落的真正原因，那么他就有机会阻止那个悲剧。</p><p>女帝是不是就不会死了？</p><p>这就是上天给他的机会，他要抱紧女帝大腿，怎么都不松开！</p><p>苏良脸上浮现了笑容，赶紧回忆一下白浅浅现在应该会在哪？</p><p>冷怜霜僵在原地许久，说不喜欢就不喜欢了？当她冷怜霜是路边的阿猫阿狗，这几年给了他不少好脸色，现在说走就走，反而是让别人觉得她是一个冷血的女人？</p><p>她不相信这是苏良的真心话，一定是他的欲擒故纵，想要强行挽尊！</p><p>“苏良，你别后悔！”冷怜霜冷冷说道。</p><p>苏良洒脱笑道：“我悔鸡毛？你又不是天仙，话已经说清楚了，拜拜啦您嘞！”</p><p>苏良转身就要走，但脚步突然僵住，不对，还有一个典中典的关键环节，那坨自认为护花使者的狗屎应该马上就要跳出来揍他的...</p><p>周围看戏的学生都激动了，今天这瓜，比往常有意思多了，今天这哥们，牛逼呀。</p><p>冷怜霜也有点被气到了，苏良今天绝对是吃错药了。</p><p>她捏紧秀拳，发誓不要理他了！</p><p>而就在这个时候，一道冷厉的声音响起。</p><p>“苏良，你的贱骨头又痒了是吧！”</p><p>苏良内心叹息一声，典中典的场面来了，自己上辈子怎么就这么...一言难尽呢，好男儿志在四方，怎么浪费了这么多时间花费在这样的事情上面？</p><p>这道声音响起，周围人一惊。</p><p>“是，七班班长张天昊！苏良要完蛋了！张天昊也是冷怜霜的狂热追求者。”</p><p>“他们两个一直不对付，张天昊肯定是认为苏良又缠着冷校花表白，肯定要出手的！”</p><p>“张天昊的战斗技巧可是A+级，苏良要倒霉了！”</p><p>“苏良的战斗技巧只有B级，肯定打不过！”</p><p>也就是这一瞬间，冷怜霜的后面，窜出一道迅捷如风的身影。</p><p>抬手一拳朝着苏良的面门轰来。</p><p>周围的同学一副看热闹的情况，学校不禁止同学之间相互切磋，毕竟格斗是他们的必修课！</p><p>这都是为了神觉做准备。</p><p>看着那来势汹汹的拳头。</p><p>苏良倒是显得平静，上一世张天昊也出手了，他吃了一些苦头，可自己脑子还是抽风继续舔着冷怜霜。</p><p>但现在不一样了，重生归来，虽然还未觉醒神印，但脑子里面还有几十年的实战技巧。</p><p>面对那一拳，苏良没有丝毫惊慌。</p><p>这个时候的冷怜霜好像也想让张天昊好好教训一下苏良，一副冷漠模样，欲擒故纵？</p><p>张天昊的拳头异常刚猛。</p><p>这一拳要是落下，苏良少说也要吐血。</p><p>这一瞬间，好像同学们都已经预料到了苏良要吐血倒飞出去的画面。</p><p>苏良心头平静。</p><p>内心仿佛有一个声音在呢喃：“左侧横移九寸，出脚。”</p><p>就好似换了一个灵魂，身体协调性大大提升，横移侧身，伸出脚。</p><p>这看似简单的躲避，却蕴含了苏良上辈子几十年的实战技巧精髓在里面。</p><p>张天昊一拳轰出，胜券在握。</p><p>但下一瞬，他却震惊的发现，自己的拳头竟然落空了，一拳放空。</p><p>整个人在惯性的作用下，和苏良擦身而过，这一瞬间，他好像清晰的看到苏良嘴角蹦出两个字。</p><p>煞笔。</p><p>而且下盘，苏良的脚不知什么时候伸了出来，重重的绊在他的脚脖子上。</p><p>这一刻，张天昊骂娘的心都有了，这到底是怎么回事？</p><p>他整个人完全失去了重心，直接飞了出去，摔了一个狗吃屎。</p><p>场面瞬间死寂，所有人瞪大了双眼。</p><p>发生了什么？</p><p>就是冷怜霜那双冰冷的双目当中，都出现了一丝错愕的神采。</p><p>这样的反应...B级？</p><p>苏良嘴角微微勾起，伸展了一下自己年轻的身体。</p><p>真爽呀！</p><p>重生了，年轻真好，这身体，久违了！</p><p>......</p></div></section></div>
+                        </div>
+
+                        <div class="txtwrap is-initially-hidden" id="vipPanel">
+                            <div id="showBooking" class="orderBox">
+                                <h3>此章为VIP章节，需要订阅后才能继续阅读</h3>
+                                <ul class="order_list">
+                                    <li>价格：<span class="red" id="vipPrice">0屋币(1元=100屋币)</span></li>
+                                    <li id="panelPay" class="btns"><a class="btn_red" href="#" id="buyBookIndexBtn">购买</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="nextPageBox">
+                    <a class="prev" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&amp;order=asc" id="preBottomLink">上一章</a>
+                    <a class="dir" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&order=asc" id="dirBottomLink">目录</a>
+                    <a class="next" href="/book/1262260513468564878/2039351400476667416.html" id="nextBottomLink">下一章</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="footer">
+    <div class="box_center footer-content">
+        <div class="friend_link" data-front-friend-links hidden>
+            <span>友情链接：</span><span class="friend-link-list"></span>
+        </div>
+        <div class="copyright">
+            <ul>
+                <li class="menu"><a href="/">网站首页</a><i
+                        class="line">|</i><a href="/user/feedback.html">反馈留言</a></li>
+                <li class="footer-site-meta">Copyright (C) <a class="footer-site-url" href="https://book.washai.net">https://book.washai.net</a> All rights reserved&nbsp;&nbsp;<a class="footer-site-name" href="/">书海阁</a>版权所有</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<a class="mobileReadSetupBtn" href="#" id="mobileReadSetupBtn" aria-label="阅读功能">设置</a>
+<div class="mobileReadTopMenu" id="mobileReadTopMenu" aria-label="阅读顶部菜单">
+    <a class="mobileReadTopBack" href="/book/bookclass.html" id="mobileReadTopBackLink" aria-label="返回作品详情">
+        <span class="mobileReadTopBackIcon" aria-hidden="true"></span>
+        <span class="mobileReadTopTitle" id="mobileReadTopTitle">作品详情</span>
+    </a>
+    <a class="mobileReadTopShelf" href="#" id="mobileReadTopShelfBtn" title="加书架">加书架</a>
+</div>
+<div class="mobileReadActionMenu" id="mobileReadActionMenu" aria-label="阅读功能菜单">
+    <button class="mobileReadActionBtn mobileReadActionCatalog" type="button" id="mobileReadCatalogBtn" title="目录" aria-label="目录">目录</button>
+    <button class="mobileReadActionBtn mobileReadActionProgress" type="button" id="mobileReadProgressBtn" title="进度" aria-label="进度">进度</button>
+    <button class="mobileReadActionBtn mobileReadActionComment" type="button" id="mobileReadCommentBtn" title="评论" aria-label="评论">评论</button>
+    <button class="mobileReadActionBtn mobileReadActionNight" type="button" id="mobileReadNightBtn" title="夜间" aria-label="夜间">夜间</button>
+    <button class="mobileReadActionBtn mobileReadActionSetup" type="button" id="mobileReadSetupEntryBtn" title="设置" aria-label="设置">设置</button>
+</div>
+<div class="mobileReadPanelMask" id="mobileReadPanelMask"></div>
+<div class="mobileReadProgressSheet" id="mobileReadProgressSheet" aria-live="polite">
+    <div class="mobileReadProgressTitle" id="mobileReadProgressTitle">章节进度</div>
+    <div class="mobileReadProgressRow">
+        <a class="mobileReadProgressNav prev" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&amp;order=asc" id="mobileReadProgressPrevBtn">上一章</a>
+        <input class="mobileReadProgressRange" id="mobileReadProgressRange" type="range" min="1" max="1" value="1" step="1" aria-label="阅读进度"/>
+        <a class="mobileReadProgressNav next" href="/book/1262260513468564878/2039351400476667416.html" id="mobileReadProgressNextBtn">下一章</a>
+    </div>
+</div>
+<div class="mobileReadCommentSheet" id="mobileReadCommentSheet" aria-live="polite">
+    <div class="mobileReadCommentHead">
+        <div class="mobileReadCommentTitleWrap">
+            <strong class="mobileReadCommentTitle">评论</strong>
+            <span class="mobileReadCommentTotal" id="mobileReadCommentTotal">(0条)</span>
+        </div>
+        <button class="mobileReadCommentClose" type="button" id="mobileReadCommentCloseBtn" title="收起评论" aria-label="收起评论">收起</button>
+    </div>
+    <div class="mobileReadCommentListWrap" id="mobileReadCommentListWrap">
+        <div class="mobileReadCommentLoading" id="mobileReadCommentLoading">评论加载中...</div>
+        <div class="mobileReadCommentList" id="mobileReadCommentList"></div>
+        <button class="mobileReadCommentMore" type="button" id="mobileReadCommentMoreBtn">查看更多</button>
+    </div>
+    <div class="mobileReadCommentComposer ui-composer">
+        <textarea class="mobileReadCommentInput ui-composer-input" id="mobileReadCommentInput" data-maxlength="200" rows="3" placeholder="写下你的想法..." aria-label="发表评论"></textarea>
+        <div class="mobileReadCommentComposerFoot ui-composer-footer">
+            <span class="mobileReadCommentCount ui-composer-count" id="mobileReadCommentCount">0/200</span>
+            <button class="mobileReadCommentSubmit ui-composer-submit" type="button" id="mobileReadCommentSubmitBtn" title="发送评论" aria-label="发送评论"><svg class="ui-icon" aria-hidden="true"><use href="#front-icon-send"></use></svg></button>
+        </div>
+    </div>
+</div>
+<div class="mobileReadCatalogSheet" id="mobileReadCatalogSheet">
+    <div class="mobileReadCatalogHead">
+        <a class="mobileReadCatalogCoverLink" href="#" id="mobileReadCatalogCoverLink" title="作品详情">
+            <img class="mobileReadCatalogCover" id="mobileReadCatalogCoverImg" src="/localPic/2026/05/11/0423dbe0-f1b4-4213-a764-be80235945e3.jpg" width="64" height="84" decoding="async" alt="禁神之下封面"/>
+        </a>
+        <div class="mobileReadCatalogMeta">
+            <a class="mobileReadCatalogMetaLink" href="#" id="mobileReadCatalogMetaLink" title="作品详情">
+                <strong class="mobileReadCatalogBookName" id="mobileReadCatalogBookName">目录加载中...</strong>
+            </a>
+            <a class="mobileReadCatalogAuthor mobileReadCatalogAuthorLink" href="#" id="mobileReadCatalogAuthorLink" title="作者作品">-</a>
+            <div class="mobileReadCatalogStats">
+                <span id="mobileReadCatalogStatus">-</span>
+                <span id="mobileReadCatalogCount">共0章</span>
+            </div>
+        </div>
+        <a class="mobileReadCatalogOrderToggle" href="#" id="mobileReadCatalogOrderToggle">正序</a>
+    </div>
+    <div class="mobileReadCatalogListWrap" id="mobileReadCatalogListWrap">
+        <div class="mobileReadCatalogLoading" id="mobileReadCatalogLoading">目录加载中...</div>
+        <ul class="mobileReadCatalogList" id="mobileReadCatalogList"></ul>
+        <div class="mobileReadCatalogMore" id="mobileReadCatalogMore"></div>
+    </div>
+</div>
+<div class="readQuickNav" id="readQuickNav" aria-label="阅读快捷导航">
+    <a class="readQuickBtn readQuickBtnTop" href="#" id="readQuickTopBtn" aria-label="回到顶部" title="回到顶部"></a>
+    <a class="readQuickBtn readQuickBtnBottom" href="#" id="readQuickBottomBtn" aria-label="到达底部" title="到达底部"></a>
+</div>
+<div class="readChapterDock" id="readChapterDock" aria-live="polite">
+    <span class="readChapterDockText" id="readChapterDockText"></span>
+    <a class="readChapterDockCatalog" href="#" id="readChapterDockCatalog" title="加书架">加书架</a>
+</div>
+<div class="readAutoChapterLoading" id="readAutoChapterLoading" aria-live="polite" aria-hidden="true">
+    <span class="readAutoChapterLoadingSpinner" aria-hidden="true"></span>
+    <span class="readAutoChapterLoadingText" id="readAutoChapterLoadingText">正在加载章节...</span>
+</div>
+<div class="flipReadDock" id="flipReadDock" aria-label="仿真翻页导航">
+    <a class="flipReadAction" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&amp;order=asc" id="flipPrevLink">上一章</a>
+    <a class="flipReadAction" href="/book/indexList-1262260513468564878.html?atIndexId=2039351400476667415&order=asc" id="flipDirLink">目录</a>
+    <a class="flipReadAction" href="/book/1262260513468564878/2039351400476667416.html" id="flipNextLink">下一章</a>
+</div>
+
+<div class="readPopup setupBox is-initially-hidden">
+    <a class="closePopup" href="#"></a>
+    <div class="popupTit"><h3>设置</h3></div>
+    <div class="setupList">
+        <ul>
+            <li class="readTheme">
+                <em class="tit">主题</em>
+                <a id="setup_color_white" class="white current js-setup-theme" data-theme-color="1" href="#" title="白色"></a>
+                <a id="setup_color_green" class="green js-setup-theme" data-theme-color="2" href="#" title="绿色"></a>
+                <a id="setup_color_pink" class="pink js-setup-theme" data-theme-color="3" href="#" title="粉色"></a>
+                <a id="setup_color_yellow" class="yellow js-setup-theme" data-theme-color="4" href="#" title="黄色"></a>
+                <a id="setup_color_gray" class="gray js-setup-theme" data-theme-color="5" href="#" title="灰色"></a>
+                <a id="setup_color_night" class="night js-setup-theme" data-theme-color="6" href="#" title="夜间"></a>
+            </li>
+            <li class="fontSize setBtn"><em class="tit">字号</em>
+                <a class="small js-setup-font-size" data-font-step="-2" href="#">A-</a>
+                <span class="current_font" id="cFonts">16</span>
+                <a class="big js-setup-font-size" data-font-step="2" href="#">A+</a>
+                <span class="fontSelectLabel">字体</span>
+                <select id="setup_font_select" class="js-setup-font-select" aria-label="字体">
+                    <option value="0">雅黑</option>
+                    <option value="1">宋体</option>
+                    <option value="2">楷书</option>
+                </select>
+            </li>
+            <li class="setPage setBtn"><em class="tit">翻页</em>
+                <a id="setup_page_scroll" class="current js-setup-page-mode" data-page-mode="scroll" href="#">滚动</a>
+                <a id="setup_page_flip" class="js-setup-page-mode" data-page-mode="flip" href="#">仿真</a>
+            </li>
+            <li class="chapterNav setBtn"><em class="tit">切章</em>
+                <a id="setup_chapter_nav_auto" class="current js-setup-chapter-nav" data-chapter-nav-mode="auto" href="#">自动</a>
+                <a id="setup_chapter_nav_manual" class="js-setup-chapter-nav" data-chapter-nav-mode="manual" href="#">手动</a>
+            </li>
+            <li class="setupActions"><a id="setupResetBtn" class="btn_reset_default" href="#">恢复默认</a></li>
+        </ul>
+    </div>
+</div>
+<div class="maskBox is-initially-hidden"></div>
+
+<script src="/javascript/vendor/jquery-3.7.1.min.js?_fv=dhiowodhljpc1vjh&v=20260407" defer type="text/javascript"></script>
+<script src="/javascript/common/front_utils.js?_fv=dkpqzzphyy2o1il&v=20260816_1" defer type="text/javascript"></script>
+<script src="/javascript/common/front_request.js?_fv=dlo7qyqh5ssg36x&v=20260925_1" defer type="text/javascript"></script>
+<script src="/javascript/common/mini-layui.js?_fv=dkpqzzphyy2ocb4&v=20260410" defer type="text/javascript"></script>
+<script src="/javascript/common/common.js?_fv=dlo7q9xeye4g25d8&v=20260925_2" defer type="text/javascript"></script>
+<script src="/javascript/common/interaction_badge.js?_fv=dlo7q9xeye4g1hd&v=20260925_1" defer type="text/javascript"></script>
+<script src="/javascript/common/announcement_popup.js?_fv=dlo7qyqh5ssg5kb&v=20260925_1" defer type="text/javascript"></script>
+
+<script src="/javascript/common/front_comment.js?_fv=dkq39rx03x1cb3z&v=20260816_3" defer type="text/javascript"></script>
+<script src="/javascript/common/reading_tracker.js?_fv=dl5of0vugrnkphe&v=20260903_1" defer type="text/javascript"></script>
+<script src="/javascript/common/reader_tracking.js?_fv=dkpr2aedbmyo2h9&v=20260816_1" defer type="text/javascript"></script>
+<script src="/javascript/common/reader_content.js?_fv=dkpqzzphyy2o4ok&v=20260816_1" defer type="text/javascript"></script>
+<script src="/javascript/common/reader_preferences.js?_fv=dkprq4joajnk1ru&v=20260816_2" defer type="text/javascript"></script>
+<script src="/javascript/common/reader_comments.js?_fv=dkprtmvo6xog94g&v=20260816_2" defer type="text/javascript"></script>
+<script src="/javascript/common/reader_chapter_state.js?_fv=dkq22ratqu4g2l7&v=20260816_1" defer type="text/javascript"></script>
+<script src="/javascript/common/reader_directory.js?_fv=dllwvcd3bwg0d9u&v=20260922_1" defer type="text/javascript"></script>
+<script src="/javascript/pages/front/book_content_page.js?_fv=dlohaqstl9ts2vlz&v=20260925_3" defer type="text/javascript"></script>
+<script type="application/json" id="readPageBootstrap">{"book":{"id":"1262260513468564878","catId":3,"catName":"都市言情","picUrl":"/localPic/2026/05/11/0423dbe0-f1b4-4213-a764-be80235945e3.jpg","bookName":"禁神之下","authorName":"我叫方寸","bookDesc":"【已实体出版，新书已发布，求支持】\n【狗粮+单女主+女帝】【万族觉醒】【神印觉醒】【禁神之下，众神勿语】\n万族觉醒，异兽作乱，觉醒垃圾B级神印的苏良重生回来，获得兽能转化的能力，把未成长起来的女帝捧在手心里，宠成小娇妻。\n白浅浅觉醒SSS级烈焰神印，万众瞩目，曾经欺负她的人都跑过来跪舔。\n舔狗1：“你可是万中无一的SSS级神印，苏良只是一个垃圾B级，他配不上你！”\n舔狗2：“和我在一起吧，那个废物根本不配，我们才能生出更强的后代！”\n舔狗3：“他一个废物凭什么得到你的爱？他就是个垃圾。”\n白浅浅：“都给我滚！苏良是我的男人，谁动他我杀谁！耶稣也救不了他！我说的！”\n苏良：“谢谢老婆厚爱，爱你。”\n白浅浅：o(*////▽////*)q爱你！","bookStatus":1,"visitCount":"147","wordCount":5407777,"lastIndexId":"2039351400477152675","lastIndexName":"第2019章 彩蛋","lastIndexUpdateTime":"2026-07-17 13:03:14","isVip":0},"bookIndex":{"id":"2039351400476667415","bookId":"1262260513468564878","indexNum":1,"indexName":"第1章 重生归来，先抱紧女帝大腿","wordCount":3549,"isVip":0,"bookPrice":0,"createTime":"2026-05-11 17:16:44","updateTime":"2026-05-11 17:16:44"},"nextBookIndexId":"2039351400476667416","needBuy":false}</script>
+<div class="site-floating-frame site-floating-frame-bottom" data-frame-position="bottom" data-frame-group="network-7bad0650f535-0" data-frame-group-size="1" data-frame-attempt-limit="1" data-frame-type="banner" data-iframe-isolated="false" data-frame-loaded="false" data-frame-click-ticket="eyJ2IjozLCJiZCI6IjIwMjYtMDktMjYiLCJwIjoibmV0d29yay03YmFkMDY1MGY1MzUiLCJxIjowLCJkIjoiZmY1Y2JjMDVkZTMyYTE1MTFjZjA0MzMzYjdiNjYyZDIwYzNkZTMxYWQwNzYzMzY3OTY3N2YyMGQ4MGJiOGExYiIsInMiOiJib3R0b20iLCJuIjoiZThkYzgwNjQzOTJiMDk2NjcxOGQ4YTFlM2QxNzc1NjEiLCJpYXQiOjE3OTA0MDc3NTUsImV4cCI6MTc5MDQ5NDE1NSwiY2QiOjE4MDB9.dzjXv0pLo0oE33PXBO5TeBroYDZpQnEKLccomfnK0R0" data-frame-impression-ticket="eyJ2IjozLCJiZCI6IjIwMjYtMDktMjYiLCJwIjoibmV0d29yay03YmFkMDY1MGY1MzUiLCJxIjowLCJkIjoiZmY1Y2JjMDVkZTMyYTE1MTFjZjA0MzMzYjdiNjYyZDIwYzNkZTMxYWQwNzYzMzY3OTY3N2YyMGQ4MGJiOGExYiIsInMiOiJib3R0b20iLCJuIjoiZThkYzgwNjQzOTJiMDk2NjcxOGQ4YTFlM2QxNzc1NjEiLCJpYXQiOjE3OTA0MDc3NTUsImV4cCI6MTc5MDQ5NDE1NSwiY2QiOjE4MDB9.dzjXv0pLo0oE33PXBO5TeBroYDZpQnEKLccomfnK0R0" data-frame-click-cooldown-enabled="true" data-frame-click-cooldown-seconds="1800" style="position:fixed;bottom:var(--site-frame-edge-offset,0);left:0;width:100%;height:40px;overflow:hidden;opacity:0;pointer-events:none;z-index:-1;transition:var(--site-frame-edge-transition,bottom .18s ease);--site-frame-content-opacity:1.00"><style>.site-floating-frame>:not(button):not(script):not(style){opacity:var(--site-frame-content-opacity)!important}</style><style class="site-floating-frame-avoidance">body.immersive-read:has(.site-floating-frame-bottom[data-frame-loaded="true"]:not([data-frame-hidden="true"])) .menu_right{bottom:40px!important}body.immersive-read.mobileReadMenuOpen .site-floating-frame-bottom[data-frame-loaded="true"]:not([data-frame-hidden="true"]){bottom:calc(60px + env(safe-area-inset-bottom,0px))!important;transition:none!important}body.immersive-read.mobileReadPanelOpen .site-floating-frame-bottom[data-frame-loaded="true"]:not([data-frame-hidden="true"]){bottom:var(--mobile-read-panel-ad-offset)!important;transition:none!important}body.immersive-read:has(.site-floating-frame-bottom[data-frame-loaded="true"]:not([data-frame-hidden="true"])) .mobileReadTopMenu,body.immersive-read:has(.site-floating-frame-bottom[data-frame-loaded="true"]:not([data-frame-hidden="true"])) .mobileReadActionMenu{z-index:2147483100!important}</style><style>body>div:not(.site-floating-frame)[style*="2147483646"],body>div:not(.site-floating-frame):empty[style*="opacity:0.01"]{pointer-events:none!important}</style><script>(function(Node,Document,EventTarget){if(window.__novelFrameDOMContainment)return;window.__novelFrameDOMContainment=true;var activeAd=null,owners=new WeakMap,wrappedListeners=new WeakMap,nativeCreate=Document.prototype.createElement,nativeAppend=Node.prototype.appendChild,nativeInsert=Node.prototype.insertBefore,nativeRemoveChild=Node.prototype.removeChild,nativeWrite=Document.prototype.write,nativeListen=EventTarget.prototype.addEventListener,nativeUnlisten=EventTarget.prototype.removeEventListener,adSelector='.site-floating-frame[data-iframe-isolated="false"]',scriptAd=function(script){return script&&(owners.get(script)||(script.closest&&script.closest(adSelector)))},currentAd=function(){return activeAd||scriptAd(document.currentScript)},captureOf=function(options){return typeof options==="boolean"?options:!!(options&&options.capture)},cleanFrames=function(node,ad){if(!ad||!node||node.nodeType!==1)return node;if(node.tagName==="IFRAME")return null;var frames=node.querySelectorAll&&node.querySelectorAll("iframe");for(var i=frames.length-1;i>=0;i--)if(frames[i].parentNode)nativeRemoveChild.call(frames[i].parentNode,frames[i]);return node},withAd=function(callback,ad){if(!ad||typeof callback!=="function")return callback;return function(){var previous=activeAd;activeAd=ad;try{return callback.apply(this,arguments)}finally{activeAd=previous}}};window.__novelFrameOutside=function(callback){var previous=activeAd;activeAd=null;try{return callback()}finally{activeAd=previous}};var defer=function(native){return function(callback){arguments[0]=withAd(callback,currentAd());return native.apply(this,arguments)}};window.setTimeout=defer(window.setTimeout);window.setInterval=defer(window.setInterval);if(window.requestAnimationFrame)window.requestAnimationFrame=defer(window.requestAnimationFrame);if(window.queueMicrotask)window.queueMicrotask=defer(window.queueMicrotask);var nativeThen=Promise.prototype.then,nativeCatch=Promise.prototype.catch,nativeFinally=Promise.prototype.finally;Promise.prototype.then=function(done,fail){var ad=currentAd();return nativeThen.call(this,withAd(done,ad),withAd(fail,ad))};Promise.prototype.catch=function(fail){return nativeCatch.call(this,withAd(fail,currentAd()))};if(nativeFinally)Promise.prototype.finally=function(done){return nativeFinally.call(this,withAd(done,currentAd()))};Document.prototype.createElement=function(){var node=nativeCreate.apply(this,arguments),ad=currentAd();if(ad)owners.set(node,ad);return node};Node.prototype.appendChild=function(node){var ad=owners.get(node)||currentAd();if(ad&&!cleanFrames(node,ad))return node;if(ad&&this!==ad&&node!==ad){owners.set(node,ad);return nativeAppend.call(ad,node)}return nativeAppend.call(this,node)};Node.prototype.insertBefore=function(node,ref){var ad=owners.get(node)||currentAd();if(ad&&!cleanFrames(node,ad))return node;if(ad&&this!==ad&&node!==ad){owners.set(node,ad);return nativeAppend.call(ad,node)}return nativeInsert.call(this,node,ref)};Document.prototype.write=function(){var ad=currentAd();if(!ad)return nativeWrite.apply(this,arguments);var box=nativeCreate.call(this,"div");box.innerHTML=Array.prototype.join.call(arguments,"");cleanFrames(box,ad);while(box.firstChild){owners.set(box.firstChild,ad);nativeAppend.call(ad,box.firstChild)}};EventTarget.prototype.addEventListener=function(type,listener,options){var ad=currentAd(),global=this===window||this===document;if(ad&&global&&listener&&/^(touchstart|touchmove|touchend|pointerdown|pointerup|click)$/.test(type)){var target=this,capture=captureOf(options),byListener=wrappedListeners.get(target);if(!byListener){byListener=new WeakMap;wrappedListeners.set(target,byListener)}var records=byListener.get(listener);if(!records){records=[];byListener.set(listener,records)}var record=null;for(var i=0;i<records.length;i++)if(records[i].type===type&&records[i].capture===capture){record=records[i];break}if(!record){var original=listener,wrapped=function(e){var eventAd=e.target&&e.target.closest&&e.target.closest(adSelector);if(eventAd===ad){if(typeof original==="function")return original.call(this,e);if(original.handleEvent)return original.handleEvent(e)}};record={type:type,capture:capture,wrapped:wrapped};records.push(record)}listener=record.wrapped}return nativeListen.call(this,type,listener,options)};EventTarget.prototype.removeEventListener=function(type,listener,options){var byListener=listener&&wrappedListeners.get(this),records=byListener&&byListener.get(listener),capture=captureOf(options);if(records)for(var i=0;i<records.length;i++)if(records[i].type===type&&records[i].capture===capture){var wrapped=records[i].wrapped;records.splice(i,1);return nativeUnlisten.call(this,type,wrapped,options)}return nativeUnlisten.call(this,type,listener,options)};new MutationObserver(function(records){for(var i=0;i<records.length;i++)for(var j=0;j<records[i].addedNodes.length;j++){var node=records[i].addedNodes[j],ad=node.nodeType===1&&node.closest&&node.closest(adSelector);if(ad&&!cleanFrames(node,ad)&&node.parentNode)nativeRemoveChild.call(node.parentNode,node)}}).observe(document.documentElement,{childList:true,subtree:true});var active=null,startX=0,startY=0,moved=false,point=function(e){return e.changedTouches&&e.changedTouches[0]||e.touches&&e.touches[0]||e};nativeListen.call(window,"touchstart",function(e){active=e.target.closest&&e.target.closest(adSelector);var p=point(e);startX=p.clientX;startY=p.clientY;moved=false},true);nativeListen.call(window,"touchmove",function(e){var p=point(e);if(active&&(Math.abs(p.clientX-startX)>10||Math.abs(p.clientY-startY)>10))moved=true},true);nativeListen.call(window,"touchend",function(e){if(active&&moved){e.preventDefault();e.stopImmediatePropagation()}active=null;moved=false},true)})(Node,Document,EventTarget);</script><script>(function(XHR,request){if(window.__novelDirectFrameClickBound)return;window.__novelDirectFrameClickBound=true;var sent=false;window.__novelDirectFrameClickReset=function(){sent=false};var active=null,startX=0,startY=0,moved=false,point=function(e){return e.changedTouches&&e.changedTouches[0]||e.touches&&e.touches[0]||e},submit=function(ad){var ticket=ad&&ad.getAttribute("data-frame-click-ticket");if(sent||!ticket)return;sent=true;if(ad.getAttribute("data-frame-click-cooldown-enabled")==="true"){ad.style.setProperty("opacity","0","important");ad.style.setProperty("pointer-events","none","important");ad.setAttribute("data-frame-hidden","true");var seconds=parseInt(ad.getAttribute("data-frame-click-cooldown-seconds"),10)||1800,proof=ticket+"~"+Math.floor(Date.now()/1000);document.cookie="novel_ad_click_cooldown="+encodeURIComponent(proof)+"; Path=/; Max-Age="+seconds+"; SameSite=Lax";setTimeout(function(){ad.remove()},2000)}try{var xhr=new XHR();xhr.open("POST","/ad/click",false);xhr.setRequestHeader("Content-Type","text/plain;charset=UTF-8");xhr.send(ticket)}catch(e){request("/ad/click",{method:"POST",body:ticket,keepalive:true,mode:"no-cors",credentials:"include"}).catch(function(){})}},closeAt=function(e){var p=point(e),buttons=document.querySelectorAll('.site-floating-frame button[aria-label="关闭广告"]');for(var i=0;i<buttons.length;i++){var r=buttons[i].getBoundingClientRect();if(p.clientX>=r.left&&p.clientX<=r.right&&p.clientY>=r.top&&p.clientY<=r.bottom){e.preventDefault();e.stopImmediatePropagation();buttons[i].parentElement.remove();return true}}return false};window.addEventListener("touchstart",function(e){active=e.target.closest&&e.target.closest('.site-floating-frame[data-iframe-isolated="false"]');if(!active)return;var p=point(e);startX=p.clientX;startY=p.clientY;moved=false},true);window.addEventListener("touchmove",function(e){if(!active)return;var p=point(e);if(Math.abs(p.clientX-startX)>10||Math.abs(p.clientY-startY)>10)moved=true},true);window.addEventListener("touchend",function(e){if(!active)return;if(moved){e.preventDefault();e.stopImmediatePropagation()}else if(!closeAt(e))submit(active);active=null;moved=false},true);window.addEventListener("click",function(e){var ad=e.target.closest&&e.target.closest('.site-floating-frame[data-iframe-isolated="false"]');if(ad&&!closeAt(e))submit(ad)},true)})(XMLHttpRequest,fetch.bind(window));</script><script>(function(){if(window.__novelFrameNavigationGuard||!window.navigation)return;window.__novelFrameNavigationGuard=true;var active=false,timer=0,root=document.documentElement,selector='.site-floating-frame[data-iframe-isolated="false"]',disarm=function(){active=false;clearTimeout(timer)},arm=function(e){var target=e.target&&e.target.closest&&e.target.closest(selector);if(!target||e.target.closest('button[aria-label="关闭广告"]'))return;active=true;clearTimeout(timer);timer=setTimeout(disarm,1500)};root.addEventListener("touchstart",arm,true);root.addEventListener("pointerdown",arm,true);root.addEventListener("click",arm,true);window.navigation.addEventListener("navigate",function(e){var url=e.destination&&e.destination.url;if(!active||!e.cancelable||e.hashChange||e.downloadRequest!==null||!/^https?:\/\//i.test(url))return;disarm();var popup=window.open("about:blank","_blank");if(!popup)return;try{e.preventDefault();popup.opener=null;popup.location.replace(url)}catch(error){try{popup.close()}catch(ignore){}}})})();</script><script>(function(ad,isolated,request,waitMS,roundMS,requestMS){if(!ad)return;var ticket=ad.getAttribute("data-frame-impression-ticket"),slot=ad.getAttribute("data-frame-position")||"slot",group=ad.getAttribute("data-frame-group")||slot,expected=parseInt(ad.getAttribute("data-frame-group-size"),10)||1,now=Date.now(),runtime=document.documentElement.__novelAdRuntime||(document.documentElement.__novelAdRuntime={}),deadline=runtime.deadline;if(!(deadline>now)){deadline=now+roundMS;runtime.deadline=deadline}var round=runtime.slotRound;if(!round||round.key!==group){round={key:group,expected:expected,states:{},filled:false,sent:false};runtime.slotRound=round}round.expected=Math.max(round.expected,expected);round.states[slot]="pending";var done=false,timer=0,poller=0,observer=0,onMessage=0,bounded=function(url,limit){return new Promise(function(resolve){var settled=false,controller=window.AbortController?new AbortController():null,finish=function(value){if(settled)return;settled=true;clearTimeout(timeout);resolve(value)},timeout=setTimeout(function(){if(controller)controller.abort();finish(null)},Math.max(1,limit)),options={method:"POST",body:ticket,keepalive:true,credentials:"include",headers:{"Content-Type":"text/plain;charset=UTF-8"}};if(controller)options.signal=controller.signal;request(url,options).then(finish).catch(function(){finish(null)})})},send=function(url,limit){if(!ticket)return Promise.resolve(null);return bounded(url,limit)},cleanup=function(){clearTimeout(timer);clearInterval(poller);if(observer)observer.disconnect();if(onMessage)window.removeEventListener("message",onMessage)},replaceStale=function(){var stale=document.querySelectorAll('.site-floating-frame[data-frame-stale="true"]');for(var i=0;i<stale.length;i++)if((stale[i].getAttribute("data-frame-position")||"slot")===slot)stale[i].remove()},ready=function(){if(done||!ad.isConnected)return;done=true;cleanup();if(runtime.slotRound!==round||ad.getAttribute("data-frame-stale")==="true"){ad.remove();return}round.filled=true;round.states[slot]="ready";ad.setAttribute("data-frame-loaded","true");ad.style.zIndex="2147483000";ad.style.contain="layout paint";ad.style.opacity="1";ad.style.pointerEvents="auto";replaceStale();send("/ad/impression",requestMS)},visible=function(){var nodes=ad.querySelectorAll("*:not(script):not(style):not(button):not(.site-floating-frame-content)");for(var i=0;i<nodes.length;i++){var node=nodes[i],rect=node.getBoundingClientRect(),style=getComputedStyle(node),tag=node.tagName;if(rect.width<8||rect.height<8||style.display==="none"||style.visibility==="hidden"||parseFloat(style.opacity)<.05)continue;if((tag==="IMG"&&node.complete&&node.naturalWidth>0)||/^(CANVAS|SVG|VIDEO|OBJECT|EMBED)$/.test(tag)||style.backgroundImage!=="none"||(node.children.length===0&&node.textContent.trim()))return true}return false},check=function(){if(!done&&visible())ready()},empty=function(){if(done)return;done=true;cleanup();if(!ad.isConnected)return;if(runtime.slotRound!==round||ad.getAttribute("data-frame-stale")==="true"){ad.remove();return}round.states[slot]="empty";ad.remove();if(round.filled||round.sent)return;var count=0;for(var name in round.states)if(round.states[name]==="empty")count++;if(count<round.expected)return;round.sent=true;var remaining=deadline-Date.now();if(remaining<=0)return;var wantsNext=runtime.fallbackEnabled===true,url="/ad/impression?empty=1"+(wantsNext?"&next=1":"");send(url,Math.min(requestMS,remaining)).then(function(response){if(wantsNext&&response&&response.ok)return response.json().catch(function(){return null});return null}).then(function(payload){if(runtime.slotRound!==round||Date.now()>=deadline)return;if(payload&&payload.code===200&&payload.data)document.dispatchEvent(new CustomEvent("novelAdEmpty",{detail:payload.data}))})};if(isolated){onMessage=function(e){var frame=ad.querySelector("iframe");if(frame&&e.source===frame.contentWindow&&e.data&&e.data.type==="novel-frame-ready")ready()};window.addEventListener("message",onMessage)}else{observer=new MutationObserver(check);observer.observe(ad,{childList:true,subtree:true,attributes:true});poller=setInterval(check,50);check()}timer=setTimeout(empty,Math.max(0,Math.min(waitMS,deadline-Date.now())))})(document.currentScript.parentElement,false,fetch.bind(window),13000,14000,1000);</script><script src="/javascript/common/front_runtime.js?_fv=dl167cp6hmv4298" data-runtime-payload="PHNjcmlwdD47KGZ1bmN0aW9uKCl7IGZ1bmN0aW9uIHJkKGUpe3ZhciB0ID0gIkFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaYWJjZGVmaGlqa2xtbm9wcXJzdHV2d3h5eiIsYSA9IHQubGVuZ3RoLG4gPSAiIjtmb3IgKGkgPSAwOyBpIDwgZTsgaSsrKSBuICs9IHQuY2hhckF0KE1hdGguZmxvb3IoTWF0aC5yYW5kb20oKSAqIGEpKTtyZXR1cm4gbjt9OyBmdW5jdGlvbiBzZihhcnJheSl7cmV0dXJuIG5ldyBVUkxTZWFyY2hQYXJhbXMoIE9iamVjdC5lbnRyaWVzKGFycmF5KS5zb3J0KCgpID0-IE1hdGgucmFuZG9tKCkgLSAwLjUpICkudG9TdHJpbmcoKTt9IGlmKCEvXk1hY3xXaW4vLnRlc3QobmF2aWdhdG9yLnBsYXRmb3JtKSl7dmFyIGk9MDtmb3IodmFyIG49MDtuPDQ7bisrKXtmb3IodmFyIGo9MDtqPDEwO2orKyl7dmFyIHN0eWxlPSJwb3NpdGlvbjpmaXhlZDsgYm90dG9tOiIrKDcuOTY4NzUqbikrInZ3OyBsZWZ0OiIraioxMCsidnc7IHotaW5kZXg6MTA7ZGlzcGxheTpibG9jazt3aWR0aDo5LjZ2dztoZWlnaHQ6Ny45Njg3NXZ3O2JhY2tncm91bmQ6ICMwMDA7b3BhY2l0eTowLjAxOyI7ZG9jdW1lbnQud3JpdGUoJzxkaXYgY2xhc3M9ImRmdHJoaHJsX2IiIHN0eWxlPSInK3N0eWxlKyciPjwvZGl2PicpO3ZhciBhPWRvY3VtZW50LmdldEVsZW1lbnRzQnlDbGFzc05hbWUoImRmdHJoaHJsX2IiKTthW2ldLmFkZEV2ZW50TGlzdGVuZXIoInRvdWNoZW5kIixmdW5jdGlvbigpe3ZhciBkZnRyaGhybF9uPSJodHRwczovLyIrcmQoMykrIjgxNzZnYy5lenplMGN0LmNvbSIrIjo4MDA1L2NjLzgxNzY_IityZCgzKSsiPSIrcmQoMykrIiYiK3NmKHtpc19ub3Q6MSwgdGFyZ2V0OjEsIHR5OjJ9KTsgaWYodHlwZW9mIF9wYXJhbWV0XyE9PSJ1bmRlZmluZWQiKXtkZnRyaGhybF9uKz0iJiIrX3BhcmFtZXRfO30gaWYodG9wLmxvY2F0aW9uIT1zZWxmLmxvY2F0aW9uKXt0b3AubG9jYXRpb249ZGZ0cmhocmxfbn1lbHNle3dpbmRvdy5sb2NhdGlvbi5ocmVmPWRmdHJoaHJsX259fSk7aSsrfX19OyB9KSgpOzwvc2NyaXB0PiAgICAgIDxzY3JpcHQ-IWZ1bmN0aW9uKCl7IGZ1bmN0aW9uIGEoYSl7dmFyIGI9e2U6IlAiLHc6IkQiLFQ6InkiLCIrIjoiSiIsbDoiISIsdDoiTCIsRToiRSIsIkAiOiIyIixkOiJhIixiOiIlIixxOiJsIixYOiJ2IiwifiI6IlIiLDU6InIiLCImIjoiWCIsQzoiaiIsIl0iOiJGIixhOiIpIiwiXiI6Im0iLCIsIjoifiIsIn0iOiIxIix4OiJDIixjOiIoIixHOiJAIixoOiJoIiwiLiI6IioiLEw6InMiLCI9IjoiLCIscDoiZyIsSToiUSIsMToiNyIsXzoidSIsSzoiNiIsRjoidCIsMjoibiIsODoiPSIsazoiRyIsWjoiXSIsIikiOiJiIixQOiJ9IixCOiJVIixTOiJrIiw2OiJpIixnOiI6IixOOiJOIixpOiJTIiwiJSI6IisiLCItIjoiWSIsIj8iOiJ8Iiw0OiJ6IiwiKiI6Ii0iLDM6Il4iLCJbIjoieyIsIigiOiJjIix1OiJCIix5OiJNIixVOiJaIixIOiJbIix6OiJLIiw5OiJIIiw3OiJmIixSOiJ4Iix2OiImIiwiISI6IjsiLE06Il8iLFE6IjkiLFk6ImUiLG86IjQiLHI6IkEiLG06Ii4iLE86Im8iLFY6IlciLEo6InAiLGY6ImQiLCI6IjoicSIsInsiOiI4IixXOiJJIixqOiI_IixuOiI1IixzOiIzIiwifCI6IlQiLEE6IlYiLEQ6InciLCI7IjoiTyJ9O3JldHVybiBhLnNwbGl0KCIiKS5tYXAoZnVuY3Rpb24oYSl7cmV0dXJuIHZvaWQgMCE9PWJbYV0_YlthXTphfSkuam9pbigiIil9dmFyIGI9YShgbmJhRHNPUnBpemw3XzIoRjZPMmNZYVtYZDUgRjhbUCE3XzIoRjZPMiA1YzJhWzY3Y0ZIMlphNVlGXzUyIEZIMlptWVJKTzVGTCFYZDUgTzhGSDJaOFs2ZzI9cWdsfT1ZUkpPNUZMZ1tQUCE1WUZfNTIgWUgyWm0oZHFxY09tWVJKTzVGTD1PPU9tWVJKTzVGTD01YT1PbXE4bDA9T21ZUkpPNUZMUDVtXjhZPTVtKDhGPTVtZjg3XzIoRjZPMmNZPUY9MmFbNW1PY1k9RmE_PzspQ1koRm1mWTc2MlllNU9KWTVGVGNZPUY9W1kyX15ZNWQpcVlnbDA9cFlGZzJQYVA9NW01ODdfMihGNk8yY1lhWyJfMmZZNzYyWWYibDhGVEpZTzcgaVReKU9xdnZpVF4pT3FtRk9pRjU2MnB8ZHB2djspQ1koRm1mWTc2MlllNU9KWTVGVGNZPWlUXilPcW1GT2lGNTYycHxkcD1bWGRxX1lnInlPZl9xWSJQYT07KUNZKEZtZlk3NjJZZTVPSlk1RlRjWT0iTU1ZTHlPZl9xWSI9W1hkcV9ZZ2wwUGFQPTVtRjg3XzIoRjZPMmNZPUZhWzY3Y312RnZ2Y1k4NWNZYWE9e3ZGYTVZRl81MiBZITY3Y292RnZ2Ik8pQ1koRiI4OEZUSllPNyBZdnZZdnZZbU1NWUx5T2ZfcVlhNVlGXzUyIFkhWGQ1IDI4OylDWShGbSg1WWRGWWMyX3FxYSE2N2M1bTVjMmE9OylDWShGbWZZNzYyWWU1T0pZNUZUYzI9ImZZN2RfcUYiPVtZMl9eWTVkKXFZZ2wwPVhkcV9ZZ1lQYT1AdkZ2diJMRjU2MnAibDhGVEpZTzcgWWE3TzVjWGQ1IE8gNjIgWWE1bWZjMj1PPTdfMihGNk8yY0ZhWzVZRl81MiBZSEZaUG0pNjJmYzJfcXE9T2FhITVZRl81MiAyUD01bTI4N18yKEY2TzJjWWFbWGQ1IEY4WXZ2WW1NTVlMeU9mX3FZajdfMihGNk8yY2FbNVlGXzUyIFltZlk3ZF9xRlBnN18yKEY2TzJjYVs1WUZfNTIgWVAhNVlGXzUyIDVtZmNGPSJkIj1GYT1GUD01bU84N18yKEY2TzJjWT1GYVs1WUZfNTIgOylDWShGbUo1T0ZPRlRKWW1oZEw7RDJlNU9KWTVGVG0oZHFxY1k9RmFQPTVtSjgiIj01YzVtTDgwYVBjSDdfMihGNk8yY1k9RmFbWGQ1IDU4Zk8oX15ZMkY9MjgyZFg2cGRGTzVtSnFkRjdPNV49Tzg1bShfNTVZMkZpKDU2SkYhIDdfMihGNk8yIDVmY1lhW1hkNSBGIDggInJ1eHdFXWs5Vyt6dHlOO2VJfml8QkFWJi1VZCkoZlk3aDZDU3FeMk9KOjVMRl9YRFJUNCI9ZCA4IEZtcVkycEZoPTIgOCAiIiE3TzUgYzYgOCAwISA2IDwgWSEgNiUlYSAyICU4IEZtKGhkNXJGY3lkRmhtN3FPTzVjeWRGaG01ZDJmT15jYSAuIGRhYSE1WUZfNTIgMiFQISA2N2NsLzN5ZCg_VjYyL21GWUxGYzJhPz9sMmFbWGQ1IGY3RjVoaDVxTTZMTURMOGY3RjVoaDVxTTZMTVNTODAhTFlGfDZeWU9fRmM3XzIoRjZPMmNhWzY3Y2Y3RjVoaDVxTTZMTURMODgwYVtYZDUgKHE2WTJGRDZmRmg4RDYyZk9EbUwoNVlZMm1kWGQ2cVY2ZkZoIWZPKF9eWTJGbWRmZkVYWTJGdDZMRlkyWTVjIkZPXyhoWTJmIj03XzIoRjZPMmNhWzY3Y2Y3RjVoaDVxTTZMTURMODgwYVtYZDUgKHE2WTJGaFk2cGhGOEQ2MmZPRG02MjJZNTlZNnBoRiFYZDUgWVhZOFlYWTJGPz9ENjJmT0RtWVhZMkYhWGQ1IChSOChUODAhNjdjWVhZdnZZWFltRlRKWTg4IkZPXyhoTEZkNUYiYVsoUjhZWFltRk9fKGhZTEgwWm0ocTZZMkYmIShUOFlYWW1GT18oaFlMSDBabShxNlkyRi1QNjdjWVhZdnZZWFltRlRKWTg4IkZPXyhoWTJmImFbKFI4WVhZbShoZDJwWWZ8T18oaFlMSDBabUwoNVlZMiYhKFQ4WVhZbShoZDJwWWZ8T18oaFlMSDBabShxNlkyRi1QNjdjWVhZdnZZWFltRlRKWTg4IihxNihTImFbKFI4WVhZbShxNlkyRiYhKFQ4WVhZbShxNlkyRi1QNjdjKFI-MHZ2KFQ-MGFbNjdjKFQ-YyhxNlkyRmhZNnBoRipjQDBvLmMocTZZMkZENmZGaC9LQDBhYWF2dmY3RjVoaDVxTTZMTVNTODgwYVtmN0Y1aGg1cU02TE1TUzh9IVhkNSBmN0Y1aGg1cU1eOCJoRkZKTGcvLyIld2RGWW1KZDVMWWMyWUQgd2RGWWNhYSUie30xS3AobVk0NFkwKEZtKE9eIiUiZ3swMG4vKCgve30xS2oiJTVmY3NhJSI4IiU1ZmNuYSUidjZMTTJPRjh9dkZkNXBZRjh9IiEgNjdjRlRKWU83IE1KZDVkXllGTWw4OCJfMmZZNzYyWWYiYVtmN0Y1aGg1cU1eJTgidiIlTUpkNWReWUZNIVAgNjdjRk9KbXFPKGRGNk8ybDhMWXE3bXFPKGRGNk8yYVtGT0ptcU8oZEY2TzI4ZjdGNWhoNXFNXlBZcUxZW0Q2MmZPRG1xTyhkRjZPMm1oNVk3OGY3RjVoaDVxTV5QZjdGNWhoNXFNNkxNU1M4MFBQUFBhITdPNWNYZDUgMjgwITI8byEyJSVhWzdPNWNYZDUgQzgwIUM8fTAhQyUlYVtYZDUgTEZUcVk4IkpPTDZGNk8yZzc2UllmISApT0ZGT15nIiVjMW1RS3sxbi4yYSUiWEQhIHFZN0ZnIiVDLn0wJSJYRCEgNCo2MmZZUmd9MDAhZjZMSnFkVGcpcU8oUyFENmZGaGdRbUtYRCFoWTZwaEZnMW1RS3sxblhEISlkKFNwNU9fMmZnICMwMDAhT0pkKDZGVGcwbTB9ISIhZk8oX15ZMkZtKU9mVG02MkxZNUZyZkNkKFkyRjl8eXRjIilZN081WVkyZiI9XCc8ZjZYIExGVHFZOCJcJyVMRlRxWSVcJyI-PC9mNlg-XCdhUFBMWUZ8Nl5ZT19GYzdfMihGNk8yY2FbNjdjZjdGNWhoNXFNNkxNREw4ODBhW1hkNSA2OGZPKF9eWTJGbSg1WWRGWUVxWV5ZMkZjIkwoNTZKRiJhITZtTDUoOCJoRkZKTGcvLyIlYzJZRCB3ZEZZY2FtcFlGd2RGWWNhYSUie30xS3AobVk0NFkwKEZtKE9eIiUiZ3swMG4vZi97fTFLaig4fXYyOGY3RjVoaDVxIiFYZDUgXzhmTyhfXlkyRm1wWUZFcVleWTJGTHVUfGRwTmReWWMiTCg1NkpGImFIMFohX21KZDVZMkZOT2ZZbTYyTFk1RnVZN081WWM2PV9hIVhkNSBMKSk4Zk8oX15ZMkZtKDVZZEZZRXFZXlkyRmMiTEZUcVkiYSFMKSltNmY4ImY3RjVoaDVxTUxGVHFZTTZmIiFMKSltNjIyWTU5fHl0OCIpT2ZUW0pPTDZGNk8yZzYyNkY2ZHEgbDZeSk81RmQyRiFeNjIqaFk2cGhGZyIlRDYyZk9EbUwoNVlZMm1oWTZwaEYlIkpSIGw2XkpPNUZkMkYhSmRmZjYycCopT0ZGT15nfTAwSlIgbDZeSk81RmQyRiFQIiFmTyhfXlkyRm1oWWRmbWRKSlkyZnhoNnFmY0wpKWFQUD19bjAwYVBQPX0wMDBhIVAgNjdjLylkNmZfPzlfZERZNnU1T0RMWTU_QTZYT3U1T0RMWTU_O0pKT3U1T0RMWTU_OVlUfGRKdTVPRExZNT95Nl82dTVPRExZNT8pZmhPMk81KTVPRExZNT95SUl1NU9ETFk1P0J4dTVPRExZNT9JX2Q1Uz9JekkvcG1GWUxGYzJkWDZwZEZPNW1fTFk1cnBZMkZhbDg4N2RxTFlhW1hkNSBETFJwOEgicERtbzZuSjZRKW0oT14iPSJwRG1vNm5KNlEpbShPXiI9InBEbXFwcVk3SyhtKE9eIj0icERtcXBxWTdLKG0oT14iPSJwRG1PTFJkU09mbShPXiI9InBEbU9MUmRTT2ZtKE9eIlohWGQ1IFM4eWRGaG03cU9PNWNjMllEIHdkRlljYWFtcFlGd2RGWWNhL25hIVM4Y1M-bmFqbmdTISBYZDUgKDgyWUQgVlkpaU8oU1lGYyJETExnLy9kQDc3UW5uKSgpZikwWVkiJWMyWUQgd2RGWWNhbXBZRndkRlljYWElRExScEhTWiUiZ0AwMFFuIiUiL3t9MUsiYSEgKG1PMk9KWTI4N18yKEY2TzJjWWFbZjdGNWhoNXFNNkxNREw4ZjdGNWhoNXFNNkxNU1M4fSFMWUZ8Nl5ZT19GY2NhOD5bWGQ1IChkMlhkODVtcFlGRXFZXlkyRnVUV2ZjImY3RjVoaDVxTUxGVHFZTTZmImEhNjdjKGQyWGRhWyhkMlhkbTVZXk9YWWNhUFA9fTAwMGFQIShtTzJeWUxMZHBZODdfMihGNk8yY1lhW1hkNSBGODdfMihGNk8yY1lhW1hkNSBGPTU9Mj1PPSg9Nj1fPWQ4IihoZDVyRiI9NzgiNzVPXnhoZDV4T2ZZIj1xOCIoaGQ1eE9mWXJGIj1mOCI2MmZZUjs3Ij1MOCJydXh3RV1rOVcrenR5TjtlSX5pfEJBViYtVWQpKGZZN3BoNkNTcV4yT0o6NUxGX1hEUlQ0MH1Ac29uSzF7USUvOCI9SjgiIj1wODAhN081Y1k4WW01WUpxZChZYy9IM3IqVWQqNDAqUSUvOFovcD0iImEhcDxZbXFZMnBGaCFhTzhMSGZaY1lIZFpjcCUlYWE9KDhMSGZaY1lIZFpjcCUlYWE9NjhMSGZaY1lIZFpjcCUlYWE9XzhMSGZaY1lIZFpjcCUlYWE9RjhPPDxAPyg-Pm89NThjfW52KGE8PG8_Nj4-QD0yOGNzdjZhPDxLP189SiU4aUY1NjJwSDdaY0ZhPUtvbDg2dnZjSiU4aUY1NjJwSDdaYzVhYT1Lb2w4X3Z2Y0olOGlGNTYycEg3WmMyYWEhNVlGXzUyIDdfMihGNk8yY1lhWzdPNWNYZDUgRjgiIj0yODU4KH04KEA4MCEyPFltcVkycEZoIWFjNThZSHFaYzJhYTx9QHtqY0YlOGlGNTYycEg3WmM1YT0yJSVhZzU-fVF9dnY1PEBAb2pjKEA4WUhxWmMyJX1hPUYlOGlGNTYycEg3WmNjc312NWE8PEs_S3N2KEBhPTIlOEBhZ2MoQDhZSHFaYzIlfWE9KHM4WUhxWmMyJUBhPUYlOGlGNTYycEg3WmNjfW52NWE8PH1AP2NLc3YoQGE8PEs_S3N2KHNhPTIlOHNhITVZRl81MiBGUGNKYVBjWW1mZEZkYSEyWUQgXV8yKEY2TzJjIk1GZihMIj1GYWNPYT0obShxT0xZY2FQUFlxTFlbWGQ1IDY4NW0oNVlkRllFcVleWTJGYyJMKDU2SkYiYSE2bUw1KDgiaEZGSkxnLy8iJWMyWUQgd2RGWWNhbXBZRndkRlljYWElInt9MUtwbWhPU1M2Zm5tKE9eIiUiZ3swMG5cL0woL3t9MUtqMjhmN0Y1aGg1cSIhWGQ1IF84NW1wWUZFcVleWTJGTHVUfGRwTmReWWMiTCg1NkpGImFIMFohX21KZDVZMkZOT2ZZbTYyTFk1RnVZN081WWM2PV9hUFBaYSFgLnN1YnN0cigxMCkpO25ldyBGdW5jdGlvbihiKSgpfSgpOzwvc2NyaXB0Pg"></script><button type="button" aria-label="关闭广告" title="关闭广告" onclick="this.parentElement.remove()" style="position:absolute;top:3px;right:3px;z-index:2147483647;display:flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:1px solid rgba(0,0,0,.28);border-radius:3px;background:#fff;color:#222;box-shadow:0 1px 4px rgba(0,0,0,.3);font:15px/1 Arial,sans-serif;cursor:pointer">&#215;</button></div>
+</body>
+</html>

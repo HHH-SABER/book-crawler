@@ -214,14 +214,13 @@ def 域名网站名(网址或域名: str) -> str:
 
 
 def _原子写(path: str, 内容: str) -> None:
-    """tmp + os.replace 原子落盘 (禁止直接 write_text, 对齐项目规约)"""
+    """原子落盘 (范式同 爬取历史.py:_落盘): pathlib 锚定 + tmp 带 pid + os.replace"""
     import os as _os
-    tmp = path + f'.tmp.{_os.getpid()}'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        f.write(内容)
-        f.flush()
-        _os.fsync(f.fileno())
-    _os.replace(tmp, path)
+    from pathlib import Path as _P
+    fobj = _P(path).resolve()
+    tmp = fobj.with_name(fobj.name + f'.tmp.{_os.getpid()}')
+    tmp.write_text(内容, encoding='utf-8')
+    _os.replace(tmp, fobj)
 
 
 def 维护_兼容小说网站txt(url: str, 小说名: str) -> bool:
@@ -246,10 +245,7 @@ def 维护_兼容小说网站txt(url: str, 小说名: str) -> bool:
                     return True
             新增 = (文本 + ('\n' if 文本 and not 文本.endswith('\n') else '')
                     + url + '\n')
-            原子path = path + f'.tmp.{os.getpid()}'
-            with open(原子path, 'w', encoding='utf-8') as f:
-                f.write(新增)
-            os.replace(原子path, path)
+            _原子写(path, 新增)
             return True
     except Exception as e:
         _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e}')

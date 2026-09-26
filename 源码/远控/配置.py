@@ -77,11 +77,14 @@ def _加载或创建() -> dict:
 
 
 def _原子写(path: str, cfg: dict) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    """原子写 (范式同 爬取历史.py:_落盘): pathlib 锚定 + tmp + os.replace"""
+    from pathlib import Path as _P
+    fobj = _P(path).resolve()
+    fobj.parent.mkdir(parents=True, exist_ok=True)
+    tmp = fobj.with_name(fobj.name + ".tmp")
+    tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    os.replace(tmp, fobj)
 
 
 def 取配置() -> dict:
