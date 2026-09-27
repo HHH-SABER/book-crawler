@@ -1401,8 +1401,9 @@ class NovelSpider:
             # 尝试使用ignore模式解码
             try:
                 text = response.content.decode('utf-8', errors='ignore')
-                # 打印解码后的内容，看看实际获取到了什么
-                _log.info(f"解码后内容前500个字符: {text[:500]}")
+                # 原始 HTML 预览仅排障用; 此处每页 1 次 (含 500 字符正文), 保持
+                # debug 级 —— INFO 级会随页数线性刷爆日志与 GUI 实时面板
+                _log.debug(f"解码后内容前500个字符: {text[:500]}")
                 # 检查解码后的内容是否包含HTML标签
                 if '<html' in text.lower() or '<body' in text.lower():
                     _log.info(f"成功获取到HTML内容，长度: {len(text)} 字符")
