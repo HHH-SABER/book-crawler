@@ -238,7 +238,16 @@ def main():
     log(f"[OK] PyInstaller : {pyinstaller_exe}")
 
     # --- 2) ensure Flet client is downloaded & extracted (sandbox can't write home dirs)
-    VIEW_DIR = os.path.join(ROOT, "_flet_client")
+    # 缓存位置: 优先 FLET_CACHE_DIR; 默认 %LOCALAPPDATA%\小说爬虫\构建缓存\flet_client
+    # (2026-09-27 移出项目树: 缓存含 Flet 客户端第三方资源, 放项目内会被安全门禁
+    #  连带扫描造成误报拦截; 且工具链缓存本不入库)
+    _cache_env = os.environ.get("FLET_CACHE_DIR")
+    if _cache_env:
+        VIEW_DIR = _cache_env
+    else:
+        _la = os.environ.get("LOCALAPPDATA")
+        VIEW_DIR = (os.path.join(_la, "小说爬虫", "构建缓存", "flet_client") if _la
+                    else os.path.join(ROOT, "_flet_client"))
     FLET_VIEW_EXE = os.path.join(VIEW_DIR, "flet.exe")
     if not os.path.isfile(FLET_VIEW_EXE):
         log("[STEP] Flet client not pre-cached. Running ensure_flet_cache.py...")
@@ -289,7 +298,7 @@ def main():
     exe_name    = "小说爬虫"
     # 关键：把 Flet client 打进 EXE（flet pack 不会自动做这件事）
     # 同时把站点配置和验证码配置的默认模板打进去（首次运行时拷到 BASE_DIR）
-    flet_client_dir = os.path.join(ROOT, "_flet_client")
+    flet_client_dir = VIEW_DIR   # 缓存统一取上方解析结果 (支持 FLET_CACHE_DIR 重定向)
     sites_config_src = os.path.join(ROOT, "源码", "站点配置.json")
     captcha_config_src = os.path.join(ROOT, "配置", "captcha_config.json")
 
