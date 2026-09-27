@@ -19,7 +19,15 @@ MIRRORS = [
     ORIG_URL,
 ]
 
-CACHE_DIR = (Path(__file__).parent.parent / "_flet_client").resolve()  # 脚本/ 的上级 = 项目根
+# 缓存位置: 优先 FLET_CACHE_DIR; 默认 %LOCALAPPDATA%\小说爬虫\构建缓存\flet_client
+# (2026-09-27 移出项目树: 缓存内含 Flet 客户端第三方资源, 放项目内会被安全门禁
+#  连带扫描造成误报拦截; 且工具链缓存本不入库)。无 LOCALAPPDATA 环境时回退项目根
+_cache_env = os.environ.get("FLET_CACHE_DIR")
+if not _cache_env:
+    _la = os.environ.get("LOCALAPPDATA")
+    _cache_env = (os.path.join(_la, "小说爬虫", "构建缓存", "flet_client") if _la
+                  else str(Path(__file__).parent.parent / "_flet_client"))
+CACHE_DIR = Path(_cache_env).resolve()
 
 # 允许的下载源域名白名单 (仅官方 GitHub 与已知镜像, 防 SSRF)
 _ALLOWED_DL_HOSTS = {
