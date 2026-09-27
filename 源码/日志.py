@@ -104,7 +104,10 @@ class AppLogger:
                 except Exception:
                     pass  # 刻意静默: 关闭旧日志文件句柄失败无资源可回收 (进程内仅一份), 换文件继续
             self._file_path = path
-            self._file = open(path, 'a', encoding='utf-8', buffering=1)  # 行缓冲
+            # newline='\n': Windows 文本模式会把 \n 译成 \r\n, 磁盘字节比
+            # _cur_size 逐行多计 1 字节, 轮转点漂移 (实测 5MB 目标 overshoot 66KB)
+            self._file = open(path, 'a', encoding='utf-8', buffering=1,
+                              newline='\n')
             self._cur_date = today
         try:
             self._cur_size = os.path.getsize(path)
