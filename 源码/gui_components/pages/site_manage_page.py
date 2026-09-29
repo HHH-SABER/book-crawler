@@ -298,7 +298,8 @@ class SiteManagePage:
 
         # 站点表格 (4 主列 + 操作列) — 整页可滚后表格用有界高度:
         # scroll 的 Column 不能有 expand 子级 (Flutter 纵向无界高度会报 unbounded)
-        self._table_view = ft.ListView(spacing=3, auto_scroll=True)
+        self._table_view = ft.ListView(spacing=3, auto_scroll=True,
+                                       scroll=ft.ScrollMode.ALWAYS)
         table_card = make_card(
             ft.Container(content=self._table_view, height=420),
             padding=6,
@@ -558,7 +559,7 @@ class SiteManagePage:
     # ---------------------------------------------------- 自愈建议审核卡 (批3 PoC-C)
     def _build_heal_card(self) -> ft.Control:
         """自愈建议审核卡: 规则选择器落空时自动产出的容器建议, 一键采纳/忽略。"""
-        self._heal_view = ft.ListView(spacing=4)
+        self._heal_view = ft.ListView(spacing=4, scroll=ft.ScrollMode.ALWAYS)
         self._heal_info = ft.Text("", size=SIZE_TINY,
                                   color=ft.Colors.ON_SURFACE_VARIANT,
                                   font_family=FONT_STACK)

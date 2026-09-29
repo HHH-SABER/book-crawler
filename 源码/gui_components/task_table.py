@@ -27,23 +27,22 @@ except Exception:
 
 # ---------------------------------------------------------------- 列定义
 # 表头与数据行共用同一份列宽 (单一定义源, 保证表头与行严格对齐):
-#   - 标题列 width=None → expand 占据剩余宽度
-#   - 其余列固定像素宽 → 任何窗口尺寸下操作按钮都不会被压缩裁剪
-#     (修复: 纯 flex 布局在窄窗口丢操作按钮 + 表头与行错位)
+#   - 全列固定像素宽 + 表格横向滚动 (2026-09-29 二轮反馈"任务列显示不全"):
+#     固定列合计 816px 超出窄窗口可视宽度时, 表头+行整体左右滚动,
+#     操作按钮不再被裁; 拖拽调列宽 Flet 0.86 无现成 API, 横向滚动为务实解
 _COLUMNS = [
-    # (表头文字, 宽度px / None=expand, 是否居中)
-    ("任务 / URL", None, False),
+    # (表头文字, 宽度px, 是否居中) — 无 expand 列 (横向滚动容器内 expand 会报错)
+    ("任务 / URL", 200, False),
     ("进度", 100, False),
     ("状态", 72, True),
     ("引擎", 84, False),
     ("反爬", 84, False),
     ("耗时", 56, False),
     ("质检", 56, False),
-    # 164px: 4 按钮 (展开/预览/重下/删除) × 36 + 间距 3×2 = 150, 留余量防裁切
-    # (v2.3.1 为 3 按钮 144px, 新增预览按钮后未同步加宽 → 删除按钮被裁切)
-    ("操作", 164, True),
+    # 164px: 5 按钮 (展开/预览/EPUB/重下/删除) × 36 + 间距 4×2 = 188 → 200 留余量
+    ("操作", 200, True),
 ]
-_TITLE_COL = 0        # expand 列在 _COLUMNS 中的下标
+_TITLE_COL = 0        # 标题列下标 (现亦为固定宽)
 _OPS_COL = 7          # 操作列下标
 
 
@@ -108,12 +107,17 @@ class TaskTable:
         ])
         header = self._build_header()
         self._refresh()
+        # 横向滚动容器 (2026-09-29 二轮反馈"任务列显示不全"): 全列固定宽后,
+        # 窄窗口 (侧栏+抽屉挤占) 时表格整体左右滚动, 操作按钮不再被裁;
+        # vertical_alignment=STRETCH 把卡片高度传给内层 Column → ListView 有界可滚
+        表格体 = ft.Column([header, self._list_view], spacing=4)
+        横滚 = ft.Row([表格体], spacing=0, scroll=ft.ScrollMode.AUTO,
+                      vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         return make_card(
             ft.Column([
                 card_header,
-                header,
                 ft.Container(
-                    content=self._list_view, expand=True,
+                    content=横滚, expand=True,
                     border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
                     padding=ft.Padding(top=4, left=4, right=4, bottom=4),
                 ),
