@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """风控事件日志 (P2-1): 请求/反爬/验证码/任务事件追加到 数据/风控事件-YYYYMMDD.jsonl。
 
-设计 (文档/新站接入与命中监控设计.md §3):
+设计 (文档/实施计划.md §P1 §3):
 - 事件源: request / anti_spider / captcha / task_result / content_issue
 - 写入: append-only JSONL, 按天轮转; 内存缓冲满 N 条或显式 flush 才落盘 (热路径零阻塞)
 - 旁路: 任何失败静默忽略, 绝不影响抓取 (与 日志.py 同策略)
