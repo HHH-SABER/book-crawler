@@ -478,5 +478,40 @@ class Test教程端点与md转换(unittest.TestCase):
         self.assertNotIn('<td>---</td>', html)
 
 
+class Test桌面教程入口(unittest.TestCase):
+    """远控页"使用教程"按钮 (2026-09-29 用户反馈 EXE 里找不到使用说明):
+    运行中 → 系统浏览器打开 <本机地址>/tutorial; 未启用 → toast 提示不发 open"""
+
+    def setUp(self):
+        from gui_components.pages.remote_page import RemotePage
+        self.rp = RemotePage()
+        self.rp.build()
+
+    def test_运行中打开教程页(self):
+        self.rp.取信息 = lambda: {'运行': True,
+                                 '地址': 'http://127.0.0.1:8760/', 'token': 'x'}
+        with mock.patch('webbrowser.open') as op:
+            self.rp._open_tutorial(None)
+        op.assert_called_once_with('http://127.0.0.1:8760/tutorial')
+
+    def test_未启用时提示且不开浏览器(self):
+        self.rp.取信息 = lambda: {'运行': False, '地址': '', 'token': ''}
+        with mock.patch('webbrowser.open') as op, \
+                mock.patch.object(self.rp, '_toast') as tt:
+            self.rp._open_tutorial(None)
+        op.assert_not_called()
+        tt.assert_called_once()
+
+    def test_取信息异常走未启用分支(self):
+        def _炸():
+            raise RuntimeError('信息源炸了')
+        self.rp.取信息 = _炸
+        with mock.patch('webbrowser.open') as op, \
+                mock.patch.object(self.rp, '_toast') as tt:
+            self.rp._open_tutorial(None)
+        op.assert_not_called()
+        tt.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
