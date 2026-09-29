@@ -3293,6 +3293,7 @@ class NovelSpider:
         # 云趣阁/笔趣阁等站点的 <p> 标签可能因分段不一致产生短行,
         # 这些短行既非对话引语 (不以中文/英文引号开头) 也非独立段落,
         # 应合并到上一段, 使正文段落完整、连贯。
+        _段末终结标点 = ('。', '！', '？', '…', '”', '』', '」', '!', '?')
         merged_lines = []
         for line in filtered_lines:
             if not line:
@@ -3302,8 +3303,14 @@ class NovelSpider:
             # 段落首行特征: 较长 (>=30字) 或是对话引语
             is_paragraph_start = (len(line) >= 35) or is_dialogue
             if merged_lines and not is_paragraph_start and len(line) < 35:
-                # 短行 (非对话引语) 合并到上一段，加空格避免粘连
-                merged_lines[-1] = merged_lines[-1] + ' ' + line
+                上一行 = merged_lines[-1]
+                if not 上一行.endswith(_段末终结标点):
+                    # 上一行是半句 (逗号/无标点收尾) → 续接; 中文直接拼接
+                    # 不加空格 (宁过拆勿粘连: 过拆可由导出排版/离线工具兜底, 粘连不可逆)
+                    merged_lines[-1] = 上一行 + line
+                else:
+                    # 上一行已完整成句 → 短行另起一段, 不粘连 (分段丢失根因④)
+                    merged_lines.append(line)
             else:
                 merged_lines.append(line)
 
@@ -3313,8 +3320,14 @@ class NovelSpider:
         # 移除多余的空行
         cleaned_content = re.sub(r'\n{3,}', '\n\n', cleaned_content)
 
-        # 移除行首行尾的空白
-        cleaned_content = '\n'.join([line.strip() for line in cleaned_content.split('\n') if line.strip()])
+        # 段落边界保留 (分段丢失根因③的修复):
+        # 旧实现 '\n'.join([... if line.strip()]) 把 \n\n 段间空行全部删除,
+        # 段落边界不可逆丢失 → TXT 观感"不分段"。
+        # 新实现按 \n\n 切段: 段内 strip (清除残行), 段间保留恰好一个空行。
+        # 注意: merged_lines 每项本就是单行 (无段内 \n), replace 为防御兜底。
+        cleaned_content = '\n\n'.join(
+            p.replace('\n', '').strip()
+            for p in cleaned_content.split('\n\n') if p.strip())
 
 # ===== 排版规范化 (对整章最终文本，均不影响语义) =====
         # 1. 全角空格 → 空 (部分站点用全角空格做对齐水印)
@@ -3844,7 +3857,9 @@ class NovelSpider:
                                     # 移除脚本和样式
                                     for script in soup_decoded(['script', 'style']):
                                         script.decompose()
-                                    text = soup_decoded.get_text(strip=True)
+                                    # separator='\n': 保留 <p>/<br>/<div> 的段落边界,
+                                    # 否则整章被压成一行 (分段丢失根因①)
+                                    text = soup_decoded.get_text('\n', strip=True)
                                 else:
                                     text = decoded_text
 
@@ -3910,9 +3925,9 @@ class NovelSpider:
                                 padding = '=' * ((4 - len(base64_content) % 4) % 4)
                                 decoded_bytes = base64.b64decode(base64_content + padding)
                                 decoded_text = decoded_bytes.decode('utf-8', errors='ignore')
-                                # 从HTML中提取文本
+                                # 从HTML中提取文本 (separator='\n' 保留段落边界, 根因①)
                                 soup_decoded = BeautifulSoup(decoded_text, 'lxml')
-                                text = soup_decoded.get_text(strip=True)
+                                text = soup_decoded.get_text('\n', strip=True)
                                 if text:
                                     content += text + '\n\n'
                                     _log.info(f"成功提取到内容，长度: {len(text)} 字符")
@@ -4422,9 +4437,9 @@ class NovelSpider:
                             padding = '=' * ((4 - len(match) % 4) % 4)
                             decoded_bytes = base64.b64decode(match + padding)
                             decoded_text = decoded_bytes.decode('utf-8', errors='ignore')
-                            # 从HTML中提取文本
+                            # 从HTML中提取文本 (separator='\n' 保留段落边界, 根因①)
                             soup_decoded = BeautifulSoup(decoded_text, 'lxml')
-                            text = soup_decoded.get_text(strip=True)
+                            text = soup_decoded.get_text('\n', strip=True)
                             if text:
                                 decoded_content += text + '\n\n'
                         except Exception as e:
@@ -4441,16 +4456,23 @@ class NovelSpider:
                 # 移除多余的空白
                 content = '\n\n'.join([line.strip() for line in content.split('\n') if line.strip()])
                 # 移除可能的重复内容
+                # 空行不参与去重: 连续段落间的空行只保留会被当成重复删掉,
+                # 段落边界 (\n\n) 因此塌缩成单 \n —— 空行全量保留
                 lines = content.split('\n')
                 unique_lines = []
                 seen = set()
                 for line in lines:
+                    if not line:
+                        unique_lines.append(line)
+                        continue
                     if line not in seen:
                         seen.add(line)
                         unique_lines.append(line)
                 content = '\n'.join(unique_lines)
                 # 清理乱码和特殊字符
-                content = re.sub(r'[\x00-\x1f\x7f-\xff]', '', content)
+                # 字符类排除 \n (U+000A): 4444 已按 \n\n 重组段落, 此处杀掉换行
+                # 会让整章压成一行 (分段丢失根因, 与 pjxdd 分支同类)
+                content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', content)
                 # 清理重复的标点符号
                 content = re.sub(r'([.!?,;])\1+', r'\1', content)
                             
@@ -4458,9 +4480,11 @@ class NovelSpider:
                 if 'pjxdd.com' in current_url:
                     _log.info("对pjxdd.com网站进行额外的内容清理")
                     # 移除可能的乱码和特殊符号
-                    content = re.sub(r'[\u0000-\u001f\u007f-\u00ff]', '', content)
-                    # 移除多余的空白字符
-                    content = re.sub(r'\s+', ' ', content)
+                    # 注意: 字符类必须排除 \n (U+000A) 与 \t/\r (由下一步行内压缩处理),
+                    # 否则换行被杀, 后续 4463 的空白压缩把整章压成一行 (分段丢失根因⑤)
+                    content = re.sub(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u00ff]', '', content)
+                    # 移除多余的空白字符 (仅行内空白, 保留换行的段落边界)
+                    content = re.sub(r'[ \t\r\f\v]+', ' ', content)
                     # 移除行首行尾的空白
                     content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
                     _log.info(f"清理后内容长度: {len(content)} 字符")
