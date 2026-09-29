@@ -354,7 +354,7 @@ class DetailDrawer:
                 f"降级链: {chain}", size=SIZE_TINY, font_family=FONT_STACK,
                 color=ft.Colors.ON_SURFACE_VARIANT))
 
-        # 输出文件 + 操作
+        # 输出文件 + 操作 (打开文件夹 / 导出 EPUB 单篇导出)
         if task.output_file:
             file_row = ft.Row([
                 ft.Icon(ft.Icons.DESCRIPTION_OUTLINED, size=14,
@@ -363,6 +363,13 @@ class DetailDrawer:
                         size=SIZE_TINY, font_family=FONT_STACK,
                         color=ft.Colors.ON_SURFACE_VARIANT, expand=True,
                         max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.IconButton(
+                    icon=ft.Icons.IMPORT_CONTACTS, icon_size=14,
+                    tooltip="导出 EPUB (单篇导出, 与全局导出同格式)",
+                    on_click=lambda e: self._export_epub(task),
+                    style=ft.ButtonStyle(
+                        padding=2, shape=ft.RoundedRectangleBorder(radius=6)),
+                ),
                 ft.IconButton(
                     icon=ft.Icons.FOLDER_OPEN, icon_size=14,
                     tooltip="打开所在文件夹",
@@ -390,6 +397,27 @@ class DetailDrawer:
                 subprocess.Popen(['xdg-open', d])
         except Exception as _e:
             _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+
+    def _export_epub(self, task):
+        """单篇 EPUB 导出 (2026-09-29): 对已完成书籍手动触发, 主线程执行"""
+        try:
+            from epub_exporter import 导出单篇
+            epub_path = 导出单篇(task.output_file, title=task.title)
+            self._toast(f'✅ EPUB 已导出: {os.path.basename(epub_path)}')
+            _dbg("详情面板", f'[单篇EPUB] {task.title}: {epub_path}')
+        except Exception as _e:
+            self._toast(f'❌ EPUB 导出失败: {_e}')
+            _dbg("详情面板", f'[单篇EPUB] 失败: {type(_e).__name__}: {_e}')
+
+    def _toast(self, msg: str):
+        """SnackBar 轻提示 (flet 0.86 兼容, 经 ui_fluent.open_dialog)"""
+        try:
+            from .ui_fluent import open_dialog
+            if self.page is not None:
+                open_dialog(self.page, ft.SnackBar(
+                    ft.Text(msg, font_family=FONT_STACK), duration=4000))
+        except Exception as _e:
+            _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e} (toast={msg[:40]})')
 
     # ----------------------------------------------------------- 文件预览
     def _scan_files(self):

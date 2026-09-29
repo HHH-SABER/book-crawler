@@ -196,5 +196,55 @@ class TestTxtToEpub失败路径(unittest.TestCase):
         self.assertIsInstance(ex.is_available(), bool)
 
 
+class Test导出单篇(unittest.TestCase):
+    """导出单篇: GUI 单本手动导出入口 (2026-09-29)。
+
+    契约与 txt_to_epub 相反 —— 手动触发必须给用户明确失败原因:
+    失败抛异常 (ValueError/FileNotFoundError/RuntimeError), 成功返回 epub 路径。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='epub_single_')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _写txt(self, content, name='book.txt'):
+        p = Path(self.tmp) / name
+        p.write_text(content, encoding='utf-8')
+        return str(p)
+
+    @unittest.skipUnless(ex.is_available(), 'ebooklib 未安装')
+    def test_成功导出返回epub路径(self):
+        p = self._写txt('## 第一章 开端\n第一段正文内容。\n第二段正文内容。\n\n'
+                        '## 第二章 转折\n第二章正文。\n')
+        out = ex.导出单篇(p, title='测试书名')
+        self.assertTrue(os.path.isfile(out), 'EPUB 未生成')
+        self.assertTrue(out.endswith('.epub'))
+        # 与全局导出同链路: 同名同目录
+        self.assertEqual(os.path.splitext(p)[0] + '.epub', out)
+
+    def test_空路径抛ValueError(self):
+        with self.assertRaises(ValueError):
+            ex.导出单篇('')
+
+    def test_文件不存在抛FileNotFoundError(self):
+        with self.assertRaises(FileNotFoundError):
+            ex.导出单篇(os.path.join(self.tmp, '不存在.txt'))
+
+    def test_ebooklib缺失抛RuntimeError(self):
+        p = self._写txt('## 第一章\n正文。\n')
+        with mock.patch.object(ex, '_ebooklib_ok', False):
+            with self.assertRaises(RuntimeError):
+                ex.导出单篇(p)
+
+    def test_无章节抛RuntimeError(self):
+        """txt 无 '## ' 标记 → 解析 0 章 → 明确报错 (手动触发不静默)"""
+        p = self._写txt('没有任何章节标记的内容。\n')
+        with self.assertRaises(RuntimeError):
+            ex.导出单篇(p)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

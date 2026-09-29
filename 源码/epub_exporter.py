@@ -122,3 +122,25 @@ def txt_to_epub(txt_path: str, epub_path: str = None, title: str = '',
     except Exception as e:
         _log.info(f"[epub] 导出失败: {e}")
         return None
+
+
+def 导出单篇(txt_path: str, title: str = '') -> str:
+    """单篇/单本 EPUB 手动导出入口 (2026-09-29, GUI 任务详情"导出 EPUB"按钮)。
+
+    与全局 export_epub 开关 (抓完自动导) 互补: 允许对已完成书籍独立触发,
+    格式/样式/内容与全局导出完全一致 (同走 txt_to_epub 同一条转换链)。
+
+    成功返回 .epub 路径; 失败抛 RuntimeError/ValueError/FileNotFoundError
+    (调用方捕获后提示用户 —— 与 txt_to_epub 的"静默返回 None"不同,
+    手动触发必须给用户明确失败原因)。
+    """
+    if not txt_path:
+        raise ValueError('未提供 TXT 路径')
+    if not os.path.isfile(txt_path):
+        raise FileNotFoundError(f'TXT 文件不存在: {txt_path}')
+    if not _ebooklib_ok:
+        raise RuntimeError('ebooklib 未安装, 无法导出 EPUB')
+    epub_path = txt_to_epub(txt_path, title=title)
+    if not epub_path:
+        raise RuntimeError('EPUB 生成失败 (未解析到章节或写入失败, 详见日志)')
+    return epub_path
