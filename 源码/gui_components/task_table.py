@@ -286,6 +286,22 @@ class TaskTable:
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
             ),
         )
+        # 导出 EPUB (2026-09-29): 单本手动导出, 走 epub_exporter 同一转换链。
+        # 已完成且有输出文件时高亮可点; 无输出/运行中置灰 (tooltip 说明原因)
+        _可导 = bool(task.output_file) and task.status != "running"
+        epub_btn = ft.IconButton(
+            icon=ft.Icons.MENU_BOOK_OUTLINED, icon_size=14,
+            tooltip=("导出 EPUB (单本导出)" if _可导
+                     else ("请等待抓取完成" if task.status == "running"
+                           else "无输出文件, 无法导出")),
+            disabled=not _可导,
+            on_click=lambda e, tid=task.task_id: self._on_export_epub(tid),
+            width=36, height=32,
+            style=ft.ButtonStyle(
+                padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+            ),
+        )
         redl_btn = ft.IconButton(
             icon=ft.Icons.REPLAY, icon_size=14,
             tooltip="重新下载 (从头重新抓取)",
@@ -307,7 +323,7 @@ class TaskTable:
                 color=ft.Colors.ON_ERROR_CONTAINER,
             ),
         )
-        ops_cell = _cell(ft.Row([expand_btn, preview_btn, redl_btn, del_btn],
+        ops_cell = _cell(ft.Row([expand_btn, preview_btn, epub_btn, redl_btn, del_btn],
                                 spacing=2,
                                 alignment=ft.MainAxisAlignment.CENTER),
                          width=_w(7), center=True)
@@ -371,6 +387,30 @@ class TaskTable:
             self.task_manager.select_task(task_id)
             _log("GUI", f"重新下载 (原任务重启): {task_id} ({task.url})")
             self.refresh()
+
+    def _on_export_epub(self, task_id: str):
+        """导出 EPUB (2026-09-29 单本手动导出): 走 epub_exporter 同一转换链
+
+        失败与自动导出 (静默返回 None) 不同 —— 手动触发必须有明确反馈,
+        故 导出单篇() 抛异常, 此处捕获后 SnackBar 提示原因。
+        """
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return
+        if not task.output_file:
+            self._notify("该任务没有输出文件, 无法导出 EPUB")
+            return
+        if task.status == "running":
+            self._notify("任务仍在运行, 请等待抓取完成后再导出")
+            return
+        try:
+            from epub_exporter import 导出单篇
+            epub_path = 导出单篇(task.output_file, title=task.title)
+            _log("GUI", f"EPUB 已导出 (单本): {epub_path}")
+            self._notify(f"✅ EPUB 已导出: {os.path.basename(epub_path)}")
+        except Exception as _e:
+            _log("GUI", f"EPUB 导出失败: {type(_e).__name__}: {_e}")
+            self._notify(f"❌ EPUB 导出失败: {_e}")
 
     def _on_delete(self, task_id: str):
         """删除任务: 有本地输出文件时弹确认框, 可选同时删除文件"""
