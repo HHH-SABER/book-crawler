@@ -6,7 +6,7 @@
     python 脚本/probe_adapter.py https://www.example.com/read/1.html 章节 URL (最准)
     python 脚本/probe_adapter.py --json URL   # 只输出 JSON 草稿
 
-设计 (文档/新站接入与命中监控设计.md §2):
+设计 (文档/实施计划.md §P1 §2):
 - 探测复用现有能力: site_probe / NovelSpider.inspect_page (UA+质询处理)
   / 通用候选容器 / content_decoder 混淆特征
 - 注意: 混淆(正文是否加密/占位)最准在【章节页】判定; 传目录 URL 时会抽样前 4 个

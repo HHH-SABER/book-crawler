@@ -11,7 +11,7 @@ flet 桌面是**双进程**: Python 侧是 Flet 协议服务端, Flutter 客户�
     close_flet_view(pid_file)    # os.kill(pid, SIGKILL) 收尾
 
 配合 `page.window.prevent_close = True`, 只有两条路可走 —— 而**单独用任何一条
-都不完整**(三种方式均已用最小复现脚本实测, 见 文档/退出卡死定位与修复-2026-09-10.md):
+都不完整**(三种方式均已用最小复现脚本实测, 见 文档/审查报告汇总.md 专项B):
 
 | 退出方式 | Python 进程 | flet.exe 客户端 |
 |---|---|---|
