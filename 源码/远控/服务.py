@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 
 from _path_utils import get_default_output_dir, get_state_root
 from .配置 import 取配置
@@ -54,6 +54,110 @@ def _dbg(source: str, message: str):
 app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
 
 _面板路径 = Path(__file__).with_name("面板.html")
+
+# 远控使用教程 md (2026-09-29 教程入 UI): EXE 经 --add-data 与面板同目录;
+# 源码运行直接读项目 文档/
+_教程候选 = (
+    Path(__file__).with_name("远控使用教程.md"),
+    Path(__file__).parents[2] / "文档" / "远控使用教程.md",
+)
+
+
+def _教程md路径() -> Path:
+    for p in _教程候选:
+        if p.is_file():
+            return p
+    return _教程候选[0]
+
+
+def _行内md(s: str) -> str:
+    """行内标记: **粗体** 与 `代码` (输入已经过 html.escape, 安全)"""
+    import re as _re
+    s = _re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', s)
+    s = _re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
+    return s
+
+
+def _md转html(md: str) -> str:
+    """极简 Markdown→HTML (纯标准库, 教程页专用)。
+
+    支持: #/##/### 标题、```代码块、表格(| |)、有序/无序列表、**粗体**、`行内代码`。
+    流程: 逐行先 html.escape 再施加标记 (防注入); 空行分段。
+    """
+    import html as _html
+    import re as _re
+    out = []
+    in_code = in_table = False
+    for ln in md.replace('\r\n', '\n').split('\n'):
+        e = _html.escape(ln)
+        if e.startswith('```'):
+            out.append('</code></pre>' if in_code else '<pre><code>')
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(e)
+            continue
+        if e.startswith('|') and e.rstrip().endswith('|'):
+            cells = [c.strip() for c in e.strip().strip('|').split('|')]
+            if all(_re.fullmatch(r':?-{2,}:?', c) for c in cells):
+                continue                      # 表头分隔行
+            tag = 'th' if not in_table else 'td'
+            if not in_table:
+                out.append('<table>')
+                in_table = True
+            out.append('<tr>' + ''.join(f'<{tag}>{c}</{tag}>' for c in cells) + '</tr>')
+            continue
+        if in_table:
+            out.append('</table>')
+            in_table = False
+        if e.startswith('### '):
+            out.append(f'<h3>{e[4:]}</h3>')
+        elif e.startswith('## '):
+            out.append(f'<h2>{e[3:]}</h2>')
+        elif e.startswith('# '):
+            out.append(f'<h1>{e[2:]}</h1>')
+        elif e.startswith('- '):
+            out.append(f'<li>{_行内md(e[2:])}</li>')
+        elif _re.match(r'^\d+\. ', e):
+            out.append(f'<li>{_行内md(_re.sub(r"^\d+\. ", "", e))}</li>')
+        elif not e.strip():
+            out.append('')
+        else:
+            out.append(f'<p>{_行内md(e)}</p>')
+    if in_table:
+        out.append('</table>')
+    if in_code:
+        out.append('</code></pre>')
+    body = '\n'.join(out)
+    # 连续 <li> 包裹 <ul>
+    body = _re.sub(r'((?:<li>.*?</li>\n?)+)', r'<ul>\1</ul>', body)
+    return body
+
+
+_教程页模板 = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>远控使用教程</title>
+<style>
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+     margin:0;padding:16px;background:#f5f5f7;color:#1d1d1f;line-height:1.65;}
+.wrap{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;
+      padding:20px 18px;box-shadow:0 1px 4px rgba(0,0,0,.08);}
+h1{font-size:1.4em;} h2{font-size:1.15em;border-bottom:1px solid #e5e5ea;
+   padding-bottom:4px;margin-top:1.6em;} h3{font-size:1.02em;}
+pre{background:#1d1d1f;color:#f5f5f7;padding:10px;border-radius:8px;
+    overflow-x:auto;font-size:.85em;}
+code{background:#eef0f3;padding:1px 5px;border-radius:4px;font-size:.9em;}
+pre code{background:none;padding:0;}
+table{border-collapse:collapse;width:100%;font-size:.9em;margin:.6em 0;}
+th,td{border:1px solid #e5e5ea;padding:6px 8px;text-align:left;}
+th{background:#f5f5f7;}
+li{margin:.3em 0;}
+.back{display:inline-block;margin-bottom:10px;color:#007aff;text-decoration:none;}
+</style></head><body><div class="wrap">
+<a class="back" href="/">&#8592; 返回控制面板</a>
+{body}
+</div></body></html>"""
 
 _task_manager = None   # 惰性单例 (TaskManager(page=None), 无 flet 依赖)
 
@@ -232,6 +336,16 @@ def 面板():
     if not _面板路径.is_file():
         raise HTTPException(status_code=500, detail="面板文件缺失")
     return FileResponse(_面板路径, media_type="text/html")
+
+
+@app.get("/tutorial")
+def 教程():
+    """远控使用教程页 (免鉴权, 与面板同级; 2026-09-29 教程入 UI)"""
+    p = _教程md路径()
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="教程文件缺失")
+    md = p.read_text(encoding='utf-8', errors='replace')
+    return HTMLResponse(_教程页模板.replace('{body}', _md转html(md)))
 
 
 @app.post("/api/v1/tasks")
