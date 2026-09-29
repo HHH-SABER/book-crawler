@@ -324,6 +324,42 @@ class TestCleanContent(unittest.TestCase):
         cleaned = self.spider.clean_content(raw)
         self.assertNotIn('book@example.com', cleaned, '邮箱推广行未删除')
 
+    def test_clean_stats_via_contextvar(self):
+        """清洗统计经 contextvar 传出: 广告/关键词行被删时统计可读且总数非零。"""
+        from 爬虫 import _最近清洗统计
+        raw = ('第一段完整叙事内容，句子完整并以句号收尾，长度足够跨越阈值判定。\n'
+               '一秒记住本站最新域名，请收藏备用\n'
+               '第二段完整叙事内容，同样以句号收尾，长度也足够跨过阈值独立成段。')
+        cleaned = self.spider.clean_content(raw)
+        stats = _最近清洗统计.get()
+        self.assertIsNotNone(stats, 'clean_content 未写入清洗统计 contextvar')
+        self.assertIsInstance(stats, dict)
+        # 该宣传行至少被 关键词表 或 广告行检测 之一拦截计数
+        total = sum(v for v in stats.values() if isinstance(v, int))
+        self.assertGreaterEqual(total, 1, '删除行未被计数')
+        self.assertNotIn('记住本站', cleaned, '宣传行未被删除')
+
+    def test_排版章节文本_indent_and_blank_lines(self):
+        """_排版章节文本: 段首两全角空格 + 段间空行 + 标题行不缩进 (中文排版规范)。"""
+        from 爬虫 import _排版章节文本
+        out = _排版章节文本('第一章 测试', '段落一内容。\n段落二内容。', 缩进=True)
+        self.assertEqual(out, '## 第一章 测试\n\n'
+                              '\u3000\u3000段落一内容。\n\n'
+                              '\u3000\u3000段落二内容。\n\n')
+
+    def test_排版章节文本_no_indent(self):
+        """_排版章节文本: 缩进关闭时只保留段间空行。"""
+        from 爬虫 import _排版章节文本
+        out = _排版章节文本('第一章', '段落一。\n段落二。', 缩进=False)
+        self.assertNotIn('\u3000', out, '关闭缩进后仍有全角空格')
+        self.assertIn('段落一。\n\n段落二。', out)
+
+    def test_排版章节文本_empty_body(self):
+        """_排版章节文本: 空正文只写标题行 (空占位章不产生缩进空段)。"""
+        from 爬虫 import _排版章节文本
+        self.assertEqual(_排版章节文本('第一章', '', 缩进=True), '## 第一章\n\n')
+        self.assertEqual(_排版章节文本('第一章', None, 缩进=True), '## 第一章\n\n')
+
 
 # ============================================================
 # 5b. 点选验证码多模态调用器 (C4 回归)

@@ -132,6 +132,18 @@ class Test双通道等价(unittest.TestCase):
         r.处理任务事件('质检', {'得分': None, '通过': False})
         self.assertEqual(t.metrics.quality_score, 88)
 
+    def test_清洗事件写入摘要且非法字段不抛异常(self):
+        """'清洗' 事件 (2026-09-29): 合法统计写入 clean_summary, 坏数据保持原值"""
+        t = _新任务()
+        r = _重定向器(t)
+        r.处理任务事件('清洗', {'关键词行': 2, '推广行': 1, '水印': 3})
+        self.assertEqual(t.metrics.clean_summary,
+                         {'关键词行': 2, '推广行': 1, '水印': 3})
+        # 非数值字段被过滤, 不抛异常
+        r.处理任务事件('清洗', {'广告行': 4, '坏字段': '文本'})
+        self.assertEqual(t.metrics.clean_summary.get('广告行'), 4)
+        self.assertNotIn('坏字段', t.metrics.clean_summary)
+
 
 class Test通道自身健壮(unittest.TestCase):
 
@@ -329,6 +341,13 @@ class Test事件覆盖契约(unittest.TestCase):
     def test_标题事件有发出点(self):
         import 爬虫
         self.assertIn("发布('标题'", inspect.getsource(爬虫))
+
+    def test_清洗事件有发出点(self):
+        """'清洗' 事件 (2026-09-29): clean_content 统计出口必须有发布点"""
+        import 爬虫
+        源码 = inspect.getsource(爬虫)
+        self.assertIn("发布('清洗'", 源码, '爬虫未发布清洗统计事件')
+        self.assertIn('_最近清洗统计', 源码, '清洗统计 contextvar 通道缺失')
 
 
 class Test覆盖率诊断(unittest.TestCase):
