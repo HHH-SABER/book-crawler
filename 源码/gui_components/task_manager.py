@@ -5,11 +5,13 @@
 """
 import threading
 import dataclasses
+import json
 import sys
 import time
 import re
 import os
 import contextvars
+from pathlib import Path
 from typing import Optional
 
 # 统一日志模块 (位于上级目录 源码/)
@@ -582,12 +584,167 @@ def _排队提示(task) -> None:
 class TaskManager:
     """多任务管理器：创建、停止、查询爬虫任务"""
 
+    # 任务历史持久化 (2026-09-29 用户反馈"更新程序后历史记录就没了"):
+    # 任务表曾是全工程唯一不落盘的对象, 重启即清零。
+    # 落盘 STATE_ROOT/数据/任务历史.json, 保留最近 _历史最大条数 条;
+    # logs 不存 (已全量落 日志/*.log), 上限防 JSON 膨胀。
+    _历史最大条数 = 200
+    _历史文件名 = '任务历史.json'
+
     def __init__(self, page):
         self.page = page  # Flet Page 实例，用于触发UI更新
         self.tasks: dict[str, TaskInfo] = {}
         self._lock = threading.Lock()
         self._counter = 0
         self._selected_task_id: str = ""       # 当前选中任务 (表格高亮/抽屉联动)
+        self._加载任务历史()                    # 重启后恢复任务表 (含 running→interrupted)
+
+    # ------------------------------------------------------ 任务历史持久化
+    @staticmethod
+    def _历史路径() -> Optional[str]:
+        try:
+            import _path_utils
+            return os.path.join(_path_utils.get_state_root(), '数据',
+                                TaskManager._历史文件名)
+        except Exception as _e:
+            if app_log is not None:
+                try:
+                    app_log.debug('任务管理',
+                                  f'历史路径解析失败: {type(_e).__name__}: {_e}')
+                except Exception:
+                    pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+            return None
+
+    @staticmethod
+    def _序列化任务(t: TaskInfo) -> dict:
+        """白名单序列化: 显式逐字段构造。
+
+        不用 dataclasses.asdict — 它对字段值 deepcopy, 而 stop_flag 是
+        threading.Event (内含不可 deepcopy 的 _thread.lock), 会 TypeError。
+        logs 不存 (已全量落 日志/*.log); thread/stop_flag/selected 是运行期对象。
+        """
+        m = t.metrics
+        return {
+            'task_id': t.task_id, 'url': t.url, 'title': t.title,
+            'mode': t.mode,
+            'progress_current': t.progress_current,
+            'progress_total': t.progress_total,
+            'status': t.status, 'output_file': t.output_file, 'error': t.error,
+            'chapter_range': (list(t.chapter_range)
+                              if t.chapter_range else None),
+            'threads': t.threads, 'delay': t.delay, 'resume': t.resume,
+            'output_dir': t.output_dir, 'export_epub': t.export_epub,
+            'incremental': t.incremental, '来源': t.来源,
+            'metrics': {
+                'engine': m.engine,
+                'anti_spider_type': m.anti_spider_type,
+                'quality_score': m.quality_score,
+                'quality_passed': m.quality_passed,
+                'incremental_skipped': m.incremental_skipped,
+                'engine_fallback_chain': list(m.engine_fallback_chain),
+                'start_time': m.start_time, 'end_time': m.end_time,
+                'clean_summary': dict(m.clean_summary or {}),
+            },
+        }
+
+    def _保存任务历史(self):
+        """即时写 (终态流转/删除/重启后调用, 低频无需防抖)。
+
+        锁内取快照、锁外落盘 (范式同 爬取历史._落盘 U17: 不在临界区做文件 IO);
+        tmp 名带 pid+线程 id — 同进程不同线程 (stop_task 来自 UI/远控线程,
+        _run_task finally 来自任务线程) 并发写时共用 tmp 会互相截断。
+        resume_/checkpoint 扫描注入的展示项 (task_id 非 'task_' 前缀) 不入库:
+        其数据源是 checkpoint 文件本身, 入库会造成重启后双份恢复。
+        """
+        path = self._历史路径()
+        if not path:
+            return
+        try:
+            with self._lock:
+                条目 = [self._序列化任务(t) for t in self.tasks.values()
+                        if t.task_id.startswith('task_')]
+            条目 = 条目[-self._历史最大条数:]
+            锚定 = Path(path).resolve()   # pathlib 锚定 (防穿越告警/路径规范)
+            os.makedirs(str(锚定.parent), exist_ok=True)
+            tmp = 锚定.with_name(锚定.name + '.tmp')   # 写入在 _lock 内串行, 固定后缀即可
+            tmp.write_text(json.dumps(条目, ensure_ascii=False), encoding='utf-8')
+            os.replace(tmp, 锚定)
+        except Exception as _e:
+            if app_log is not None:
+                try:
+                    app_log.debug('任务管理',
+                                  f'任务历史落盘失败: {type(_e).__name__}: {_e}')
+                except Exception:
+                    pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
+    def _加载任务历史(self):
+        """启动恢复: 重建 TaskInfo (thread/stop_flag 由 dataclass 默认值重建)。
+
+        running → interrupted — 进程已死线程不可能还活着; end_time 归 0 且
+        服务._扫描终态 只推"本进程观察过 running"的翻转 → 恢复的终态不会误推送。
+        容错: 文件缺失/损坏/单条字段异常 → 跳过, 不影响其余与程序启动。
+        """
+        path = self._历史路径()
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                条目 = json.load(f)
+        except (OSError, ValueError) as _e:
+            if app_log is not None:
+                try:
+                    app_log.info('任务管理',
+                                 f'任务历史读取失败 (忽略): {type(_e).__name__}: {_e}')
+                except Exception:
+                    pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+            return
+        if not isinstance(条目, list):
+            return
+        _任务字段 = {f.name for f in dataclasses.fields(TaskInfo)} - {
+            'thread', 'stop_flag', 'selected', 'logs', 'metrics'}
+        _指标字段 = {f.name for f in dataclasses.fields(TaskMetrics)}
+        恢复数 = 0
+        for d in 条目:
+            try:
+                if not isinstance(d, dict):
+                    continue
+                m = d.pop('metrics', None) or {}
+                kwargs = {k: v for k, v in d.items() if k in _任务字段}
+                if not kwargs.get('task_id') or not kwargs.get('url'):
+                    continue
+                if kwargs.get('chapter_range') is not None:
+                    kwargs['chapter_range'] = tuple(kwargs['chapter_range'])
+                t = TaskInfo(**kwargs)
+                t.metrics = TaskMetrics(**{k: v for k, v in m.items()
+                                           if k in _指标字段})
+                if t.status == 'running':
+                    t.status = 'interrupted'
+                    t.error = t.error or '程序退出时中断 (可重新下载续传)'
+                    t.metrics.end_time = 0.0
+                self.tasks[t.task_id] = t
+                恢复数 += 1
+            except Exception as _e:
+                if app_log is not None:
+                    try:
+                        app_log.debug('任务管理', '任务历史单条恢复失败 (跳过): '
+                                      f'{type(_e).__name__}')
+                    except Exception:
+                        pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+                continue
+        if 恢复数:
+            # _counter 续接存量最大 task_N, 防新任务 id 与恢复项冲突
+            _最大N = 0
+            for tid in self.tasks:
+                _m = re.fullmatch(r'task_(\d+)', tid)
+                if _m:
+                    _最大N = max(_最大N, int(_m.group(1)))
+            self._counter = max(self._counter, _最大N)
+            if app_log is not None:
+                try:
+                    app_log.info('任务管理',
+                                 f'任务历史已恢复 {恢复数} 条 (计数续接至 {_最大N})')
+                except Exception:
+                    pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
     # ------------------------------------------------------------ 选中联动
     def select_task(self, task_id: str):
@@ -757,6 +914,8 @@ class TaskManager:
                     app_log.info(f"任务{task.task_id}", 重定向器.覆盖率摘要())
             except Exception:
                 pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+            # 任务历史持久化: 每轮任务结束 (completed/failed/中断退出) 落一次盘
+            self._保存任务历史()
 
     def stop_task(self, task_id: str) -> bool:
         """停止指定任务（通过设置停止标志，爬虫循环检查后退出）。
@@ -786,6 +945,8 @@ class TaskManager:
             else:
                 app_log.info(f"任务{task_id}",
                              f"停止请求被忽略: 任务不存在或已处于终态")
+        if 受理:
+            self._保存任务历史()   # stopped 终态即时落盘 (锁外)
         return 受理
 
     def delete_task(self, task_id: str, delete_file: bool = False) -> bool:
@@ -826,6 +987,7 @@ class TaskManager:
                     app_log.error(f"任务{task_id}", f"删除源文件失败: {e}")
         if app_log is not None:
             app_log.info(f"任务{task_id}", f"任务已删除: {task_id} (删文件={delete_file})")
+        self._保存任务历史()   # 删除后同步历史 (防止已删条目重启后"复活")
         return True
 
     def get_task_params(self, task_id: str) -> dict:
@@ -889,6 +1051,7 @@ class TaskManager:
         t.start()
         if app_log is not None:
             app_log.info(f"任务{task_id}", f"任务重新下载 (原任务重启): {task.url}")
+        self._保存任务历史()   # 重启后 running 状态落盘 (下次启动恢复为 interrupted)
         return True
 
     def get_task(self, task_id: str) -> Optional[TaskInfo]:
