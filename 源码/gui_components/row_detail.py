@@ -100,6 +100,10 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
         q_text = "尚未质检"
     quality_body = ft.Column([
         _kv("最近质检", q_text, color=q_color),
+        # 清洗摘要 (2026-09-29 可观测性): 最近一章的删除计数, 无数据不显示
+        *([
+            _kv("清洗", _清洗摘要文本(mt.clean_summary))
+        ] if getattr(mt, 'clean_summary', None) else []),
     ], spacing=2)
 
     # 错误区 (有错才显示)
@@ -117,3 +121,10 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
                       vertical_alignment=ft.CrossAxisAlignment.START),
         padding=ft.Padding.symmetric(horizontal=28, vertical=4),
     )
+
+
+def _清洗摘要文本(summary: dict) -> str:
+    """清洗统计 dict → 一行摘要 (如 '广告3 推广2 水印1'), 空统计返回 '无删除'"""
+    parts = [f"{k}{int(v)}" for k, v in summary.items()
+             if isinstance(v, (int, float)) and v]
+    return ' '.join(parts) if parts else '无删除'

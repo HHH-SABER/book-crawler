@@ -90,6 +90,7 @@ import os
 import sys
 import tempfile
 import threading
+import contextvars
 from pathlib import Path
 import hashlib
 
@@ -380,6 +381,58 @@ _行内URL_RE = re.compile(
     r'https?://[A-Za-z0-9.\-]+(?:/[A-Za-z0-9./?#&=%_\-+~]*)?'
     r'|www\.[A-Za-z0-9.\-]+(?:/[A-Za-z0-9./?#&=%_\-+~]*)?'
     r'|\S*@\S*')
+
+# 最近一次 clean_content 的清洗统计 (contextvar, 随 copy_context 传播到 worker;
+# 供 _fetch_with_qc 读取并附加进质检报告 —— 避免改 clean_content 返回值签名)
+_最近清洗统计 = contextvars.ContextVar('最近清洗统计', default=None)
+
+
+def _排版章节文本(标题: str, 正文: str, 缩进: bool = True) -> str:
+    """单章 TXT 写入格式化: '## 标题' + 段首两个全角空格缩进 + 段间空行。
+
+    中文排版规范: 每段首行缩进两个字符 (\u3000\u3000), 段落间空一行。
+    与 EPUB 的 text-indent: 2em (epub_exporter.py) 语义对齐。
+
+    段落切分: 单换行即段落边界 (clean_content 的"每行=每段"语义),
+    因此对修复前的旧正文 (单 \\n 分段) 同样能正确重排 —— 增量搬运的
+    旧内容经过本函数后与新抓取格式统一。
+
+    Args:
+        标题: 章节标题 (写成 '## 标题' 行, 不缩进)
+        正文: 清洗后的章节正文
+        缩进: False 时不加缩进 (仍保留段间空行)
+
+    Returns:
+        str: 直接 f.write 的整块文本
+    """
+    段落 = [ln.strip() for ln in (正文 or '').split('\n') if ln.strip()]
+    if 缩进:
+        段落 = ['\u3000\u3000' + p for p in 段落]
+    正文块 = '\n\n'.join(段落)
+    头 = f"## {标题}\n\n"
+    return 头 + (正文块 + '\n\n' if 正文块 else '')
+
+
+def _读txt缩进配置() -> bool:
+    """读 TXT 段首缩进开关 (captcha_config.json 的 'txt_indent' 键, 默认开)。
+
+    captcha_config.json 已兼作应用配置 (代理/浏览器引擎/备用源同此文件),
+    该键缺失/类型不符/文件不可读时一律回退 True (符合中文排版默认)。
+    """
+    try:
+        import json as _json
+        import _path_utils as _pu
+        p = _pu.resolve_data_file('captcha_config.json')
+        with open(p, 'r', encoding='utf-8') as f:
+            cfg = _json.load(f)
+        v = cfg.get('txt_indent')
+        return True if v is None else bool(v)
+    except Exception as e:
+        try:
+            _log.debug(f'txt_indent 配置读取失败, 默认开启: {type(e).__name__}: {e}')
+        except Exception:
+            pass  # 日志链路兜底 (模块初始化早期 _log 可能未就绪)
+        return True
 
 
 def _is_ad_line(line):
@@ -3200,10 +3253,16 @@ class NovelSpider:
         for entity, char in html_entities.items():
             content = content.replace(f'&{entity};', char)
 
+        # 清洗统计 (2026-09-29 可观测性): 各删除类型的行数累计,
+        # 函数末尾经 contextvar 供 _fetch_with_qc 附加进质检报告 + 发布事件
+        清洗统计 = {'关键词行': 0, '推广行': 0, '过短行': 0,
+                    '符号行': 0, '广告行': 0, '水印': 0}
+
         # 移除站点内嵌水印 (段落内部/段尾, 非整行): 连同前后空白一起删,
         # 保证 "句号。 W阿木战恋雪 新段落" 清洗后自然衔接为 "句号。 新段落"
         for _wm in _WATERMARK_TOKENS:
-            content = re.sub(r'\s*' + re.escape(_wm) + r'\s*', '', content)
+            content, _wm_n = re.subn(r'\s*' + re.escape(_wm) + r'\s*', '', content)
+            清洗统计['水印'] += _wm_n
 
         # 使用模块级常量 (避免重复定义)
         filter_keywords = _CONTENT_FILTER_KEYWORDS
@@ -3251,6 +3310,7 @@ class NovelSpider:
 
             # 跳过包含过滤关键词的行
             if any(keyword in stripped_line for keyword in filter_keywords):
+                清洗统计['关键词行'] += 1
                 continue
 
             # URL/邮箱处理 (2026-09-29 改为行内剥离): 旧行为整行删除会误杀
@@ -3264,20 +3324,24 @@ class NovelSpider:
                 _url_residual = _行内URL_RE.sub('', stripped_line)
                 _url_cn = sum('\u4e00' <= c <= '\u9fff' for c in _url_residual)
                 if _url_cn < 10:
+                    清洗统计['推广行'] += 1
                     continue
                 stripped_line = _url_residual.strip()   # 只剥空白, 句尾标点不动
 
             # 跳过过短的行（可能是导航或广告）
             if len(stripped_line) < 5:
+                清洗统计['过短行'] += 1
                 continue
 
             # 跳过主要是符号的行
             symbol_count = sum(1 for c in stripped_line if not c.isalnum() and not c.isspace() and not '\u4e00' <= c <= '\u9fff')
             if symbol_count > len(stripped_line) * 0.5:
+                清洗统计['符号行'] += 1
                 continue
 
             # 通用广告行特征检测 (基于内容特征, 不依赖具体书名/站点名)
             if _is_ad_line(stripped_line):
+                清洗统计['广告行'] += 1
                 continue
 
             filtered_lines.append(stripped_line)
@@ -3350,6 +3414,12 @@ class NovelSpider:
         #     章节标题由调用方以 "## {title}" 写出(不经过本函数), 故此处去前缀
         #     可保证输出文件中 "## " 开头行必然 == 真实章节标题。
         cleaned_content = re.sub(r'^##\s+', '', cleaned_content, flags=re.M)
+
+        # 清洗统计出口: contextvar 供 _fetch_with_qc 读取 (附加进质检报告);
+        # 有订阅方时发布 '清洗' 事件 (GUI 任务卡显示清洗摘要), 无订阅方零成本
+        _最近清洗统计.set(清洗统计)
+        if _任务事件.有订阅方():
+            _任务事件.发布('清洗', **清洗统计)
 
         return cleaned_content.strip()
 
@@ -5605,6 +5675,11 @@ class NovelSpider:
                 _log.info(f"[质检] 抓取异常: {e}")
                 content = ''
             报告 = _章节质检器.质检(content, chap.get('title', ''))
+            # 附加清洗统计 (clean_content 经 contextvar 传出, 同一 worker 上下文内
+            # set→get 严格对应本章; 多线程各 worker 上下文隔离不串台)
+            _stats = _最近清洗统计.get()
+            if _stats is not None:
+                报告.清洗统计 = dict(_stats)
             if 报告.有效:
                 if attempt > 0:
                     _log.info(f"[质检] 第{attempt}次重试后通过: {报告.摘要()}")
@@ -6012,7 +6087,8 @@ class NovelSpider:
     def run(self, catalog_url, output_file=None, sort_chapters=False, output_dir=None,
             resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
             stop_event=None, unique_title=False, novel_title=None,
-            incremental=False, incremental_max_age_hours=24, export_epub=False):
+            incremental=False, incremental_max_age_hours=24, export_epub=False,
+            txt_indent=None):
         """完整抓取小说。
         resume=True 时自动检测检查点，从上次中断处继续（追加写入）。
         show_progress=True 时每章更新下载进度条。
@@ -6028,11 +6104,19 @@ class NovelSpider:
             默认 False 保持原有全量抓取行为, 对外接口完全兼容。
         incremental_max_age_hours: 增量模式的时间窗口 (小时), 默认 24。
             仅在 incremental=True 时生效。
+        txt_indent: TXT 段首缩进开关 (每段首行两个全角空格 + 段间空行)。
+            None = 读 captcha_config.json 的 'txt_indent' 键 (缺省开);
+            True/False 显式覆盖 (CLI --no-txt-indent 传 False)。
         """
         # 章节页 URL → 目录页 (适配器可选能力 catalog_from_chapter):
         # 用户常把章节页 URL 当任务 URL (详见 _规范化目录URL docstring)。
         # 在书名提取前规范化, 书名也随之修正。
         catalog_url = _规范化目录URL(catalog_url)
+
+        # TXT 排版开关解析 (None = 读配置)
+        if txt_indent is None:
+            txt_indent = _读txt缩进配置()
+        self._txt_indent = bool(txt_indent)
 
         # 提取小说名称 (调用方已提供时直接使用, 避免重复请求)
         title_from_caller = novel_title is not None
@@ -6268,8 +6352,8 @@ class NovelSpider:
                                 # (追加模式 start>0 时旧正文已在文件中, 无需写)
                                 旧正文 = 增量旧内容.get(chapters[i]['title'])
                                 if start == 0 and 旧正文 is not None:
-                                    f.write(f"## {chapters[i]['title']}\n\n")
-                                    f.write(旧正文 + "\n\n")
+                                    f.write(_排版章节文本(chapters[i]['title'],
+                                                          旧正文, self._txt_indent))
                                 self._save_checkpoint(output_file, catalog_url,
                                                       i + 1, total, file_handle=f)
                                 if show_progress:
@@ -6304,8 +6388,9 @@ class NovelSpider:
                                 _log.info(f"抓取异常: {e}")
                                 content = ''
                             # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
-                            f.write(f"## {chap['title']}\n\n")
-                            f.write(content + "\n\n")
+                            # (_排版章节文本: 段首缩进+段间空行, 标题行不缩进)
+                            f.write(_排版章节文本(chap['title'], content,
+                                                  self._txt_indent))
                             if content:
                                 self._连续失败章数 = 0
                                 _log.info(f"成功: {len(content)} 字符")
@@ -6348,8 +6433,9 @@ class NovelSpider:
                                 _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
                                 _任务事件.发布('增量跳过')          # U19 结构化事件
                                 if start == 0:
-                                    f.write(f"## {chap['title']}\n\n")
-                                    f.write(增量旧内容[chap['title']] + "\n\n")
+                                    f.write(_排版章节文本(chap['title'],
+                                                          增量旧内容[chap['title']],
+                                                          self._txt_indent))
                                 self._save_checkpoint(output_file, catalog_url,
                                                       i + 1, total, file_handle=f)
                                 if show_progress:
@@ -6365,8 +6451,9 @@ class NovelSpider:
                             _spd.record_chapter(bool(content),
                                                 time.perf_counter() - _t0)
                         # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
-                        f.write(f"## {chap['title']}\n\n")
-                        f.write(content + "\n\n")
+                        # (_排版章节文本: 段首缩进+段间空行, 标题行不缩进)
+                        f.write(_排版章节文本(chap['title'], content,
+                                              self._txt_indent))
                         if content:
                             self._连续失败章数 = 0
                             _log.info(f"成功: {len(content)} 字符")
@@ -6721,7 +6808,8 @@ def _规范化目录URL(catalog_url):
 
 def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
               resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
-              stop_event=None, unique_title=False, export_epub=False, incremental=False):
+              stop_event=None, unique_title=False, export_epub=False, incremental=False,
+              txt_indent=None):
     """根据模式执行抓取任务，供命令行与交互式共用
 
     Args:
@@ -6739,6 +6827,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         unique_title: 为 True 时, 新任务遇到同名小说自动加 (1)/(2) 序号
         export_epub: 为 True 时, 抓取完成后把结果 txt 同时导出为 EPUB
         incremental: 为 True 时启用增量抓取 (24h 内已抓取且未变化的章节跳过)
+        txt_indent: TXT 段首缩进开关 (None=读配置默认开; False=CLI --no-txt-indent)
     """
     # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
     try:
@@ -6874,13 +6963,14 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                                chapter_range=chapter_range, threads=threads, delay=delay,
                                stop_event=stop_event, unique_title=unique_title,
                                novel_title=unique_novel_title, incremental=incremental,
-                               export_epub=export_epub)
+                               export_epub=export_epub, txt_indent=txt_indent)
             else:
                 src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                                resume=resume, show_progress=show_progress,
                                threads=threads, delay=delay, stop_event=stop_event,
                                unique_title=unique_title, novel_title=unique_novel_title,
-                               incremental=incremental, export_epub=export_epub)
+                               incremental=incremental, export_epub=export_epub,
+                               txt_indent=txt_indent)
         except Exception as e:
             # M5: 源 run() 抛未捕获异常时切换下一备用源 — 旧实现 try/finally
             # 无 except, 异常直接冒出 run_crawl, 备用源永不尝试 (与
@@ -6930,7 +7020,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
 
 def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
               show_progress=True, output_dir=None, delay=None, stop_event=None,
-              unique_title=False, export_epub=False):
+              unique_title=False, export_epub=False, txt_indent=None):
     """批量抓取多本书 (书级并行)。
 
     方案说明:
@@ -6978,7 +7068,7 @@ def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
                       output_dir=output_dir, resume=resume,
                       show_progress=show_progress, threads=None, delay=delay,
                       stop_event=stop_event, unique_title=unique_title,
-                      export_epub=export_epub)
+                      export_epub=export_epub, txt_indent=txt_indent)
             return url, '✅ 完成', time.time() - t0, None
         except Exception as e:
             return url, f'❌ 失败: {str(e)[:80]}', time.time() - t0, None
@@ -7027,7 +7117,8 @@ def _parse_batch_opts(argv, start_idx):
         dict: {threads, resume, show_progress, output_dir, delay}
     """
     opts = {'threads': None, 'resume': True, 'show_progress': True,
-            'output_dir': None, 'delay': None, 'export_epub': False}   # None = 速度自适应默认
+            'output_dir': None, 'delay': None, 'export_epub': False,
+            'txt_indent': None}   # None = 速度自适应默认 / txt_indent 读配置
     i = start_idx
     while i < len(argv):
         arg = argv[i]
@@ -7044,6 +7135,8 @@ def _parse_batch_opts(argv, start_idx):
             opts['show_progress'] = False
         elif arg == "--epub":
             opts['export_epub'] = True
+        elif arg == "--no-txt-indent":
+            opts['txt_indent'] = False
         elif arg == "--output-dir":
             if i + 1 < len(argv):
                 opts['output_dir'] = argv[i + 1]
@@ -7148,7 +7241,7 @@ if __name__ == "__main__":
                           show_progress=opts['show_progress'],
                           threads=opts['threads'], delay=opts['delay'],
                           unique_title=False, export_epub=opts['export_epub'],
-                          incremental=True)
+                          incremental=True, txt_indent=opts['txt_indent'])
             exit(0)
 
         # ===== 批量模式: --batch 清单文件 或 多个 URL 参数 =====
@@ -7174,7 +7267,8 @@ if __name__ == "__main__":
                 run_batch(urls, threads=opts['threads'], resume=opts['resume'],
                           show_progress=opts['show_progress'],
                           output_dir=opts['output_dir'], delay=opts['delay'],
-                          unique_title=True, export_epub=opts['export_epub'])
+                          unique_title=True, export_epub=opts['export_epub'],
+                          txt_indent=opts['txt_indent'])
             exit(0)
 
         # 收集所有非选项参数作为 URL (支持一次抓多本)
@@ -7199,7 +7293,8 @@ if __name__ == "__main__":
             run_batch(url_args, threads=opts['threads'], resume=opts['resume'],
                       show_progress=opts['show_progress'],
                       output_dir=opts['output_dir'], delay=opts['delay'],
-                      unique_title=True, export_epub=opts['export_epub'])
+                      unique_title=True, export_epub=opts['export_epub'],
+                      txt_indent=opts['txt_indent'])
             exit(0)
 
         catalog_url = sys.argv[1].strip()
@@ -7212,6 +7307,7 @@ if __name__ == "__main__":
         threads_arg = None   # None = 速度自适应 (默认)
         delay_arg = None
         export_epub = False   # --epub: 抓取后同时导出 EPUB
+        txt_indent_arg = None   # None = 读配置; --no-txt-indent → False
         i = 2
         argv = sys.argv
         while i < len(argv):
@@ -7234,6 +7330,8 @@ if __name__ == "__main__":
                 show_progress = True
             elif arg == "--epub":
                 export_epub = True
+            elif arg == "--no-txt-indent":
+                txt_indent_arg = False
             elif arg == "--fast":
                 threads_arg = 4
                 delay_arg = 0.2
@@ -7302,7 +7400,7 @@ if __name__ == "__main__":
                   resume=resume, show_progress=show_progress,
                   chapter_range=chapter_range_arg,
                   threads=threads_arg, delay=delay_arg,
-                  export_epub=export_epub)
+                  export_epub=export_epub, txt_indent=txt_indent_arg)
     else:
         # 帮助信息
         if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
@@ -7321,6 +7419,7 @@ if __name__ == "__main__":
             _log.info("  python 爬虫.py <URL> --delay N         章节间间隔秒数 (默认: 随自适应档位)")
             _log.info("  python 爬虫.py <URL> --fast            快速模式 (4线程+0.2秒间隔)")
             _log.info("  python 爬虫.py <URL> --epub            抓取完成后同时导出 EPUB")
+            _log.info("  python 爬虫.py <URL> --no-txt-indent   关闭TXT段首缩进 (默认: 缩进+段间空行)")
             _log.info("  python 爬虫.py -h / --help             显示帮助")
             exit(0)
         # 交互式菜单
@@ -7330,4 +7429,4 @@ if __name__ == "__main__":
                       resume=resume, show_progress=show_progress,
                       chapter_range=chapter_range,
                       threads=threads, delay=delay,
-                      export_epub=export_epub)
+                      export_epub=export_epub)   # txt_indent 走配置默认

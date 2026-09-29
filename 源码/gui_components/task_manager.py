@@ -31,6 +31,9 @@ class TaskMetrics:
     engine_fallback_chain: list = dataclasses.field(default_factory=list)  # 引擎降级尝试记录
     start_time: float = 0.0       # 任务启动时间戳 (计算耗时用)
     end_time: float = 0.0         # 任务结束时间戳 (完成后冻结耗时; 0=仍在运行)
+    # 最近一章的清洗统计 ('清洗' 事件, 2026-09-29 可观测性):
+    # {关键词行, 推广行, 过短行, 符号行, 广告行, 水印} — 全为 int
+    clean_summary: dict = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass
@@ -360,6 +363,14 @@ class TaskLogRedirector:
             except (TypeError, ValueError):
                 pass        # 得分缺失/非数字 → 保持原值 (与正则不匹配时同语义)
             self.task.metrics.quality_passed = bool(数据.get('通过'))
+            return
+        if 类型 == '清洗':
+            # 2026-09-29 可观测性: 最近一章的清洗删除计数 (clean_content 发布)
+            try:
+                self.task.metrics.clean_summary = {
+                    k: int(v) for k, v in 数据.items() if isinstance(v, (int, float))}
+            except (TypeError, ValueError):
+                pass        # 字段异常 → 保持上次统计 (与质检得分缺失同语义)
             return
 
     def _backfill_quality(self, task):
