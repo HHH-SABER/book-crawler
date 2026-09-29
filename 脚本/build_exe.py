@@ -13,7 +13,7 @@ Double-click 打包EXE.bat  (or:  .venv\\Scripts\\python.exe build_exe.py)
       --no-bump           保持当前版本号不变 (重跑修复时使用)
   版本状态保存在: 脚本/版本.json
 """
-import os, sys, subprocess, shutil, time, re, json, argparse
+import os, sys, subprocess, shutil, time, re, json, argparse, tempfile
 from pathlib import Path
 
 # CI (GitHub Actions) 下 stdout 可能落到 cp1252 导致中文 print 崩溃, 强制 UTF-8
@@ -180,6 +180,64 @@ def _flet_pids(tasklist_output: str) -> set:
     return pids
 
 
+# ---- dist 用户运行时数据保护 (2026-09-29, R4 定案) --------------------
+# 每次重打包 rmtree(dist) 会连带删掉用户数据: 抓取结果/ (小说正文+检查点)
+# 与 dist 旁两份用户手改 JSON (站点配置.json / captcha_config.json ——
+# 后者含 ddddocr 开关, 曾致"更新 EXE 后成功率降低"复现)。
+# 清理前 stash 到系统临时目录, 构建结束 (无论成败) 原样恢复。
+_DIST_USER_DIRS = ('抓取结果',)
+_DIST_USER_FILES = ('站点配置.json', 'captcha_config.json')
+
+
+def 保护dist用户数据(dist: str) -> str:
+    """把 dist 内用户运行时数据移入临时 stash 目录。
+
+    Returns:
+        stash 目录路径; 无可保护内容时返回 ''。
+    """
+    条目 = [name for name in _DIST_USER_DIRS
+            if os.path.isdir(os.path.join(dist, name))]
+    条目 += [name for name in _DIST_USER_FILES
+             if os.path.isfile(os.path.join(dist, name))]
+    if not 条目:
+        return ''
+    stash = tempfile.mkdtemp(prefix='build_dist_stash_')
+    for name in 条目:
+        try:
+            shutil.move(os.path.join(dist, name), os.path.join(stash, name))
+            log(f"[PRESERVE] 已暂存用户数据: {name}")
+        except Exception as e:
+            log(f"[WARN] 暂存 {name} 失败 (该数据可能随 dist 清理丢失): {e}")
+    return stash
+
+
+def 恢复dist用户数据(dist: str, stash: str) -> None:
+    """把 stash 中的用户数据恢复回 dist; 同名已存在时不覆盖 (构建不生成它们)。"""
+    if not stash or not os.path.isdir(stash):
+        return
+    for name in os.listdir(stash):
+        src = os.path.join(stash, name)
+        dst = os.path.join(dist, name)
+        try:
+            if os.path.isdir(src) and os.path.isdir(dst):
+                # 目录级合并: 逐文件搬移, 已存在的不覆盖
+                for root, _dirs, files in os.walk(src):
+                    rel = os.path.relpath(root, src)
+                    target = os.path.join(dst, rel) if rel != '.' else dst
+                    os.makedirs(target, exist_ok=True)
+                    for fn in files:
+                        fsrc = os.path.join(root, fn)
+                        fdst = os.path.join(target, fn)
+                        if not os.path.exists(fdst):
+                            shutil.move(fsrc, fdst)
+            elif not os.path.exists(dst):
+                shutil.move(src, dst)
+            log(f"[PRESERVE] 已恢复用户数据: {name}")
+        except Exception as e:
+            log(f"[WARN] 恢复 {name} 失败: {e}")
+    shutil.rmtree(stash, ignore_errors=True)
+
+
 def main():
     """主流程: 版本解析/递增 → 环境准备 → PyInstaller 打包 → 产物报告"""
     # --- init log
@@ -285,7 +343,9 @@ def main():
     # 环境变量 WBC_SKIP_CLEAN=1 时跳过目录删除 (dist 被进程占用/沙箱拦截时用;
     # PyInstaller --noconfirm 会覆盖 dist 内同名 EXE)
     dist = os.path.join(ROOT, "dist")
+    _dist_stash = ''   # 用户运行时数据 stash (见 保护dist用户数据/恢复dist用户数据)
     if os.path.isdir(dist) and not os.environ.get("WBC_SKIP_CLEAN"):
+        _dist_stash = 保护dist用户数据(dist)
         log("[CLEAN] Remove previous dist/")
         shutil.rmtree(dist, ignore_errors=True)
     build_dir = os.path.join(ROOT, "build")
@@ -471,6 +531,7 @@ def main():
     log(f"==== BUILD FINISHED exit={code} {time.strftime('%Y-%m-%d %H:%M:%S')} ====")
 
     if code != 0:
+        恢复dist用户数据(dist, _dist_stash)   # 失败也把用户数据放回 dist
         log(f"[ERROR] Build FAILED (exit={code}). Full output saved to build_log.txt.")
         log("  Common fixes:")
         log("    - Missing deps   : .venv\\Scripts\\pip.exe install -r requirements.txt")
@@ -508,6 +569,8 @@ def main():
             log(f"[WARN] 复制 站点适配/ 失败: {e}")
     else:
         log("[INFO] 站点适配/ 不存在, 跳过 (可选外部适配器目录)")
+    # dist 重建完成 → 把清理前暂存的用户运行时数据放回 (R4: 抓取结果/配置不再丢)
+    恢复dist用户数据(dist, _dist_stash)
     # PyInstaller 可能 --onefile 或 onedir, 两处都查一下，把真实产物挑出来给用户看
     onedir_exe = os.path.join(dist, exe_name, f"{exe_name}.exe")
     onefile_exe = os.path.join(dist, f"{exe_name}.exe")
