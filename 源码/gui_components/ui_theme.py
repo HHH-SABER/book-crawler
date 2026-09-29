@@ -40,9 +40,13 @@ _CARD_SHADOW = [
 
 
 def make_card(content, padding=CARD_PADDING, radius=CARD_RADIUS,
-              expand=False, width=None, bgcolor=None, scroll=None,
+              expand=False, width=None, bgcolor=None,
               visible=None, border=None):
-    """统一卡片：纯白表面 (夜间深灰) + 8px 圆角 + 细边框 + 轻阴影"""
+    """统一卡片：纯白表面 (夜间深灰) + 8px 圆角 + 细边框 + 轻阴影
+
+    注: 曾有 scroll=None 形参, 收下但从未转发 (ft.Container 无 scroll 字段),
+    已删除 —— 需要滚动请开在内容 Column/ListView 上 (2026-09-29)。
+    """
     return ft.Container(
         content=content,
         width=width,
