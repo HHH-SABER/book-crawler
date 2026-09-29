@@ -7,6 +7,20 @@
 """
 import flet as ft
 
+try:
+    import 日志 as _app_log          # 留痕通道 (桥模式, 同 site_manage_page)
+except Exception:
+    _app_log = None
+
+
+def _dbg(source: str, message: str):
+    """异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免高频刷屏)"""
+    if _app_log is not None:
+        try:
+            _app_log.debug(source, message)
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+
 from ..ui_fluent import (txt, FONT_STACK, SIZE_SMALL, SIZE_BODY, SIZE_TITLE,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
                          MORANDI_SUCCESS, MORANDI_STOPPED,
@@ -64,7 +78,13 @@ class RemotePage:
                         ft.Text("手机访问: 需与电脑同一 Tailscale 账号",
                                 size=SIZE_SMALL, weight=WEIGHT_BODY,
                                 color=ft.Colors.ON_SURFACE_VARIANT,
-                                font_family=FONT_STACK)], spacing=10),
+                                font_family=FONT_STACK),
+                        # 使用教程入口 (2026-09-29 用户反馈"EXE 里找不到使用说明"):
+                        # 教程页由内嵌远控服务的 /tutorial 渲染 (与手机端同一页面),
+                        # 故需远控处于开启状态
+                        ft.TextButton("使用教程", icon=ft.Icons.BOOK_OUTLINED,
+                                      on_click=self._open_tutorial)],
+                       spacing=10),
                 ft.Divider(height=1, color=MORANDI_OUTLINE_VARIANT),
                 ft.Row([txt("本机地址", size=SIZE_SMALL, weight=WEIGHT_BODY),
                         self._addr], spacing=8),
@@ -106,6 +126,31 @@ class RemotePage:
                 bgcolor=MORANDI_SURFACE_CONTAINER, expand=True,
             ),
         ], spacing=10, expand=True)
+
+    # ---------------------------------------------------------------- 教程
+    def _open_tutorial(self, e=None):
+        """打开使用教程 (系统浏览器 → 内嵌远控 /tutorial, 与手机端同一页面)"""
+        try:
+            info = self.取信息() if self.取信息 else {}
+        except Exception as _e:
+            info = {}
+            _dbg("远控页", f'取信息失败: {type(_e).__name__}: {_e}')
+        if not info.get("运行"):
+            self._toast("请先启用远控 —— 教程页由远控服务提供")
+            return
+        import webbrowser
+        地址 = (info.get("地址") or "http://127.0.0.1:8760/").rstrip("/")
+        webbrowser.open(f"{地址}/tutorial")
+
+    def _toast(self, msg: str):
+        """SnackBar 轻提示 (同 detail_drawer._toast 模式, 经 ui_fluent.open_dialog)"""
+        try:
+            from ..ui_fluent import open_dialog
+            if self.page is not None:
+                open_dialog(self.page, ft.SnackBar(
+                    ft.Text(msg, font_family=FONT_STACK), duration=4000))
+        except Exception:
+            pass  # 刻意静默: toast 属锦上添花, 失败不影响教程打开主路径
 
     # ---------------------------------------------------------------- 数据
     def refresh(self):
