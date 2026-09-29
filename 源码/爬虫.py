@@ -435,17 +435,19 @@ def _读txt缩进配置() -> bool:
         return True
 
 
-def _is_ad_line(line):
+def _is_ad_line(line, 额外正则=None):
     """通用广告行/无意义字符检测 (基于内容特征, 不依赖具体书名或站点名)
 
     识别策略 (分两层, 避免误伤正文):
     1. 结构特征 (对所有行): 连续空格分隔的推荐列表、纯符号行、域名行、纯数字行
     2. 标签特征 (仅对短行 <40 字): 小说搜索标签、站点宣传语片段
+    3. 站点级增补正则 (对所有行): 站点配置.json 的 ad_rules.行正则 (2026-09-29)
 
     正文段落通常 >40 字且含完整中文标点, 不会被误伤。
 
     Args:
         line: 单行文本 (已 strip)
+        额外正则: 站点级增补正则列表 (获取广告规则().正则), 可为 None
 
     Returns:
         True 表示该行是广告/无意义字符, 应过滤
@@ -464,6 +466,15 @@ def _is_ad_line(line):
         for frag in _AD_PHRASE_FRAGMENTS:
             if frag in line:
                 return True
+    # 3. 站点级增补规则 (对所有行生效; 用户在 站点配置.json 里配置的正则
+    #    理应全行匹配, 不做短行限制)
+    for pat in (额外正则 or ()):
+        try:
+            if pat.search(line):
+                return True
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e} '
+                       f'(站点广告正则执行失败, 忽略该规则)')
     return False
 
 
@@ -3203,8 +3214,14 @@ class NovelSpider:
             _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return content
 
-    def clean_content(self, content):
-        """清理无意义字符和广告内容"""
+    def clean_content(self, content, site_url=None):
+        """清理无意义字符和广告内容
+
+        Args:
+            content: 待清洗正文
+            site_url: 章节页 URL (可选)。提供时按域名加载 站点配置.json 的
+                ad_rules 站点级广告增补规则 (关键词 + 行正则), 与内置规则合并。
+        """
         if not content:
             return ""
 
@@ -3264,8 +3281,19 @@ class NovelSpider:
             content, _wm_n = re.subn(r'\s*' + re.escape(_wm) + r'\s*', '', content)
             清洗统计['水印'] += _wm_n
 
-        # 使用模块级常量 (避免重复定义)
-        filter_keywords = _CONTENT_FILTER_KEYWORDS
+        # 使用模块级常量 (避免重复定义); 站点级增补规则按域名合并 (2026-09-29)
+        if site_url:
+            try:
+                from sites_config import 获取广告规则 as _获取广告规则
+                _site_rules = _获取广告规则(site_url)
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e} '
+                           f'(站点广告规则加载失败, 仅用内置规则)')
+                _site_rules = {'关键词': [], '正则': []}
+        else:
+            _site_rules = {'关键词': [], '正则': []}
+        filter_keywords = list(_CONTENT_FILTER_KEYWORDS) + list(_site_rules['关键词'])
+        _额外广告正则 = tuple(_site_rules['正则'])
         
         # 修复常见编码错误字符（Base64 解码后可能出现的乱码）
         # 2026-09-29 清理: 仅保留"形近/音近错字"级无争议替换 (48→20 条)。
@@ -3340,7 +3368,7 @@ class NovelSpider:
                 continue
 
             # 通用广告行特征检测 (基于内容特征, 不依赖具体书名/站点名)
-            if _is_ad_line(stripped_line):
+            if _is_ad_line(stripped_line, _额外广告正则):
                 清洗统计['广告行'] += 1
                 continue
 
@@ -4716,7 +4744,7 @@ class NovelSpider:
                         data_content = '\n'.join(data_lines)
                         if len(data_content) > 50:
                             _log.info(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
-                            page_text = self.clean_content(data_content)
+                            page_text = self.clean_content(data_content, site_url=chapter_url)
                             if len(page_text) < 50:
                                 _log.info("[数据文件] 内容过短, 可能已到末页")
                                 break
@@ -4755,7 +4783,7 @@ class NovelSpider:
                     _adapter_content = None
                 if _adapter_content:
                     _log.info(f"[适配器] 提取成功: {len(_adapter_content)} 字符")
-                    page_text = self.clean_content(_adapter_content)
+                    page_text = self.clean_content(_adapter_content, site_url=chapter_url)
                     _log.info(f"[适配器] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                     if len(page_text) < 50:
                         _log.info("[适配器] 正文过短, 可能已到末页, 结束分页")
@@ -4797,7 +4825,7 @@ class NovelSpider:
                 if site_ok and site_content:
                     _log.info(f"[sites_config] 站点配置提取成功: {len(site_content)} 字符 "
                           f"(extractor={site_pattern['content_extractor']})")
-                    page_text = self.clean_content(site_content)
+                    page_text = self.clean_content(site_content, site_url=chapter_url)
                     _log.info(f"[sites_config] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                     if len(page_text) < 50:
                         _log.info("[sites_config] 正文过短, 可能已到末页, 结束分页")
@@ -4900,7 +4928,7 @@ class NovelSpider:
             if generic_content:
                 # 通用提取成功, 走通用清洗+指纹去重流程
                 import hashlib
-                page_text = self.clean_content(generic_content)
+                page_text = self.clean_content(generic_content, site_url=chapter_url)
                 _log.info(f"[通用提取] 第{page_index+1}页清洗后: {len(page_text)} 字符")
                 if len(page_text) < 50:
                     _log.info("[通用提取] 正文过短, 可能已到末页, 结束分页")
