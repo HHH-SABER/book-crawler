@@ -360,6 +360,47 @@ class TestCleanContent(unittest.TestCase):
         self.assertEqual(_排版章节文本('第一章', '', 缩进=True), '## 第一章\n\n')
         self.assertEqual(_排版章节文本('第一章', None, 缩进=True), '## 第一章\n\n')
 
+    def test_site_ad_rules_filter(self):
+        """站点级 ad_rules: 关键词与行正则按域名增补过滤, 不污染其他站点 (2026-09-29)。"""
+        import sites_config
+        sites_config.SITE_PATTERNS.append({
+            'domain': 'adtest.example', 'enabled': True,
+            'ad_rules': {'关键词': ['本站特供广告词'],
+                         '行正则': [r'^.*带推广链接.*$']}})
+        try:
+            sites_config._广告规则缓存.clear()
+            raw = ('第一段完整叙事内容，句子完整并以句号收尾，长度足够跨越阈值判定。\n'
+                   '本站特供广告词请勿保留\n'
+                   '这是一行带推广链接的内容也应该被删掉。\n'
+                   '第二段完整叙事内容，同样以句号收尾，长度也足够跨过阈值独立成段。')
+            cleaned = self.spider.clean_content(
+                raw, site_url='https://adtest.example/book/1/')
+            self.assertNotIn('本站特供广告词', cleaned, '站点关键词未过滤')
+            self.assertNotIn('带推广链接', cleaned, '站点行正则未过滤')
+        finally:
+            sites_config.SITE_PATTERNS[:] = [
+                p for p in sites_config.SITE_PATTERNS
+                if p.get('domain') != 'adtest.example']
+            sites_config._广告规则缓存.clear()
+
+    def test_site_ad_rules_invalid_regex_skipped(self):
+        """站点 ad_rules 非法正则: 编译失败只跳过该规则, 清洗不抛异常。"""
+        import sites_config
+        sites_config.SITE_PATTERNS.append({
+            'domain': 'badregex.example', 'enabled': True,
+            'ad_rules': {'行正则': ['[非法正则(']}})
+        try:
+            sites_config._广告规则缓存.clear()
+            raw = ('第一段完整叙事内容，句子完整并以句号收尾，长度足够跨越阈值判定。')
+            cleaned = self.spider.clean_content(
+                raw, site_url='https://badregex.example/book/1/')
+            self.assertIn('第一段完整叙事内容', cleaned)
+        finally:
+            sites_config.SITE_PATTERNS[:] = [
+                p for p in sites_config.SITE_PATTERNS
+                if p.get('domain') != 'badregex.example']
+            sites_config._广告规则缓存.clear()
+
 
 # ============================================================
 # 5b. 点选验证码多模态调用器 (C4 回归)
