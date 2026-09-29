@@ -100,6 +100,11 @@ class TaskTable:
                     color=ft.Colors.ON_SURFACE, font_family=FONT_STACK),
             ft.Container(expand=True),
             self._count_text,
+            # 清空历史 (2026-09-29 任务历史持久化配套): 一键清终态任务记录,
+            # 确认框 + 不动输出文件 (历史已落 任务历史.json, 清空即从存档移除)
+            ft.TextButton("清空历史", icon=ft.Icons.CLEANING_SERVICES_OUTLINED,
+                          tooltip="清空所有已结束任务的记录 (不删除输出文件)",
+                          on_click=self._on_clear_history),
         ])
         header = self._build_header()
         self._refresh()
@@ -471,6 +476,63 @@ class TaskTable:
             open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
         except Exception as _e:
             _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+
+    # ------------------------------------------------------- 清空历史
+    def _on_clear_history(self, e=None):
+        """清空历史: 批量删除终态任务记录 (不动输出文件), 弹确认框。
+
+        运行中/排队中的任务不会被清 (仅 completed/failed/stopped/interrupted)。
+        文字显式 color 是 G-H1 教训 (EXE 中 dialog 无色文字不可见)。
+        """
+        try:
+            终态 = [t.task_id for t in self.task_manager.get_all_tasks()
+                    if t.status in ("completed", "failed", "stopped", "interrupted")]
+        except Exception as _e:
+            _dbg("任务表", f'清空历史取任务列表失败: {type(_e).__name__}: {_e}')
+            return
+        if not 终态:
+            self._notify("没有可清空的任务 (均为运行中/排队中)")
+            return
+        if self.page is None:
+            self._do_clear_history(终态)
+            return
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("清空历史", color=MORANDI_ON_SURFACE,
+                          font_family=FONT_STACK),
+            content=ft.Text(f"确定清空 {len(终态)} 条已结束任务的记录?\n"
+                            "不会删除输出文件 (.txt/.epub)。",
+                            size=SIZE_SMALL, font_family=FONT_STACK,
+                            color=MORANDI_ON_SURFACE),
+            actions=[
+                ft.TextButton("取消",
+                              on_click=lambda _: close_dialog(self.page, dialog)),
+                ft.TextButton("清空",
+                              on_click=lambda _: self._confirm_clear_history(dialog, 终态)),
+            ],
+        )
+        open_dialog(self.page, dialog)
+
+    def _confirm_clear_history(self, dialog, 任务ids):
+        try:
+            close_dialog(self.page, dialog)
+        except Exception as _e:
+            _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        self._do_clear_history(任务ids)
+
+    def _do_clear_history(self, 任务ids):
+        成功 = 0
+        for tid in 任务ids:
+            try:
+                if self.task_manager.delete_task(tid, delete_file=False):
+                    成功 += 1
+            except Exception as _e:
+                _dbg("任务表", f'清空历史删除 {tid} 失败: {type(_e).__name__}: {_e}')
+        if self._expanded_id in 任务ids:
+            self._expanded_id = ""
+        self._sig = None
+        self.refresh()
+        self._notify(f"已清空 {成功} 条任务记录 (输出文件已保留)")
 
     # 对外刷新入口 (主线程)
     def refresh(self):
