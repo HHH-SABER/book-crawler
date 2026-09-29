@@ -73,6 +73,9 @@ class 质检报告:
     有效: bool = False
     统计: Dict = field(default_factory=dict)
     原因: List[str] = field(default_factory=list)
+    # 清洗统计 (2026-09-29 可观测性): 由爬虫._fetch_with_qc 从 contextvar 读取
+    # clean_content 的删除计数后附加, {关键词行,推广行,过短行,符号行,广告行,水印}
+    清洗统计: Dict = field(default_factory=dict)
 
     def 摘要(self) -> str:
         """一行式摘要 (用于日志/汇总报告)"""
