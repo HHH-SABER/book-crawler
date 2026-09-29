@@ -253,6 +253,32 @@ class TestCleanContent(unittest.TestCase):
         self.assertNotIn('找回4F4F', cleaned, '找回站广告行未被过滤')
         self.assertIn('第一段正常叙事内容', cleaned)
 
+    # ===== 分段修复回归 (2026-09-29): 段落边界保留 + 短行合并不粘连 =====
+
+    def test_paragraph_blank_line_preserved(self):
+        """段落边界以 \\n\\n 保留: 旧行为把段间空行压成单 \\n (根因③)。"""
+        raw = ('第一段完整叙事内容，句子完整并以句号收尾，长度足够跨越短行合并阈值判定。\n\n'
+               '第二段完整叙事内容，同样以句号收尾，长度也足够跨过阈值独立成段。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertIn('阈值判定。\n\n第二段', cleaned,
+                      '段间空行未保留, 段落边界丢失')
+
+    def test_short_line_not_glued_after_full_sentence(self):
+        """完整句 (句号收尾) 之后的短行另起一段, 不被粘成长段 (根因④)。"""
+        raw = ('主角推开门缓缓走进屋子，环顾四周一圈后轻轻叹了口气，神色复杂。\n'
+               '这是短尾巴')
+        cleaned = self.spider.clean_content(raw)
+        self.assertIn('神色复杂。\n\n这是短尾巴', cleaned,
+                      '完整句后的短行被粘连')
+
+    def test_half_sentence_still_continues(self):
+        """半句断行 (无句末标点收尾) 仍续接, 且中文直接拼接不加空格。"""
+        raw = ('主角推开门缓缓走进屋子，环顾四周一圈后轻轻\n'
+               '叹了口气继续动作')
+        cleaned = self.spider.clean_content(raw)
+        self.assertIn('轻轻叹了口气继续动作', cleaned, '半句断行未被续接')
+        self.assertNotIn('轻轻 叹了口气', cleaned, '续接处残留空格')
+
 
 # ============================================================
 # 5b. 点选验证码多模态调用器 (C4 回归)

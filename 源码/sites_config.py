@@ -887,9 +887,11 @@ def extract_content_html_selector(html, selectors, extractor=None, domain=''):
         except Exception as _e:
             _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     # 兜底: 找最长文本容器
+    # get_text('\n') 保留标签间换行: strip=True 无 separator 会把整章压成一行
+    # (分段丢失根因②, 下游 clean_content 无法还原段落)
     candidates = []
     for el in soup.find_all(True):
-        text = el.get_text(strip=True)
+        text = el.get_text('\n', strip=True)
         if len(text) > 500:
             candidates.append((len(text), text))
     if candidates:
@@ -1064,6 +1066,8 @@ def _extract_ltbook_junk_filter(container):
     lines = [ln for ln in text.split('\n') if ln.strip() and '最快更新' not in ln]
     text = '\n'.join(lines)
     # 清理连续空行/首尾空白
+    # 注: \n{2,}→\n 压掉段间空行, 但下游 clean_content 以"每行=每段"重组,
+    # 单换行即段落边界, 此处无实际段落损失 (分段语义以 clean_content 出口为准)
     text = re.sub(r'\n{2,}', '\n', text).strip()
     return text
 
