@@ -158,6 +158,7 @@ class LogTab:
             expand=True,
             spacing=1,
             auto_scroll=False,
+            scroll=ft.ScrollMode.ALWAYS,   # 常显滚动条 (2026-09-29 二轮反馈)
         )
 
         viewer = ft.Container(

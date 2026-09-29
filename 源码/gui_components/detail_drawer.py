@@ -67,7 +67,9 @@ class DetailDrawer:
     def build(self) -> ft.Control:
         """构建右侧面板 (默认实时日志视图)"""
         # ---- 实时日志视图 (默认) ----
-        self._log_list = ft.ListView(expand=True, spacing=1, auto_scroll=True)
+        # scroll=ALWAYS: 常显滚动条 (2026-09-29 二轮反馈"实时日志也加滚动条")
+        self._log_list = ft.ListView(expand=True, spacing=1, auto_scroll=True,
+                                     scroll=ft.ScrollMode.ALWAYS)
         self._log_view = ft.Container(
             content=self._log_list,
             expand=True,
@@ -81,7 +83,8 @@ class DetailDrawer:
                                       tight=True)
 
         # ---- 文件预览视图 ----
-        self._file_list = ft.ListView(expand=True, spacing=2, auto_scroll=True)
+        self._file_list = ft.ListView(expand=True, spacing=2, auto_scroll=True,
+                                      scroll=ft.ScrollMode.ALWAYS)
         self._file_content = ft.TextField(
             multiline=True, expand=True, read_only=True, dense=True,
             text_style=ft.TextStyle(size=SIZE_SMALL, font_family=FONT_STACK),
