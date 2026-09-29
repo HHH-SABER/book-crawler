@@ -408,6 +408,56 @@ def get_site_pattern(url):
 
 
 # ============================================================
+# 站点级广告规则 (2026-09-29 清洗智能化): 站点配置.json 条目可选键
+#   "ad_rules": {"关键词": [...], "行正则": [...]}
+# 由 _执行重放 的任意字段 upsert 自动流入 SITE_PATTERNS (零加载代码),
+# 经 获取广告规则() 编译缓存后供 爬虫.clean_content 按域名增补过滤。
+# ============================================================
+_广告规则缓存 = {}   # domain -> {'关键词': [...], '正则': [compiled...]}
+
+
+def 获取广告规则(url):
+    """按 URL 查询站点级广告增补规则 (未配置返回空规则, 不含内置规则)。
+
+    热重载: reload_runtime_config() → _执行重放 末尾清空本缓存, 下次查询重建。
+    非法正则编译失败只告警跳过 (不让一条坏配置打断抓取)。
+    """
+    _apply_runtime_config()
+    load_adapters()
+    pat = get_site_pattern(url)
+    domain = ''
+    if pat:
+        domain = pat.get('domain', '')
+    else:
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(url or '').netloc.lower()
+        except Exception:
+            domain = ''
+    if not domain:
+        return {'关键词': [], '正则': []}
+    if domain in _广告规则缓存:
+        return _广告规则缓存[domain]
+    规则 = {'关键词': [], '正则': []}
+    ad = (pat.get('ad_rules') if pat else None) or {}
+    kws = ad.get('关键词')
+    if isinstance(kws, list):
+        规则['关键词'] = [str(k) for k in kws if k]
+    rxs = ad.get('行正则')
+    if isinstance(rxs, list):
+        for rx in rxs:
+            try:
+                规则['正则'].append(re.compile(str(rx)))
+            except Exception as e:
+                try:
+                    _log.info(f"[广告规则] 域 {domain} 非法正则已跳过: {rx!r} ({e})")
+                except Exception:
+                    pass  # 日志链路兜底
+    _广告规则缓存[domain] = 规则
+    return 规则
+
+
+# ============================================================
 # 运行时配置合并: 站点配置.json (GUI 站点管理页写入) 覆盖/追加内置配置
 # ============================================================
 _RUNTIME_APPLIED = False
@@ -490,6 +540,8 @@ def _执行重放():
             _log.info(f"[sites_config] 运行时站点配置加载失败, 使用内置配置: {_e}")
         except Exception:
             pass  # 刻意静默: 日志链路兜底: try 体在写日志 (热重放告警), 再加日志会递归
+    # 广告规则编译缓存失效 (站点级 ad_rules 热重载刷新点, 须在持锁内)
+    _广告规则缓存.clear()
 
 
 def reload_runtime_config():
