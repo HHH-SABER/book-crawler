@@ -122,7 +122,8 @@ class HistoryPage:
 
         # 统计卡行 + 过滤器 + 表格
         self._stat_row = ft.Row(spacing=6)
-        self._table_view = ft.ListView(expand=True, spacing=2, auto_scroll=True)
+        self._table_view = ft.ListView(expand=True, spacing=2, auto_scroll=True,
+                                       scroll=ft.ScrollMode.ALWAYS)
 
         # Fluent 页面大标题 (设计稿: 标题+副标题在页头, 视图切换在右侧)
         header = page_header(
