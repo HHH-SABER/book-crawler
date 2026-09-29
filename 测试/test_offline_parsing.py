@@ -279,6 +279,51 @@ class TestCleanContent(unittest.TestCase):
         self.assertIn('轻轻叹了口气继续动作', cleaned, '半句断行未被续接')
         self.assertNotIn('轻轻 叹了口气', cleaned, '续接处残留空格')
 
+    # ===== 误纠表清理 + 行内URL剥离回归 (2026-09-29) =====
+
+    def test_typo_table_no_semantic_tampering(self):
+        """误纠表清理后: 高危条目不得再篡改正文语义 (直接含触发词)。"""
+        raw = ('村里的老张头脾气倔，谁跟他作对他就跟谁急，天天闹得鸡飞狗跳不安生。\n'
+               '庙会那天集市人山人海，摊位生意个个爆满，吆喝声此起彼伏好不热闹。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertIn('作对', cleaned, '"作对"被误纠表篡改成"作为"')
+        self.assertNotIn('作为他就跟谁急', cleaned)
+        self.assertIn('爆满', cleaned, '"爆满"被误纠表篡改成"爆发"')
+        self.assertNotIn('爆发，吆喝', cleaned)
+
+    def test_typo_table_still_fixes_real_typos(self):
+        """误纠表清理后: 无争议错字纠正仍然生效。"""
+        raw = '他巳经离开了三个小时，房间里按排好的茶具还没有人动过，显然走得匆忙。'
+        cleaned = self.spider.clean_content(raw)
+        self.assertIn('已经', cleaned, '巳经→已经 纠错失效')
+        self.assertNotIn('巳经', cleaned)
+        self.assertIn('安排', cleaned, '按排→安排 纠错失效')
+
+    def test_inline_url_stripped_keeps_text(self):
+        """行内 URL 剥离: 含链接的正文行保留剥离后的文字 (旧行为整行误删)。"""
+        raw = ('他打开浏览器搜索了半天资料，终于在某个论坛里找到了关键线索，\n'
+               '详情参见 https://forum.example.com/thread/12345 这条帖子写得很清楚。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertIn('这条帖子写得很清楚', cleaned, '含URL正文行被整行误删')
+        self.assertNotIn('https://', cleaned, 'URL 本身未剥离')
+
+    def test_pure_promo_url_line_removed(self):
+        """纯推广行 (URL + 少量中文) 仍被删除。"""
+        raw = ('第一段完整叙事内容，句子完整并以句号收尾，长度足够跨越短行合并阈值判定。\n'
+               '最新网址 www.example.com 请收藏\n'
+               '第二段完整叙事内容，同样以句号收尾，长度也足够跨过阈值独立成段。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertNotIn('www.example.com', cleaned, '纯推广URL行未删除')
+        self.assertNotIn('请收藏', cleaned, '推广语未随行删除')
+
+    def test_email_line_handled(self):
+        """@ 推广行: 剥离后剩余中文不足则删行。"""
+        raw = ('第一段完整叙事内容，句子完整并以句号收尾，长度足够跨越短行合并阈值判定。\n'
+               '联系邮箱 book@example.com 记得发邮件\n'
+               '第二段完整叙事内容，同样以句号收尾，长度也足够跨过阈值独立成段。')
+        cleaned = self.spider.clean_content(raw)
+        self.assertNotIn('book@example.com', cleaned, '邮箱推广行未删除')
+
 
 # ============================================================
 # 5b. 点选验证码多模态调用器 (C4 回归)
