@@ -423,5 +423,60 @@ class Test推送Scheme校验(unittest.TestCase):
         self.assertEqual(1, mpost.call_count, 'ntfy 渠道应发起请求')
 
 
+class Test教程端点与md转换(unittest.TestCase):
+    """/tutorial 教程页 (2026-09-29 教程入 UI) 与 _md转html 极简转换"""
+
+    def setUp(self):
+        self.client, self._patcher = _client()
+        self.addCleanup(self._patcher.stop)
+
+    def test_tutorial端点200且含教程标题(self):
+        """源码环境直接读 文档/远控使用教程.md"""
+        r = self.client.get('/tutorial')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('text/html', r.headers['content-type'])
+        # 教程 md 的一级标题应出现在渲染结果中
+        self.assertIn('远控使用教程', r.text)
+
+    def test_tutorial免鉴权(self):
+        r = self.client.get('/tutorial')
+        self.assertEqual(r.status_code, 200, '教程与面板同级, 免 token')
+
+    def test_md转html_标题与段落(self):
+        html = 服务._md转html('# 一级\n\n正文段落\n## 二级\n### 三级')
+        self.assertIn('<h1>一级</h1>', html)
+        self.assertIn('<p>正文段落</p>', html)
+        self.assertIn('<h2>二级</h2>', html)
+        self.assertIn('<h3>三级</h3>', html)
+
+    def test_md转html_列表与代码块与表格(self):
+        md = ('- 项目甲\n- 项目乙\n\n'
+              '```\ncode line\n```\n\n'
+              '| 列1 | 列2 |\n|---|---|\n| a | b |\n\n'
+              '这是 **加粗** 和 `内联码`\n')
+        html = 服务._md转html(md)
+        self.assertIn('<ul>', html)
+        self.assertIn('<li>项目甲</li>', html)
+        self.assertIn('<li>项目乙</li>', html)
+        self.assertIn('</ul>', html)
+        self.assertIn('<pre><code>\ncode line\n</code></pre>', html)
+        self.assertIn('<th>列1</th>', html)
+        self.assertIn('<td>a</td>', html)
+        self.assertIn('<b>加粗</b>', html)
+        self.assertIn('<code>内联码</code>', html)
+
+    def test_md转html_防注入(self):
+        """HTML 特殊字符先转义, 站点内容中的标签不会变成活标记"""
+        html = 服务._md转html('<script>alert(1)</script>')
+        self.assertNotIn('<script>', html)
+        self.assertIn('&lt;script&gt;', html)
+
+    def test_md转html_表格分隔行跳过(self):
+        html = 服务._md转html('| a | b |\n|---|---|\n| 1 | 2 |')
+        self.assertIn('<th>a</th>', html)
+        self.assertIn('<td>1</td>', html)
+        self.assertNotIn('<td>---</td>', html)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -328,6 +328,14 @@ def main():
             log(f"[OK] Bundling 远控/{_rc_html}")
         else:
             log(f"[ERROR] 源码/远控/{_rc_html} 不存在, EXE 内远控面板将不可用!")
+    # 远控使用教程 md (2026-09-29 教程入 UI: 面板"📖 使用教程"→ /tutorial 端点)
+    # dest=远控/ 与 面板.html 同目录 — 服务._教程候选 按 with_name 定位
+    _tut_md = os.path.join(ROOT, "文档", "远控使用教程.md")
+    if os.path.isfile(_tut_md):
+        add_data_list.append(f"{_tut_md}:远控")
+        log("[OK] Bundling 远控/远控使用教程.md")
+    else:
+        log("[WARN] 文档/远控使用教程.md 不存在, EXE 内 /tutorial 将 404")
     # ddddocr 模型（WAF 图片验证码识别必需；onnx 模型不会被 PyInstaller 自动收集，
     # 缺包时 EXE 内报 模型文件不存在: common_old.onnx，识别失败导致 401 0章）
     ddddocr_dir = os.path.join(ROOT, ".venv", "Lib", "site-packages", "ddddocr")
