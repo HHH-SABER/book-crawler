@@ -86,7 +86,10 @@ class TaskTable:
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
         """构建任务表格"""
-        self._list_view = ft.ListView(expand=True, spacing=4, auto_scroll=False)
+        # 常显滚动条 (scroll=ALWAYS, 2026-09-29): 默认悬浮式仅滚动瞬间可见,
+        # 任务多时用户看不到滚动条以为"不能滚"
+        self._list_view = ft.ListView(expand=True, spacing=4, auto_scroll=False,
+                                      scroll=ft.ScrollMode.ALWAYS)
         # 卡片头: "任务列表" + 动态任务计数 (设计稿 card-header)
         self._count_text = ft.Text("共 0 个任务", size=SIZE_TINY,
                                    weight=WEIGHT_BODY,

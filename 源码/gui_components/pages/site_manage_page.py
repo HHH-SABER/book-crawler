@@ -296,11 +296,12 @@ class SiteManagePage:
         # 自愈建议审核卡 (批3 PoC-C: 选择器失效时自动产出的建议, 一键采纳/忽略)
         heal_card = self._build_heal_card()
 
-        # 站点表格 (4 主列 + 操作列)
-        self._table_view = ft.ListView(expand=True, spacing=3, auto_scroll=True)
+        # 站点表格 (4 主列 + 操作列) — 整页可滚后表格用有界高度:
+        # scroll 的 Column 不能有 expand 子级 (Flutter 纵向无界高度会报 unbounded)
+        self._table_view = ft.ListView(spacing=3, auto_scroll=True)
         table_card = make_card(
-            ft.Container(content=self._table_view, expand=True),
-            expand=True, padding=6,
+            ft.Container(content=self._table_view, height=420),
+            padding=6,
         )
 
         # 底部编辑卡 (默认隐藏, 点编辑图标展开)
@@ -308,9 +309,12 @@ class SiteManagePage:
 
         self._refresh_table()
         banner = self._build_alarm_banner()
+        # 页面级滚动 (2026-09-29): 各卡片固有高度总和超过窗口高度时,
+        # 之前无滚动出口 → 表格被挤扁、自愈卡被裁底; scroll=AUTO 整页可滚
         return ft.Column([header, banner, toolbar, adapter_card, table_card,
                           heal_card, self._edit_card],
                          expand=True, spacing=10,
+                         scroll=ft.ScrollMode.AUTO,
                          horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _build_alarm_banner(self):

@@ -83,7 +83,10 @@ class RemotePage:
         self._empty = txt("暂无手机端记录 — 手机发起的抓取任务会实时出现在这里",
                           size=SIZE_SMALL, weight=WEIGHT_BODY,
                           color=ft.Colors.ON_SURFACE_VARIANT)
-        self._rows = ft.Column([self._empty], spacing=4, tight=True)
+        # ListView + 常显滚动条 (2026-09-29): 旧实现 Column(tight) 记录一多
+        # 就超出 Container 有界高度被裁, 且无滚动出口; expand 取满卡片剩余高度
+        self._rows = ft.ListView(spacing=4, expand=True,
+                                 scroll=ft.ScrollMode.ALWAYS)
 
         return ft.Column([
             page_header('远控', '远程控制开关、手机访问方式与手机端任务记录'),
@@ -98,7 +101,7 @@ class RemotePage:
                                           on_click=lambda e: self.refresh())],
                            vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     self._rows,
-                ], spacing=8, tight=True),
+                ], spacing=8, expand=True),
                 padding=14, border_radius=10,
                 bgcolor=MORANDI_SURFACE_CONTAINER, expand=True,
             ),
