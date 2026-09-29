@@ -651,6 +651,15 @@ def _恢复中断任务():
         tid = "resume_" + hashlib.md5(path.encode("utf-8")).hexdigest()[:8]
         if tid in mgr.tasks:
             continue
+        # 去重 (2026-09-29 任务历史持久化): 同 URL 的 interrupted 项可能已由
+        # 任务历史恢复进表, checkpoint 扫描不再注入第二条
+        with mgr._lock:
+            已有同URL = any(
+                existing.url == ck["catalog_url"]
+                and existing.status in ("running", "interrupted", "pending")
+                for existing in mgr.tasks.values())
+        if 已有同URL:
+            continue
         t = TaskInfo(task_id=tid, url=ck["catalog_url"],
                      title=name[:-len(".checkpoint.json")],
                      status="interrupted",
