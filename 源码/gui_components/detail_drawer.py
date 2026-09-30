@@ -218,28 +218,28 @@ class DetailDrawer:
             if self._title_text.value != "实时日志":
                 self._title_text.value = "实时日志"
             self._log_sig = None
+            self._log_list.controls.clear()
             return
         task = self.task_manager.get_task(tid)
         if not task:
             return
         self._title_text.value = f"实时日志 · {task.title[:24]}"
 
-        logs = task.logs
-        sig = (tid, len(logs))
-        if getattr(self, '_log_sig', None) == sig:
-            return  # 无变化: 保留控件树 (选中文本不失效)
-        prev_task, prev_count = getattr(self, '_log_sig', (None, 0)) or (None, 0)
-        if self._log_sig is None or prev_task != tid or len(logs) < prev_count \
-                or len(logs) - prev_count > 60:
-            # 全量重建: 换任务 / 日志被截断 / 新行堆积过多
+        from .task_manager import snapshot_task_logs
+        previous = getattr(self, '_log_sig', None)
+        prev_count = previous[1] if previous and previous[0] == tid else 0
+        snapshot = snapshot_task_logs(task, prev_count)
+        sig = (tid, snapshot['total'], snapshot['epoch'])
+        if previous == sig:
+            return
+        if (not previous or previous[0] != tid or previous[2] != snapshot['epoch']
+                or snapshot['截断'] or len(snapshot['entries']) > 60):
             self._log_list.controls.clear()
-            for log in logs[-100:]:
+            for log in snapshot_task_logs(task)['entries'][-100:]:
                 self._log_list.controls.append(self._log_line(log))
         else:
-            # 增量追加 (logs 只追加不重写)
-            for log in logs[prev_count:]:
+            for log in snapshot['entries']:
                 self._log_list.controls.append(self._log_line(log))
-            # 显示有界: 超过 120 条收敛到最近 100 条
             if len(self._log_list.controls) > 120:
                 self._log_list.controls = self._log_list.controls[-100:]
         self._log_sig = sig
@@ -299,6 +299,8 @@ class DetailDrawer:
             ring_value = min(1.0, task.progress_current / task.progress_total)
         elif task.status == "completed":
             ring_value = 1.0
+        elif task.status != "running":
+            ring_value = 0.0
         ring = ft.ProgressRing(
             width=56, height=56, stroke_width=6, value=ring_value,
             color=status_color(task.status),

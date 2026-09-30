@@ -237,6 +237,9 @@ class InputBar:
             try:
                 start = int(self.start_chapter.value)
                 end = int(self.end_chapter.value)
+                if start < 1 or end < 1:
+                    self._notify("章节号必须是正整数")
+                    return
                 if start > end:
                     self._notify("起始章不能大于结束章")
                     return
@@ -277,6 +280,8 @@ class InputBar:
                     if self.on_task_created:
                         self.on_task_created()
                     return
+                self._notify("原任务正在收尾，请稍后重试")
+                return
 
         task_id = self.task_manager.create_task(
             url=url, mode=mode, chapter_range=chapter_range,

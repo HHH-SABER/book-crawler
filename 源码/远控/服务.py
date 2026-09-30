@@ -159,14 +159,17 @@ li{margin:.3em 0;}
 {body}
 </div></body></html>"""
 
+_任务管理器锁 = threading.Lock()
 _task_manager = None   # 惰性单例 (TaskManager(page=None), 无 flet 依赖)
 
 
 def _任务管理器():
     global _task_manager
     if _task_manager is None:
-        from gui_components.task_manager import TaskManager
-        _task_manager = TaskManager(page=None)
+        with _任务管理器锁:
+            if _task_manager is None:
+                from gui_components.task_manager import TaskManager
+                _task_manager = TaskManager(page=None)
     return _task_manager
 
 
@@ -203,7 +206,8 @@ def 后台启动(host: str = None, port: int = None):
     _port = int(port or cfg.get("端口", 8760))
     try:
         config = uvicorn.Config(app, host=_host, port=_port,
-                                log_level="warning", loop="asyncio", http="h11")
+                                log_level="warning", loop="asyncio", http="h11",
+                                timeout_graceful_shutdown=3)
         _server = uvicorn.Server(config)
     except Exception as e:
         _日志留痕(f"内嵌远控配置失败: {type(e).__name__}: {e}")
@@ -224,6 +228,12 @@ def 停止后台() -> None:
             srv.should_exit = True
         except Exception as _e:
             _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+    worker = _server_thread
+    if worker is not None and worker is not threading.current_thread():
+        worker.join(timeout=5)
+        if worker.is_alive():
+            _server = srv
+            raise RuntimeError("远控服务仍在收尾，请稍后重试")
     _server_thread = None
 
 
@@ -248,7 +258,7 @@ def _要求鉴权(k: Optional[str] = None, authorization: Optional[str] = Header
     supplied = k or ""
     if authorization and authorization.lower().startswith("bearer "):
         supplied = authorization[7:].strip()
-    if not token or not supplied or not hmac.compare_digest(supplied, token):
+    if not token or not supplied or not hmac.compare_digest(supplied.encode("utf-8"), str(token).encode("utf-8")):
         raise HTTPException(status_code=401, detail="未授权")
 
 
@@ -319,7 +329,8 @@ def _确保epub(item: dict) -> str:
     epub = os.path.splitext(txt)[0] + ".epub"
     if (not os.path.isfile(epub)
             or os.path.getmtime(epub) < os.path.getmtime(txt)):
-        epub_exporter.txt_to_epub(txt, title=item["标题"])
+        if not epub_exporter.txt_to_epub(txt, title=item["标题"]):
+            raise HTTPException(status_code=500, detail="EPUB 生成失败，旧文件已保留")
     if not os.path.isfile(epub):
         raise HTTPException(status_code=500, detail="EPUB 生成失败")
     return epub
@@ -352,7 +363,10 @@ def 教程():
 def 创建任务(body: dict, k: Optional[str] = None,
             authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
-    url = (body or {}).get("url", "").strip()
+    raw_url = (body or {}).get("url", "")
+    if not isinstance(raw_url, str):
+        raise HTTPException(status_code=400, detail="url 必须是字符串")
+    url = raw_url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="缺少 url")
     try:
@@ -364,14 +378,19 @@ def 创建任务(body: dict, k: Optional[str] = None,
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"爬虫模块加载失败: {e}")
 
-    mode = (body or {}).get("mode") or "full"
+    mode = (body or {}).get("mode", "full")
     if mode not in ("full", "test", "range"):
-        mode = "full"
+        raise HTTPException(status_code=400, detail="mode 仅支持 full/test/range")
     chapter_range = (body or {}).get("chapter_range")
-    if isinstance(chapter_range, (list, tuple)) and len(chapter_range) == 2:
-        chapter_range = tuple(chapter_range)   # run_crawl 按元组解包
-    else:
-        chapter_range = None
+    if chapter_range is not None or mode == "range":
+        if (not isinstance(chapter_range, (list, tuple)) or len(chapter_range) != 2
+                or any(type(n) is not int for n in chapter_range)
+                or chapter_range[0] < 1 or chapter_range[1] < chapter_range[0]):
+            raise HTTPException(status_code=400, detail="区间需两个正整数，结束章不得小于开始章")
+        chapter_range = tuple(chapter_range)
+    for flag in ("resume", "export_epub", "unique_title"):
+        if flag in body and type(body[flag]) is not bool:
+            raise HTTPException(status_code=400, detail=f"{flag} 必须是布尔值")
     try:
         task_id = _任务管理器().create_task(
             url=url,
@@ -398,6 +417,8 @@ def _任务快照(t) -> dict:
     start = m.start_time if m else 0
     end = m.end_time if m else 0
     耗时 = max(0, int((end or time.time()) - start)) if start else 0
+    if t.status == "interrupted" and not end:
+        耗时 = 0  # 历史中断时刻未知，不累计为本轮运行时间
     return {
         "id": t.task_id, "url": t.url, "标题": t.title,
         "状态": t.status, "进度": [t.progress_current, t.progress_total],
@@ -445,7 +466,7 @@ def 删除展示任务(task_id: str, k: Optional[str] = None,
 
 
 @app.get("/api/v1/tasks/{task_id}/logs")
-def 任务日志(task_id: str, after: int = 0,
+def 任务日志(task_id: str, after: int = 0, epoch: Optional[str] = None,
             k: Optional[str] = None, authorization: Optional[str] = Header(default=None)):
     """日志增量: 客户端持 after 指针; 日志被 500 条截断致 total < after 时,
     从 0 重发并置 截断=True (客户端据此重置指针, 防永久漏日志)"""
@@ -453,18 +474,16 @@ def 任务日志(task_id: str, after: int = 0,
     task = _任务管理器().get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
-    logs = task.logs
-    total = len(logs)
-    if after < 0 or after > total:
-        after = 0
-        截断 = True
-    else:
-        截断 = False
-    return {"total": total, "截断": 截断, "entries": logs[after:]}
+    from gui_components.task_manager import snapshot_task_logs
+    snapshot = snapshot_task_logs(task, after)
+    if epoch is not None and epoch != snapshot["epoch"]:
+        snapshot = snapshot_task_logs(task, 0)
+        snapshot["截断"] = True
+    return snapshot
 
 
 @app.get("/api/v1/tasks/{task_id}/logs/stream")
-async def 任务日志流(task_id: str, after: int = 0,
+async def 任务日志流(task_id: str, after: int = 0, epoch: Optional[str] = None,
                     k: Optional[str] = None,
                     authorization: Optional[str] = Header(default=None)):
     """日志 SSE 流: 每 0.6s 推增量, 15s 无新日志发注释行保活"""
@@ -475,16 +494,18 @@ async def 任务日志流(task_id: str, after: int = 0,
 
     async def _流():
         pos = max(0, after)
+        current_epoch = epoch
         try:
             for _ in range(6000):     # 最长 ~1h, 防僵尸流
-                logs = task.logs
-                total = len(logs)
-                if pos < 0 or pos > total:
-                    pos = 0     # 截断 → 客户端按事件里的 total 重置
-                if total > pos:
-                    payload = json.dumps(
-                        {"total": total, "entries": logs[pos:]},
-                        ensure_ascii=False)
+                from gui_components.task_manager import snapshot_task_logs
+                snapshot = snapshot_task_logs(task, pos)
+                if current_epoch is not None and current_epoch != snapshot["epoch"]:
+                    snapshot = snapshot_task_logs(task, 0)
+                    snapshot["截断"] = True
+                current_epoch = snapshot["epoch"]
+                total = snapshot["total"]
+                if snapshot["entries"] or snapshot["截断"]:
+                    payload = json.dumps(snapshot, ensure_ascii=False)
                     pos = total
                     yield f"data: {payload}\n\n"
                 else:
@@ -574,7 +595,7 @@ def _扫描终态() -> list:
     with mgr._lock:
         快照 = list(mgr.tasks.values())
     for t in 快照:
-        if t.status not in ("completed", "failed", "stopped"):
+        if getattr(t, "_恢复项", False) or t.status not in ("completed", "failed", "stopped"):
             continue
         end = t.metrics.end_time if t.metrics else 0
         键 = (t.task_id, t.status, end)
@@ -599,10 +620,9 @@ def _扫描终态() -> list:
         _发送推送(f"{t.title or t.url} · {状态词}",
                   f"{章节}{链接}")
         已触发.append((t.task_id, t.status))
-    # 防内存增长: 只保留最近 500 个键
-    if len(_已推终态) > 500:
-        for k in list(_已推终态)[:len(_已推终态) - 500]:
-            _已推终态.discard(k)
+    # 只清理已不在表中的运行轮次，避免任意删活跃终态键导致重复通知。
+    活跃键 = {(t.task_id, t.status, t.metrics.end_time if t.metrics else 0) for t in 快照}
+    _已推终态.intersection_update(活跃键)
     return 已触发
 
 
@@ -618,7 +638,19 @@ async def _终态监视():
 
 @app.on_event("startup")
 async def _启动监视器():
-    asyncio.create_task(_终态监视())
+    app.state.终态监视 = asyncio.create_task(_终态监视())
+
+
+@app.on_event("shutdown")
+async def _停止监视器():
+    task = getattr(app.state, "终态监视", None)
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass  # 预期取消：服务关闭时回收监视器
+        app.state.终态监视 = None
 
 
 
@@ -660,11 +692,19 @@ def _恢复中断任务():
                 for existing in mgr.tasks.values())
         if 已有同URL:
             continue
+        try:
+            completed = int(ck.get("completed", 0) or 0)
+            total = int(ck.get("total", 0) or 0)
+            if completed < 0 or total < completed or not isinstance(ck["catalog_url"], str):
+                continue
+        except (ValueError, TypeError, OverflowError):
+            _dbg("远控服务", f"检查点字段异常，跳过: {name}")
+            continue
         t = TaskInfo(task_id=tid, url=ck["catalog_url"],
-                     title=name[:-len(".checkpoint.json")],
+                     title=os.path.splitext(name[:-len(".checkpoint.json")])[0],
                      status="interrupted",
-                     progress_current=int(ck.get("completed", 0) or 0),
-                     progress_total=int(ck.get("total", 0) or 0))
+                     progress_current=completed,
+                     progress_total=total)
         with mgr._lock:
             mgr.tasks[tid] = t
 
@@ -674,12 +714,9 @@ def _删除展示任务(task_id: str) -> bool:
     mgr = _任务管理器()
     with mgr._lock:
         t = mgr.tasks.get(task_id)
-        if t is None or t.status == "running":
+        if t is None or t.status in ("running", "pending") or (t.thread is not None and t.thread.is_alive()):
             return False
-        del mgr.tasks[task_id]
-        if mgr._selected_task_id == task_id:
-            mgr._selected_task_id = ""
-        return True
+    return mgr.delete_task(task_id, delete_file=False)
 
 
 # ---------------------------------------------------------------- 阅读
@@ -690,7 +727,8 @@ def _解析章节(item: dict) -> list:
     阅读页选择保留, 由读者自己跳过)。"""
     path = item["路径"]
     try:
-        mtime = os.path.getmtime(path)
+        st = os.stat(path)
+        mtime = (st.st_mtime_ns, st.st_size)
     except OSError as e:
         raise HTTPException(status_code=404, detail="文件已不存在") from e
     with _章节缓存锁:
@@ -708,6 +746,8 @@ def _解析章节(item: dict) -> list:
         if line.startswith("## "):
             if 当前标题 is not None:
                 章节.append({"标题": 当前标题, "内容": "\n".join(缓冲).strip()})
+            elif "\n".join(缓冲).strip():
+                章节.append({"标题": "(开篇)", "内容": "\n".join(缓冲).strip()})
             当前标题, 缓冲 = line[3:].strip(), []
         elif 当前标题 is not None:
             缓冲.append(line)
@@ -733,7 +773,8 @@ def _读进度(book_id: str) -> int:
     try:
         with open(os.path.join(get_state_root(), "数据", "阅读进度.json"),
                   "r", encoding="utf-8") as f:
-            return int(json.load(f).get(book_id, 0))
+            data = json.load(f)
+            return max(0, int(data.get(book_id, 0))) if isinstance(data, dict) else 0
     except (OSError, ValueError, TypeError):
         return 0
 
@@ -746,6 +787,8 @@ def _写进度(book_id: str, chapter: int) -> None:
         try:
             with open(进度文件, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                if not isinstance(data, dict):
+                    data = {}
         except (OSError, ValueError) as _e:
             _dbg("远控服务", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         data[book_id] = max(0, int(chapter))
@@ -795,7 +838,7 @@ def 存进度(book_id: str, body: dict, k: Optional[str] = None,
            authorization: Optional[str] = Header(default=None)):
     _要求鉴权(k, authorization)
     序 = (body or {}).get("章节")
-    if not isinstance(序, int) or 序 < 0:
+    if type(序) is not int or 序 < 0:
         raise HTTPException(status_code=400, detail="章节序号无效")
     _写进度(book_id, 序)
     return {"ok": True}

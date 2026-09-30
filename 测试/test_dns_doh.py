@@ -107,7 +107,10 @@ class TestPollutionFallback(unittest.TestCase):
         dns_doh._doh_cache.clear()
 
     def test_polluted_host_gets_doh_result(self):
-        dns_doh._orig_getaddrinfo = lambda host, port, *a, **k: _polluted_result(port)
+        # 系统对数字 IP 应直接解析；域名才返回被污染的地址。
+        dns_doh._orig_getaddrinfo = lambda host, port, *a, **k: (
+            dns_doh._真实_getaddrinfo(host, port, *a, **k)
+            if host == '93.184.216.34' else _polluted_result(port))
         dns_doh._doh_query = lambda host: '93.184.216.34'
         results = dns_doh._patched_getaddrinfo('polluted.example.com', 443)
         self.assertEqual(results[0][4][0], '93.184.216.34',

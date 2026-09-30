@@ -8,13 +8,14 @@
 - 测试可直接给 服务._CONFIG 赋值绕过磁盘
 """
 import json
+import copy
 import os
 import secrets
 import threading
 
 from _path_utils import get_state_root
 
-_CONFIG_LOCK = threading.Lock()
+_CONFIG_LOCK = threading.RLock()
 _CONFIG: dict | None = None
 
 _CONFIG_NAME = "远控配置.json"
@@ -39,12 +40,13 @@ _推送默认 = dict(_DEFAULTS["推送"])
 
 def _合并默认(cfg: dict) -> dict:
     """嵌套字段深合并: 磁盘缺键/半配置时补齐默认, 防 KeyError"""
-    合并 = dict(_DEFAULTS)
+    合并 = copy.deepcopy(_DEFAULTS)
     合并.update({k: v for k, v in cfg.items() if k not in ("推送",)})
     推送 = cfg.get("推送") if isinstance(cfg.get("推送"), dict) else {}
     合并["推送"] = {}
     for 渠道, 默认 in _推送默认.items():
-        合并["推送"][渠道] = {**默认, **(推送.get(渠道) or {})}
+        value = 推送.get(渠道)
+        合并["推送"][渠道] = {**默认, **(value if isinstance(value, dict) else {})}
     return 合并
 
 
@@ -55,7 +57,7 @@ def _配置路径() -> str:
 
 def _加载或创建() -> dict:
     path = _配置路径()
-    cfg = dict(_DEFAULTS)
+    cfg = copy.deepcopy(_DEFAULTS)
     disk = None
     if os.path.isfile(path):
         try:
@@ -66,7 +68,7 @@ def _加载或创建() -> dict:
                 cfg = _合并默认(_d)   # 深合并: 磁盘半配置也不缺键
         except (OSError, ValueError):
             pass  # 配置损坏 → 用默认重建 (token 会更换, 属预期)
-    if not cfg.get("token"):
+    if not isinstance(cfg.get("token"), str) or not cfg.get("token"):
         cfg["token"] = secrets.token_hex(16)
         _原子写(path, cfg)
         return cfg
@@ -81,7 +83,7 @@ def _原子写(path: str, cfg: dict) -> None:
     from pathlib import Path as _P
     fobj = _P(path).resolve()
     fobj.parent.mkdir(parents=True, exist_ok=True)
-    tmp = fobj.with_name(fobj.name + ".tmp")
+    tmp = fobj.with_name(fobj.name + f".tmp.{os.getpid()}.{threading.get_ident()}")
     tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
                    encoding="utf-8")
     os.replace(tmp, fobj)
@@ -101,8 +103,9 @@ def 保存配置(cfg: dict) -> bool:
     """原子写回配置并同步内存单例 (远控开关等运行时修改用)"""
     global _CONFIG
     try:
-        _原子写(_配置路径(), cfg)
-        _CONFIG = cfg
+        with _CONFIG_LOCK:
+            _原子写(_配置路径(), cfg)
+            _CONFIG = copy.deepcopy(cfg)
         return True
     except OSError:
         return False
@@ -110,6 +113,7 @@ def 保存配置(cfg: dict) -> bool:
 
 def 设置启用(flag: bool) -> bool:
     """切换远控启用开关 (写盘 + 内存态), 供顶栏开关调用"""
-    cfg = dict(取配置())
-    cfg["启用"] = bool(flag)
-    return 保存配置(cfg)
+    with _CONFIG_LOCK:
+        cfg = copy.deepcopy(取配置())
+        cfg["启用"] = bool(flag)
+        return 保存配置(cfg)

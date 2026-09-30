@@ -84,6 +84,7 @@ def page_header(title: str, subtitle: str = "", actions=None) -> ft.Control:
 # ---------------------------------------------------------------- 状态标签
 # 任务状态 -> (前景色, 背景色) — Fluent badge: 浅色底 + 深语义字
 STATUS_STYLES = {
+    'interrupted': (ft.Colors.ON_TERTIARY_CONTAINER, ft.Colors.TERTIARY_CONTAINER),
     'running':   (ft.Colors.ON_PRIMARY_CONTAINER, ft.Colors.PRIMARY_CONTAINER),   # 蓝: 抓取中
     'completed': (ft.Colors.ON_SECONDARY_CONTAINER, ft.Colors.SECONDARY_CONTAINER),  # 绿: 已完成
     'failed':    (ft.Colors.ON_ERROR_CONTAINER, ft.Colors.ERROR_CONTAINER),       # 红: 失败
@@ -97,6 +98,7 @@ STATUS_LABELS = {
     'failed': '失败',
     'pending': '等待中',
     'stopped': '已停止',
+    'interrupted': '已中断',
 }
 
 
@@ -115,7 +117,9 @@ def status_chip(status: str) -> ft.Control:
 
 def status_color(status: str):
     """状态主色（进度环/圆点用）"""
-    return STATUS_STYLES.get(status, STATUS_STYLES['pending'])[1]
+    return {'running': ft.Colors.PRIMARY, 'completed': ft.Colors.SECONDARY,
+            'failed': ft.Colors.ERROR, 'interrupted': ft.Colors.TERTIARY}.get(
+                status, ft.Colors.ON_SURFACE_VARIANT)
 
 
 # ---------------------------------------------------------------- 按钮
