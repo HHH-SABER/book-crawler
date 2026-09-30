@@ -145,7 +145,20 @@ def validate_data_url(chapter_url, data_url):
 
 def _json_safe(text):
     """将 JSON 字符串中的字面控制字符转为 \\uXXXX 转义 (json.loads 拒绝裸控制字符)"""
-    return re.sub(r'[\x00-\x1f]', lambda m: '\\u%04x' % ord(m.group(0)), text)
+    out = []
+    in_string = escaped = False
+    for ch in text:
+        if in_string and ord(ch) < 32:
+            out.append('\\u%04x' % ord(ch))
+        else:
+            out.append(ch)
+        if escaped:
+            escaped = False
+        elif ch == '\\' and in_string:
+            escaped = True
+        elif ch == '"':
+            in_string = not in_string
+    return ''.join(out)
 
 
 def parse_codepoint_stream(content, replace_map=None):

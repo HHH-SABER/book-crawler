@@ -3,6 +3,7 @@ rem ---------- 远控服务启动 (常驻机用; 手机/外部设备经浏览器访问) ----------
 setlocal
 cd /d "%~dp0"
 set "PYTHON_EXE=%~dp0.venv\Scripts\python.exe"
+if exist "%~dp0.runtime\python314\python.exe" set "PYTHON_EXE=%~dp0.runtime\python314\python.exe"
 if not exist "%PYTHON_EXE%" (
     echo [ERROR] .venv not found. Run: python -m venv .venv ^&^& .venv\Scripts\pip.exe install -r requirements.txt
     pause

@@ -1,3 +1,7 @@
+> **v2.4.34 本地交付（2026-09-30）**：保留原项目和原依赖版本。直接运行 `dist/小说爬虫.exe`；源码入口 `启动GUI.bat` / `启动爬虫.bat` / `启动远控.bat` 优先使用随包 `.runtime/python314` 和原 `.venv/Lib/site-packages`，无需依赖原作者的 `F:/Python` 或本轮工作目录。GUI 源码优先使用同包 Flet 客户端，避免首启下载。
+> 开发/测试：`.runtime\python314\python.exe -m unittest discover -s 测试 -v`；构建：`.runtime\python314\python.exe 脚本\build_exe.py --version=2.4.34`（设置 `FLET_CACHE_DIR` 指向 `.runtime/flet_client`）。若自行重建环境，Python 3.14 + `requirements.txt` 与 `requirements-lock.txt`；Rust 可选并保留 Python 回退。
+> 便携运行时为官方 CPython 3.14.0 Windows x64 嵌入版；第三方库复用附件原件，无新增 Python 包。Chrome/Playwright 浏览器程序仍按原项目要求由目标机提供。
+
 # 小说爬虫 (Book Crawler)
 
 多站点小说爬虫，支持 Flet 桌面 GUI 和 Windows EXE 打包。

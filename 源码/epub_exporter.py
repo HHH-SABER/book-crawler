@@ -35,21 +35,20 @@ def is_available() -> bool:
 def parse_txt_chapters(txt_path: str, encoding: str = 'utf-8'):
     """把 txt 解析为 [(章节标题, 正文), ...]; 解析失败返回空列表"""
     chapters = []
+    cur_title, cur_lines = None, []
     try:
         with open(txt_path, 'r', encoding=encoding, errors='replace') as f:
-            lines = f.read().splitlines()
+            for ln in f:
+                ln = ln.rstrip('\r\n')
+                if ln.startswith('## '):
+                    if cur_title is not None:
+                        chapters.append((cur_title, '\n'.join(cur_lines)))
+                    cur_title, cur_lines = ln[3:].strip(), []
+                elif cur_title is not None:
+                    cur_lines.append(ln)
     except OSError as e:
         _log.info(f"[epub] 读取失败: {e}")
         return []
-    cur_title, cur_lines = None, []
-    for ln in lines:
-        if ln.startswith('## '):
-            if cur_title is not None:
-                chapters.append((cur_title, '\n'.join(cur_lines)))
-            cur_title = ln[3:].strip()
-            cur_lines = []
-        else:
-            cur_lines.append(ln)
     if cur_title is not None:
         chapters.append((cur_title, '\n'.join(cur_lines)))
     return chapters
@@ -84,6 +83,7 @@ def txt_to_epub(txt_path: str, epub_path: str = None, title: str = '',
         epub_path = os.path.splitext(txt_path)[0] + '.epub'
     if not title:
         title = os.path.splitext(os.path.basename(txt_path))[0]
+    tmp_path = str(epub_path) + ".tmp." + uuid.uuid4().hex
     try:
         book = epub.EpubBook()
         book.set_identifier(str(uuid.uuid4()))
@@ -114,7 +114,8 @@ def txt_to_epub(txt_path: str, epub_path: str = None, title: str = '',
         book.add_item(epub.EpubNcx())
         book.add_item(epub.EpubNav())
         book.spine = ['nav'] + items
-        epub.write_epub(epub_path, book)
+        epub.write_epub(tmp_path, book)
+        os.replace(tmp_path, epub_path)
         size_kb = os.path.getsize(epub_path) / 1024
         _log.info(f"[epub] ✅ 已导出: {epub_path} "
                   f"({len(chapters)} 章, {size_kb:.1f} KB, 书名={title})")
@@ -122,6 +123,12 @@ def txt_to_epub(txt_path: str, epub_path: str = None, title: str = '',
     except Exception as e:
         _log.info(f"[epub] 导出失败: {e}")
         return None
+    finally:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError as e:
+            _log.debug(f"[epub] 临时文件清理失败: {e}")
 
 
 def 导出单篇(txt_path: str, title: str = '') -> str:

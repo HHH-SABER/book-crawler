@@ -11,7 +11,8 @@ title Novel Crawler GUI
 
 rem ---------- 1. Locate Python ----------
 set "PYTHON_EXE="
-if exist ".venv\Scripts\python.exe" (
+if exist ".runtime\python314\python.exe" set "PYTHON_EXE=%~dp0.runtime\python314\python.exe"
+if not defined PYTHON_EXE if exist ".venv\Scripts\python.exe" (
     set "PYTHON_EXE=.venv\Scripts\python.exe"
 )
 if not defined PYTHON_EXE (
@@ -47,6 +48,8 @@ set "PYTHONUTF8=1"
 set "FLUTTER_STORAGE_BASE_URL=https://mirrors.tuna.tsinghua.edu.cn/flutter"
 
 rem ---------- 4. Output dir is auto-created by Python ----------
+
+if exist ".runtime\flet_client\flet.exe" set "FLET_VIEW_PATH=%~dp0.runtime\flet_client"
 
 rem ---------- 5. Launch GUI ----------
 echo [START] Launching GUI...

@@ -276,6 +276,14 @@ HANDOFF.md
 # ============ 便携运行时 (2026-10-01 补: 新版启动脚本改用 .runtime/) ============
 #   .runtime/python314/   —— 嵌入式 Python, 其 ._pth 指向 ../../.venv/Lib/site-packages
 #   .runtime/flet_client/ —— Flet 桌面客户端 (由 启动GUI.bat 设 FLET_VIEW_PATH 指向它)
-# 两者都是**随发布包分发**的运行时, 不进 git (体积约 96MB / 120 文件)。
+# 两者都是**随发布包分发**的运行时, 不进 git (体积约 118MB / 99 文件)。
 # 此前未忽略 → 一直在 `git status` 里显示为未跟踪, 且有被误 add 的风险。
 .runtime/
+
+# ============ Rust 工具链与构建缓存 (2026-10-01 补) ============
+#   rust_core_poc/.toolchain/  1.25GB / 309 文件 —— 经用户裁决"本地保留", 但不入库
+#   rust_core_poc/**/target/   cargo 构建缓存, 可再生成
+# 未忽略会让 git status 长期挂着一个巨大的未跟踪目录 (且拖慢任何遍历工作区的工具)。
+rust_core_poc/.toolchain/
+rust_core_poc/pyo3_ext/target/
+rust_core_poc/target/

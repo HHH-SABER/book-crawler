@@ -66,11 +66,21 @@ RESULT_UNCHANGED = '未变化'
 RESULT_FAIL = '失败'
 
 
+class _版本快照(str):
+    """兼容原字符串契约，同时携带生成序号以拒绝倒序写回。"""
+    def __new__(cls, text, version):
+        obj = super().__new__(cls, text)
+        obj.version = version
+        return obj
+
+
 class 爬取历史:
     """爬取历史记录管理器 (单例, 线程安全)"""
 
     _instance = None
     _init_lock = threading.Lock()
+    _初始化锁 = threading.Lock()
+    _落盘锁 = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -80,18 +90,19 @@ class 爬取历史:
         return cls._instance
 
     def __init__(self):
-        if getattr(self, '_ready', False):
-            return
-        self._ready = True
-        self._file = self._取存储路径()
-        self._io_lock = threading.Lock()
-        self._数据 = self._加载()
-        # M1 防抖: 每请求全量序列化重写整个 JSON 会让抓取吞吐随历史库增大
-        # 线性劣化 (千章书 = 千次 dumps+写盘)。改为脏标记 + 最小落盘间隔,
-        # 任务收尾/atexit 时强制刷盘
-        self._脏 = False
-        self._上次落盘 = 0.0
-        atexit.register(self._atexit_flush)
+        with self._初始化锁:
+            if getattr(self, '_ready', False):
+                return
+            self._file = self._取存储路径()
+            self._io_lock = threading.Lock()
+            self._数据 = self._加载()
+            # M1 防抖: 每请求全量序列化重写整个 JSON 会让抓取吞吐随历史库增大
+            # 线性劣化 (千章书 = 千次 dumps+写盘)。改为脏标记 + 最小落盘间隔,
+            # 任务收尾/atexit 时强制刷盘
+            self._脏 = False
+            self._上次落盘 = 0.0
+            atexit.register(self._atexit_flush)
+            self._ready = True
 
     def _atexit_flush(self):
         """进程退出时强制刷盘 (防抖期间未落盘的记录不丢失)"""
@@ -175,13 +186,15 @@ class 爬取历史:
         U17 第一段: 序列化必须在锁内 (否则边改边序列化会写出撕裂的状态),
         但它是纯 CPU, 远快于文件 IO。
         """
+        self._脏 = True
+        self._版本 = getattr(self, "_版本", 0) + 1
         now = time.time()
         if not force and now - self._上次落盘 < self._最小落盘间隔:
             self._脏 = True
             return None
         self._合并磁盘新数据()      # U16: 先吸收另一进程的新记录再序列化
         try:
-            return json.dumps(self._数据, ensure_ascii=False)
+            return _版本快照(json.dumps(self._数据, ensure_ascii=False), self._版本)
         except Exception as e:
             _log.info(f"[爬取历史] 序列化失败: {type(e).__name__}: {e}")
             return None
@@ -190,17 +203,30 @@ class 爬取历史:
         """(锁外调用) 原子写盘 —— U17 第二段: 不在临界区内做文件 IO"""
         if not 快照:
             return
-        try:
-            fobj = Path(self._file).resolve()   # pathlib 锚定, 防路径穿越
-            # U16: 临时文件名带 pid —— 两个进程写同一目录时, 共用一个 .tmp
-            # 会互相截断, 可能 replace 出一个"半 A 半 B"的损坏文件
-            tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}')
-            tmp.write_text(快照, encoding='utf-8')
-            os.replace(tmp, fobj)
-            self._上次落盘 = time.time()
-            self._脏 = False
-        except OSError as e:
-            _log.info(f"[爬取历史] 保存失败: {e}")
+        version = getattr(快照, "version", getattr(self, "_版本", 0))
+        with self._落盘锁:
+            if version < getattr(self, "_已落盘版本", -1):
+                return  # 较新的快照已落盘，不让旧线程倒序覆盖
+            tmp = None
+            try:
+                fobj = Path(self._file).resolve()
+                tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}.{threading.get_ident()}')
+                tmp.write_text(快照, encoding='utf-8')
+                os.replace(tmp, fobj)
+                with self._io_lock:
+                    self._上次落盘 = time.time()
+                    self._已落盘版本 = version
+                    # 写盘期间的新修改必须继续保持脏，交给下一次 flush。
+                    self._脏 = getattr(self, "_版本", 0) != version
+            except OSError as e:
+                _log.info(f"[历史] 保存失败 (保留脏标记供重试): {e}")
+                self._脏 = True
+            finally:
+                if tmp is not None:
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except OSError as e:
+                        _log.debug(f"[历史] 临时文件清理失败: {e}")
 
     def _保存(self, force=False):
         """防抖写入入口 (供不持锁的调用方使用; U17: 锁外落盘)

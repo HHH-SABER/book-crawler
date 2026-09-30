@@ -13,7 +13,8 @@ title Novel Crawler
 
 rem ---------- 1. Locate Python ----------
 set "PYTHON_EXE="
-if exist ".venv\Scripts\python.exe" set "PYTHON_EXE=.venv\Scripts\python.exe"
+if exist ".runtime\python314\python.exe" set "PYTHON_EXE=%~dp0.runtime\python314\python.exe"
+if not defined PYTHON_EXE if exist ".venv\Scripts\python.exe" set "PYTHON_EXE=.venv\Scripts\python.exe"
 if not defined PYTHON_EXE (
     where python >nul 2>&1 && set "PYTHON_EXE=python"
 )

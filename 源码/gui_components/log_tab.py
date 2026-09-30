@@ -146,7 +146,7 @@ class LogTab:
             ft.Column([
                 ft.Row([self.source_dd, self.level_dd, self.keyword_field,
                         copy_btn, export_btn, clear_btn],
-                       spacing=6),
+                       spacing=6, wrap=True),
                 ft.Row([self.date_dropdown, refresh_btn, open_dir_btn,
                         self.status_text],
                        spacing=6, wrap=True),

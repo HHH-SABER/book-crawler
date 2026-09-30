@@ -131,7 +131,7 @@ def main(page: ft.Page):
         _sw, _sh = 1920, 1080
     page.window.width = min(1500, max(960, int(_sw * 0.9)))
     page.window.height = min(860, max(640, int(_sh * 0.85)))
-    page.window.min_width = 1100
+    page.window.min_width = min(960, _sw)
     page.window.min_height = 640
     # 居中: 用 flet 官方 center() 在窗口就绪后调用。旧实现用 GetSystemMetrics
     # 手算坐标, 与原生窗口创建存在竞态且只算主屏 (多显示器下偏移), 导致启动不居中
@@ -402,7 +402,7 @@ def main(page: ft.Page):
             import 远控.服务 as _远控切
             if _远控切.运行中():
                 _远控切.设置启用(False)
-                _远控切.停止后台()
+                await asyncio.to_thread(_远控切.停止后台)
                 _更新远控外观(False)
                 app_log.info("远控", "远控已停用 (手机端将无法访问)")
                 page.show_dialog(ft.SnackBar(ft.Text("远控已停用, 手机端将无法访问")))
