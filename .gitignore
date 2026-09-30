@@ -281,9 +281,17 @@ HANDOFF.md
 .runtime/
 
 # ============ Rust 工具链与构建缓存 (2026-10-01 补) ============
-#   rust_core_poc/.toolchain/  1.25GB / 309 文件 —— 经用户裁决"本地保留", 但不入库
-#   rust_core_poc/**/target/   cargo 构建缓存, 可再生成
-# 未忽略会让 git status 长期挂着一个巨大的未跟踪目录 (且拖慢任何遍历工作区的工具)。
+#   .toolchain/  1.25GB / 309 文件 —— 经用户裁决"本地保留", 但不入库。
+#   2026-10-01 已整体移出工作区至 E:\程序文件\_构建缓存\小说爬虫_toolchain\
+#   (重建 rust_core.pyd 时需把 CARGO_HOME / RUSTUP_HOME 指向新位置,
+#    该目录内的 _原位置说明.txt 有完整说明)。此处保留规则以防再次放回项目内。
 rust_core_poc/.toolchain/
 rust_core_poc/pyo3_ext/target/
 rust_core_poc/target/
+
+# ============ 交付清单类产物 (2026-10-01 补) ============
+# 按 AGENTS.md 入库白名单, 根级只允许 README/CHANGELOG/AGENTS/LICENSE/
+# requirements.txt/.gitignore/启动*.bat —— 下列为特定版本的交付校验产物,
+# 随发布包分发, 不进版本库 (内容与 CHANGELOG / 交付报告重复)。
+/SHA256SUMS.txt
+/交付清单.json
