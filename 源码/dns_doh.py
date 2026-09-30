@@ -99,6 +99,8 @@ def _patched_getaddrinfo(host, port, *args, **kwargs):
     # 对 name=127.0.0.1 发起 DoH 查询 (两个源超时 8s 串行, 最坏卡 16 秒)。
     # H3: DoH 服务器自身域名必须走原函数 — 否则 alidns 解析失败时,
     # urlopen→getaddrinfo(已 patch)→再次 DoH 查询同一域名, 无限递归空转。
+    if not isinstance(host, str):
+        return _orig_getaddrinfo(host, port, *args, **kwargs)
     if _is_ip_literal(host) or host in _DOH_ALLOWED_HOSTS \
             or host == 'localhost' or host.endswith('.localhost'):
         return _orig_getaddrinfo(host, port, *args, **kwargs)
@@ -137,8 +139,7 @@ def _patched_getaddrinfo(host, port, *args, **kwargs):
                         f"检测到 DNS 污染: {host} → DoH 解析 {ip}")
                 except Exception:
                     print(f"[DNS] 检测到污染: {host} → DoH 解析 {ip}")
-            family = socket.AF_INET
-            return [(family, socket.SOCK_STREAM, 6, '', (ip, port))]
+            return _orig_getaddrinfo(ip, port, *args, **kwargs)
         if results:
             return results
         # DoH 也失败且系统解析本就抛异常 → 还原系统行为

@@ -110,7 +110,9 @@ class TaskTable:
         # 横向滚动容器 (2026-09-29 二轮反馈"任务列显示不全"): 全列固定宽后,
         # 窄窗口 (侧栏+抽屉挤占) 时表格整体左右滚动, 操作按钮不再被裁;
         # vertical_alignment=STRETCH 把卡片高度传给内层 Column → ListView 有界可滚
-        表格体 = ft.Column([header, self._list_view], spacing=4)
+        # 横滚主轴不约束宽度；ListView 必须取得有限横轴宽度才可布局。
+        表宽 = sum(c[1] for c in _COLUMNS) + 6 * (len(_COLUMNS) - 1) + 16
+        表格体 = ft.Column([header, self._list_view], spacing=4, width=表宽)
         横滚 = ft.Row([表格体], spacing=0, scroll=ft.ScrollMode.AUTO,
                       vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         return make_card(
@@ -232,7 +234,7 @@ class TaskTable:
             ratio, pct_text = 0.0, "—"
         ring = ft.ProgressRing(
             width=16, height=16, stroke_width=2.5,
-            value=(ratio if task.progress_total or task.status == "completed"
+            value=(ratio if task.progress_total or task.status != "running"
                    else None),
             color=status_color(task.status),
         )
@@ -399,6 +401,8 @@ class TaskTable:
             self.task_manager.select_task(task_id)
             _log("GUI", f"重新下载 (原任务重启): {task_id} ({task.url})")
             self.refresh()
+        else:
+            self._notify("任务正在收尾，请稍后重新下载")
 
     def _on_export_epub(self, task_id: str):
         """导出 EPUB (2026-09-29 单本手动导出): 走 epub_exporter 同一转换链
@@ -474,6 +478,8 @@ class TaskTable:
                 self._expanded_id = ""
             self._sig = None
             self.refresh()
+        else:
+            self._notify("任务正在收尾，文件仍在写入；停止后请稍后重试")
 
     def _notify(self, msg: str):
         try:

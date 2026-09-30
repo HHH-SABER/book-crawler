@@ -68,7 +68,7 @@ def _递增(ver: str, 级别: str) -> str:
 
 
 def _同步CHANGELOG(ver: str, date: str) -> str:
-    """把 CHANGELOG.md 顶部最新条目的版本号与日期更新为本次版本, 返回提示
+    """同步当前发布标题；新版本追加条目，绝不将旧版本正文重新标号。
 
     兼容两种标题形式 (部分编辑器会把 [ 转义为 \\[ ):
         ## [2.0.0] - 2026-09-02   /   ## \\[2.0.0] - 2026-09-02
@@ -83,9 +83,14 @@ def _同步CHANGELOG(ver: str, date: str) -> str:
     m = 模式.search(文本)
     if m:
         bs1, bs2 = m.group(2), m.group(4)   # 保留原转义样式
-        新文本 = 模式.sub(
-            lambda mm: f"{mm.group(1)}{bs1}[{ver}]{bs2} - {date}",
-            文本, count=1)
+        if m.group(3) == f"[{ver}]":
+            新文本 = 模式.sub(
+                lambda mm: f"{mm.group(1)}{bs1}[{ver}]{bs2} - {date}",
+                文本, count=1)
+        else:
+            条目 = (f"## {bs1}[{ver}]{bs2} - {date}\n\n"
+                    "### 变更\n\n- (待补充本次改进内容)\n\n***\n\n")
+            新文本 = 文本[:m.start()] + 条目 + 文本[m.start():]
     else:
         # 无最新条目 (首次): 在文档开头插入空模板
         新文本 = (f"## [{ver}] - {date}\n\n### 新增功能\n\n- (待补充本次改进内容)\n\n"
@@ -207,7 +212,8 @@ def 保护dist用户数据(dist: str) -> str:
             shutil.move(os.path.join(dist, name), os.path.join(stash, name))
             log(f"[PRESERVE] 已暂存用户数据: {name}")
         except Exception as e:
-            log(f"[WARN] 暂存 {name} 失败 (该数据可能随 dist 清理丢失): {e}")
+            恢复dist用户数据(dist, stash)
+            raise RuntimeError(f"暂存 {name} 失败，已中止 dist 清理；剩余原件保留在 {stash}: {e}") from e
     return stash
 
 
@@ -235,7 +241,12 @@ def 恢复dist用户数据(dist: str, stash: str) -> None:
             log(f"[PRESERVE] 已恢复用户数据: {name}")
         except Exception as e:
             log(f"[WARN] 恢复 {name} 失败: {e}")
-    shutil.rmtree(stash, ignore_errors=True)
+    # 冲突或恢复失败的原件必须保留；只移除已搬空的目录。
+    for root, dirs, files in os.walk(stash, topdown=False):
+        if not os.listdir(root):
+            os.rmdir(root)
+    if os.path.isdir(stash):
+        log(f"[WARN] 部分原件未恢复，已完整保留供人工处理: {stash}")
 
 
 def main():
@@ -252,7 +263,7 @@ def main():
                     help="递增版本: --bump(默认patch) / --bump=minor / --bump=major")
     _g.add_argument("--version", dest="指定版本", help="手动指定版本号 (不递增)")
     _g.add_argument("--no-bump", action="store_true", help="保持当前版本号不变")
-    _g.add_argument("--skip-smoke", action="store_true",
+    _parser.add_argument("--skip-smoke", action="store_true",
                     help="跳过构建后的 EXE 启动冒烟测试 (默认开启: 打包成功≠能启动)")
     _args = _parser.parse_args()
 
@@ -302,6 +313,8 @@ def main():
     _cache_env = os.environ.get("FLET_CACHE_DIR")
     if _cache_env:
         VIEW_DIR = _cache_env
+    elif os.path.isfile(os.path.join(ROOT, ".runtime", "flet_client", "flet.exe")):
+        VIEW_DIR = os.path.join(ROOT, ".runtime", "flet_client")
     else:
         _la = os.environ.get("LOCALAPPDATA")
         VIEW_DIR = (os.path.join(_la, "小说爬虫", "构建缓存", "flet_client") if _la

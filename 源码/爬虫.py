@@ -5530,7 +5530,14 @@ class NovelSpider:
             ck = json.loads(Path(ck_path).read_text(encoding='utf-8'))
         except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
             return None
-        if ck.get('catalog_url') != catalog_url:
+        if not isinstance(ck, dict) or ck.get('catalog_url') != catalog_url:
+            return None
+        try:
+            done = int(ck.get('completed', 0))
+            total = int(ck.get('total', 0))
+            if done < 0 or total < done:
+                return None
+        except (ValueError, TypeError, OverflowError):
             return None
         return ck
 
@@ -6026,6 +6033,8 @@ class NovelSpider:
           日志 (避免 GUI 正则把停止的任务误解析为 completed)
         - 正常完成: 由调用方先移除检查点
         """
+        self.last_output_file = output_file
+        self.last_novel_title = novel_title
         self.last_failed = failed
         self.last_total = total
         self.last_aborted = not 正常完成
@@ -6272,7 +6281,7 @@ class NovelSpider:
         if resume:
             ck = self._load_checkpoint(output_file, catalog_url)
             if ck:
-                done = int(ck.get('completed', 0))
+                done = min(int(ck.get('completed', 0)), self._count_written_chapters(output_file))
                 if done >= total:
                     _log.info(f"[断点续传] 检查点显示上次已全部完成 ({done}/{total} 章)，从头重新抓取")
                     self._remove_checkpoint(output_file)
@@ -6345,13 +6354,17 @@ class NovelSpider:
                     # 只允许一个线程进入, 共享同一 Context 会报 "already entered"。
                     with ThreadPoolExecutor(max_workers=threads) as pool:
                         futures = {}
+                        跳过索引 = set()
                         timed_out = []   # M6: result 超时被放弃、但 worker 仍在运行的 future
                         for i in range(start, total):
+                            if stop_event is not None and stop_event.is_set():
+                                break
                             # 增量模式: 跳过未变更章节 (不提交到线程池)。
                             # 从头重抓(start==0)时仅当旧正文已索引(可搬运)才允许跳过,
                             # 否则章节会因 'w' 截断而永久丢失
                             if self._是否应跳过章节(chapters[i]['url']):
-                                if start > 0 or chapters[i]['title'] in 增量旧内容:
+                                if start == 0 and 增量旧内容.get(chapters[i]['title']):
+                                    跳过索引.add(i)
                                     self._增量跳过数 += 1
                                     _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): "
                                           f"{chapters[i]['title']}")
@@ -6375,6 +6388,11 @@ class NovelSpider:
                                                       novel_title, total, failed,
                                                       export_epub, 正常完成=False)
                         for i in range(start, total):
+                            if (stop_event is not None and stop_event.is_set()) or (i not in futures and i not in 跳过索引):
+                                for pending in futures.values():
+                                    pending.cancel()
+                                return self._收尾汇总(output_file, catalog_url, novel_title,
+                                                      total, failed, export_epub, 正常完成=False)
                             if i not in futures:
                                 # 被增量跳过的章节: 从头重抓时搬运旧正文到新文件
                                 # (追加模式 start>0 时旧正文已在文件中, 无需写)
@@ -6456,7 +6474,7 @@ class NovelSpider:
                         # 追加模式(start>0): 旧正文已在文件中, 直接跳过;
                         # 从头重抓(start==0): 搬运旧正文到新文件, 索引缺失则重抓
                         if self._是否应跳过章节(chap['url']):
-                            if start > 0 or chap['title'] in 增量旧内容:
+                            if start == 0 and 增量旧内容.get(chap['title']):
                                 self._增量跳过数 += 1
                                 _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
                                 _任务事件.发布('增量跳过')          # U19 结构化事件
@@ -6501,7 +6519,11 @@ class NovelSpider:
                         if _cur_delay > 0:
                             # 章节间隔: 自适应模式下按当前档位实时取值 (降档立即放大;
                             # 尊重风控延迟因子, P0-2 自适应)
-                            time.sleep(_cur_delay * getattr(self, '_延迟因子', 1.0))
+                            wait_seconds = _cur_delay * getattr(self, '_延迟因子', 1.0)
+                            if stop_event is not None:
+                                stop_event.wait(wait_seconds)
+                            else:
+                                time.sleep(wait_seconds)
         except KeyboardInterrupt:
             _log.info(f"\n⚠️ 用户中断! 进度检查点已保存，下次运行将自动从断点继续 (输出: {output_file})")
             # M7: 提前返回也要走收尾统计 (旧实现直接 return)
@@ -6857,6 +6879,8 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         incremental: 为 True 时启用增量抓取 (24h 内已抓取且未变化的章节跳过)
         txt_indent: TXT 段首缩进开关 (None=读配置默认开; False=CLI --no-txt-indent)
     """
+    if stop_event is not None and stop_event.is_set():
+        return ""
     # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
     try:
         _app_log.enable_console()
@@ -6898,8 +6922,7 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     try:
         validate_public_url(catalog_url)
     except ValueError as e:
-        _log.info(f"⚠️ URL 校验失败: {e}")
-        return
+        raise ValueError(f"URL 校验失败: {e}") from e
 
     # 章节页 → 目录页规范化 (必须在标题预取/目录解析前; 幂等, run() 内会再调一次)
     catalog_url = _规范化目录URL(catalog_url)
@@ -6907,6 +6930,9 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     base_url = get_base_url(catalog_url)
     _log.info(f"提取到基础URL: {base_url}")
     spider = NovelSpider(base_url)
+    fallback_sources = {}
+    if spider._captcha_manager is not None:
+        fallback_sources = spider._captcha_manager.config.data.get("fallback_sources", {})
 
     # 若启用去重序号, 在主源抓取前一次性确定唯一标题,
     # 避免多源回退时备用源又产生新的序号文件。
@@ -6924,32 +6950,25 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             spider.close()
             spider = None
 
-    if mode == "list":
-        chapters = spider.get_chapter_list(catalog_url, sort_chapters)
-        _log.info("\n=== 章节列表 ===")
-        for i, chap in enumerate(chapters):
-            _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
-        _log.info(f"\n共找到 {len(chapters)} 个章节")
-        spider.close()
-        return
-
-    if mode == "test":
-        chapters = spider.get_chapter_list(catalog_url, sort_chapters)
-        _log.info(f"\n共找到 {len(chapters)} 个章节")
-        if not chapters:
-            _log.info("⚠️ 未提取到章节，可能需要适配该网站结构")
+    if mode in ("list", "test"):
+        try:
+            chapters = spider.get_chapter_list(catalog_url, sort_chapters)
+            _log.info(f"共找到 {len(chapters)} 个章节")
+            if mode == "list":
+                for i, chap in enumerate(chapters):
+                    _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
+                return
+            if not chapters:
+                raise RuntimeError("未提取到章节，可能需要适配该网站结构")
+            _log.info(f"第1章: {chapters[0]['title']}")
+            _log.info(f"最后章: {chapters[-1]['title']}")
+            content = spider.get_chapter_content(chapters[0]['url'], max_pages=2)
+            if not content:
+                raise RuntimeError("未提取到内容，可能需要调整内容选择器")
+            _log.info(f"内容长度: {len(content)} 字符，预览: {content[:200]}...")
             return
-        _log.info(f"第1章: {chapters[0]['title']}")
-        _log.info(f"最后章: {chapters[-1]['title']}")
-        _log.info("\n--- 提取第1章内容(前2页) ---")
-        content = spider.get_chapter_content(chapters[0]['url'], max_pages=2)
-        _log.info(f"内容长度: {len(content)} 字符")
-        if content:
-            _log.info(f"内容预览: {content[:200]}...")
-        else:
-            _log.info("⚠️ 未提取到内容，可能需要调整内容选择器")
-        spider.close()
-        return
+        finally:
+            spider.close()
 
     # mode == "full" or "range"
     # ===== 多源回退: 主源抓取失败(验证码拦死/章节大面积失败)时自动尝试备用源 =====
@@ -6958,13 +6977,17 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     # 或指向一个 JSON 文件路径
     sources = [catalog_url]
     try:
-        if spider is not None and spider._captcha_manager is not None:
-            fs = spider._captcha_manager.config.data.get('fallback_sources', {})
+        if fallback_sources:
+            fs = fallback_sources
             if isinstance(fs, str) and os.path.exists(fs):
                 fs = json.loads(Path(fs).read_text(encoding='utf-8'))
             if isinstance(fs, dict):
-                for alt in fs.get(catalog_url, []):
-                    if alt and alt not in sources:
+                alternatives = fs.get(catalog_url, [])
+                if not isinstance(alternatives, (list, tuple)):
+                    alternatives = []
+                for alt in alternatives:
+                    if isinstance(alt, str) and alt and alt not in sources:
+                        validate_public_url(alt)
                         sources.append(alt)
     except Exception as e:
         _log.info(f"[多源回退] 配置读取失败: {e}")
@@ -6979,21 +7002,25 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         _log.info(f"[多源回退] 共 {len(sources)} 个数据源 (主源 + {len(sources)-1} 个备用)")
 
     last_error = None   # M5: 最后一个源的异常 (全部源异常时向上抛, 保持单源行为)
+    last_result = None
+    any_content = False
     all_errored = True  # M5: 是否所有源都以异常收场
     for src_idx, src in enumerate(sources):
         if src_idx > 0:
             _log.info(f"[多源回退] ⚠️ 主源抓取异常, 切换备用源 {src_idx}/{len(sources)-1}: {src}")
+        if stop_event is not None and stop_event.is_set():
+            return ""
         src_spider = NovelSpider(get_base_url(src))
         try:
             if mode == "range" and chapter_range:
-                src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
+                result = src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                                resume=resume, show_progress=show_progress,
                                chapter_range=chapter_range, threads=threads, delay=delay,
                                stop_event=stop_event, unique_title=unique_title,
                                novel_title=unique_novel_title, incremental=incremental,
                                export_epub=export_epub, txt_indent=txt_indent)
             else:
-                src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
+                result = src_spider.run(src, sort_chapters=sort_chapters, output_dir=output_dir,
                                resume=resume, show_progress=show_progress,
                                threads=threads, delay=delay, stop_event=stop_event,
                                unique_title=unique_title, novel_title=unique_novel_title,
@@ -7016,8 +7043,11 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             return
         failed = getattr(src_spider, 'last_failed', None)
         total_n = getattr(src_spider, 'last_total', 0)
-        if failed is None:
-            return  # run 内部异常终止(如无章节), 不再尝试备用源
+        if failed is None or total_n <= 0:
+            last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
+            continue
+        last_result = result
+        any_content = any_content or total_n > len(failed)
         fail_ratio = len(failed) / max(total_n, 1)
         rate = 0.0
         if src_spider._captcha_manager is not None:
@@ -7032,18 +7062,21 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             if mode in ("full", "range") and not incremental:
                 try:
                     from 书架 import 记录 as _shelf记录
-                    _bt = unique_novel_title or src_spider.get_novel_title(src)
-                    _shelf记录(_bt or '', src, '')
+                    _bt = unique_novel_title or getattr(src_spider, 'last_novel_title', '')
+                    _shelf记录(_bt or '', src, getattr(src_spider, 'last_output_file', result) or '')
                 except Exception as _e_shelf:
                     _log.info(f"[书架] 登记失败(不影响抓取): {_e_shelf}")
-            return
+            return result
         _log.info(f"[多源回退] 源 {src_idx+1}/{len(sources)} 未达标 "
               f"(失败率 {fail_ratio:.0%}, 验证码触发率 {rate:.0%}), "
               + ("尝试下一个备用源..." if src_idx < len(sources) - 1 else "无更多备用源"))
 
+    if not any_content:
+        raise last_error or RuntimeError("所有章节抓取失败，请检查站点及反爬提示")
     if all_errored and last_error is not None:
         # M5: 所有源都异常 → 向上抛最后一个异常 (保持旧单源行为: GUI 标记失败)
         raise last_error
+    return last_result
 
 
 def run_batch(url_list, threads=None, sort_chapters=True, resume=True,

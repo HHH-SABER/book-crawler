@@ -45,7 +45,7 @@
      background:rgba(0,0,0,.85); z-index:99; align-items:center; justify-content:center;">
   <div style="background:#1a2029; padding:20px; border-radius:12px; width:86%; max-width:360px;">
     <div style="margin-bottom:10px;">请输入访问 token<br><span class="dim">(常驻机 数据/远控配置.json 中的 token)</span></div>
-    <input id="token输入" type="text" autocomplete="off" autocapitalize="off"
+    <input id="token输入" type="password" aria-label="访问 token" autocomplete="off" autocapitalize="off"
            style="width:100%; padding:10px; font-size:16px; border-radius:6px;
                   border:1px solid #333; background:#0d1015; color:#dde3ec;">
     <div style="margin-top:12px; text-align:right;">
@@ -85,6 +85,7 @@
 var token = localStorage.getItem('远控token') || '';
 var 日志目标 = null;   // 当前展开日志的任务 id
 var 日志指针 = 0;
+var 日志轮次 = null;
 
 // 移动端部分浏览器 (夸克/UC 等) 屏蔽系统 prompt 的输入框 —
 // 改用页面内自绘登录层, 任何浏览器都可输入
@@ -148,6 +149,7 @@ function 停止(id) {
 function 展开日志(id) {
   日志目标 = (日志目标 === id) ? null : id;
   日志指针 = 0;
+  日志轮次 = null;
   var box = document.getElementById('log');
   box.textContent = '';
   box.style.display = 日志目标 ? 'block' : 'none';
@@ -156,14 +158,14 @@ function 展开日志(id) {
 
 function 拉日志() {
   if (!日志目标) return;
-  api('/api/v1/tasks/' + 日志目标 + '/logs?after=' + 日志指针)
-    .then(function (r) { return r.json(); })
+  api('/api/v1/tasks/' + 日志目标 + '/logs?after=' + 日志指针 + (日志轮次 ? '&epoch=' + encodeURIComponent(日志轮次) : ''))
+    .then(function (r) { if (!r.ok) throw new Error("请求失败: " + r.status); return r.json(); })
     .then(function (j) {
-      if (j.total < 日志指针) {   // 服务端日志被截断 → 重置指针全量重拉
-        日志指针 = 0;
+      if (j.截断 || j.total < 日志指针 || (日志轮次 && 日志轮次 !== j.epoch)) {
         document.getElementById('log').textContent = '';
-        return;
       }
+      日志轮次 = j.epoch;
+      日志指针 = j.total;
       if (j.entries.length) {
         var box = document.getElementById('log');
         var atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
@@ -183,11 +185,11 @@ function 拉日志() {
         if (atBottom) box.scrollTop = box.scrollHeight;
         日志指针 = j.total;
       }
-    }).catch(function () {});
+    }).catch(function (e) { 提示(e.message || "连接失败，请检查远控服务"); });
 }
 
 function 刷新任务() {
-  api('/api/v1/tasks').then(function (r) { return r.json(); })
+  api('/api/v1/tasks').then(function (r) { if (!r.ok) throw new Error("请求失败: " + r.status); return r.json(); })
     .then(function (j) {
       var tb = document.getElementById('tasks');
       tb.textContent = '';
@@ -199,7 +201,8 @@ function 刷新任务() {
         td1.style.textOverflow = 'ellipsis'; td1.style.whiteSpace = 'nowrap';
         var td2 = document.createElement('td');
         td2.className = 'st-' + t.状态;
-        td2.textContent = t.状态;
+        td2.textContent = ({running:'抓取中',completed:'已完成',failed:'失败',stopped:'已停止',interrupted:'已中断',pending:'等待中'})[t.状态] || t.状态;
+        td2.title = t.错误 || ''; 
         var td3 = document.createElement('td');
         td3.textContent = t.进度[1] ? (t.进度[0] + '/' + t.进度[1]) : '—';
         var td4 = document.createElement('td');
@@ -242,7 +245,7 @@ function 刷新任务() {
 }
 
 function 刷新书架() {
-  api('/api/v1/books').then(function (r) { return r.json(); })
+  api('/api/v1/books').then(function (r) { if (!r.ok) throw new Error("请求失败: " + r.status); return r.json(); })
     .then(function (j) {
       var box = document.getElementById('books');
       box.textContent = '';
@@ -258,7 +261,7 @@ function 刷新书架() {
         var ops = document.createElement('div'); ops.style.display = 'flex';
         ops.style.gap = '6px';
         var rd = document.createElement('a');
-        rd.href = '/reader/' + b.id + '?k=' + token;
+        rd.href = '/reader/' + b.id + '?k=' + encodeURIComponent(token);
         var rb = document.createElement('button'); rb.textContent = '阅读';
         rd.appendChild(rb);
         var dl = document.createElement('a');

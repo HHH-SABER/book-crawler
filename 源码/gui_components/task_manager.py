@@ -22,6 +22,46 @@ except Exception:
     app_log = None
 
 
+class TaskLogBuffer(list):
+    """保留最近 500 行，累计游标不随截断回退；快照与追加共用锁。"""
+    def __init__(self):
+        super().__init__()
+        self._lock = threading.Lock()
+        self.total = 0
+        self.epoch = str(time.time_ns())
+
+    def append(self, entry):
+        with self._lock:
+            super().append(entry)
+            self.total += 1
+            if len(self) > 500:
+                del self[:-500]
+
+    def extend(self, entries):
+        for entry in entries:
+            self.append(entry)
+
+    def snapshot(self, after=0):
+        with self._lock:
+            total = self.total
+            first = total - len(self)
+            reset = after < first or after > total or after < 0
+            pos = first if reset else after
+            return {"total": total, "截断": reset,
+                    "entries": list(self[max(0, pos-first):]), "epoch": self.epoch}
+
+
+def snapshot_task_logs(task, after=0):
+    logs = task.logs
+    if isinstance(logs, TaskLogBuffer):
+        return logs.snapshot(after)
+    # 兼容旧调用方/测试直接赋 list；生产 TaskInfo 均用累计缓冲。
+    copied = list(logs)
+    reset = after < 0 or after > len(copied)
+    return {"total": len(copied), "截断": reset,
+            "entries": copied[0 if reset else after:], "epoch": str(id(logs))}
+
+
 @dataclasses.dataclass
 class TaskMetrics:
     """任务运行时指标 (由爬虫结构化日志解析回填, 见 TaskLogRedirector)"""
@@ -48,7 +88,7 @@ class TaskInfo:
     progress_current: int = 0
     progress_total: int = 0
     status: str = "pending"  # pending/running/completed/failed
-    logs: list = dataclasses.field(default_factory=list)
+    logs: list = dataclasses.field(default_factory=TaskLogBuffer)
     output_file: str = ""
     error: str = ""
     thread: Optional[threading.Thread] = None
@@ -66,6 +106,7 @@ class TaskInfo:
     # 运行时指标 (GUI 表格列数据源)
     metrics: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
     selected: bool = False  # 当前是否被选中 (供抽屉/表格高亮)
+    _恢复项: bool = False  # 启动恢复项不触发本轮完成推送 (不持久化)
 
 
 class TaskLogRedirector:
@@ -108,6 +149,8 @@ class TaskLogRedirector:
 
     def _应用完成终态(self):
         """完成终态的统一落点 (正则路径与 '完成' 事件共用同一实现, 避免两处漂移)"""
+        if self.task.stop_flag.is_set() or self.task.status == 'stopped':
+            return
         self.task.progress_current = self.task.progress_total
         self.task.status = 'completed'
         if self.task.metrics:
@@ -161,7 +204,7 @@ class TaskLogRedirector:
                         'msg': s
                     })
                     # U19: 统计正则兜底是否仍在起作用 (正则停用时这里恒不计数)
-                    _前 = self._状态指纹()
+                    _前 = self._状态指纹() if self.启用正则兜底 else None
                     if self.启用正则兜底:
                         # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
                         self._parse_progress(s)
@@ -178,7 +221,7 @@ class TaskLogRedirector:
                             if m:
                                 self._应用完成终态()
                     # U19: 正则路径若确实改动了状态, 记一笔 (含改了哪些字段)
-                    _后 = self._状态指纹()
+                    _后 = self._状态指纹() if self.启用正则兜底 else None
                     if _后 != _前:
                         self.正则兜底数 += 1
                         self.正则兜底字段.update(
@@ -392,7 +435,7 @@ class TaskLogRedirector:
             _cands = []
             try:
                 import _path_utils
-                _cands.append(_Path(_path_utils.resolve_data_file('站点历史.json')))
+                _cands.append(_Path(os.path.join(_path_utils.get_state_root(), '数据', '站点历史.json')))
             except Exception as _e:
                 if app_log:
                     app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
@@ -554,6 +597,8 @@ def _获取域闸门(闸门, stop_flag=None, 占用提示=None) -> bool:
     返回 True=已获得 (调用方必须 release); False=排队中 stop 置位而放弃
     (未获得, 不得 release)。闸门为 None 视为放行。
     """
+    if stop_flag is not None and stop_flag.is_set():
+        return False
     if 闸门 is None:
         return True
     if 闸门.acquire(blocking=False):
@@ -567,6 +612,9 @@ def _获取域闸门(闸门, stop_flag=None, 占用提示=None) -> bool:
     while not 闸门.acquire(timeout=1.0):
         if stop_flag is not None and stop_flag.is_set():
             return False
+    if stop_flag is not None and stop_flag.is_set():
+        闸门.release()
+        return False
     return True
 
 
@@ -595,6 +643,7 @@ class TaskManager:
         self.page = page  # Flet Page 实例，用于触发UI更新
         self.tasks: dict[str, TaskInfo] = {}
         self._lock = threading.Lock()
+        self._历史写锁 = threading.Lock()
         self._counter = 0
         self._selected_task_id: str = ""       # 当前选中任务 (表格高亮/抽屉联动)
         self._加载任务历史()                    # 重启后恢复任务表 (含 running→interrupted)
@@ -660,15 +709,16 @@ class TaskManager:
         if not path:
             return
         try:
-            with self._lock:
-                条目 = [self._序列化任务(t) for t in self.tasks.values()
-                        if t.task_id.startswith('task_')]
-            条目 = 条目[-self._历史最大条数:]
-            锚定 = Path(path).resolve()   # pathlib 锚定 (防穿越告警/路径规范)
-            os.makedirs(str(锚定.parent), exist_ok=True)
-            tmp = 锚定.with_name(锚定.name + '.tmp')   # 写入在 _lock 内串行, 固定后缀即可
-            tmp.write_text(json.dumps(条目, ensure_ascii=False), encoding='utf-8')
-            os.replace(tmp, 锚定)
+            with self._历史写锁:
+                with self._lock:
+                    条目 = [self._序列化任务(t) for t in self.tasks.values()
+                            if t.task_id.startswith('task_')]
+                条目 = 条目[-self._历史最大条数:]
+                锚定 = Path(path).resolve()   # pathlib 锚定 (防穿越告警/路径规范)
+                os.makedirs(str(锚定.parent), exist_ok=True)
+                tmp = 锚定.with_name(锚定.name + f'.tmp.{os.getpid()}.{threading.get_ident()}')
+                tmp.write_text(json.dumps(条目, ensure_ascii=False), encoding='utf-8')
+                os.replace(tmp, 锚定)
         except Exception as _e:
             if app_log is not None:
                 try:
@@ -701,7 +751,7 @@ class TaskManager:
         if not isinstance(条目, list):
             return
         _任务字段 = {f.name for f in dataclasses.fields(TaskInfo)} - {
-            'thread', 'stop_flag', 'selected', 'logs', 'metrics'}
+            'thread', 'stop_flag', 'selected', 'logs', 'metrics', '_恢复项'}
         _指标字段 = {f.name for f in dataclasses.fields(TaskMetrics)}
         恢复数 = 0
         for d in 条目:
@@ -715,6 +765,7 @@ class TaskManager:
                 if kwargs.get('chapter_range') is not None:
                     kwargs['chapter_range'] = tuple(kwargs['chapter_range'])
                 t = TaskInfo(**kwargs)
+                t._恢复项 = True
                 t.metrics = TaskMetrics(**{k: v for k, v in m.items()
                                            if k in _指标字段})
                 if t.status == 'running':
@@ -801,6 +852,7 @@ class TaskManager:
             daemon=True
         )
         task.thread = t
+        self._保存任务历史()   # 先保存 running，异常退出也能恢复
         t.start()
         return task_id
 
@@ -891,7 +943,7 @@ class TaskManager:
                                       f"网站清单记录失败 (不影响抓取结果): "
                                       f"{type(_e_清单).__name__}")
         except Exception as e:
-            if self._is_task_thread_owner(task):
+            if self._is_task_thread_owner(task) and not task.stop_flag.is_set():
                 self._set_terminal(task, "failed")
                 task.error = str(e)
                 task.logs.append({
@@ -963,11 +1015,18 @@ class TaskManager:
             task = self.tasks.get(task_id)
             if not task:
                 return False
+            # 文件仍被 worker 使用时，停止并拒绝立即删文件；下一次可安全重试。
+            if delete_file and task.thread is not None and task.thread.is_alive():
+                task.stop_flag.set()
+                self._set_terminal(task, "stopped")
+                return False
             # 停止仍在运行的任务
             task.stop_flag.set()
             if task.status == "running":
                 self._set_terminal(task, "stopped")
             self.tasks.pop(task_id, None)
+            if self._selected_task_id == task_id:
+                self._selected_task_id = ""
         if delete_file and task.output_file:
             try:
                 # 安全校验: 只允许删除输出目录下的 .txt 文件, 防误删任意路径
@@ -1022,14 +1081,15 @@ class TaskManager:
             task = self.tasks.get(task_id)
             if not task:
                 return False
-            if task.status == "running":
+            if task.status == "running" or (task.thread is not None and task.thread.is_alive()):
                 return False
+            task._恢复项 = False
             # L1 修复: 重置/登记线程的整段移入锁内 (旧实现检查与重置分离,
             # 并发的 delete_task/stop_task 可插入造成僵尸线程)
             task.progress_current = 0
             task.progress_total = 0
             task.status = "running"
-            task.logs = []
+            task.logs = TaskLogBuffer()
             task.error = ""
             task.output_file = ""
             task.metrics = TaskMetrics(start_time=time.time())  # 重置运行时指标

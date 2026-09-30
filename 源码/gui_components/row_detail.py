@@ -15,6 +15,8 @@ from .ui_fluent import (FONT_STACK, SIZE_TINY,
 def _fmt_elapsed(task: TaskInfo) -> str:
     """格式化任务耗时"""
     st = task.metrics.start_time
+    if task.status == 'interrupted' and not task.metrics.end_time:
+        return '—'  # 上轮实际中断时刻未知，不能当作仍在运行累计
     if not st:
         return "—"
     # 已完成/失败/停止: 用结束时间冻结耗时, 不再随当前时间增长
