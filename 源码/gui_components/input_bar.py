@@ -93,7 +93,7 @@ class InputBar:
         """构建输入条"""
         self.url_input = ft.TextField(
             label="小说目录页URL",
-            hint_text="如: https://m.tanmixs.com/YzN6/ml.html",
+            hint_text="如: https://m.example.com/book/123/ml.html",
             expand=True,
             dense=True,
             text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),

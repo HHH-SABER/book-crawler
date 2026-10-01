@@ -58,40 +58,37 @@ _锁 = threading.Lock()
 # (不设置则用程序基目录; 与「重定向 LOCALAPPDATA」同一思路)
 _环境覆盖变量 = 'NC_LEDGER_PATH'
 
-# 常见站点 域名 → 网站名 (未知域名回退为域名本身, 详见 域名网站名())
-_网站名映射 = {
-    'qiqishu.cc': '奇书网',
-    'yueliang.org': '月亮小说网',
-    'shuhaige.net': '书海阁',
-    'yunshuzhai.com': '云书斋',
-    'als1010.space': '爱丽丝书屋',
-    # 实网抓取 URL 走 punycode 子域 (xn--vcsx64d = '书' 的 ACE 编码), 需单独映射
-    'xn--vcsx64d.als1010.space': '爱丽丝书屋',
-    'uuwxw.cc': '悠悠书城',
-    'zhiruo.org': '知若网',
-    'biquwx.cc': '笔趣阁',
-    'ahxsw.com': '安徽小说网',
-    '11bzw.org': '书宝网',
-    'yqyp.net': '一起泡',
-    '28zw.org': '云趣阁',
-    'spscl.com': '书神领域',
-    'tanmixs.com': '探密小说网',
-    '630wang.cc': '630小说',
-    'ciyewk.com': '笔趣阁',
-    'ltbook.net': '龙腾小说',
-    '322zw.com': '蛇蝎小说网',
-    'banlvzw.com': '半路中文',
-    'exotxt.net': '飘天文学',
-    '5hbook.net': '六五读书',
-    'oldtimeswx.net': '旧时小说网',
-    'yipinzongshi.com': '一品宗师',
-    'xingguangks.com': '星光小说',
-    'shubaoks.net': '书包网',
-    'orion34g.com': '猎户座',
-    'pjxdd.com': '爬爬小说',
-    'qingheks.com': '清河看小说',
-    '27xsw.cc': '27小说网',
-}
+# 域名 → 网站名 (站点专属数据, 站点脱钩: 外置 站点适配_本地/域名映射.json 不入库;
+# 公开形态映射为空, 未知域名回退为域名本身, 详见 域名网站名() 与 _加载域名映射())
+_网站名映射 = {}
+_映射已加载 = False
+
+
+def _加载域名映射():
+    """从 站点适配_本地/域名映射.json 加载 域名→站名 (幂等; 缺失即公开形态)。
+
+    punycode 子域 (xn-- 前缀) 需在 JSON 里单独映射。
+    """
+    global _映射已加载
+    if _映射已加载:
+        return
+    _映射已加载 = True
+    try:
+        import json as _json
+        from _path_utils import get_app_base_dir
+        _p = os.path.join(get_app_base_dir(), '站点适配_本地', '域名映射.json')
+        if os.path.isfile(_p):
+            with open(_p, 'r', encoding='utf-8') as f:
+                _data = _json.load(f)
+            if isinstance(_data, dict):
+                _网站名映射.update({str(k).strip().lower(): str(v)
+                                    for k, v in _data.items() if k})
+    except Exception as _e:
+        try:
+            _log.info(f'[网站清单] 域名映射加载失败 (不影响主流程): '
+                      f'{type(_e).__name__}')
+        except Exception:
+            pass  # 刻意静默: 日志链路兜底
 
 
 def _环境已覆盖() -> bool:
@@ -257,6 +254,7 @@ def 按小说名搜索(关键词: str) -> list:
 
 def 域名网站名(网址或域名: str) -> str:
     """URL/域名 → 中文网站名。未知域名回退 '域名' (去 www. 前缀)"""
+    _加载域名映射()
     s = (网址或域名 or '').strip()
     try:
         from urllib.parse import urlparse

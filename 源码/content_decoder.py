@@ -7,7 +7,7 @@ _log = _app_log.get('content_decoder')
 ==================================
 
 **背景**: 部分小说站把章节正文存放在独立的数据文件中 (页面仅引用),
-且数据经过压缩/编码 (如 tanmixs 的 .xs 十六进制码点流 + 高频字压缩映射)。
+且数据经过压缩/编码 (如某些站点的 .xs 十六进制码点流 + 高频字压缩映射)。
 旧流程仅靠浏览器渲染提取, 会丢失被压缩的常用字, 导致文章不通顺。
 
 **本模块通用化能力**:
@@ -41,7 +41,7 @@ except (ImportError, OSError):
 # ============================================================
 
 # 常见的数据文件引用模式: (正则, 说明)
-# 数据文件常见后缀: .xs (tanmixs) / .book (banlvzw 伴侣中文网) / .data / .txt / .json
+# 数据文件常见后缀: .xs / .book / .data / .txt / .json
 _DATA_EXT = r'(?:xs|book|data|txt|json)'
 DATA_REF_PATTERNS = [
     (r'initTxt\s*\(\s*["\']([^"\']+?\.' + _DATA_EXT + r')["\']', 'initTxt()'),
@@ -116,7 +116,7 @@ def validate_data_url(chapter_url, data_url):
     if not host:
         raise ValueError(f"数据文件缺少主机: {data_url}")
 
-    # 与章节页同注册域 (允许 CDN 子域, 如 js.tanmixs.com vs m.tanmixs.com)
+    # 与章节页同注册域 (允许 CDN 子域, 如 js.example.com vs m.example.com)
     cp = urlparse(chapter_url)
     chapter_host = (cp.hostname or '').lower()
     if not chapter_host:
@@ -166,8 +166,8 @@ def parse_codepoint_stream(content, replace_map=None):
 
     格式:
       - 4位十六进制 = Unicode 码点 (两种写法都支持)
-          a) x 前缀:  "x6700"          (tanmixs 的 .xs)
-          b) 裸码点:  "\x01 6700"      (ciyewk 的 .book, 由前缀标记引导)
+          a) x 前缀:  "x6700"          (.xs 数据文件)
+          b) 裸码点:  "\x01 6700"      (.book 数据文件, 由前缀标记引导)
       - 前缀标记 \x01 / \x02 / \x03 表示其后 4 位十六进制是码点
           (原始 HTML 实体分别为 ";&#x" / "&#x" / ";&#", 压缩时被整体替换)
       - \x04 = 换行 (原始 ";\n")
@@ -197,9 +197,9 @@ def parse_codepoint_stream(content, replace_map=None):
                     mapping[ctrl] = chr(int(code, 16))
 
     # 分词顺序很重要 (P1-7 修复):
-    #   ① x+4位hex        → x 前缀码点 (tanmixs)
+    #   ① x+4位hex        → x 前缀码点 (.xs)
     #   ② 4位hex          → 裸码点, 仅当前一个 token 是前缀标记时才解码
-    #                        (ciyewk 等站点把 ";&#x6700;" 压成 "\x016700")
+    #                        (部分站点把 ";&#x6700;" 压成 "\x016700")
     #   ③ 单个控制字符     → 压缩字 / 前缀标记 / 换行
     #   ④ 其它单字符       → 明文
     #
@@ -212,7 +212,7 @@ def parse_codepoint_stream(content, replace_map=None):
     result = []
     pending_marker = False   # 上一个 token 是未被 mapping 消费的前缀标记
     for t in tokens:
-        # 前缀标记后的裸码点 (P2-7: ciyewk 连续码点流支持)
+        # 前缀标记后的裸码点 (P2-7: .book 连续码点流支持)
         if pending_marker and re.fullmatch(r'[0-9a-fA-F]{4}', t):
             pending_marker = False
             try:
@@ -265,7 +265,7 @@ def decode_data(raw):
     """尝试多种数据格式解码, 返回 (正文文本, 使用的方法名)。
 
     依次尝试:
-      1. _txt_call({content, replace}) 码点流 (tanmixs 风格)
+      1. _txt_call({content, replace}) 码点流 (.xs 风格)
       2. 直接 JSON 对象含 content 字段
       3. 纯文本 (本身即正文)
       4. Base64 编码文本
