@@ -812,6 +812,22 @@ class TaskManager:
         """当前选中任务 ID (空串=无选中)"""
         return self._selected_task_id
 
+    def _同URL判重(self, url: str):
+        """锁内快照同 URL 现存任务, 返回 (可复用id或None, 待清理残影id列表).
+
+        活跃判定: status∈{pending,running,queued} 或线程仍存活。
+        本方法只读快照; 实际清理 (delete_task 自带锁) 必须由调用方在锁外执行,
+        防止非重入锁自死锁。
+        """
+        with self._lock:
+            同URL = [t for t in self.tasks.values() if t.url == url]
+            for t in 同URL:
+                活着 = (t.status in ("pending", "running", "queued")
+                        or bool(t.thread is not None and t.thread.is_alive()))
+                if 活着 and not t.stop_flag.is_set():
+                    return t.task_id, []
+            return None, [t.task_id for t in 同URL]
+
     def create_task(self, url: str, mode: str = "full",
                     chapter_range: tuple = None, threads: int = None,
                     delay: float = None, resume: bool = True,
@@ -822,7 +838,19 @@ class TaskManager:
         threads/delay 为 None (默认) 时由速度自适应模块自动选档。
         incremental=True 时启用增量抓取 (一键更新书架用, 建议 unique_title=False
         以续写原文件而非另存带序号的新文件)。
+
+        同 URL 判重 (2026-10-02 残影事故): 批量脚本对同一本书反复提交
+        (蓝屏恢复自动重提 + 失败补交 + 手动重提) 曾每次都新建一行, 任务表
+        一度堆到 111 行 (真实书目仅 40)。现在:
+          ① 同 URL 已有在跑/排队任务 → 幂等复用返回该 id, 不新建第二行;
+          ② 同 URL 只有终态旧记录 (线程已死) → 清除残影展示项 (不删输出
+             文件) 后新建本轮任务, 界面恒为该 URL 恰好一行。
         """
+        活跃复用, 终态残影 = self._同URL判重(url)
+        if 活跃复用 is not None:
+            return 活跃复用
+        for _旧id in 终态残影:
+            self.delete_task(_旧id, delete_file=False)   # 锁外调用, 防自死锁
         with self._lock:
             self._counter += 1
             task_id = f"task_{self._counter}"

@@ -388,9 +388,17 @@ def 创建任务(body: dict, k: Optional[str] = None,
                 or chapter_range[0] < 1 or chapter_range[1] < chapter_range[0]):
             raise HTTPException(status_code=400, detail="区间需两个正整数，结束章不得小于开始章")
         chapter_range = tuple(chapter_range)
-    for flag in ("resume", "export_epub", "unique_title"):
+    for flag in ("resume", "export_epub", "unique_title", "incremental"):
         if flag in body and type(body[flag]) is not bool:
             raise HTTPException(status_code=400, detail=f"{flag} 必须是布尔值")
+    # 增量透传 (EXE/桌面批量用): incremental=True 默认 unique_title=False ——
+    # 增量语义是续写原文件, True 会另存 "书名(1).txt" 使旧正文无法参与增量搬运;
+    # 显式传入 unique_title 时以显式为准 (与 GUI"一键更新书架"同参数组合)
+    增量 = bool((body or {}).get("incremental", False))
+    if "unique_title" in body:
+        唯一标题 = bool(body["unique_title"])
+    else:
+        唯一标题 = not 增量
     try:
         task_id = _任务管理器().create_task(
             url=url,
@@ -399,7 +407,8 @@ def 创建任务(body: dict, k: Optional[str] = None,
             resume=bool((body or {}).get("resume", True)),
             export_epub=bool((body or {}).get("export_epub", False)),
             # 续传中断任务时必须 False — True 会另存 "书名(1).txt" 而非续写
-            unique_title=bool((body or {}).get("unique_title", True)),
+            unique_title=唯一标题,
+            incremental=增量,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"任务创建失败: {e}")

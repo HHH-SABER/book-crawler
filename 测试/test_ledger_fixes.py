@@ -28,7 +28,9 @@ sys.path.insert(0, str(_根 / '源码'))
 sys.path.insert(0, str(_根 / '源码' / 'gui_components'))
 sys.path.insert(0, str(_根 / '站点适配_本地'))   # 站点脱钩: 真实适配器不入库
 sys.path.insert(0, str(_根 / '脚本'))
+sys.path.insert(0, str(_根 / '测试'))
 
+import _沙箱                   # noqa: E402,F401  状态根沙箱 (2026-10-02)
 import task_manager as tm            # noqa: E402
 import 请求引擎                        # noqa: E402
 
