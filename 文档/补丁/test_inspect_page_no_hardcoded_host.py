@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""守卫测试: `inspect_page` 的请求头不得硬编码 `Host`（对应 踩坑总表 K27）。
+"""守卫测试: `inspect_page` 的请求头不得硬编码 `Host`（对应 踩坑总表 K29）。
 
 **这是待评估补丁的一部分** —— 本文件放在 `文档/待评估补丁/` 下，
 评估通过后再移入 `测试/` 并纳入门禁。
@@ -54,7 +54,7 @@ class TestInspectPage请求头(unittest.TestCase):
                       '定位到的字典看起来不是请求头(缺 User-Agent), 守卫可能已失效')
 
     def test_请求头不得硬编码Host(self):
-        """K27: 手写 Host 会让做 www/主机级跳转的站点陷入 Exceeded 30 redirects"""
+        """K29: 手写 Host 会让做 www/主机级跳转的站点陷入 Exceeded 30 redirects"""
         键s = _找inspect_page的头字典()
         self.assertIsNotNone(键s, '未定位到请求头字典')
         self.assertNotIn(
@@ -63,7 +63,7 @@ class TestInspectPage请求头(unittest.TestCase):
             "requests 会按 URL 自动生成正确的 Host(含跳转后的新主机)；手写它会覆盖该行为，\n"
             "导致 bookben5.org → www.bookben5.org 这类主机级跳转被反复 301，\n"
             "最终 requests 抛 'Exceeded 30 redirects.' 并返回空页面(目录 0 章)。\n"
-            "详见 文档/踩坑总表.md K27。")
+            "详见 文档/踩坑总表.md K29。")
 
     def test_不得在其它位置给session注入Host头(self):
         """兜底: 除了 headers 字面量, 也不该通过 session.headers 等途径固定 Host"""
