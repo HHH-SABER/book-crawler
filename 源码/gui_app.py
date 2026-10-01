@@ -159,6 +159,13 @@ def main(page: ft.Page):
         _mode = "PyInstaller EXE" if getattr(sys, "frozen", False) else "源码模式"
         app_log.info("系统", f"程序启动 (模式: {_mode}, Python {platform.python_version()})")
         app_log.info("系统", f"EXE/项目目录: {os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, 'frozen', False) else os.getcwd()}")
+        # 便携数据开关提示 (P1): flag 仅打包模式生效; 不自动迁移旧数据
+        import _path_utils as _pu
+        if _pu.is_portable_mode():
+            app_log.info("系统", "便携数据模式已启用 (EXE 旁 便携模式.flag): "
+                          "数据/日志 将读写 EXE 旁目录; 默认根 "
+                          "%LOCALAPPDATA%\\小说爬虫 的历史数据不会自动迁移, "
+                          "如需保留请手动复制其中的 数据/ 与 日志/ 两个目录")
     except Exception:
         pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
