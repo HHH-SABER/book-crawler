@@ -6,9 +6,10 @@
      因文件名以 _ 开头不会被 load_adapters 加载执行;
   2. load_adapters 幂等, 双目录扫描 (公开侧 + 站点适配_本地);
   3. 提取器别名归一与"未注册走通用路径"的降级行为;
-  4. 函数型分页机制名引用 (站点表.json 外置形态) 的解析;
-  5. 合成占位样本 (测试样本/_模板_合成.html) 可走通用提取链。
+  4. 函数型分页机制名引用 (站点表.json 外置形态) 的解析。
 
+注: 公开仓库不含任何测试样本文件 (真实快照在 测试样本_本地/ 不入库,
+    合成占位样本已移除 —— 契约测试全部使用内联 HTML, 零文件依赖)。
 公开仓库形态 (无 站点适配_本地/) 与本地形态下本测试都必须全绿。
 运行: python -m unittest discover -s 测试 -v
 """
@@ -23,7 +24,6 @@ sys.path.insert(0, str(_ROOT / '源码'))
 from bs4 import BeautifulSoup  # noqa: E402
 
 _TEMPLATE = _ROOT / '站点适配' / '_模板.py'
-_SAMPLE = _ROOT / '测试样本' / '_模板_合成.html'
 
 
 def _载入模板模块():
@@ -114,22 +114,6 @@ class Test加载器契约(unittest.TestCase):
         import sites_config as sc
         pag = {'type': 'function', 'function': '不存在的机制名', 'max_pages': 30}
         self.assertIsNone(sc.build_paged_url('https://example.com/a/1/2.html', 1, pag))
-
-
-class Test合成样本(unittest.TestCase):
-    """占位样本可走通用提取链 (公开侧 fixture 的可用性契约)"""
-
-    @classmethod
-    def setUpClass(cls):
-        if not _SAMPLE.is_file():
-            raise unittest.SkipTest('测试样本/_模板_合成.html 不存在')
-
-    def test_通用选择器提取占位样本(self):
-        import sites_config as sc
-        html = _SAMPLE.read_text(encoding='utf-8')
-        text = sc.extract_content_html_selector(html, ['#content', '.content'])
-        self.assertGreater(len(text), 100, '占位样本正文应超过通用阈值')
-        self.assertIn('合成占位正文', text)
 
 
 if __name__ == '__main__':
