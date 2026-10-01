@@ -7,7 +7,7 @@
 - try_heal + 记录建议: 端到端产出建议并原子写盘 (tmp 目录, 不碰真实 数据/)
 - 门槛行为: 置信度不足不产出 (防把软封页/加密变更误当普通改版)
 
-依赖 测试样本/ 快照: ltbook_content.html (明文#rtext), qiqishu_content.html (加密负样本)。
+依赖 测试样本_本地/ 快照 (不入库, 缺失时跳过): ltbook_content.html (明文#rtext), qiqishu_content.html (加密负样本)。
 """
 import base64
 import json
@@ -20,7 +20,7 @@ from unittest import mock
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SRC = os.path.join(_PROJECT_ROOT, '源码')
-_SAMPLES = os.path.join(_PROJECT_ROOT, '测试样本')
+_SAMPLES = os.path.join(_PROJECT_ROOT, '测试样本_本地')   # 站点脱钩: 真实快照不入库
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
@@ -29,7 +29,10 @@ import 选择器自愈 as heal      # noqa: E402
 
 
 def _read(name):
-    return Path(os.path.join(_SAMPLES, name)).read_text(encoding='utf-8', errors='replace')
+    p = Path(os.path.join(_SAMPLES, name))
+    if not p.is_file():
+        raise unittest.SkipTest(f'本地站点样本缺失: 测试样本_本地/{name} (公开形态跳过)')
+    return p.read_text(encoding='utf-8', errors='replace')
 
 
 class Test启发式打分(unittest.TestCase):

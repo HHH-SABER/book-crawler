@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""离线回归测试: 使用 测试样本/ 中的真实页面快照验证解析逻辑, 全程不联网。
+"""离线回归测试: 使用 测试样本_本地/ 中的真实页面快照验证解析逻辑, 全程不联网。
+(站点脱钩: 真实快照不入库, 公开仓库形态下相关用例自动 skipTest, 机制用例照常跑。
 
 运行方式 (项目根目录):
     python 测试/test_offline_parsing.py
@@ -21,11 +22,14 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / '源码'))
 
-SAMPLES = _PROJECT_ROOT / '测试样本'
+SAMPLES = _PROJECT_ROOT / '测试样本_本地'   # 站点脱钩: 真实快照不入库, 缺失时相关用例跳过
 
 
 def _read(name: str) -> str:
-    return (SAMPLES / name).read_text(encoding='utf-8')
+    p = SAMPLES / name
+    if not p.is_file():
+        raise unittest.SkipTest(f'本地站点样本缺失: 测试样本_本地/{name} (公开形态跳过)')
+    return p.read_text(encoding='utf-8')
 
 
 # 正文特征串: 三份样本实际是同一部小说的开篇 (晨读迟到场景)
@@ -691,9 +695,11 @@ class TestRustFallbackParity(unittest.TestCase):
 def _load_yunshuzhai_adapter():
     """直接按路径加载适配器模块 (不依赖 ADAPTERS 注册表, 与加载路径解耦)"""
     import importlib.util
+    _p = _PROJECT_ROOT / '站点适配_本地' / 'yunshuzhai.py'
+    if not _p.is_file():
+        raise unittest.SkipTest('本地适配器缺失: 站点适配_本地/yunshuzhai.py (公开形态跳过)')
     spec = importlib.util.spec_from_file_location(
-        'site_adapter_yunshuzhai_test',
-        str(_PROJECT_ROOT / '站点适配' / 'yunshuzhai.py'))
+        'site_adapter_yunshuzhai_test', str(_p))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

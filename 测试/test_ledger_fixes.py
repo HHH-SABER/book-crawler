@@ -26,7 +26,7 @@ from pathlib import Path
 _根 = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_根 / '源码'))
 sys.path.insert(0, str(_根 / '源码' / 'gui_components'))
-sys.path.insert(0, str(_根 / '站点适配'))
+sys.path.insert(0, str(_根 / '站点适配_本地'))   # 站点脱钩: 真实适配器不入库
 sys.path.insert(0, str(_根 / '脚本'))
 
 import task_manager as tm            # noqa: E402
@@ -90,7 +90,10 @@ class Test站点历史整数容错(unittest.TestCase):
 class Test同域判断(unittest.TestCase):
 
     def setUp(self):
-        import uuwxw
+        try:
+            import uuwxw
+        except ImportError:
+            self.skipTest('本地适配器缺失: 站点适配_本地/uuwxw.py (站点脱钩, 公开形态跳过)')
         self.uuwxw = uuwxw
 
     def test_伪装子域被识别为不同域(self):

@@ -35,7 +35,7 @@ import bs4                       # noqa: E402
 # 每章解析预算 (实测 1~2 次; 留 1 次余量给不同站点的分支差异)
 每章解析上限 = 3
 
-_样本 = sorted((_根 / '测试样本').glob('*_content.html'))
+_样本 = sorted((_根 / '测试样本_本地').glob('*_content.html'))   # 站点脱钩: 真实快照不入库
 
 
 class _计数:
@@ -68,7 +68,7 @@ class Test每章解析预算(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not _样本:
-            raise unittest.SkipTest('测试样本/ 下没有 *_content.html')
+            raise unittest.SkipTest('测试样本_本地/ 下没有 *_content.html (公开形态跳过)')
         import 爬虫 as crawler
         cls.爬虫 = crawler
         cls.蜘蛛 = crawler.NovelSpider.__new__(crawler.NovelSpider)
