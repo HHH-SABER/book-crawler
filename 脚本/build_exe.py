@@ -191,7 +191,8 @@ def _flet_pids(tasklist_output: str) -> set:
 # 后者含 ddddocr 开关, 曾致"更新 EXE 后成功率降低"复现)。
 # 清理前 stash 到系统临时目录, 构建结束 (无论成败) 原样恢复。
 _DIST_USER_DIRS = ('抓取结果',)
-_DIST_USER_FILES = ('站点配置.json', 'captcha_config.json')
+# 网站清单.txt: 用户的个人爬取记录 (网址/网站名/书名), 重打包不得丢
+_DIST_USER_FILES = ('站点配置.json', 'captcha_config.json', '网站清单.txt')
 
 
 def 保护dist用户数据(dist: str) -> str:
@@ -247,6 +248,38 @@ def 恢复dist用户数据(dist: str, stash: str) -> None:
             os.rmdir(root)
     if os.path.isdir(stash):
         log(f"[WARN] 部分原件未恢复，已完整保留供人工处理: {stash}")
+
+
+def 写网站清单模板(dist: str) -> None:
+    """在 dist 预置空「网站清单.txt」模板 (仅表头注释, 无任何用户记录)。
+
+    用户从 Release / 网盘 / 任何渠道拿到 EXE, 解压后即可见该文件, 爬取时自动追加。
+    内容与运行时首启生成保持一致 (同源 源码/网站清单.py:模板文本), 避免格式漂移。
+    已存在 (用户旧数据已恢复回来) 则不覆盖, 保护隐私记录。
+    """
+    dst = os.path.join(dist, "网站清单.txt")
+    if os.path.exists(dst):
+        log("[INFO] 网站清单.txt 已存在 (用户记录), 保留不覆盖")
+        return
+    内容 = ""
+    try:
+        import importlib.util
+        src = os.path.join(ROOT, "源码", "网站清单.py")
+        spec = importlib.util.spec_from_file_location("_nc_ledger_tpl", src)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        内容 = mod.模板文本()
+    except Exception as e:
+        log(f"[WARN] 加载 网站清单.模板文本 失败, 用内置兜底: {e}")
+    if not 内容:
+        内容 = ("# 网站清单 — 程序自动维护, 请勿手改格式 (抓取/尝试抓取后自动追加)\n"
+                "# 每行: 网址\t网站名\t小说名 (制表符分隔, # 开头为注释)\n"
+                "# 本文件是个人爬取记录, 请勿上传或分享\n")
+    try:
+        Path(dst).resolve().write_text(内容, encoding="utf-8")
+        log(f"[OK] 预置网站清单模板 → {dst}")
+    except OSError as e:
+        log(f"[WARN] 预置网站清单模板失败: {e}")
 
 
 def main():
@@ -584,6 +617,8 @@ def main():
         log("[INFO] 站点适配/ 不存在, 跳过 (可选外部适配器目录)")
     # dist 重建完成 → 把清理前暂存的用户运行时数据放回 (R4: 抓取结果/配置不再丢)
     恢复dist用户数据(dist, _dist_stash)
+    # 预置空「网站清单.txt」: 用户拿到 EXE 解压后即可见, 抓取时自动追加 (仅表头, 无隐私)
+    写网站清单模板(dist)
     # PyInstaller 可能 --onefile 或 onedir, 两处都查一下，把真实产物挑出来给用户看
     onedir_exe = os.path.join(dist, exe_name, f"{exe_name}.exe")
     onefile_exe = os.path.join(dist, f"{exe_name}.exe")
@@ -606,11 +641,12 @@ def main():
     if mode == "ONEFILE":
         log(f"  - SINGLE FILE distribution: copy {final_exe} directly")
         log("    First launch extracts ~200MB to %TEMP%\\_MEIxxxxxx (deleted on exit);")
-        log("    抓取结果/ / 站点配置.json / captcha_config.json are placed NEXT TO the .exe.")
+        log("    抓取结果/ / 站点配置.json / captcha_config.json / 网站清单.txt are placed NEXT TO the .exe.")
     elif mode == "ONEDIR":
         log(f"  - Distribute the ENTIRE folder: {final_exe_dir}   (not only the .exe)")
     log("  - Missing chromedriver? Place it next to .exe or on PATH")
     log("  - Customize site configs: run the EXE once, edit 站点配置.json beside it")
+    log("  - 隐私: 网站清单.txt 是你的个人爬取记录, 请勿上传/分享 (Release 内只含空模板)")
 
     # --- EXE 启动冒烟测试 (v2.4.0 教训: 打包成功 ≠ 能启动 — flet icons.json
     # 与 flet_desktop 两个缺口都靠真实启动才暴露; CI 发布前必须过此关) ---

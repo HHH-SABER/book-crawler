@@ -2,6 +2,7 @@
 """本轮接手回归：离线复现数据保护、停止竞态、日志窗口与远控边界。"""
 import io
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -25,6 +26,11 @@ class 接手回归(unittest.TestCase):
         self.path_patch = mock.patch.object(tm.TaskManager, '_历史路径', return_value=str(self.history))
         self.path_patch.start(); self.addCleanup(self.path_patch.stop)
         self.mgr = tm.TaskManager(None)
+        # 清单隔离 (v2.4.35): run_crawl 入口会往「网站清单」留一条"尝试抓取",
+        # 不隔离就会把 example.com 等测试域写进项目根的真实用户记录。
+        self._ledger_env = mock.patch.dict(
+            os.environ, {'NC_LEDGER_PATH': str(self.root/'网站清单.txt')})
+        self._ledger_env.start(); self.addCleanup(self._ledger_env.stop)
         p=mock.patch.object(服务, '_任务管理器', return_value=self.mgr)
         p.start(); self.addCleanup(p.stop)
         p=mock.patch.object(服务, '取配置', return_value={'token':'testtoken'})
