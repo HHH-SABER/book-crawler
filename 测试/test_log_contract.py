@@ -22,7 +22,9 @@ from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / '源码' / 'gui_components'))
+sys.path.insert(0, str(_PROJECT_ROOT / '测试'))
 
+import _沙箱                              # noqa: E402,F401  状态根沙箱 (2026-10-02)
 import task_manager as tm
 
 

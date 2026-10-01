@@ -327,6 +327,27 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
 _人工锁 = threading.Lock()
 
 
+def _仍为拦截页(src: str) -> bool:
+    """浏览器页面源码是否仍是 WAF 拦截页 (内容特征与 is_waf_captcha_page 同源)。
+
+    两类形态: ①经典 __wafcaptcha + 验证码; ②200 状态"访问验证 + check_code"页。
+    空源码 (刚 driver.get, 尚未加载完) 一律视为仍在拦截 → 继续等人,
+    绝不误判"已通过"。
+
+    修复依据 (2026-10-02 "访问验证页"类站点实测): 旧实现轮询条件误写为
+    `'__wafcaptcha' not in src or '验证码' not in src`, 对②型页(__wafcaptcha
+    根本不存在)首 poll 即误判通过 → 可见窗口弹 2~3 秒就关、回灌无效 cookie,
+    下请求仍被拦 → 再弹窗, 死循环; 用户来不及做任何验证。
+    """
+    if not src or not src.strip():
+        return True
+    if '__wafcaptcha' in src and '验证码' in src:
+        return True
+    if '访问验证' in src and 'check_code' in src:
+        return True
+    return False
+
+
 def 回灌cookie(session, cookies: list) -> int:
     """把浏览器 cookie 列表合并进 requests.Session (纯逻辑, 可离线测试)。
 
@@ -350,6 +371,26 @@ def 回灌cookie(session, cookies: list) -> int:
             except Exception as _e:
                 _dbg("WAF", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return n
+
+
+def _人工等待通过(driver, 截止时刻: float, 轮询间隔: float = 3.0):
+    """轮询等待用户在可见浏览器中人工通过验证码。
+
+    Returns:
+        'passed'  — 页面已不是拦截页 (用户通过验证)
+        'timeout' — 到截止时刻仍在拦截
+        'error'   — 取页面源码异常, 交由外层处理
+    """
+    try:
+        while time.time() < 截止时刻:
+            src = driver.page_source or ''
+            # 与 is_waf_captcha_page 同源的内容判定 (修 or 误写死循环, 见 _仍为拦截页)
+            if not _仍为拦截页(src):
+                return 'passed'
+            time.sleep(轮询间隔)
+        return 'timeout'
+    except Exception:
+        return 'error'
 
 
 def solve_waf_captcha_manual(session, url: str, log=print,
@@ -386,15 +427,14 @@ def solve_waf_captcha_manual(session, url: str, log=print,
         try:
             driver = create_driver(visible=True)
             driver.get(url)
-            截止 = time.time() + wait_minutes * 60
-            while time.time() < 截止:
-                src = driver.page_source or ''
-                # 拦截页特征消失 = 用户已通过 (浏览器侧无状态码, 按内容判断)
-                if '__wafcaptcha' not in src or '验证码' not in src:
-                    n = 回灌cookie(session, driver.get_cookies())
-                    log(f"[WAF验证码-人工] ✅ 验证码通过, 已回灌 {n} 条 cookie 到 session")
-                    return True
-                time.sleep(3)
+            结果 = _人工等待通过(driver, time.time() + wait_minutes * 60)
+            if 结果 == 'passed':
+                n = 回灌cookie(session, driver.get_cookies())
+                log(f"[WAF验证码-人工] ✅ 验证码通过, 已回灌 {n} 条 cookie 到 session")
+                return True
+            if 结果 == 'error':
+                log("[WAF验证码-人工] 轮询页面源码异常, 放弃人工兜底")
+                return False
             log("[WAF验证码-人工] ⏳ 等待超时, 放弃人工兜底")
             return False
         except Exception as e:
