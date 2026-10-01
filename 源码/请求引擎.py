@@ -26,7 +26,74 @@ _log = _app_log.get('请求引擎')
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 from urllib.parse import urlparse
+import json
+import os
 import threading
+
+# ------------------------------------------------------------------
+# 按域 Cookie 注入 (站点脱钩: 登录态凭证外置 站点适配_本地/域名cookies.json, 不入库)
+# ------------------------------------------------------------------
+# 数据形态: {"注册域": "k=v; k2=v2"} (如 {"7ku.net": "uid=1; sid=abc"})
+# 注入规则: 请求 host 与键互为后缀匹配 (注册域语义, 7ku.net ↔ www.7ku.net);
+#          调用方显式传入的 Cookie 头不覆盖 (显式优先);
+#          文件 mtime 热检 (30s) —— Cookie 更新后免重启生效。
+_域COOKIE: Dict[str, str] = {}
+_COOKIE文件状态 = {'mtime': None, '检查': 0.0}
+_COOKIE热检间隔 = 30.0
+
+
+def _加载域COOKIE():
+    """惰性加载 + 30s 热检; 文件缺失 (公开形态) 即空表, 不影响请求"""
+    import time as _time
+    _now = _time.time()
+    if _now - _COOKIE文件状态['检查'] < _COOKIE热检间隔:
+        return
+    _COOKIE文件状态['检查'] = _now
+    try:
+        from _path_utils import get_app_base_dir
+        _p = os.path.join(get_app_base_dir(), '站点适配_本地', '域名cookies.json')
+        if not os.path.isfile(_p):
+            return
+        _mtime = os.path.getmtime(_p)
+        if _mtime == _COOKIE文件状态['mtime']:
+            return
+        with open(_p, 'r', encoding='utf-8') as f:
+            _data = json.load(f)
+        if isinstance(_data, dict):
+            _域COOKIE.clear()
+            _域COOKIE.update({str(k).strip().lower(): str(v)
+                              for k, v in _data.items() if k and v})
+        _COOKIE文件状态['mtime'] = _mtime
+    except Exception as _e:
+        try:
+            _log.debug(f'[引擎] 域Cookie 加载失败 (不影响请求): {type(_e).__name__}')
+        except Exception:
+            pass  # 刻意静默: 极早期调用日志链路未就绪
+
+
+def 注入COOKIE(headers, url):
+    """按域名匹配注入登录 Cookie (返回新 headers; 不修改调用方的 dict)。
+
+    匹配: URL host 与配置键互为后缀 (注册域语义)。调用方显式传了
+    Cookie 头时不覆盖。公开形态 (无域名cookies.json) 恒等返回原 headers。
+    """
+    _加载域COOKIE()
+    if not _域COOKIE:
+        return headers
+    if headers and any(str(k).lower() == 'cookie' for k in headers):
+        return headers
+    try:
+        _host = (urlparse(url).netloc or '').split('@')[-1].split(':')[0].lower()
+    except Exception:
+        return headers
+    if not _host:
+        return headers
+    for _域, _ck in _域COOKIE.items():
+        if _host == _域 or _host.endswith('.' + _域) or _域.endswith('.' + _host):
+            _merged = dict(headers) if headers else {}
+            _merged['Cookie'] = _ck
+            return _merged
+    return headers
 
 # ------------------------------------------------------------------
 # 引擎可用性探测 (惰性, 不强制依赖)
@@ -167,6 +234,8 @@ class 请求引擎管理器:
         Returns:
             引擎响应; 引擎不可用或请求失败返回 None (调用方应保留原响应走现有流程)
         """
+        # 按域 Cookie 注入 (站点脱钩: 登录态外置; 调用方显式 Cookie 优先)
+        headers = 注入COOKIE(headers, url)
         if 引擎 == 'auto':
             引擎 = self._选择引擎(机制)
         方法 = getattr(self, f'_请求_{引擎}', None)
