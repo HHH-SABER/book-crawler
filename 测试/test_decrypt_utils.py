@@ -5,7 +5,7 @@
 
 ## 数据来源 (两类)
 
-1. **真实样本回归** — `测试样本/` 现有 HTML 快照, 锁定线上已验证行为防退化。
+1. **真实样本回归** — `测试样本_本地/` HTML 快照 (不入库, 缺失时跳过), 锁定线上已验证行为防退化。
    实测只有 2 种机制有真实样本: std_base64 (zhiruo/qiqishu)、str_concat (ltbook)。
 2. **合成正向样本** — 其余 4 种机制 (custom_base64 / xor / char_map / eval_obfuscated)
    无真实快照, 在测试内**现场用 base64/xor/translate 构造加密 HTML**, 不落任何二进制文件。
@@ -35,11 +35,14 @@ sys.path.insert(0, str(_PROJECT_ROOT / '源码'))
 
 import decrypt_utils as d  # noqa: E402
 
-SAMPLES = _PROJECT_ROOT / '测试样本'
+SAMPLES = _PROJECT_ROOT / '测试样本_本地'   # 站点脱钩: 真实快照不入库
 
 
 def _样本(name):
-    return (SAMPLES / name).read_text(encoding='utf-8', errors='replace')
+    p = SAMPLES / name
+    if not p.is_file():
+        raise unittest.SkipTest(f'本地站点样本缺失: 测试样本_本地/{name} (公开形态跳过)')
+    return p.read_text(encoding='utf-8', errors='replace')
 
 
 # 探针验证过的合成明文: 79 字符, 满足 std_base64/custom_base64/xor/char_map

@@ -20,7 +20,10 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / '源码'))
 
-_样本 = (_ROOT / '测试样本' / 'als1010_访问验证页.html').read_text(encoding='utf-8')
+try:
+    _样本 = (_ROOT / '测试样本_本地' / 'als1010_访问验证页.html').read_text(encoding='utf-8')
+except OSError:
+    _样本 = None   # 站点脱钩: 本地样本缺失 (公开形态) → setUpClass 跳过
 
 
 class 假响应:
@@ -34,6 +37,11 @@ class 假响应:
 
 
 class Test内容型验证页识别(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        if _样本 is None:
+            raise unittest.SkipTest('本地站点样本缺失: 测试样本_本地/als1010_访问验证页.html (公开形态跳过)')
 
     def test_检测器识别访问验证页(self):
         from 反爬检测器 import 取检测器

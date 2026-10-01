@@ -405,7 +405,10 @@ def main():
     # 关键：把 Flet client 打进 EXE（flet pack 不会自动做这件事）
     # 同时把站点配置和验证码配置的默认模板打进去（首次运行时拷到 BASE_DIR）
     flet_client_dir = VIEW_DIR   # 缓存统一取上方解析结果 (支持 FLET_CACHE_DIR 重定向)
-    sites_config_src = os.path.join(ROOT, "源码", "站点配置.json")
+    # 站点脱钩 (2026-10-01): 站点配置模板移至 站点适配_本地/站点配置模板.json (不入库)。
+    # 本地形态 → 打包完整内置站点模板; 公开形态 (CI/他人 clone) → 打包空模板 [],
+    # 用户首启后由 GUI 站点管理页生成自己的配置。
+    sites_config_src = os.path.join(ROOT, "站点适配_本地", "站点配置模板.json")
     captcha_config_src = os.path.join(ROOT, "配置", "captcha_config.json")
 
     add_data_list = []
@@ -416,10 +419,19 @@ def main():
     else:
         log("[ERROR] _flet_client/ not found! Run ensure_flet_cache.py first.")
         sys.exit(3)
-    # 站点配置默认模板（可选）
+    # 站点配置默认模板 (可选; 本地形态=完整内置站点, 公开形态=空模板)
     if os.path.isfile(sites_config_src):
         add_data_list.append(f"{sites_config_src}:.")
-        log(f"[OK] Bundling 站点配置.json")
+        log("[OK] Bundling 站点配置.json (本地模板: 站点适配_本地/站点配置模板.json)")
+    else:
+        try:
+            _empty_cfg = os.path.join(tempfile.gettempdir(), "站点配置_空模板.json")
+            with open(_empty_cfg, "w", encoding="utf-8") as f:
+                f.write("[]")
+            add_data_list.append(f"{_empty_cfg}:.")
+            log("[INFO] 站点适配_本地/站点配置模板.json 不存在 (公开形态), 打包空站点配置模板")
+        except OSError as e:
+            log(f"[WARN] 空站点配置模板生成失败, EXE 首启将自动生成: {e}")
     # 验证码配置默认模板（可选）
     if os.path.isfile(captcha_config_src):
         add_data_list.append(f"{captcha_config_src}:.")
@@ -615,6 +627,22 @@ def main():
             log(f"[WARN] 复制 站点适配/ 失败: {e}")
     else:
         log("[INFO] 站点适配/ 不存在, 跳过 (可选外部适配器目录)")
+    # 站点脱钩 (2026-10-01): 真实站点资产 (适配器/站点表.json/_提取器.py) 在
+    # 站点适配_本地/, 不入库。本机打包时复制进 dist → 本机 EXE 全功能;
+    # CI/公开环境无此目录 → 自动跳过, Release 产物保持无站点 (GitHub 红线)。
+    # ⚠ dist 因此是"本机交付物": 解压自用可以, 严禁直接上传公开渠道!
+    local_adapter_src = os.path.join(ROOT, "站点适配_本地")
+    local_adapter_dst = os.path.join(dist, "站点适配_本地")
+    if os.path.isdir(local_adapter_src):
+        try:
+            if os.path.isdir(local_adapter_dst):
+                shutil.rmtree(local_adapter_dst, ignore_errors=True)
+            shutil.copytree(local_adapter_src, local_adapter_dst)
+            log(f"[OK] Copied 站点适配_本地/ → {local_adapter_dst} (本机全功能交付; dist 勿外传)")
+        except OSError as e:
+            log(f"[WARN] 复制 站点适配_本地/ 失败: {e}")
+    else:
+        log("[INFO] 站点适配_本地/ 不存在 (公开形态), dist 将不含内置站点")
     # dist 重建完成 → 把清理前暂存的用户运行时数据放回 (R4: 抓取结果/配置不再丢)
     恢复dist用户数据(dist, _dist_stash)
     # 预置空「网站清单.txt」: 用户拿到 EXE 解压后即可见, 抓取时自动追加 (仅表头, 无隐私)

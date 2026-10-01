@@ -17,7 +17,10 @@ sys.path.insert(0, str(_ROOT / '源码'))
 
 import waf_captcha as wc   # noqa: E402
 
-_样本 = (_ROOT / '测试样本' / 'als1010_访问验证页.html').read_text(encoding='utf-8')
+try:
+    _样本 = (_ROOT / '测试样本_本地' / 'als1010_访问验证页.html').read_text(encoding='utf-8')
+except OSError:
+    _样本 = None   # 站点脱钩: 本地样本缺失 (公开形态) → setUpClass 跳过
 _正常页 = '<html><head><title>第1章</title></head><body>' + '正文。' * 400 + '</body></html>'
 _目标 = 'https://example.com/book/50585/be101e8b60c8d.html'
 
@@ -61,6 +64,12 @@ def _假ddddocr(答案='abcd'):
 
 
 class Test表单验证页求解(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        if _样本 is None:
+            raise unittest.SkipTest('本地站点样本缺失: 测试样本_本地/als1010_访问验证页.html (公开形态跳过)')
+
 
     def test_求解成功并沿用原表单字段(self):
         会话 = 假会话()

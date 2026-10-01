@@ -102,6 +102,7 @@ try:
         extract_content as extract_content_by_pattern,
         resolve_catalog_from_chapter,
         validate_public_url,
+        解析提取器名, 提取器已注册,
     )
     SITES_CONFIG_AVAILABLE = True
 except ImportError:
@@ -4803,17 +4804,15 @@ class NovelSpider:
 
             # ===== sites_config 站点专属正文提取 (优先于通用检测) =====
             # 站点配置声明了专用 content_extractor 时, 用配置的精准选择器提取,
-            # 避免通用检测选中外层容器导致正文混入广告/导航行:
-            #   - ltbook.net: #content 含书名作者行 + 尾部温馨提示, #rtext 才是纯正文
-            #   - 630wang.cc: .word_read 含 上一章/下一章 导航按钮
-            #   - yunquge: div.content 混推荐书单
+            # 避免通用检测选中外层容器导致正文混入广告/导航行 (如 #content 混
+            # 书名作者行/尾部提示、.word_read 混上一章下一章导航、div.content 混推荐书单)。
             # 仅对 html_selector 模式且显式声明 content_extractor 的站点启用,
             # 其余站点保持原通用检测行为不变。
-            # 注意: 只启用 extract_content_html_selector 中已实现的分支,
-            # 未实现的 (如 yqyp_nav_strip) 保持原通用提取路径, 避免行为退化。
-            _IMPLEMENTED_EXTRACTORS = ('yunquge_p_filter', 'ltbook_junk_filter', 'word_read_p_filter', 'yqyp_nav_strip', 'xingguang_filter')
+            # 注意: 只对注册表已实现的提取器启用 (提取器实现在
+            # 站点适配_本地/_提取器.py, 不入库; 公开形态未注册 → 保持原通用
+            # 提取路径, 避免行为退化)。旧站点名经 解析提取器名 归一为机制名。
             if (site_pattern and site_pattern.get('pattern') == PATTERN_HTML_SELECTOR
-                    and site_pattern.get('content_extractor') in _IMPLEMENTED_EXTRACTORS):
+                    and 提取器已注册(解析提取器名(site_pattern.get('content_extractor') or ''))):
                 try:
                     site_content, site_ok = extract_content_by_pattern(
                         self.session, current_url, site_pattern, self.base_url, headers,

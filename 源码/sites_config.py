@@ -5,17 +5,22 @@ _log = _app_log.get('sites_config')
 站点适配模式库
 ===============
 
-将已适配过的小说网站的反爬机制、目录解析、正文获取、分页规则等
-抽象为可复用的模式。以后遇到新站，只需在 SITE_PATTERNS 中添加一条
+将小说网站的反爬机制、目录解析、正文获取、分页规则等
+抽象为可复用的模式。以后遇到新站，只需在站点表中添加一条
 配置，无需修改主爬虫逻辑。
 
+站点配置三来源 (按加载顺序, 后者按域名 upsert 覆盖前者):
+  1. 站点适配_本地/站点表.json —— 内置站点表 (不入库, 见 AGENTS §目录与文件管理规范 四)
+  2. 站点适配/ 与 站点适配_本地/ 下的适配器插件 .py (SITE dict upsert)
+  3. 站点配置.json —— 用户运行时配置 (GUI 站点管理页写入)
+
 模式说明：
-  - PATTERN_QSBS_BB: qsbs.bb() Base64 加密 (zhiruo / biquwx / ahxsw)
+  - PATTERN_QSBS_BB: qsbs.bb() Base64 加密
       正文是 <script>document.writeln(qsbs.bb('BASE64'))</script>
       分页: /{chap_id}.html → /{chap_id}_{N}.html
       反爬: ge_js_validator JS cookie 校验
 
-  - PATTERN_AJAX_TWO_STEP: 两步 AJAX 动态加载 (11bzw.org)
+  - PATTERN_AJAX_TWO_STEP: 两步 AJAX 动态加载
       步骤1: GET /api/read_sign.php?aid=X&cid=Y 获取 {sign, bk}
       步骤2: GET /read/X/Y.html?ajax=1&aid=X&cid=Y&bk=Z&sign=S 获取正文
       分页: /read/X/Y.html → /read/X/Y_{N}.html (N 从 2 开始)
@@ -24,15 +29,15 @@ _log = _app_log.get('sites_config')
   - PATTERN_HTML_SELECTOR: 通用 BeautifulSoup 选择器
       通过一组 CSS 选择器按优先级依次尝试提取正文
       可配合 'content_extractor' 标记调用专用提取器
-      (如 'yunquge_p_filter' 按 <p> 标签逐行过滤云趣阁的广告/导航行)
-      已适配站点: yqyp.net, 28zw.org, spscl.com (云趣阁)
+      (站点专属提取器实现放 站点适配_本地/_提取器.py, 不入库;
+       机制名经 _EXTRACTORS 注册表分发, 旧站点名别名见 _EXTRACTOR_ALIASES)
 
   - PATTERN_SELENIUM: Selenium 无头浏览器渲染
       当以上方式都失效时的兜底方案
 
 扩展新站点：
   1. 识别该站点属于哪种模式（上述 4 种 + 可自行添加）
-  2. 在 SITE_PATTERNS 中添加条目，填入必要的配置
+  2. 站点条目加入 站点适配_本地/站点表.json (或适配器插件的 SITE dict)
   3. 无需修改主爬虫代码
 """
 
@@ -78,41 +83,53 @@ PATTERN_SELENIUM = 'selenium'
 
 
 # ============================================================
-# orion34g.com 子目录分页 (必须定义在 SITE_PATTERNS 之前)
-# 章节第1页: /orion/{book_id}/{chapter_id}.html
-# 第2页:     /orion/{book_id}/{chapter_id}/1.html  (去掉 .html, 追加 /N.html)
-# chapter_id 就在章节 URL 中, 无需从 HTML 提取
+# 函数型分页注册表 (必须定义在 SITE_PATTERNS 之前)
+# 站点表.json 外置形态下 JSON 无法序列化函数, content_pagination 用
+#   {'type': 'function', 'function': '<机制名>', ...} 引用本注册表。
+#   chapter_subdir — 章节子目录分页:
+#   章节第1页: /{seg}/{book_id}/{chapter_id}.html
+#   第2页:     /{seg}/{book_id}/{chapter_id}/1.html  (去掉 .html, 追加 /N.html)
+#   chapter_id 就在章节 URL 中, 无需从 HTML 提取
 # ============================================================
 
 
-def paginate_orion34g(base_url, page_index):
-    """orion34g 子目录分页: 第1页=/orion/{bid}/{cid}.html, 第N页=/orion/{bid}/{cid}/{N}.html"""
+def _paginate_chapter_subdir(base_url, page_index):
+    """章节子目录分页: 第1页=/{seg}/{bid}/{cid}.html, 第N页=/{seg}/{bid}/{cid}/{N}.html"""
     if page_index == 0:
         return base_url
-    m = re.match(r'(https?://[^/]+/orion/\d+/\d+)\.html$', base_url)
+    m = re.match(r'(https?://[^/]+/[^/]+/\d+/\d+)\.html$', base_url)
     if not m:
         return None
     return f"{m.group(1)}/{page_index}.html"
 
 
+_PAGINATION_FUNCTIONS = {
+    'chapter_subdir': _paginate_chapter_subdir,
+}
+
+
 # ============================================================
 # 站点配置表
 # ============================================================
-# 每个站点条目结构:
+# 内置站点条目已外置到 站点适配_本地/站点表.json (不入库, 站点脱钩机制,
+# 见 AGENTS §目录与文件管理规范 四)。公开仓库形态下本表为空, 程序仅靠
+# 站点配置.json (用户运行时配置) 与公开侧适配器工作; 本地形态由
+# _load_site_table() 启动时把站点表逐条 upsert 进本列表。
+#
+# 每个站点条目结构 (字段语义, 加载时原样透传):
 # {
 #   'domain':          域名 (用于匹配, 主爬虫通过 'if domain in url' 选择)
-#   'pattern':         模式常量
-#   'catalog_parser':  目录解析方式
-#       - 'generic':    通用 (用 novel_path 过滤 href)
-#       - 'biquwx':     biquwx 专门 (读 /txt{id}.shtml)
-#       - '11bzw':      11bzw 专门 (读 /read/{aid}/{cid}.html)
-#       - 'zhiruo':     zhiruo 专门 (解析 onclick="read_tz(id)")
+#   'pattern':         模式常量 (见模块 docstring 四种模式)
+#   'catalog_parser':  目录解析方式 ('generic' 通用, 其余为站点专属解析器标记,
+#                      由主爬虫的目录解析分发表处理)
 #   'chapter_url_regex': 章节链接正则 (从目录页 href 提取章节ID)
-#   'chapter_url_template': 章节URL模板, {0}=小说ID, {1}=章节ID
 #   'content_pagination': 分页规则
-#       - {'suffix': '_{N}.html', 'start': 1}   # zhiruo/biquwx 第2页=_1.html
-#       - {'suffix': '_{N}.html', 'start': 2}   # 11bzw 第2页=_2.html
+#       - {'suffix': '_{N}.html', 'start': 1}   # 路径替换, 第2页=_1.html
+#       - {'suffix': '_{N}.html', 'start': 2}   # 路径替换, 第2页=_2.html
+#       - {'suffix': '?page={N}', 'start': 2}   # 查询参数分页
+#       - {'type': 'function', 'function': '<机制名>'}   # 函数型, 见 _PAGINATION_FUNCTIONS
 #   'content_selectors': 正文选择器 (仅 HTML_SELECTOR 模式使用)
+#   'content_extractor': 专用提取器机制名 (实现在 站点适配_本地/_提取器.py)
 #   'anti_spider':     反爬机制
 #       - {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'}
 #       - {'type': 'none'}
@@ -122,272 +139,7 @@ def paginate_orion34g(base_url, page_index):
 #           并动态调整策略: 指数退避 / UA轮换 / 引擎切换, 未知站点无需配置
 # }
 
-SITE_PATTERNS = [
-    {
-        'domain': 'zhiruo.org',
-        'pattern': PATTERN_QSBS_BB,
-        'catalog_parser': 'zhiruo',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['#content', '.content'],
-        'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
-    },
-    {
-        'domain': 'biquwx.cc',
-        'pattern': PATTERN_QSBS_BB,
-        'catalog_parser': 'biquwx',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['#content', '.content'],
-        'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
-    },
-    {
-        'domain': 'ahxsw.com',
-        'pattern': PATTERN_QSBS_BB,
-        'catalog_parser': 'generic',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['#content', '.content'],
-        'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
-    },
-    {
-        'domain': '11bzw.org',
-        'pattern': PATTERN_AJAX_TWO_STEP,
-        'catalog_parser': '11bzw',
-        'chapter_url_regex': r'/read/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 2, 'max_pages': 30},
-        'content_selectors': ['#content'],
-        'anti_spider': {'type': 'session_cookie'},
-    },
-    {
-        'domain': 'yqyp.net',
-        'pattern': PATTERN_HTML_SELECTOR,
-        'catalog_parser': 'yqyp',
-        'chapter_url_regex': r'/book/(\d+)/(\d+)\.html',
-        # 分页: 第2页=_2.html (实际多数章节单页, 指纹去重自动处理)
-        'content_pagination': {'suffix': '_{N}.html', 'start': 2, 'max_pages': 5},
-        # 正文在 div.info_dv1.ov 下, 第一个 div.read_btn 之后的 <p> 标签中
-        # 遇到VIP提示/推荐列表/第二个read_btn时停止
-        'content_selectors': ['div.info_dv1.ov'],
-        'content_extractor': 'yqyp_nav_strip',  # 专用提取器标记
-        'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
-    },
-    {
-        # 云趣阁 (28zw.org 镜像), 正文用 qsbs.bb() Base64 加密 (与 zhiruo/biquwx/ahxsw 同机制)
-        # 目录页: /book/{aid}/ml{N}.html (ml1, ml2, ... 分页; 详情页含"最新章节"倒序+"章节列表"正序, 需去重)
-        # 章节页: /book/{aid}/{cid}.html, 分页 _{N}.html (第2页=_1.html)
-        # 解码后每个 <p> 含正文, 但混有广告行: "一秒记住新域名 https://..."、"请勿开启浏览器阅读模式"、"相邻推荐:..."等
-        # 用 'yunquge_p_filter' 提取器在 Base64 解码后逐 <p> 过滤广告/导航行
-        'domain': '28zw.org',
-        'pattern': PATTERN_QSBS_BB,
-        'catalog_parser': 'yunquge',
-        'chapter_url_regex': r'/book/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['div.content', 'div#txt', '#content', '.content'],
-        'content_extractor': 'yunquge_p_filter',
-        'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
-    },
-    {
-        # spscl.com 与 28zw.org 同属云趣阁, 正文同样用 qsbs.bb() Base64 加密
-        # 目录页: /yue/{aid}/ml{N}.html; 章节页: /yue/{aid}/{cid}.html, 分页 _{N}.html
-        'domain': 'spscl.com',
-        'pattern': PATTERN_QSBS_BB,
-        'catalog_parser': 'yunquge',
-        'chapter_url_regex': r'/yue/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['div.word_read', 'div.content', 'div#txt', '#content', '.content'],
-        'content_extractor': 'yunquge_p_filter',
-        'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
-    },
-    {
-        # 悠悠书城 (uuwxw.cc): 目录页 /book/{bid}/list{N}.html (每页100章)
-        # 章节链接: <div id="list"><dl> 下 <a href="/book/{bid}/{cid}.html"
-        #   rel="chapter"><dd>第N章...</dd></a> (注意 <dd> 在 <a> 内部)
-        # 正文用 document.writeln(kfiwawn.akxa('BASE64')) 加密, akxa 即标准 Base64
-        #   解码 (通用检测 1c 识别 document.writeln(obj.func('BASE64')) → qsbs_bb 路径)
-        # 章节分页: 第2页 = {cid}_1.html
-        'domain': 'uuwxw.cc',
-        'pattern': PATTERN_QSBS_BB,
-        'catalog_parser': 'uuwxw',
-        'chapter_url_regex': r'/book/[a-z0-9]+/[a-z0-9]+\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['#content', '#booktxt', '.content'],
-        'anti_spider': {'type': 'auto'},
-    },
-    {
-        'domain': 'pjxdd.com',
-        'pattern': PATTERN_SELENIUM,
-        'catalog_parser': 'generic',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 10},
-        'content_selectors': ['#content', '.content'],
-        'anti_spider': {'type': 'challenge_page'},
-    },
-    {
-        'domain': 'qingheks.com',
-        'pattern': PATTERN_SELENIUM,
-        'catalog_parser': 'generic',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 10},
-        'content_selectors': ['#content', '.content'],
-        'anti_spider': {'type': 'challenge_page'},
-    },
-    {
-        'domain': '27xsw.cc',
-        'pattern': PATTERN_SELENIUM,
-        'catalog_parser': 'generic',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 10},
-        'content_selectors': ['#content', '.content'],
-        'anti_spider': {'type': 'challenge_page'},
-    },
-    {
-        # 5hbook.net: 正文用 str_decode("...") Base64 加密 (与 qsbs.bb 类似但 JS 函数名不同)
-        # 目录页: /books/{id}.html, 章节链接: /books/{id}/{cid}.html
-        # 章节页: /books/{id}/{cid}.html, 分页 _{N}.html (第2页=_2.html)
-        # 解码后是带 <p> 标签的 HTML 正文
-        'domain': '5hbook.net',
-        'pattern': 'str_decode_bb',
-        'catalog_parser': 'generic',
-        'chapter_url_regex': r'/books/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 2, 'max_pages': 10},
-        'content_selectors': ['#content', '.content', '#htmlContent'],
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # exotxt.net: TXT小说网, 正文直接内嵌HTML, 无分页
-        # 目录页: /infos/{book_id}.html (或 /infos/{book_id}/1/ 自动规范化)
-        # 章节链接: /infos/{book_id}/{chapter_id}.html
-        # 章节页: 单页无分页, 正文在 div.content 中
-        'domain': 'exotxt.net',
-        'pattern': 'html_selector',
-        'catalog_parser': 'generic',
-        'chapter_url_regex': r'/infos/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 1},
-        'content_selectors': ['div.content', '.content', '#content'],
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # tanmixs.com (探秘小说网移动版): 需 Selenium 绕过 401 反爬
-        # 目录URL: /{book_id}/ml.html (第1页) → /{book_id}/ml_N.html (后续页)
-        # 章节URL: /{book_id}/{chapter_id}.html
-        # 章节分页: ?page=N 查询参数 (如 /YzN6/1.html?page=2)
-        # 正文容器: div#chapter-content (含 <p class="chapter-line" data-line="N"> 段落)
-        # 目录页章节标题统一为 "分章阅读 N", 实际标题在章节页第一段
-        'domain': 'tanmixs.com',
-        'pattern': 'selenium',
-        'catalog_parser': 'tanmixs',
-        'chapter_url_regex': r'/([A-Za-z0-9]+)/(\d+)\.html',
-        'content_pagination': {'suffix': '?page={N}', 'start': 2, 'max_pages': 10},
-        'content_selectors': ['div#chapter-content', 'div.chapter-content', '#content', '.content'],
-        'anti_spider': {'type': 'selenium_required'},
-    },
-    {
-        # oldtimeswx.net (旧时光文学): 标准 HTML 选择器 + _N.html 分页
-        # 目录URL: /book/{book_id}/
-        # 章节URL: /book/{book_id}/{chapter_id}.html (第1页) → _{N}.html (后续页)
-        # 第2页示例: 35530884_1.html (start=1)
-        'domain': 'oldtimeswx.net',
-        'pattern': 'html_selector',
-        'catalog_parser': 'generic',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['#content', '#BookText', '#booktxt', '.content', 'div.content'],
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # banlvzw.com (伴侣中文网): WAF JS 挑战 + ?page=N 查询参数分页
-        # 目录URL: /{book_id}/index.html
-        # 章节URL: /{book_id}/{N}.html (第1页) → ?page=N (后续页)
-        # 第2页示例: 5.html?page=2 (start=2)
-        'domain': 'banlvzw.com',
-        'pattern': 'html_selector',
-        'catalog_parser': 'banlvzw',
-        'content_pagination': {'suffix': '?page={N}', 'start': 2, 'max_pages': 30},
-        'content_selectors': ['#BookText', '#booktxt', '#content', '.content', '#articlecontent'],
-        'anti_spider': {'type': 'waf_js'},
-    },
-    {
-        # yipinzongshi.com (一品小说网): qsbs.bb Base64 加密 + _N.html 分页
-        # 章节URL: /book/{book_id}/{chapter_id}.html (第1页)
-        # 第2页: /book/{book_id}/{chapter_id}_1.html (后缀 _N.html, start=1)
-        # 实测: 57724683.html = 第03章第1页, 57724683_1.html = 第03章第2页
-        'domain': 'yipinzongshi.com',
-        'pattern': 'qsbs_bb',
-        'catalog_parser': 'generic',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['.word_read', '#content', '.content', 'div.content'],
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # orion34g.com (猎人小说网): qsbs.bb Base64 加密 + 子目录分页
-        # 章节第1页: /orion/{book_id}/{chapter_id}.html (chapter_id 就在 URL 中)
-        # 第2页: /orion/{book_id}/{chapter_id}/1.html (去掉 .html 加 /N.html)
-        'domain': 'orion34g.com',
-        'pattern': 'qsbs_bb',
-        'catalog_parser': 'generic',
-        'content_pagination': {'type': 'function', 'function': paginate_orion34g, 'max_pages': 30},
-        'content_selectors': ['.word_read', '#content', '.content', 'div.content'],
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # 630wang.cc (恋上看书网): 目录页 /kan/{id}.html (详情页), 目录分页 /kan/{id}/{n}.html
-        # 目录分页按钮由 JS 动态加载, 页面无 "下一页" 链接, 需按规则拼接 /kan/{id}/2.html 等
-        # 章节URL: /kan/{id}_{chapid}.html; 正文在 div.word_read 的 <p> 中
-        # 反爬: 正文中的数字被服务端替换为 o (如 "早自习o分钟"), 有损替换无法还原, 保留原样
-        'domain': '630wang.cc',
-        'pattern': 'html_selector',
-        'catalog_parser': '630wang',
-        'chapter_url_regex': r'/kan/(\d+)_(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 30},
-        'content_selectors': ['div.word_read', '.word_read', '#content', '.content'],
-        'content_extractor': 'word_read_p_filter',
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # xingguangks.com (星光书苑): 目录页 /part/{id}/ 只列"分卷阅读"入口,
-        # 分卷页 /list/{id}/{n}.html 即正文大章 (卷内 50+ <p> 段落, 无内部页码),
-        # 顺序由 /list/{id}/{n+1}.html 的 "下一章(→)" 链接衔接
-        # 正文 div.content 首行带 "如果出现文字缺失，格式混乱请取消转码/退出阅读模式"
-        # 提示, 次行前缀含 "书名作者:xxx" 元信息, 由 xingguang_filter 剥离 (2026-09 实测适配)
-        'domain': 'xingguangks.com',
-        'pattern': 'html_selector',
-        'catalog_parser': 'xingguang',
-        'chapter_url_regex': r'/list/(\d+)/(\d+)\.html',
-        'content_pagination': {'max_pages': 1},   # 分卷页=单页正文, 不探测页码
-        'content_selectors': ['div.content', '.content', '#content'],
-        'content_extractor': 'xingguang_filter',
-        'anti_spider': {'type': 'none'},
-    },
-    {
-        # ciyewk.com (词夜书屋): 目录 /shu/{bid}.html 的 #list dl dd a 结构
-        # 章节URL: /shu/{bid}/{N}.html (bid 为字母数字, 如 OqWe)
-        # 正文: 章节页仅有 "章节内容加载中" 占位, 通过 initTxt('//js.ciyewk.com/data/chapter/.../N.book')
-        #       加载数据文件; .book 为 _txt_call({content:...}) 码点流压缩格式,
-        #       由 content_decoder.decode_chapter_data 自动探测并解码
-        # 注意: 不使用通用html_selector模式, 避免提取到"章节内容加载中"占位内容
-        'domain': 'ciyewk.com',
-        'pattern': 'datafile',  # 强制使用数据文件解码模式
-        'catalog_parser': 'ciyewk',
-        'chapter_url_regex': r'/shu/[A-Za-z0-9]+/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 5},
-        'anti_spider': {'type': 'waf_js'},
-    },
-    {
-        # ltbook.net (龙腾小说网): 目录 /83663/ 简介页通常只有少量章节链接
-        # 章节URL: /83663/{chapid}.html (chapid 为长数字, 如 16026145)
-        # 正文: div#rtext / #content 的 <p> 中, 混有 &amp;ap;ap;ap;ig src...toigdata... 多层实体
-        #       混淆串 (部分汉字被替换, 有损), 用 'ltbook_junk_filter' 提取器清洗删除
-        # 完整目录: 简介页章节少时, 从 "全文阅读" 连读页 (/83663/6.html) 链式追踪 "下一页" 补充
-        'domain': 'ltbook.net',
-        'pattern': 'html_selector',
-        'catalog_parser': 'ltbook',
-        'chapter_url_regex': r'/(\d+)/(\d+)\.html',
-        'content_pagination': {'suffix': '_{N}.html', 'start': 1, 'max_pages': 3},
-        'content_selectors': ['#rtext', '#content', 'div#content'],
-        'content_extractor': 'ltbook_junk_filter',
-        'anti_spider': {'type': 'none'},
-    },
-]
+SITE_PATTERNS = []   # 内置站点表已外置 站点适配_本地/站点表.json (站点脱钩)
 
 
 # ============================================================
@@ -397,7 +149,7 @@ SITE_PATTERNS = [
 def get_site_pattern(url):
     """根据 URL 返回匹配的站点配置, 未匹配返回 None"""
     _apply_runtime_config()  # 首次调用时合并 站点配置.json (幂等)
-    load_adapters()          # 首次调用时加载 站点适配/ 插件 (幂等)
+    load_adapters()          # 首次调用时加载站点表与适配器插件 (幂等)
     url_lower = url.lower()
     for pat in SITE_PATTERNS:
         if pat['domain'] in url_lower:
@@ -569,7 +321,14 @@ _ADAPTERS_LOADED = False
 
 
 def load_adapters():
-    """扫描 BASE_DIR/站点适配/*.py, 逐个 import 并注册。
+    """加载站点表/提取器/适配器插件 (幂等)。
+
+    加载顺序 (后者按域名 upsert 覆盖前者):
+      1. 站点适配_本地/站点表.json —— 内置站点表 (_load_site_table, 不入库;
+         目录缺失 = 公开仓库形态, 静默跳过)
+      2. 站点适配/ *.py —— 公开侧适配器插件 (占位模板以 _ 开头, 自动跳过)
+      3. 站点适配_本地/ *.py —— 真实站点适配器 (不入库)
+      附: 站点适配_本地/_提取器.py —— 站点专属提取器注册进 _EXTRACTORS
 
     每个适配器文件（一个站点一个 .py）可暴露:
       - SITE (dict, 可选): 站点配置，字段同 站点配置.json
@@ -595,17 +354,26 @@ def load_adapters():
     global _ADAPTERS_LOADED, ADAPTERS, _ADAPTER_APPENDED
     if _ADAPTERS_LOADED:
         return
+    # 站点脱钩: 先加载外置站点表与站点专属提取器 (目录缺失 = 公开形态, 各自静默)
+    _load_site_table()
+    _register_extractors()
     new_adapters = {}
     try:
         from _path_utils import get_app_base_dir
-        adapter_dir = os.path.join(get_app_base_dir(), "站点适配")
-        if not os.path.isdir(adapter_dir):
-            _ADAPTERS_LOADED = True   # 目录不存在: 无可加载, 置位避免每次重扫
-            return
-        files = sorted(f for f in os.listdir(adapter_dir)
-                       if f.endswith('.py') and not f.startswith('_'))
-        for fname in files:
-            path = os.path.join(adapter_dir, fname)
+        _base = get_app_base_dir()
+
+        def _scan_dir(dir_name):
+            """列出一个适配器目录的待加载 .py (跳过 _ 开头, 如占位模板)"""
+            d = os.path.join(_base, dir_name)
+            if not os.path.isdir(d):
+                return []
+            return [(f, os.path.join(d, f))
+                    for f in sorted(os.listdir(d))
+                    if f.endswith('.py') and not f.startswith('_')]
+
+        # 双目录: 公开侧 站点适配/ + 本地侧 站点适配_本地/ (站点脱钩, 不入库)。
+        # 同域名两文件并存时先到先得 (公开侧在前), 后到者在下方 L3 检查处告警跳过。
+        for fname, path in _scan_dir("站点适配") + _scan_dir("站点适配_本地"):
             try:
                 mod = _import_adapter_module(path, fname[:-3])
                 site = getattr(mod, 'SITE', None)
@@ -640,7 +408,7 @@ def load_adapters():
                 new_adapters[domain] = entry
                 # 注意: setdefault 的默认字典不含 get_title, 适配器未定义书名
                 # 函数时该键不存在, 必须用 .get 访问 (旧代码直接索引导致
-                # "加载 uuwxw.py 失败: 'get_title'" 的误报)
+                # "加载 适配器文件 失败: 'get_title'" 的误报)
                 _log.info(f"[适配器] 已加载 {fname} → {domain} "
                           f"(目录={'✓' if entry.get('parse_catalog') else '✗'} "
                           f"正文={'✓' if entry.get('extract_content') else '✗'} "
@@ -663,6 +431,96 @@ def load_adapters():
         SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
                             if p.get('domain') not in _残留]
         _ADAPTER_APPENDED -= _残留
+
+
+# ============================================================
+# 站点脱钩 (2026-10-01): 外置站点表 + 站点专属提取器注册
+# 公开仓库形态: 站点适配_本地/ 不存在 → 站点表为空、提取器注册表为空,
+# 程序正常工作 (仅无内置站点); 本地形态全量加载。详见 AGENTS §目录与文件管理规范 四。
+# ============================================================
+_LOCAL_TABLE_APPENDED = set()   # 由站点表 JSON 追加的域名 (重载先移除防重复)
+_EXTRACTORS = {}                # 提取器机制名 -> 函数(container)->str (本地注册)
+
+# 旧站点名别名 -> 机制名。别名字典本体放 站点适配_本地/_提取器.py (ALIASES,
+# 不入库 —— 旧名含站点信息), 由 _register_extractors() 注册; 公开形态为空
+# (公开用户无旧配置, 无需兼容)。
+_EXTRACTOR_ALIASES = {}
+
+
+def 解析提取器名(name):
+    """旧站点名别名归一为机制名; 未知名原样返回 (开放给主爬虫使用)。"""
+    return _EXTRACTOR_ALIASES.get(name, name)
+
+
+def 提取器已注册(name):
+    """机制名是否已有实现 (公开形态下站点专属提取器未注册 → False)。"""
+    return name in _EXTRACTORS
+
+
+def _load_site_table():
+    """加载 站点适配_本地/站点表.json, 逐条按域名 upsert 进 SITE_PATTERNS。
+
+    - 目录/文件不存在 (公开仓库形态): 静默跳过
+    - 由站点表追加的域名记入 _LOCAL_TABLE_APPENDED, 重载时先移除防重复
+      (语义同 _ADAPTER_APPENDED); 覆盖型条目由 JSON 再次覆盖, 无需移除
+    - upsert 只更新 JSON 中出现的字段, 函数型分页等机制名引用照常透传
+    - 任何异常告警并降级 (只用已加载配置), 不影响调用方
+    """
+    global _LOCAL_TABLE_APPENDED
+    try:
+        from _path_utils import get_app_base_dir
+        path = os.path.join(get_app_base_dir(), "站点适配_本地", "站点表.json")
+        if not os.path.isfile(path):
+            return
+        import json as _json
+        with open(path, 'r', encoding='utf-8') as f:
+            data = _json.load(f)
+        items = data.get('sites') if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return
+        if _LOCAL_TABLE_APPENDED:
+            SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
+                                if p.get('domain') not in _LOCAL_TABLE_APPENDED]
+            _LOCAL_TABLE_APPENDED = set()
+        by_domain = {p.get('domain'): p for p in SITE_PATTERNS}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            domain = str(item.get('domain', '')).strip()
+            if not domain:
+                continue
+            if domain in by_domain:
+                for k, v in item.items():
+                    by_domain[domain][k] = v
+            else:
+                SITE_PATTERNS.append(dict(item))
+                by_domain[domain] = SITE_PATTERNS[-1]
+                _LOCAL_TABLE_APPENDED.add(domain)
+        _log.info(f"[站点表] 已加载 {len(items)} 条内置站点 (站点适配_本地/站点表.json)")
+    except Exception as e:
+        _log.info(f"[站点表] 加载失败, 使用现有配置: {e}")
+
+
+def _register_extractors():
+    """从 站点适配_本地/_提取器.py 注册站点专属提取器 (文件缺失=公开形态, 跳过)。"""
+    try:
+        from _path_utils import get_app_base_dir
+        path = os.path.join(get_app_base_dir(), "站点适配_本地", "_提取器.py")
+        if not os.path.isfile(path):
+            return
+        mod = _import_adapter_module(path, "_提取器")
+        table = getattr(mod, 'EXTRACTORS', None)
+        if isinstance(table, dict) and table:
+            _EXTRACTORS.clear()
+            _EXTRACTORS.update(table)
+            _log.info(f"[提取器] 已注册 {len(table)} 个站点专属提取器")
+        aliases = getattr(mod, 'ALIASES', None)
+        if isinstance(aliases, dict) and aliases:
+            _EXTRACTOR_ALIASES.clear()
+            _EXTRACTOR_ALIASES.update(aliases)
+            _log.info(f"[提取器] 已注册 {len(aliases)} 条旧名别名")
+    except Exception as e:
+        _log.info(f"[提取器] 注册失败: {e}")
 
 
 def _import_adapter_module(path, mod_name):
@@ -757,13 +615,20 @@ def build_paged_url(base_url, page_index, pagination):
     if page_index == 0:
         return base_url
 
-    # ---- 自定义函数型 (orion34g 等特殊分页模式) ----
+    # ---- 自定义函数型 (机制名引用, 见 _PAGINATION_FUNCTIONS) ----
     if pagination.get('type') == 'function':
         if page_index >= pagination.get('max_pages', 30):
             return None
-        return pagination['function'](base_url, page_index)
+        fn = pagination.get('function')
+        # 站点表.json 外置形态: function 以机制名字符串引用注册表;
+        # 内存/旧配置形态: 直接是函数对象 (双兼容)。
+        if isinstance(fn, str):
+            fn = _PAGINATION_FUNCTIONS.get(fn)
+        if not callable(fn):
+            return None
+        return fn(base_url, page_index)
 
-    # ---- 序号递增型 (yipinzongshi.com 等) ----
+    # ---- 序号递增型 ----
     if pagination.get('type') == 'increment_number':
         if page_index >= pagination.get('max_pages', 10):
             return None
@@ -784,7 +649,7 @@ def build_paged_url(base_url, page_index, pagination):
     if not suffix:
         return None
     # 查询参数模式 (如 ?page={N}): 直接追加到 URL 末尾, 不替换 .html
-    # 用于 tanmixs.com 等使用 ?page=N 翻页的站点
+    # 用于以 ?page=N 查询参数翻页的站点
     if '?' in suffix:
         return f"{base_url}{suffix.replace('{N}', str(page_num))}"
     # 路径替换模式 (如 _{N}.html): 替换 .html 为分页后缀
@@ -821,7 +686,7 @@ def extract_content_qsbs_bb(html):
 
 
 def extract_content_ajax_two_step(session, current_url, pattern, base_url, headers):
-    """11bzw.org 两步 AJAX 正文获取
+    """两步 AJAX 动态加载正文获取
     
     Args:
         session: requests.Session
@@ -891,9 +756,8 @@ def extract_content_html_selector(html, selectors, extractor=None, domain=''):
     Args:
         html: 原始页面 HTML
         selectors: 选择器列表, 按优先级依次尝试
-        extractor: 专用提取器标记 (可选)
-            - 'yunquge_p_filter': 云趣阁按 <p> 逐行过滤广告/导航行
-            - 'yqyp_nav_strip': 言情一品书 (yqyp.net) 导航/推荐剥离
+        extractor: 专用提取器机制名 (可选, 实现见 _EXTRACTORS 注册表;
+            旧站点名别名经 _EXTRACTOR_ALIASES 归一)
         domain: 站点域名 (可选, 批3 PoC-A)。选择器全部落空时触发选择器自愈,
             产出**待审建议** (数据/选择器建议.json)。不自动改配置、不影响
             本函数返回值与下方兜底逻辑; 自愈异常一律旁路, 绝不断主流程。
@@ -902,28 +766,17 @@ def extract_content_html_selector(html, selectors, extractor=None, domain=''):
         正文文本
     """
     soup = BeautifulSoup(html, 'lxml')
+    # 旧站点名别名归一 (兼容既有 站点配置.json / 站点表 里的旧 content_extractor 值)
+    extractor = _EXTRACTOR_ALIASES.get(extractor, extractor)
     for sel in selectors:
         el = soup.select_one(sel)
         if not el:
             continue
-        if extractor == 'yunquge_p_filter':
-            text = _extract_yunquge_p_filter(el)
-            if text:
-                return text
-        if extractor == 'ltbook_junk_filter':
-            text = _extract_ltbook_junk_filter(el)
-            if text:
-                return text
-        if extractor == 'word_read_p_filter':
-            text = _extract_word_read_p_filter(el)
-            if text:
-                return text
-        if extractor == 'yqyp_nav_strip':
-            text = _extract_yqyp_nav_strip(el)
-            if text:
-                return text
-        if extractor == 'xingguang_filter':
-            text = _extract_xingguang_filter(el)
+        # 站点专属提取器经注册表分发 (实现在 站点适配_本地/_提取器.py, 不入库);
+        # 未注册 (公开形态) 时跳过, 走通用 get_text 路径。
+        fn = _EXTRACTORS.get(extractor)
+        if fn is not None:
+            text = fn(el)
             if text:
                 return text
         text = el.get_text('\n', strip=True)
@@ -950,178 +803,6 @@ def extract_content_html_selector(html, selectors, extractor=None, domain=''):
         candidates.sort(key=lambda x: x[0], reverse=True)
         return candidates[0][1]
     return ''
-
-
-def _extract_yunquge_p_filter(container):
-    """云趣阁 (28zw.org / spscl.com) 正文提取器
-
-    正文位于 div.content / div.word_read 的 <p> 标签中, 但混有广告/导航行:
-      - "一秒记住新域名 https://..." (含 URL 的广告)
-      - "请勿开启浏览器阅读模式..."
-      - "相邻推荐:..." 或纯推荐书名列表 (短词组以多空格分隔)
-      - 章节标题前缀 "XXX最新章节txt——..."
-      - "创作者：" / "创作完成日：" 元信息
-      - "myJs.bookJs2();" 等 JS 残留
-    本函数逐个 <p> 取文本, 跳过上述无意义行, 保留正文段落。
-    """
-    if container is None:
-        return ''
-    # 云趣阁广告/导航行特征 (任一命中即跳过该 <p>)
-    ad_markers = (
-        '一秒记住新域名', '请勿开启浏览器阅读模式', '相邻推荐',
-        '最新章节txt——', '创作者：', '创作完成日：',
-        'myJs.', 'bookJs', '本章未完，点击下一页',
-        '请收藏本站', '手机用户请访问', 'm.spscl.com', 'www.28zw.org',
-    )
-    parts = []
-    for p in container.find_all('p'):
-        txt = p.get_text(strip=True)
-        if not txt:
-            continue
-        # 含 URL 的广告行 (云趣阁常见 "一秒记住新域名 https://...")
-        if 'http://' in txt or 'https://' in txt:
-            continue
-        if any(m in txt for m in ad_markers):
-            continue
-        # 纯相邻推荐列表: 多个书名以连续空格分隔且无标点 (如 "书名1  书名2  书名3")
-        # 检测特征: 含 3+ 连续空格且无中文句号/逗号
-        if '   ' in txt and '。' not in txt and '，' not in txt and len(txt) > 30:
-            continue
-        parts.append(txt)
-    return '\n\n'.join(parts)
-
-
-def _extract_yqyp_nav_strip(container):
-    """言情一品书 (yqyp.net) 正文提取器
-
-    正文位于 div.info_dv1.ov 中, 容器内结构:
-      - 顶部面包屑/导航 div + "手机浏览器扫描二维码访问"
-      - <h2> 章节标题
-      - div.read_btn (上一章/章节目录/保存书签/下一章)
-      - 正文 <p> 段落
-      - 底部 div.read_btn
-      - 作者互动/推荐书目 (如 "阅读指南:", "谢谢宝贝们!", 多书名连缀)
-    本函数提取 h2 之后、第二个 read_btn 之前的 <p> 段落,
-    并过滤导航/广告/推荐/作者互动行。
-    """
-    if container is None:
-        return ''
-    nav_keywords = ('上一章', '下一章', '章节目录', '保存书签', '加入书架',
-                    '目录', '首页', '手机浏览器', '扫描二维码')
-    junk_markers = ('阅读指南', '收藏', '红包', '么么', '宝贝们',
-                    '本章完', '作者有话说', '谢谢', '评论')
-    parts = []
-    passed_first_read_btn = False
-    for child in container.children:
-        name = getattr(child, 'name', None)
-        # 遇到 h2 标记标题后开始收集
-        if name == 'h2':
-            continue
-        # 第一个 read_btn 之后才真正开始正文
-        if name == 'div' and 'read_btn' in ' '.join(child.get('class', [])):
-            if not passed_first_read_btn:
-                passed_first_read_btn = True
-                continue
-            # 第二个 read_btn: 停止收集
-            break
-        if not passed_first_read_btn:
-            continue
-        if name != 'p':
-            continue
-        txt = child.get_text(strip=True)
-        if not txt:
-            continue
-        # 跳过明显导航/广告/作者互动; 命中后直接停止, 避免把后续互动/推荐也收进来
-        if any(kw in txt for kw in nav_keywords):
-            continue
-        if any(m in txt for m in junk_markers):
-            break
-        # 跳过纯下划线/无意义占位
-        if re.fullmatch(r'[_\-]+', txt):
-            continue
-        # 跳过推荐书目串 / 作者互动: 长段中无中文句末标点, 视为非正文
-        if len(txt) > 80 and '。' not in txt and '！' not in txt and '？' not in txt:
-            break
-        parts.append(txt)
-    return '\n\n'.join(parts)
-
-
-def _extract_xingguang_filter(container):
-    """星光书苑 (xingguangks.com) 正文提取器
-
-    分卷页 div.content 内 50+ <p> 段落即一章正文, 但存在两类页眉污染:
-      1) 首行提示: "如果出现文字缺失，格式混乱请取消转码/退出阅读模式" (整行丢弃)
-      2) 次行前缀: "少年阿宾作者:ben第一章胡太太..." —— 书名+作者标记与章节标题
-         粘连在同一 <p> 开头, 需剥离 "书名作者:作者名" 前缀 (保留其后章节标题+正文)。
-    """
-    if container is None:
-        return ''
-    lines = [p.get_text(strip=True) for p in container.find_all('p')]
-    lines = [l for l in lines if l]
-    out = []
-    for line in lines:
-        if '如果出现文字缺失' in line or '取消转码' in line or '退出阅读模式' in line:
-            continue
-        out.append(line)
-    # 剥离首个段落粘连的 书名+作者 前缀 (仅当能衔接 "第X章/回/节/卷..." 时才剥)
-    if out and '作者:' in out[0][:40]:
-        m = re.match(r'^(?:[^\s]{1,40}?作者:[^\s]{1,12}?)(第[0-9一二三四五六七八九十百千]+[章回节卷].*)$', out[0])
-        if m:
-            out[0] = m.group(1)
-    return '\n\n'.join(out)
-
-
-def _extract_word_read_p_filter(container):
-    """恋上看书网 (630wang.cc) 正文提取器
-
-    正文在 div.word_read 下的 <p> 标签中; 容器内还含 <h3> 章节标题
-    与 div.read_btn 导航按钮 (上一章/章节目录/保存书签/下一章), 需排除。
-    注意: 正文中的数字被服务端替换为 o (有损替换), 无法还原, 保留原样。
-    """
-    if container is None:
-        return ''
-    nav_keywords = ('上一章', '下一章', '章节目录', '保存书签', '加入书架', '目录', '首页')
-    parts = []
-    for p in container.find_all('p'):
-        txt = p.get_text(strip=True)
-        if not txt:
-            continue
-        if any(kw in txt for kw in nav_keywords):
-            continue
-        # 跳过过短行 (导航/广告), 保留正文段落
-        if len(txt) < 5 and not re.search(r'[\u4e00-\u9fff]{2}', txt):
-            continue
-        parts.append(txt)
-    return '\n\n'.join(parts)
-
-
-def _extract_ltbook_junk_filter(container):
-    """龙腾小说网 (ltbook.net) 正文提取器
-
-    正文位于 div#rtext / #content 的 <p> 中, 混有多层实体混淆的干扰串:
-      - 形态: &amp;ap;ap;ap;ig src&amp;ap;ap;ap;“toigdata---&amp;ap;ap;ap;“ &amp;ap;ap;ap;
-      - 本质: 被多层实体编码的 <img src="..."> 反爬串, 且**原位置的汉字已被替换丢失** (有损)
-      - BeautifulSoup 解析后残留: &ap;ap;ap;ig src&ap;ap;ap;“toigdata---&ap;ap;ap;“ &ap;ap;ap;
-    另混有站点广告行:
-      - 连读页首行: "，最快更新招魂 ！" (书名/作者/最快更新 广告残留)
-    本函数删除含 toigdata 的干扰片段、孤立 ap; 残留及广告行, 保留剩余正文。
-    """
-    if container is None:
-        return ''
-    text = container.get_text('\n', strip=True)
-    # 删除含 toigdata 的混淆片段 (从 ap;ig src 到垃圾串结束, 吃掉尾部非汉字残留)
-    text = re.sub(r'(?:&|;)?(?:ap;)+ig\s+src.*?toigdata[^\u4e00-\u9fff]*',
-                  '', text, flags=re.S)
-    # 兜底: 清理残留的孤立 ap; 串 (如 "&ap;ap;ap;" 残留)
-    text = re.sub(r'[&;]?(?:ap;)+', '', text)
-    # 按行过滤站点广告/导航行 (连读页首行 "，最快更新招魂 ！" 等)
-    lines = [ln for ln in text.split('\n') if ln.strip() and '最快更新' not in ln]
-    text = '\n'.join(lines)
-    # 清理连续空行/首尾空白
-    # 注: \n{2,}→\n 压掉段间空行, 但下游 clean_content 以"每行=每段"重组,
-    # 单换行即段落边界, 此处无实际段落损失 (分段语义以 clean_content 出口为准)
-    text = re.sub(r'\n{2,}', '\n', text).strip()
-    return text
 
 
 # ============================================================
