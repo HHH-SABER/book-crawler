@@ -22,6 +22,11 @@ for _s in (sys.stdout, sys.stderr):
         _s.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass  # 刻意静默: stdout 已被重定向时 reconfigure 必然失败, 仅丢 UTF-8 优化不影响构建
+# v2.4.37 发布修复: 上面的 reconfigure 只覆盖本进程, 子进程 (ensure_flet_cache.py
+# 等) 各自起解释器, 继承 cp1252 环境照样崩 (CI 首发实测 UnicodeEncodeError)。
+# 对子进程注入 PYTHONUTF8 —— 环境变量随 subprocess 继承, 一处注入全链路生效。
+os.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 # 安全: 使用 Path.resolve() 规范化脚本所在目录, 再上溯到项目根,
 # 保证 ROOT/LOG 均为规范化绝对路径, 不含 ../ 穿越
