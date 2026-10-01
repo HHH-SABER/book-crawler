@@ -14,6 +14,7 @@
 运行方式 (项目根目录):
     python -m unittest discover -s 测试 -v
 """
+import os
 import shutil
 import sys
 import tempfile
@@ -31,6 +32,19 @@ import 任务事件                        # noqa: E402
 
 class Test事件通道端到端(unittest.TestCase):
     """真实 run() 流程 + 正则停用 → 状态仍正确"""
+
+    def setUp(self):
+        """清单隔离 (v2.4.35): 本文件的离线抓取会走到 _收尾汇总 → 网站清单.记录,
+        不隔离就会把 example.com / 端到端测试书 写进项目根的真实用户记录
+        (历史上 网站清单.txt 里那条 example.com 污染就是这么来的)。
+        """
+        self._清单目录 = Path(tempfile.mkdtemp(prefix='nc_e2e_ledger_'))
+        self.addCleanup(shutil.rmtree, self._清单目录, ignore_errors=True)
+        self._清单env = mock.patch.dict(
+            os.environ,
+            {'NC_LEDGER_PATH': str(self._清单目录 / '网站清单.txt')})
+        self._清单env.start()
+        self.addCleanup(self._清单env.stop)
 
     def test_离线抓取仅靠事件驱动状态(self):
         from 爬虫 import NovelSpider
