@@ -7,7 +7,7 @@
 ## 已支持的模式
 
 ### 1. qsbs.bb Base64 加密模式
-**适用站点**: zhiruo.org, biquwx.cc, ahxsw.com, 28zw.org, spscl.com (云趣阁)
+**适用站点**: sitea.example.org, siteb.example.cc, sitei.example.com, sitel.example.org, sitem.example.com (站名sitel)
 
 **特征**:
 - 章节页 HTML 中，正文不是普通文本，而是 `<script>document.writeln(qsbs.bb('BASE64编码'))</script>` 脚本块
@@ -15,9 +15,9 @@
 - 分页格式: `{章节ID}.html` → `{章节ID}_1.html` (第2页开始)
 - 反爬机制: `ge_js_validator` JS cookie 校验（首次访问返回小校验页，设置 cookie 后重试）
 
-**云趣阁 (28zw.org/spscl.com) 特别说明**:
+**站名sitel (sitel.example.org/sitem.example.com) 特别说明**:
 - 目录页: `/book/{aid}/ml{N}.html` (ml1, ml2, ... 分页; 详情页含"最新章节"倒序+"章节列表"正序, 需去重排序)
-- 章节页: `/book/{aid}/{cid}.html` (spscl.com 用 `/yue/{aid}/{cid}.html`)
+- 章节页: `/book/{aid}/{cid}.html` (sitem.example.com 用 `/yue/{aid}/{cid}.html`)
 - 正文容器: `div.content` / `div.word_read` (但 requests 拿到的是 Base64 加密版, 容器内只有广告占位)
 - 解码后每个 `<p>` 混有广告行, 用 `content_extractor: 'yunquge_p_filter'` 标记调用专用提取器过滤:
   - "一秒记住新域名 https://..." (含 URL 的广告)
@@ -37,7 +37,7 @@ if detect_qsbs_bb_pattern(html):
 ---
 
 ### 2. 两步 AJAX 动态加载模式
-**适用站点**: 11bzw.org (及任何使用 `/api/read_sign.php` 两步加载的站点)
+**适用站点**: sitej.example.org (及任何使用 `/api/read_sign.php` 两步加载的站点)
 
 **特征**:
 - 章节页原始 HTML 不含正文，只有导航结构
@@ -75,7 +75,7 @@ if detect_ajax_pattern(html):
 ---
 
 ### 4. Selenium 浏览器渲染模式
-**适用站点**: pjxdd.com, qingheks.com, 27xsw.cc
+**适用站点**: siteaa.example.com, siteab.example.com, siteac.example.cc
 
 **特征**:
 - 普通 requests 完全无法获取任何正文内容
@@ -134,7 +134,7 @@ GUI「站点管理」页**同时展示两层**，二者互补而非重复，都�
 |---|---|
 | `domain` | 域名（不含 `www.`，子串匹配） |
 | `pattern` | `qsbs_bb` / `ajax_two_step` / `html_selector` / `selenium` / `str_decode_bb` |
-| `catalog_parser` | 目录解析器：`generic` / `biquwx` / `11bzw` / `zhiruo` / `yunquge` 等 |
+| `catalog_parser` | 目录解析器：`generic` / `siteb` / `sitej` / `sitea` / `yunquge` 等 |
 | `chapter_url_regex` | 从目录页 href 提取章节链接的正则（含小说ID/章节ID分组） |
 | `content_pagination` | 分页规则：`suffix` 含 `{N}` 页码占位、`start` 起始页、`max_pages` 上限 |
 | `content_selectors` | 正文选择器列表（按优先级依次尝试） |
@@ -172,7 +172,7 @@ GUI「站点管理」页**同时展示两层**，二者互补而非重复，都�
 {
     'domain': '新站点域名.com',
     'pattern': PATTERN_QSBS_BB,  # 或 PATTERN_AJAX_TWO_STEP / PATTERN_HTML_SELECTOR
-    'catalog_parser': 'generic',  # 'generic' / 'biquwx' / '11bzw' / 'zhiruo' / 'yunquge'
+    'catalog_parser': 'generic',  # 'generic' / 'siteb' / 'sitej' / 'sitea' / 'yunquge'
     'chapter_url_regex': r'/(\d+)/(\d+)\.html',  # 从目录页 href 提取 (小说ID, 章节ID)
     'content_pagination': {
         'suffix': '_{N}.html',  # 分页后缀模板, {N} 会被替换为页码
@@ -180,7 +180,7 @@ GUI「站点管理」页**同时展示两层**，二者互补而非重复，都�
         'max_pages': 30,       # 最多抓取页数
     },
     'content_selectors': ['#content', '.content'],  # HTML_SELECTOR 模式使用
-    'content_extractor': None,  # 可选: 'yunquge_p_filter' 用于云趣阁广告行过滤
+    'content_extractor': None,  # 可选: 'yunquge_p_filter' 用于站名sitel广告行过滤
     'anti_spider': {'type': 'js_cookie', 'cookie_name': 'ge_js_validator_20'},
 },
 ```
@@ -233,11 +233,11 @@ pattern = auto_detect_pattern(session, url, headers, base_url)
 - 在 `get_chapter_content` 返回前统一调用
 - 按段落指纹 (前60字) 去重, 保留首次出现的段落
 - 短段落 (<60字) 不参与去重, 保留对话引语、短句等
-- 解决云趣阁等站点分页时每页包含前页内容导致的重复
+- 解决站名sitel等站点分页时每页包含前页内容导致的重复
 
 ### 3. `get_novel_title(catalog_url)` — 小说标题清理
-- 云趣阁 (28zw.org/spscl.com) 详情页 `<title>` 格式为
-  "书名最新章节列表_书名刚刚更新(作者)_云趣阁"
+- 站名sitel (sitel.example.org/sitem.example.com) 详情页 `<title>` 格式为
+  "书名最新章节列表_书名刚刚更新(作者)_站名sitel"
 - 优先从 `<h1>` 或书名容器提取纯书名
 - 失败则从 `<title>` 正则提取 "书名最新章节" 前的书名
 - 移除残留的 "txt"/"全文阅读" 等垃圾词
@@ -246,16 +246,16 @@ pattern = auto_detect_pattern(session, url, headers, base_url)
 
 | 站点 | 模式 | 目录解析 | 分页起始 | 反爬 |
 |------|------|----------|----------|------|
-| zhiruo.org | qsbs_bb | zhiruo (onclick) | 1 | ge_js_validator JS cookie |
-| biquwx.cc | qsbs_bb | biquwx (/txt.shtml) | 1 | ge_js_validator JS cookie |
-| ahxsw.com | qsbs_bb | generic | 1 | ge_js_validator JS cookie |
-| 28zw.org | qsbs_bb | yunquge (/book/{aid}/ml{N}.html) | 1 | ge_js_validator JS cookie |
-| spscl.com | qsbs_bb | yunquge (/yue/{aid}/ml{N}.html) | 1 | ge_js_validator JS cookie |
-| 11bzw.org | ajax_two_step | 11bzw (/read/) | 2 | session cookie |
-| yqyp.net | html_selector | yqyp (强制PC UA) | 2 | js_cookie (ge_js_validator_20) |
-| pjxdd.com | selenium | generic | 1 | challenge 验证页 |
-| qingheks.com | selenium | generic | 1 | challenge 验证页 |
-| 27xsw.cc | selenium | generic | 1 | challenge 验证页 |
+| sitea.example.org | qsbs_bb | sitea (onclick) | 1 | ge_js_validator JS cookie |
+| siteb.example.cc | qsbs_bb | siteb (/txt.shtml) | 1 | ge_js_validator JS cookie |
+| sitei.example.com | qsbs_bb | generic | 1 | ge_js_validator JS cookie |
+| sitel.example.org | qsbs_bb | yunquge (/book/{aid}/ml{N}.html) | 1 | ge_js_validator JS cookie |
+| sitem.example.com | qsbs_bb | yunquge (/yue/{aid}/ml{N}.html) | 1 | ge_js_validator JS cookie |
+| sitej.example.org | ajax_two_step | sitej (/read/) | 2 | session cookie |
+| sitek.example.net | html_selector | sitek (强制PC UA) | 2 | js_cookie (ge_js_validator_20) |
+| siteaa.example.com | selenium | generic | 1 | challenge 验证页 |
+| siteab.example.com | selenium | generic | 1 | challenge 验证页 |
+| siteac.example.cc | selenium | generic | 1 | challenge 验证页 |
 
 ---
 
@@ -298,7 +298,7 @@ pattern = auto_detect_pattern(session, url, headers, base_url)
 | 站点配置层 | **英文** snake_case 模块 / 函数 | `sites_config.py`, `extract_content_html_selector` |
 | 业务核心层 | 中文模块名 + 中文方法名 | `爬虫.py`(NovelSpider), `请求引擎.py`, `爬取历史.py` |
 | GUI 层 | 英文包 `gui_components/`, 组件文件英文 snake_case | `input_bar.py`, `detail_drawer.py`, `pages/history_page.py` |
-| 新站点方法 | 接入分发器用 `_parse_catalog_<site>` (域名 token 小写) | `_parse_catalog_zhiruo` |
+| 新站点方法 | 接入分发器用 `_parse_catalog_<site>` (域名 token 小写) | `_parse_catalog_sitea` |
 | 新增纯函数 | 模块级英文 snake_case, 前缀 `_` 表内部 | `_resolve_novel_paths`, `_chapter_sort_key` |
 
 新增站点适配时:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""通用表单式验证码自动求解 (als1010 类 200 状态"访问验证"页) 离线回归。
+"""通用表单式验证码自动求解 (siteg 类 200 状态"访问验证"页) 离线回归。
 
 实网取证 (2026-09-12): 该站 WAF 为会话 cookie 制, 页面 code 输入框 +
 /home/chapter/verify.html 图片 + check_code.html 表单; ddddocr 识别后按
@@ -18,7 +18,7 @@ sys.path.insert(0, str(_ROOT / '源码'))
 import waf_captcha as wc   # noqa: E402
 
 try:
-    _样本 = (_ROOT / '测试样本_本地' / 'als1010_访问验证页.html').read_text(encoding='utf-8')
+    _样本 = (_ROOT / '测试样本_本地' / 'siteg_访问验证页.html').read_text(encoding='utf-8')
 except OSError:
     _样本 = None   # 站点脱钩: 本地样本缺失 (公开形态) → setUpClass 跳过
 _正常页 = '<html><head><title>第1章</title></head><body>' + '正文。' * 400 + '</body></html>'
@@ -68,7 +68,7 @@ class Test表单验证页求解(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if _样本 is None:
-            raise unittest.SkipTest('本地站点样本缺失: 测试样本_本地/als1010_访问验证页.html (公开形态跳过)')
+            raise unittest.SkipTest('本地站点样本缺失: 测试样本_本地/siteg_访问验证页.html (公开形态跳过)')
 
 
     def test_求解成功并沿用原表单字段(self):

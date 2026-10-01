@@ -6,7 +6,7 @@
 ## 数据来源 (两类)
 
 1. **真实样本回归** — `测试样本_本地/` HTML 快照 (不入库, 缺失时跳过), 锁定线上已验证行为防退化。
-   实测只有 2 种机制有真实样本: std_base64 (zhiruo/qiqishu)、str_concat (ltbook)。
+   实测只有 2 种机制有真实样本: std_base64 (sitea/sitec)、str_concat (siteq)。
 2. **合成正向样本** — 其余 4 种机制 (custom_base64 / xor / char_map / eval_obfuscated)
    无真实快照, 在测试内**现场用 base64/xor/translate 构造加密 HTML**, 不落任何二进制文件。
    每种构造都先经设计探针验证 `decrypt_content()` 能正确解出 (见下方注释), 再固化为断言。
@@ -68,14 +68,14 @@ def _自定义base64密文(plaintext, alphabet):
 class TestStdBase64机制(unittest.TestCase):
     """机制1: 标准 Base64 (qsbs.bb / str_decode / document.writeln)"""
 
-    def test_真实样本zhiruo解出std_base64(self):
-        txt, method = d.decrypt_content(_样本('zhiruo_content.html'))
+    def test_真实样本sitea解出std_base64(self):
+        txt, method = d.decrypt_content(_样本('sitea_content.html'))
         self.assertEqual(method, 'std_base64')
         self.assertIsNotNone(txt)
         self.assertGreater(len(txt), 500, '应解出可观长度正文')
 
-    def test_真实样本qiqishu解出std_base64(self):
-        txt, method = d.decrypt_content(_样本('qiqishu_content.html'))
+    def test_真实样本sitec解出std_base64(self):
+        txt, method = d.decrypt_content(_样本('sitec_content.html'))
         self.assertEqual(method, 'std_base64')
         self.assertGreater(len(txt), 500)
 
@@ -170,10 +170,10 @@ class TestCharMap机制(unittest.TestCase):
 class TestStrConcat机制(unittest.TestCase):
     """机制5: 字符串拼接混淆 (相邻字面量 / split+reverse)"""
 
-    def test_真实样本ltbook解出str_concat(self):
-        txt, method = d.decrypt_content(_样本('ltbook_content.html'))
+    def test_真实样本siteq解出str_concat(self):
+        txt, method = d.decrypt_content(_样本('siteq_content.html'))
         self.assertEqual(method, 'str_concat')
-        self.assertGreater(len(txt), 1000, 'ltbook 样本应解出长正文')
+        self.assertGreater(len(txt), 1000, 'siteq 样本应解出长正文')
 
     def test_相邻字面量拼接检测(self):
         html = "<script>var s = '一二三四五六七八九十一二三四五六七八九十' + '继续拼接的正文内容';</script>"
@@ -230,8 +230,8 @@ class Test统一入口与负向用例(unittest.TestCase):
 
     def test_真实无加密样本返回None(self):
         """多份实测无加密的真实样本应正确返回 (None, None), 不误判"""
-        for name in ('630wang_content.html', 'yueliang_content.html',
-                     'yunshuzhai_content.html', 'als1010_软封页.html'):
+        for name in ('siteo_content.html', 'sited_content.html',
+                     'sitef_content.html', 'siteg_软封页.html'):
             path = SAMPLES / name
             if not path.exists():
                 self.skipTest(f'缺样本 {name}')

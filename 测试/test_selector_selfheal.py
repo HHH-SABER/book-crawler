@@ -7,7 +7,7 @@
 - try_heal + 记录建议: 端到端产出建议并原子写盘 (tmp 目录, 不碰真实 数据/)
 - 门槛行为: 置信度不足不产出 (防把软封页/加密变更误当普通改版)
 
-依赖 测试样本_本地/ 快照 (不入库, 缺失时跳过): ltbook_content.html (明文#rtext), qiqishu_content.html (加密负样本)。
+依赖 测试样本_本地/ 快照 (不入库, 缺失时跳过): siteq_content.html (明文#rtext), sitec_content.html (加密负样本)。
 """
 import base64
 import json
@@ -37,7 +37,7 @@ def _read(name):
 
 class Test启发式打分(unittest.TestCase):
     def test_明文快照命中大正文容器(self):
-        soup = BeautifulSoup(_read('ltbook_content.html'), 'lxml')
+        soup = BeautifulSoup(_read('siteq_content.html'), 'lxml')
         cands = heal.score_candidates(soup)
         self.assertTrue(cands, '明文页应产出候选')
         score, node = cands[0]
@@ -45,8 +45,8 @@ class Test启发式打分(unittest.TestCase):
         self.assertGreaterEqual(heal._cn_len(node.get_text()), heal._MIN_CN)
 
     def test_加密页负样本分数低于门槛(self):
-        # 探针实测: qiqishu (base64 加密) 启发式最高分仅 0.179 << 0.55
-        soup = BeautifulSoup(_read('qiqishu_content.html'), 'lxml')
+        # 探针实测: sitec (base64 加密) 启发式最高分仅 0.179 << 0.55
+        soup = BeautifulSoup(_read('sitec_content.html'), 'lxml')
         cands = heal.score_candidates(soup)
         if cands:
             self.assertLess(cands[0][0], heal._MIN_CONFIDENCE,
@@ -80,18 +80,18 @@ class Test端到端自愈(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_抹除id后找回并落盘建议(self):
-        html = _read('ltbook_content.html')
+        html = _read('siteq_content.html')
         soup = BeautifulSoup(html, 'lxml')
         node = soup.select_one('#rtext')
         self.assertIsNotNone(node, '样本前提: #rtext 应存在')
         node['class'] = ['healed_x']   # 模拟改版: id 改名
         del node['id']
-        sug = heal.try_heal(soup, 'ltbook.net', ['#rtext', '#content'])
+        sug = heal.try_heal(soup, 'siteq.example.net', ['#rtext', '#content'])
         if sug is None:
-            self.skipTest('探针口径: ltbook 抹除后 top1 可找回; 若打分漂移则本例降级跳过')
+            self.skipTest('探针口径: siteq 抹除后 top1 可找回; 若打分漂移则本例降级跳过')
         data = json.loads(Path(self.file).read_text(encoding='utf-8'))
-        self.assertIn('ltbook.net', data)
-        self.assertEqual(data['ltbook.net']['建议选择器'], sug['建议选择器'])
+        self.assertIn('siteq.example.net', data)
+        self.assertEqual(data['siteq.example.net']['建议选择器'], sug['建议选择器'])
         # 回读唯一性: 建议选择器必须恰好命中那个容器
         again = BeautifulSoup(html, 'lxml')
         again.select_one(sug['建议选择器'])  # 不抛异常即语法合法
@@ -379,10 +379,10 @@ class Test祖先去重(unittest.TestCase):
                          '真含多块正文的外层应仍居 top1 (去重只罚单一子块复制)')
 
     def test_真实快照top1更内聚(self):
-        """回归 yunshuzhai 案例: 明文快照的 top1 不应是被降权的大壳。"""
-        p = os.path.join(_SAMPLES, 'yunshuzhai_content.html')
+        """回归 sitef 案例: 明文快照的 top1 不应是被降权的大壳。"""
+        p = os.path.join(_SAMPLES, 'sitef_content.html')
         if not os.path.exists(p):
-            self.skipTest('缺 yunshuzhai 快照')
+            self.skipTest('缺 sitef 快照')
         soup = BeautifulSoup(Path(p).read_text(encoding='utf-8', errors='replace'), 'lxml')
         cands = heal.score_candidates(soup)
         self.assertTrue(cands)

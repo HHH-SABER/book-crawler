@@ -148,10 +148,10 @@ pip install -r requirements.txt
 ## 支持的站点
 
 内置多站点适配器，包括：
-- 笔趣阁系列（HTML 选择器解析）
+- 站名siteb系列（HTML 选择器解析）
 - 第一版主网（Base64 加密内容）
-- tanmixs（.xs 码点流加密）
-- 11bzw.org（AJAX 两步加载）
+- siten（.xs 码点流加密）
+- sitej.example.org（AJAX 两步加载）
 - 言情一品书、我去读小说等
 
 添加新站点请参考 [文档/SITE_ADAPTER.md](文档/SITE_ADAPTER.md)。

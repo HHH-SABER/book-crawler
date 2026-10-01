@@ -2,7 +2,7 @@
 """Cookie 导入工具: 把浏览器复制的 Cookie 串写入 域名cookies.json。
 
 用法 (项目根):
-    python 脚本\\导入Cookie.py 7ku.net
+    python 脚本\\导入Cookie.py example.com
 然后按提示粘贴从浏览器复制的 Cookie 串 (整行, 带不带 "Cookie: " 前缀都行),
 回车即写入。写入后 30 秒内自动生效, 无需重启程序。
 
@@ -20,7 +20,7 @@ from _path_utils import get_app_base_dir   # noqa: E402
 def main():
     域 = (sys.argv[1] if len(sys.argv) > 1 else '').strip().lower()
     if not 域:
-        print('用法: python 脚本\\导入Cookie.py <域名>   (例: python 脚本\\导入Cookie.py 7ku.net)')
+        print('用法: python 脚本\\导入Cookie.py <域名>   (例: python 脚本\\导入Cookie.py example.com)')
         return 1
     print(f'== 导入 {域} 的登录 Cookie ==')
     print('粘贴从浏览器复制的 Cookie 串 (整行; 带 "Cookie: " 前缀或引号都可以), 然后回车:')

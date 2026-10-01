@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT / '源码'))
 from content_decoder import decode_data  # noqa: E402
 
 _samples = []
-raw = (ROOT / '测试样本' / 'ciyewk_1.book').read_text('utf-8')
+raw = (ROOT / '测试样本' / 'codepoint_sample.book').read_text('utf-8')
 real, _method = decode_data(raw)
 _samples.append(('real_codepoint', real))
 _samples += [

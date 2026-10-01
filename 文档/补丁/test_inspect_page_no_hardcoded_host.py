@@ -61,7 +61,7 @@ class TestInspectPage请求头(unittest.TestCase):
             'Host', 键s,
             "inspect_page 的请求头里出现了硬编码 'Host'。\n"
             "requests 会按 URL 自动生成正确的 Host(含跳转后的新主机)；手写它会覆盖该行为，\n"
-            "导致 bookben5.org → www.bookben5.org 这类主机级跳转被反复 301，\n"
+            "导致 siteah.example.org → www.siteah.example.org 这类主机级跳转被反复 301，\n"
             "最终 requests 抛 'Exceeded 30 redirects.' 并返回空页面(目录 0 章)。\n"
             "详见 文档/踩坑总表.md K29。")
 
