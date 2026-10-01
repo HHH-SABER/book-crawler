@@ -672,6 +672,12 @@ def extract_content_qsbs_bb(html):
     """
     blocks = re.findall(r"qsbs\.bb\('([A-Za-z0-9+/=]+)'\)", html)
     if not blocks:
+        # 变体 (2026-10-01, 7ku 类): 同构调用但函数名随机化 ——
+        # document.writeln(随机对象.随机方法('BASE64'))。{32,} 长度阈值防误捕
+        # 页面上无关的短 base64 (如图标/占位)。
+        blocks = re.findall(
+            r"document\.writeln\([\w.$]+\('([A-Za-z0-9+/=]{32,})'\)\)", html)
+    if not blocks:
         return ''
     full_html = ''
     for b in blocks:
