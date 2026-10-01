@@ -12,7 +12,9 @@ from unittest import mock
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / '源码'))
+sys.path.insert(0, str(_PROJECT_ROOT / '测试'))
 
+import _沙箱                              # noqa: E402,F401  状态根沙箱 (2026-10-02)
 from 远控 import 服务   # noqa: E402
 
 
@@ -87,6 +89,40 @@ class Test远控服务(unittest.TestCase):
     def test_发任务_缺url_400(self):
         r = self.client.post('/api/v1/tasks?k=testtoken', json={})
         self.assertEqual(r.status_code, 400)
+
+    def test_发任务_增量透传(self):
+        """EXE 批量(增量模式): body.incremental 必须透传给 create_task;
+        且 incremental=True 时 unique_title 默认 False —— 增量语义是续写原文件,
+        True 会另存 书名(1).txt 使旧正文无法参与增量搬运 (书架曾出现 (1) 后缀混淆)。"""
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_10') as m:
+            r = self.client.post('/api/v1/tasks?k=testtoken',
+                                 json={'url': 'https://example.com/b/10',
+                                       'incremental': True})
+            self.assertEqual(r.status_code, 200)
+            self.assertIs(m.call_args.kwargs.get('incremental'), True)
+            self.assertIs(m.call_args.kwargs.get('unique_title'), False,
+                          '增量任务默认 unique_title=False (续写原文件)')
+
+    def test_发任务_默认非增量(self):
+        """不传 incremental → False, 既有调用方行为零变化。"""
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_11') as m:
+            self.client.post('/api/v1/tasks?k=testtoken',
+                             json={'url': 'https://example.com/b/11'})
+            self.assertIs(m.call_args.kwargs.get('incremental'), False)
+            self.assertIs(m.call_args.kwargs.get('unique_title'), True,
+                          '非增量保持原默认 unique_title=True')
+
+    def test_发任务_增量但显式unique_title优先(self):
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_12') as m:
+            self.client.post('/api/v1/tasks?k=testtoken',
+                             json={'url': 'https://example.com/b/12',
+                                   'incremental': True, 'unique_title': True})
+            self.assertIs(m.call_args.kwargs.get('incremental'), True)
+            self.assertIs(m.call_args.kwargs.get('unique_title'), True,
+                          '显式传入优先于增量默认')
 
     def test_日志增量与截断标志(self):
         from gui_components.task_manager import TaskInfo

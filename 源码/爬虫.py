@@ -724,6 +724,23 @@ class NovelSpider:
             # 失效时降级为内置 UA 池 (P1-1): 按域名稳定选取, 避免所有降级 run
             # 共用同一 UA 被集中封禁
             self._fixed_ua = _pick_builtin_ua(domain=getattr(self, 'base_url', '') or '')
+        # ===== 站点声明 UA 覆盖 (2026-10-01) =====
+        # 插件/JSON 规则可声明 SITE['ua'] = 完整 UA 串: 登录态 Cookie 与浏览器 UA
+        # 绑定的站点 (实测某"UA 绑定登录态"类站点: UA 不匹配即被判未登录),
+        # 主会话固定用该 UA 且禁止
+        # 轮换 —— 语义同 WAF 浏览器 UA 同步先例 (下方 _solve_waf 里 navigator UA 回灌)。
+        # 未声明 ua 的站点走原随机/池逻辑, 行为不变。
+        self._ua锁定 = False
+        if SITES_CONFIG_AVAILABLE:
+            try:
+                _站ua = (get_site_pattern(base_url) or {}).get('ua') or ''
+                if _站ua:
+                    self._fixed_ua = _站ua
+                    self._ua锁定 = True
+                    self.session.headers['User-Agent'] = _站ua
+                    _log.info(f"[站点UA] 会话固定 UA 为站点声明值: {_站ua[:50]}...")
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         # 添加完整的请求头，模拟真实浏览器
         self.session.headers.update({
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -1240,6 +1257,9 @@ class NovelSpider:
         cookie 失效, 因此仅在没有命中过验证码类反爬时才真正轮换。
         Returns: 是否实际轮换了 UA
         """
+        if getattr(self, '_ua锁定', False):
+            _log.info("[反爬] 站点声明固定 UA (登录态绑定), 保持UA不变")
+            return False
         if any(k in self._反爬统计 for k in ('waf_captcha', 'waf_js_challenge', 'js_cookie')):
             _log.info("[反爬] 站点使用验证码类反爬 (cookie绑定UA), 保持UA不变")
             return False
@@ -6000,11 +6020,20 @@ class NovelSpider:
         """解析已有输出文件 → {章节标题: 正文} (增量重抓时搬运旧正文用)
 
         输出格式为每章 "## 标题\\n\\n正文", 按标题行切块; 同名标题保留最后一份。
+
+        容错读取 (2026-10-02 EXE 批量事故): 旧文件可能含上一次进程被硬杀/
+        蓝屏时写断的半截多字节字符, 严格解码会抛 UnicodeDecodeError
+        (ValueError 子类, 不在 OSError 分支内) 冒泡炸掉整个 run_crawl,
+        一个残缺字节毁掉一整本书。坏字节降级为 U+FFFD 保住其余章节正文。
         """
         try:
-            text = Path(output_file).read_text(encoding='utf-8')
+            text = Path(output_file).read_text(encoding='utf-8',
+                                                errors='replace')
         except OSError:
             return {}
+        if '\ufffd' in text:
+            _log.info(f"[增量] 旧文件存在损坏字节 (疑似上次异常中断), "
+                      f"已降级保留其余正文: {output_file}")
         idx = {}
         cur_title = None
         buf = []
