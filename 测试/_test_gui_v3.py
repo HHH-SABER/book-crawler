@@ -81,7 +81,7 @@ def test_runtime_config_bad_json():
 
 
 def test_normalize_site_url():
-    assert site_probe.normalize_site_url('tanmixs.com') == 'https://tanmixs.com/'
+    assert site_probe.normalize_site_url('siten.example.com') == 'https://siten.example.com/'
     assert site_probe.normalize_site_url('https://a.com/path/x') == 'https://a.com/'
     assert site_probe.normalize_site_url('http://b.com') == 'http://b.com/'
     assert site_probe.normalize_site_url('') == ''

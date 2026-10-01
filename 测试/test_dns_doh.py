@@ -83,7 +83,7 @@ class TestIpLiteralFastPath(unittest.TestCase):
     def test_is_ip_literal(self):
         self.assertTrue(dns_doh._is_ip_literal('127.0.0.1'))
         self.assertTrue(dns_doh._is_ip_literal('::1'))
-        self.assertFalse(dns_doh._is_ip_literal('zhiruo.org'))
+        self.assertFalse(dns_doh._is_ip_literal('sitea.example.org'))
         self.assertFalse(dns_doh._is_ip_literal('300.1.1.1'))
 
 

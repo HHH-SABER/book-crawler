@@ -27,7 +27,7 @@ DECODED = (POC / 'py_out.txt').read_text(encoding='utf-8')
 # 从真实样本取 content + replace (供 codepoint stream)
 FUNC_WRAP = re.compile(r'[a-zA-Z_]\w*\s*\(\s*(\{.*\})\s*\)\s*$', flags=re.S)
 CTRL = re.compile(r'[\x00-\x1f]')
-_raw = (Path(__file__).resolve().parent.parent / '测试样本' / 'ciyewk_1.book').read_text(
+_raw = (Path(__file__).resolve().parent.parent / '测试样本' / 'codepoint_sample.book').read_text(
     encoding='utf-8').strip()
 _m = FUNC_WRAP.search(_raw)
 import json

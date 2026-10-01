@@ -10,7 +10,7 @@
   两种模式都会先生成输入文件 (input_content.bin / replace.txt) 供 Rust 使用。
 
 依赖:  content_decoder.py 的 parse_codepoint_stream (作为被移植的基准实现)。
-样本:  测试样本/ciyewk_1.book (真实 .book 码点流, 含 \x01/\x02 引导裸码点)。
+样本:  测试样本_本地/codepoint_sample.book (真实 .book 码点流, 含 \x01/\x02 引导裸码点)。
 """
 
 import json
@@ -45,8 +45,8 @@ def _json_safe(text):
 
 
 def prepare():
-    """从 ciyewk_1.book 提取 content + replace, 写出供 Rust 使用的输入/替换文件。"""
-    raw = (SAMPLES / 'ciyewk_1.book').read_text(encoding='utf-8').strip()
+    """从 codepoint_sample.book 提取 content + replace, 写出供 Rust 使用的输入/替换文件。"""
+    raw = (SAMPLES / 'codepoint_sample.book').read_text(encoding='utf-8').strip()
     m = _FUNC_WRAP.search(raw)
     assert m, '样本应为 _txt_call({...}) 包装'
     data = json.loads(_json_safe(m.group(1)))
@@ -108,7 +108,7 @@ def main():
             print(f'[warn] 未找到 rust 可执行文件: {exe}')
             ab = False
 
-    print(f'样本: 测试样本/ciyewk_1.book   ITERS={ITERS}')
+    print(f'样本: 测试样本_本地/codepoint_sample.book   ITERS={ITERS}')
     content, replace = prepare()
     print(f'提取到 content 长度 {len(content)}, replace 条目 {len(replace)}')
     print(f'输入已写出: {INPUT_BIN.name}, {REPLACE_TXT.name}')

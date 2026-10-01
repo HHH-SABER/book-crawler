@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""内容型 WAF"访问验证"页识别 (als1010 批次 2026-09-12 实锤样本)。
+"""内容型 WAF"访问验证"页识别 (siteg 批次 2026-09-12 实锤样本)。
 
-背景 (HANDOFF 待办 #1): als1010.space 把图片验证码页以 **HTTP 200** 返回
+背景 (HANDOFF 待办 #1): siteg.example.space 把图片验证码页以 **HTTP 200** 返回
 (1475 字符, 标题"访问验证", form action=/home/chapter/check_code.html,
 图片 /home/chapter/verify.html); 旧判定 is_waf_captcha_page 要求 401/403/429
 → 拦截页被当正文, 清洗后落为空章 (批次 8 本书正文全空)。
@@ -21,7 +21,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / '源码'))
 
 try:
-    _样本 = (_ROOT / '测试样本_本地' / 'als1010_访问验证页.html').read_text(encoding='utf-8')
+    _样本 = (_ROOT / '测试样本_本地' / 'siteg_访问验证页.html').read_text(encoding='utf-8')
 except OSError:
     _样本 = None   # 站点脱钩: 本地样本缺失 (公开形态) → setUpClass 跳过
 
@@ -33,7 +33,7 @@ class 假响应:
         self.status_code = status
         self.text = text
         self.headers = {}
-        self.url = 'https://xn--vcsx64d.als1010.space/book/50585/be101e8b60c8d.html'
+        self.url = 'https://xn--vcsx64d.siteg.example.space/book/50585/be101e8b60c8d.html'
 
 
 class Test内容型验证页识别(unittest.TestCase):
@@ -41,7 +41,7 @@ class Test内容型验证页识别(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if _样本 is None:
-            raise unittest.SkipTest('本地站点样本缺失: 测试样本_本地/als1010_访问验证页.html (公开形态跳过)')
+            raise unittest.SkipTest('本地站点样本缺失: 测试样本_本地/siteg_访问验证页.html (公开形态跳过)')
 
     def test_检测器识别访问验证页(self):
         from 反爬检测器 import 取检测器

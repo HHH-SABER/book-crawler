@@ -18,22 +18,22 @@ SAMPLES = _BASE / "测试样本"
 
 # 已知真值: 文件名特征 -> 真实 pattern (据 sites_config.py)
 GROUND_TRUTH = {
-    "630wang_content": "html_selector",
-    "630wang_dir": "html_selector",      # 目录页 (模式=正文模式)
-    "630wang_list": "html_selector",
-    "ciyewk_content": "datafile",
-    "ciyewk_real": "datafile",
-    "ciyewk_catalog": "datafile",
-    "ciyewk_ml": "datafile",
-    "ltbook_content": "html_selector",
-    "ltbook_full": "html_selector",
-    "ltbook_list": "html_selector",
-    "zhiruo_content": "qsbs_bb",
-    "zhiruo_real": "qsbs_bb",
-    "zhiruo_dir": "qsbs_bb",
-    "zhiruo_list": "qsbs_bb",
+    "siteo_content": "html_selector",
+    "siteo_dir": "html_selector",      # 目录页 (模式=正文模式)
+    "siteo_list": "html_selector",
+    "sitep_content": "datafile",
+    "sitep_real": "datafile",
+    "sitep_catalog": "datafile",
+    "sitep_ml": "datafile",
+    "siteq_content": "html_selector",
+    "siteq_full": "html_selector",
+    "siteq_list": "html_selector",
+    "sitea_content": "qsbs_bb",
+    "sitea_real": "qsbs_bb",
+    "sitea_dir": "qsbs_bb",
+    "sitea_list": "qsbs_bb",
 }
-SKIP = {"630wang_dir_2", "630wang_dir_3"}  # 同站目录分页, 避免重复计数
+SKIP = {"siteo_dir_2", "siteo_dir_3"}  # 同站目录分页, 避免重复计数
 
 rows = []
 for f in sorted(SAMPLES.glob("*.html")):

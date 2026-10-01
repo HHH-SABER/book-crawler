@@ -118,39 +118,42 @@ class Test网站清单(unittest.TestCase):
 
     def test_记录去重(self):
         清单.自动生成若缺失()
-        self.assertTrue(清单.记录('https://www.qiqishu.cc/book/47.html',
-                                     '奇书网', '深空彼岸'))
-        self.assertTrue(清单.记录('https://www.qiqishu.cc/book/47.html',
+        self.assertTrue(清单.记录('https://www.sitec.example.cc/book/47.html',
+                                     '站名sitec', '深空彼岸'))
+        self.assertTrue(清单.记录('https://www.sitec.example.cc/book/47.html',
                                      '', ''))   # 同 URL 再记 → 不重复
         条目 = 清单.读取()
         self.assertEqual(len(条目), 1)
         self.assertEqual(条目[0]['网址'],
-                         'https://www.qiqishu.cc/book/47.html')
-        self.assertEqual(条目[0]['网站名'], '奇书网')
+                         'https://www.sitec.example.cc/book/47.html')
+        self.assertEqual(条目[0]['网站名'], '站名sitec')
         self.assertEqual(条目[0]['小说名'], '深空彼岸')
 
     def test_重复记录补齐空字段(self):
         清单.自动生成若缺失()
         清单.记录('http://y.com/a.html', '', '')
-        清单.记录('http://y.com/a.html', '月亮小说网', '禁神之下')
+        清单.记录('http://y.com/a.html', '示例站名', '示例书名')
         条目 = 清单.读取()
         self.assertEqual(len(条目), 1)
-        self.assertEqual(条目[0]['网站名'], '月亮小说网')
-        self.assertEqual(条目[0]['小说名'], '禁神之下')
+        self.assertEqual(条目[0]['网站名'], '示例站名')
+        self.assertEqual(条目[0]['小说名'], '示例书名')
 
     def test_域名网站名映射与回退(self):
         # 站点脱钩: 域名→站名映射外置本地 (公开形态空表) → 映射断言仅在本地形态跑
         if not 清单._网站名映射:
             self.skipTest('域名映射外置本地 (公开形态空表), 回退断言照常跑')
-        self.assertEqual(清单.域名网站名('https://www.qiqishu.cc/x'),
-                         '奇书网')
+        # 断言样本取自本地映射文件本身 (公开仓库不含任何真实域名/站名)
+        域名, 站名 = next(iter(清单._网站名映射.items()))
+        self.assertEqual(清单.域名网站名(f'https://www.{域名}/x'), 站名)
         self.assertEqual(清单.域名网站名('https://www.unknown-zzz.com/a'),
                          'unknown-zzz.com')
         self.assertEqual(清单.域名网站名(''), '')
         # 实网抓取走 punycode 子域 (xn--vcsx64d = '书'), 同样映射到中文站名
-        self.assertEqual(
-            清单.域名网站名('https://xn--vcsx64d.als1010.space/x.html'),
-            '爱丽丝书屋')
+        _xn = next((d for d in 清单._网站名映射 if d.startswith('xn--')), None)
+        if not _xn:
+            self.skipTest('本地映射无 punycode 条目 (公开形态跳过)')
+        self.assertEqual(清单.域名网站名(f'https://{_xn}/x.html'),
+                         清单._网站名映射[_xn])
 
     def test_域名网站名未知回退(self):
         """回退行为不依赖映射表 (公开形态也全绿)"""
@@ -184,7 +187,7 @@ class Test网站清单(unittest.TestCase):
     def test_按小说名搜索(self):
         清单.自动生成若缺失()
         清单.记录('http://a.com/1.html', '站A', '深空彼岸')
-        清单.记录('http://b.com/2.html', '站B', '禁神之下')
+        清单.记录('http://b.com/2.html', '站B', '示例书名')
         self.assertEqual(len(清单.按小说名搜索('彼岸')), 1)
         self.assertEqual(len(清单.按小说名搜索('不存在')), 0)
         self.assertEqual(清单.按小说名搜索(''), [])
@@ -251,17 +254,17 @@ class Test历史页关联网站清单(unittest.TestCase):
         self._env.start()
         self.addCleanup(self._env.stop)
         清单.自动生成若缺失()
-        清单.记录('https://www.qiqishu.cc/read/47/3980.html', '奇书网', '深空彼岸')
+        清单.记录('https://www.sitec.example.cc/read/47/3980.html', '站名sitec', '深空彼岸')
         import gui_components.pages.history_data as hd
         importlib.reload(hd)
         self.hd = hd
 
     def test_补网站信息(self):
-        rows = [{'url': 'https://www.qiqishu.cc/read/47/3980.html',
-                 '域名': 'qiqishu.cc'},
+        rows = [{'url': 'https://www.sitec.example.cc/read/47/3980.html',
+                 '域名': 'sitec.example.cc'},
                 {'url': 'https://no-record.com/x.html', '域名': 'no-record.com'}]
         out = self.hd.补网站信息(rows)
-        self.assertEqual(out[0]['网站名'], '奇书网')
+        self.assertEqual(out[0]['网站名'], '站名sitec')
         self.assertEqual(out[0]['小说名'], '深空彼岸')
         # 未命中: 网站名回退域名, 书名 '—' 由页面层处理 (空串)
         self.assertEqual(out[1]['网站名'], 'no-record.com')
@@ -269,13 +272,13 @@ class Test历史页关联网站清单(unittest.TestCase):
 
     def test_按书名过滤(self):
         rows = [
-            {'url': 'https://www.qiqishu.cc/read/47/3980.html', '域名': 'qiqishu.cc'},
+            {'url': 'https://www.sitec.example.cc/read/47/3980.html', '域名': 'sitec.example.cc'},
             {'url': 'https://other.com/x.html', '域名': 'other.com'},
         ]
         out = self.hd.按书名过滤(rows, '深空')
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]['url'],
-                         'https://www.qiqishu.cc/read/47/3980.html')
+                         'https://www.sitec.example.cc/read/47/3980.html')
 
 
 if __name__ == '__main__':

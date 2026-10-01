@@ -93,29 +93,29 @@ class Test同域判断(unittest.TestCase):
 
     def setUp(self):
         try:
-            import uuwxw
+            import siteh
         except ImportError:
-            self.skipTest('本地适配器缺失: 站点适配_本地/uuwxw.py (站点脱钩, 公开形态跳过)')
-        self.uuwxw = uuwxw
+            self.skipTest('本地适配器缺失: 站点适配_本地/siteh.py (站点脱钩, 公开形态跳过)')
+        self.siteh = siteh
 
     def test_伪装子域被识别为不同域(self):
-        """回归: startswith 会让 uuwxw.cc.evil.com 冒充 uuwxw.cc"""
-        self.assertFalse(self.uuwxw._同域(
-            'https://uuwxw.cc.evil.com/book/1/list1.html', 'https://uuwxw.cc'))
+        """回归: startswith 会让 siteh.example.cc.evil.com 冒充 siteh.example.cc"""
+        self.assertFalse(self.siteh._同域(
+            'https://siteh.example.cc.evil.com/book/1/list1.html', 'https://siteh.example.cc'))
 
     def test_同域为真(self):
-        self.assertTrue(self.uuwxw._同域(
-            'https://uuwxw.cc/book/1/list1.html', 'https://uuwxw.cc'))
+        self.assertTrue(self.siteh._同域(
+            'https://siteh.example.cc/book/1/list1.html', 'https://siteh.example.cc'))
 
     def test_端口不同视为不同域(self):
-        self.assertFalse(self.uuwxw._同域(
-            'https://uuwxw.cc:8443/book/1', 'https://uuwxw.cc'))
+        self.assertFalse(self.siteh._同域(
+            'https://siteh.example.cc:8443/book/1', 'https://siteh.example.cc'))
 
     def test_大小写与非法输入(self):
-        self.assertTrue(self.uuwxw._同域(
-            'HTTPS://UUWXW.CC/book/1', 'https://uuwxw.cc'))
-        self.assertFalse(self.uuwxw._同域('', 'https://uuwxw.cc'))
-        self.assertFalse(self.uuwxw._同域('not a url', 'https://uuwxw.cc'))
+        self.assertTrue(self.siteh._同域(
+            'HTTPS://SITEH.EXAMPLE.CC/book/1', 'https://siteh.example.cc'))
+        self.assertFalse(self.siteh._同域('', 'https://siteh.example.cc'))
+        self.assertFalse(self.siteh._同域('not a url', 'https://siteh.example.cc'))
 
 
 # ====================================================================

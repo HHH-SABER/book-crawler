@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """同域闸门单测: GUI 批量/远控多任务同站串行。
 
-背景 (HANDOFF 待办 #1 后半): als1010 事故触发链之一 = GUI 批量 11 URL 同站
+背景 (HANDOFF 待办 #1 后半): siteg 事故触发链之一 = GUI 批量 11 URL 同站
 并发 (run_batch 有"同站最多 1 本并行", GUI 逐 URL create_task 无此保护)。
 本测试锁定闸门五个行为: 同域同对象 / 异域隔离 / 无域名放行 / 同域串行+排队
 提示一次 / 排队中 stop 可打断且不误 release。

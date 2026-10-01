@@ -6,10 +6,10 @@
 名字) 在 4 份真实样本上实测:
 
     样本                       解析次数   同串重复
-    630wang_content.html          1           0
-    ciyewk_content.html           1           0
-    ltbook_content.html           2           0
-    zhiruo_content.html           2           0
+    siteo_content.html          1           0
+    sitep_content.html           1           0
+    siteq_content.html           2           0
+    sitea_content.html           2           0
     —— 平均 1.50 次/章, 同串重复 0
 
 结论: **不存在"同一字符串被反复解析"的重复**, 因此按字符串身份做记忆化没有任何

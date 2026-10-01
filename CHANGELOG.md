@@ -139,7 +139,7 @@
   程序仅靠 `站点配置.json`（用户运行时配置）正常工作。
 - **站点专属逻辑机制化**：5 个站点命名提取器（yunquge\_p\_filter 等）迁至
   `站点适配_本地/_提取器.py`，经 `_EXTRACTORS` 注册表分发；函数型分页
-  （paginate\_orion34g）改机制名 `chapter_subdir` 注册表引用（站点表 JSON 可表达）；
+  （paginate\_sitez）改机制名 `chapter_subdir` 注册表引用（站点表 JSON 可表达）；
   旧提取器名经本地注册的 `ALIASES` 兼容，既有 `站点配置.json` 引用不受影响。
 - **公开侧补齐**：`站点适配/_模板.py`（example.com 占位的 SITE 契约参考实现，
   `_` 前缀天然不加载）+ `测试样本/_模板_合成.html`（合成占位样本）+
@@ -171,8 +171,8 @@
   时记录，那些在建立爬虫阶段就抛错（网址不合法 / 目录页取不到 / 标题预取失败）
   的任务在清单里完全看不到。至此"已爬取 + 尝试抓取过"均有记录。
 - **只收录 http/https**：本地文件路径、测试临时路径一律跳过（保证记录对用户始终有意义）。
-- **站名映射补 punycode 子域**：实网抓取走 `xn--vcsx64d.als1010.space`（`书` 的 ACE 编码），
-  补映射后显示为「爱丽丝书屋」，不再退化成裸域名。
+- **站名映射补 punycode 子域**：实网抓取走 `xn--vcsx64d.siteg.example.space`（`书` 的 ACE 编码），
+  补映射后显示为「站名siteg」，不再退化成裸域名。
 
 ### 修复 — 测试污染生产清单（历史遗留）
 
@@ -196,12 +196,12 @@
   站点历史/爬取历史）②**同书不同站**标注③重复入口指向。项目外、不入库，程序不读写它，
   因此备注列不会被覆盖。
 - **同书不同站主动标注**（用户要求"保留但标作或说明"）：检出 3 组 ——
-  禁神之下（ixdzs.hk / zuimoxuan.cc / book.washai.net）、我的美母教师（yunshuzhai.com /
-  orion34g.com）、端庄美艳教师妈妈的沉沦（630wang.cc / banlvzw.com），全部保留并在备注列互指。
-- **同站同书只留一条**在程序清单：`yunshuzhai.com/book/3432/1.html` 与 `/book/3432/`
+  禁神之下（ixdzs.hk / siteaf.example.cc / book.siteai.example.net）、我的美母教师（sitef.example.com /
+  sitez.example.com）、端庄美艳教师妈妈的沉沦（siteo.example.cc / sites.example.com），全部保留并在备注列互指。
+- **同站同书只留一条**在程序清单：`sitef.example.com/book/3432/1.html` 与 `/book/3432/`
   是同域名同书的两个入口，程序清单只留后者（带书名），前者在母表保留并注明指向。
-- **爬取历史兜底**：只在 `爬取历史.json` 里出现、别处无 URL 的站点（630wang.cc / qiqishu.cc /
-  shuhaige.net / yueliang.org / bbbiquge.com）取"路径段数最少"的 URL 当目录页补入。
+- **爬取历史兜底**：只在 `爬取历史.json` 里出现、别处无 URL 的站点（siteo.example.cc / sitec.example.cc /
+  sitee.example.net / sited.example.org / siteag.example.com）取"路径段数最少"的 URL 当目录页补入。
 
 ### 修复 — 清单表头注释被回写抹掉（并行会话实测暴露）
 
@@ -418,7 +418,7 @@
   - 通用 Base64 兜底分支的乱码清理 `[\x00-\x1f\x7f-\xff]` 把 `\n` 一并删除
     （紧随其后的 `\n\n` 段落重组被毁）→ 字符类排除 `\x0a`；
   - 同分支行去重把空行也当重复项删除，段间 `\n\n` 塌缩成单 `\n` → 空行不参与去重；
-  - pjxdd 专项清理 `re.sub(r'\s+', ' ')` 与前置控制符清理双重杀换行 →
+  - siteaa 专项清理 `re.sub(r'\s+', ' ')` 与前置控制符清理双重杀换行 →
     仅压行内空白 `[ \t\r\f\v]`，控制符类排除 `\n`；
   - `sites_config.py` 选择器落空兜底"最长文本容器" `get_text(strip=True)` →
     `get_text('\n', strip=True)`；
@@ -432,14 +432,14 @@
 - **回归**：`test_offline_parsing.py` 新增 3 例（段落边界保留 / 完整句后短行不粘连 /
   半句续接无空格）；全量 **356 tests OK** + 静态检查干净。
 
-### 修复 — washai.net（书海阁）目录分页收集返回 0 章
+### 修复 — siteai.example.net（站名sitee）目录分页收集返回 0 章
 
 - **根因**：目录 URL 形如 `/book/indexList-{bid}.html`（连字符形态），通用
   `_resolve_novel_paths` 的全部 URL 模式匹配不上 → `novel_path` 为空；通用兜底
   因「novel_path 为空不启用路径过滤」的保护逻辑，把全页
   `/book/{bid}/{cid}.html` 章节链接全部拒收 —— 分页遍历 21 页仍返回 0 章。
 - **修复**：按站点规约走适配器插件（不加爬虫.py 域名特判），新增
-  `站点适配/washai.py`：
+  `站点适配/siteai.py`：
   - 目录：逐页跟随 `link[rel=next]` / `a.pgBtn"下一页"` 收集（第1页连字符形态、
     第N页 `/book/indexList/{bid}/{N}.html`），本页 0 新章即停（实测溢出第22页
     返回无章节链接的空目录）；任务 URL 误给作品页 `/book/{bid}.html` 时自动
@@ -455,7 +455,7 @@
 - **全本爬取实收**：2020/2020 章，**质检 2020/2020 全通过，平均 100.0 分**，
   0 失败率 / 0 验证码触发，产物 `禁神之下.txt` 15.4 MB（532 万字符 / 中文 433 万字）；
   章号两处重复（第1081/1097章）经核实为**站点原始编号**（同号不同副标题），非程序缺陷。
-  产物含 (1) 后缀规避：输出至独立目录 `抓取结果/washai禁神之下/`。
+  产物含 (1) 后缀规避：输出至独立目录 `抓取结果/siteai禁神之下/`。
 - **EXE 实测（v2.4.30, 2026-09-27）**：全本经 EXE（远控 API 下发、隔离状态根）爬取
   **2020/2020 章、质检 100.0 分，产物与源码版字节级一致**；区间模式（前30章）87s
   completed 亦通过。（初轮报告的"GUI 事件通道冻结"经 2026-09-27 排查批**改判**：
@@ -483,7 +483,7 @@
 - Mimosa 深扫复核结果：高危 **14 → 0**，剩余 1 低危
   （`源码/代理池.py:82` 随机数用途为非密钥场景，暂留待后续批次评估）。
 
-### 测试 — `test_washai_site.py` ×13 + `test_remote_service.py` +2
+### 测试 — `test_siteai_site.py` ×13 + `test_remote_service.py` +2
 
 - 离线快照 8 份入库（目录第1/2/21/22页 + 作品页 + 第1/901/2019章）。
 - 锁定契约：多页收集与 0 新章停止 / 目录顺序保持（cid 乱序实证断言）/
@@ -512,7 +512,7 @@
 
 - **`test_decrypt_utils.py` ×22**：6 种正文解密机制（std_base64/custom_base64/
   xor/char_map/str_concat/eval_obfuscated）+ 统一入口 `decrypt_content` + 负向用例。
-  真实样本只覆盖 2 种机制（std_base64=zhiruo/qiqishu、str_concat=ltbook），其余 4 种
+  真实样本只覆盖 2 种机制（std_base64=sitea/sitec、str_concat=siteq），其余 4 种
   无快照，在测试内**现场构造加密 HTML** 补全（构造逻辑先经探针验证可解出再固化为断言）。
   锁定隐式契约：**eval_obfuscated 明文须 ≥100 字符**才触发（源码正则 `{100,}`），
   短明文不命中是设计如此。
@@ -647,7 +647,7 @@
 
 ### 可观测性 — 批2E 收尾：最后 12 处有意静默逐行注释 + 守卫测试钉死基线归零
 
-- **最后 12 处**（`日志.py`×7 / `als1010.py`×1 / `build_exe.py`×2 / `发布流程.py`×2）
+- **最后 12 处**（`日志.py`×7 / `siteg.py`×1 / `build_exe.py`×2 / `发布流程.py`×2）
   全部经逐处上下文复核，确认**确属有意静默**（日志设施自身兜底防递归、软限频页主
   路径已留痕、打包脚本尽力而为的清理/回滚），不补留痕，pass 行尾**逐行写明真实原因
   注释**——防止后人当成漏改，也满足守卫口径。
@@ -671,9 +671,9 @@
   用户配置），人工核实后才并入 `站点配置.json`。每域只留最新 1 条、50 域上限、
   tmp+os.replace 原子写、同域同建议幂等去重（每章落空不重复写盘）。
 - **打分算法先实测后固化**（探针 probe_selfheal_a95e0468，真实快照
-  "抹除 id/class 模拟改版→找回"实验）：ltbook 抹 `#rtext`→TOP1 找回(0.968)、
-  630wang 抹 `.word_read`→TOP3 找回(0.896)、yueliang 盲测精确命中
-  `#chaptercontent.content`；负样本 qiqishu（base64 加密页）最高仅 0.179
+  "抹除 id/class 模拟改版→找回"实验）：siteq 抹 `#rtext`→TOP1 找回(0.968)、
+  siteo 抹 `.word_read`→TOP3 找回(0.896)、sited 盲测精确命中
+  `#chaptercontent.content`；负样本 sitec（base64 加密页）最高仅 0.179
   → 置信门槛 0.55 有实测依据，加密变更/软封页不会被误当普通改版。
 - **挂载点**：`sites_config.extract_content_html_selector` 选择器循环落空、
   进入兜底之前（domain 可选参数，空=旧行为）；`extract_content` 的
@@ -681,8 +681,8 @@
   返回不变），自愈异常一律旁路只留痕，绝不断主流程；命中路径零接触（集成测试
   双向锁死）。
 - 已知边界（PoC 阶段如实记录）：① 打分无"祖先去重"，外层 container 可能被选中
-  （探针 yunshuzhai 案例），由链接密度+唯一性门槛压制，正式版待补；② 仅覆盖
-  HTML_SELECTOR 模式，qsbs_bb 解密后片段（zhiruo 类）的自愈需后续在解码层另挂。
+  （探针 sitef 案例），由链接密度+唯一性门槛压制，正式版待补；② 仅覆盖
+  HTML_SELECTOR 模式，qsbs_bb 解密后片段（sitea 类）的自愈需后续在解码层另挂。
 - **新增 `测试/test_selector_selfheal.py`（9 例）**：打分正/负样本、选择器唯一
   性与宁缺勿滥、端到端找回+原子写+幂等+50 域上限、挂载点"落空才触发/命中零
   接触"集成。
@@ -708,11 +708,11 @@
 
 ### 自愈 — 真实数据验证（用户清单 4 站，阳性+阴性双路径）
 
-- **探针（4 域各 1 次只读请求）**：als1010 章节页 200 但容器启发式 top1 仅
+- **探针（4 域各 1 次只读请求）**：siteg 章节页 200 但容器启发式 top1 仅
   0.238（低分正确拒产出——正文在 JS/加密里，非明文容器，门槛 0.55 有效）；
-  uuwxw 目录页无可信容器（正常）；**yunshuzhai 0.978 → `main.container`**、
+  siteh 目录页无可信容器（正常）；**sitef 0.978 → `main.container`**、
   victor 0.979 → `main.page-content`（真实结构上找回高置信容器）。
-- **阳性端到端**：CLI 真实整本抓 yunshuzhai《我的美母教师》（1 线程/1s 延迟/
+- **阳性端到端**：CLI 真实整本抓 sitef《我的美母教师》（1 线程/1s 延迟/
   58s）——**21/21 章全部质检 100 分、txt 205KB/17.7 万中文字、零 Traceback、
   检查点正常删除无 tmp 残留、网站清单自动记录**。本会话四批改动（M2 原子写、
   批2 留痕、PoC-A/B 挂载）在真实抓取全链路无回归。
@@ -733,7 +733,7 @@
 
 ### 自愈 — 批3 任务3：qsbs 加密站"加密变更线索"（PoC-A 边界②）
 
-- **失效方式不同于选择器落空**：加密站（zhiruo/qiqishu 类）规则选择器作用在
+- **失效方式不同于选择器落空**：加密站（sitea/sitec 类）规则选择器作用在
   加密块所在容器、解密后片段整体取文本——失效实为**解密函数名轮换**（如
   `qsbs.bb` 改名）→ 解密链识别不到 → **静默空章**。给它挂"选择器建议"是错药。
 - **正确形态=加密变更线索**：`选择器自愈.加密变更线索(html, domain)` 在 qsbs
@@ -744,7 +744,7 @@
   正则或写适配器，完事点忽略清除。幂等：同域同候选不重复写盘。
 - 挂载 `sites_config.extract_content` qsbs 分支（提取空才探测，成功路径零接触，
   探测异常一律旁路不改返回）；条目补 `类型` 字段区分选择器/加密变更两类。
-- 已知边界（如实记录）：qiqishu 等**适配器自有提取路径**不经过此钩子（它们
+- 已知边界（如实记录）：sitec 等**适配器自有提取路径**不经过此钩子（它们
   自己返回 None 交上层回退），线索仅覆盖"走 JSON 规则 pattern=qsbs_bb"的站。
 - 测试 +6 例（识别/白名单豁免/幂等/空输入/qsbs 分支集成双向）。
 
@@ -752,33 +752,33 @@
 
 - `score_candidates` 尾部新增去重：外层容器与其候选子容器同链且**子块中文数
   ≥ 外层 90%** → 外层文本只是包裹复制，降权 ×0.6 沉底、内层正文容器顶上 top1
-  （探针 yunshuzhai 案例：外层大壳曾以 0.978 抢占真值）。真含多块正文的容器
+  （探针 sitef 案例：外层大壳曾以 0.978 抢占真值）。真含多块正文的容器
   无单一占比子块，不受影响。
 - 测试 +3 例（内层上浮/多块外层不降/真实快照 top1 内聚性代理断言）。
 - 全量 **334 tests OK**（326+5+3+… 累计）+ 静态干净。
 
 ## \[2.4.28] - 2026-09-13
 
-### 适配 — qiqishu.cc / yueliang.org 新站适配器（用户实测整单失败）
+### 适配 — sitec.example.cc / sited.example.org 新站适配器（用户实测整单失败）
 
-- **奇书网 (qiqishu.cc)**："深空彼岸"整单失败双根因 —— ① 章节链接
+- **站名sitec (sitec.example.cc)**："深空彼岸"整单失败双根因 —— ① 章节链接
   `/read/{bid}/{cid}.html` 不在通用 novel_path（`/book/`）下，通用链接过滤
   整单抓不到，只剩 1 个"点击查看全部章节目录"导航被当章节抓；② 正文藏在
   `<script>document.writeln(对象.方法('BASE64'))</script>`，且**对象名每页随机**
   （mec.eng / wmm.uz / zhju.etculg），通用 qsbs_bb 按固定函数名匹配拿不到。
-  新适配器 `站点适配/qiqishu.py`：目录只认 `rel="chapter"` 的 `/read/` 链接，
+  新适配器 `站点适配/sitec.py`：目录只认 `rel="chapter"` 的 `/read/` 链接，
   页码从 `<select>` option（mulu_1..25）收集逐页抓取；正文按通用正则提取
   任意 对象.方法 的 BASE64 段并解码（段落 HTML → 文案）。
-- **月亮小说网 (yueliang.org)**："禁神之下"整单失败 —— 目录 URL `/txt{bid}.html`
+- **站名sited (sited.example.org)**："禁神之下"整单失败 —— 目录 URL `/txt{bid}.html`
   推导不出 novel_path，通用过滤只剩 1 个导航链接被当章节抓；章内分页第2页是
-  `{cid}_2.html`（通用默认 `_1.html` 算错页）。新适配器 `站点适配/yueliang.py`：
+  `{cid}_2.html`（通用默认 `_1.html` 算错页）。新适配器 `站点适配/sited.py`：
   目录只认 `rel="chapter"` 的 `/read/` 链接（单页 2000+ 章）；正文 `#booktxt`
   明文 `<p>`；分页从 `_2.html` 起。
 - **分页越界无需特判**（在线实测）：两站不存在的分页分别返回**第1页/末页**
   内容（非 404），靠主循环既有"与上一页指纹相同则终止"即可收尾，适配器不再
   重复造轮子。
-- 样本入库 `测试样本/qiqishu_dir.html` / `qiqishu_content.html` /
-  `yueliang_dir.html` / `yueliang_content.html`；`test_qiqishu_yueliang_site`
+- 样本入库 `测试样本/sitec_dir.html` / `sitec_content.html` /
+  `sited_dir.html` / `sited_content.html`；`test_sitec_sited_site`
   ×10（目录/正文解码/分页/章节页→目录推导/书名）。
 
 ### 修复 — 任务列表"质检"列有时显示有时不显示（U19 事件缺口）
@@ -794,9 +794,9 @@
 
 全量 **236 tests OK** + 静态检查 `check_undefined_refs.py` 干净。
 
-### 修复 — 超长书卡死根因：未适配站点失败重试过慢（书海阁 2021 章实录）
+### 修复 — 超长书卡死根因：未适配站点失败重试过慢（站名sitee 2021 章实录）
 
-- **事故复盘（日志取证）**：EXE 抓 shuhaige.net 书海阁 2021 章超长书，
+- **事故复盘（日志取证）**：EXE 抓 sitee.example.net 站名sitee 2021 章超长书，
   前 ~190 章正常；之后站点对每请求 `RemoteDisconnected`（服务端主动断连），
   单章走「通用检测失败 → 3 次连接重试(每次 sleep 3s) → 质检重试 → 外层补试
   (3s/6s)」→ **单章失败耗 30~60s**，2000 章进度爬行 = 用户感知"卡死"。
@@ -806,7 +806,7 @@
   - 连接重试间隔 3s→1s（`inspect_page` 网络异常重试）；请求默认超时 30→15s
     （请求引擎 + `_get_with_js_challenge` + 正文分页 `session.get`）；
   - `_fetch_with_retry` 外层补试间隔 3s/6s→1.5s/3s；**连续失败 ≥3 章**（站点整体
-    拒连迹象，如书海阁）跳过外层补试、直接空占位，由断点续传稍后补抓；
+    拒连迹象，如站名sitee）跳过外层补试、直接空占位，由断点续传稍后补抓；
   - 极速档 6→8 线程（`速度自适应` TIER_TURBO），站点限制压档逻辑不变。
 
 ### 增强 — 网站清单：自动记录「网址 + 网站名 + 书名」（仿 小说网站.txt）
@@ -817,7 +817,7 @@
 - **EXE 迁移/换机自愈**：文件放 `%LOCALAPPDATA%/小说爬虫/数据/`（与爬取历史/
   书架同根），程序启动自检缺失自动生成模板 —— 与"小说网站.txt"同风格但带
   站名/书名，无需手工维护。
-- 域名→中文网站名映射（奇书网/月亮小说网/书海阁/云书斋等 ~30 站），未知域名
+- 域名→中文网站名映射（站名sitec/站名sited/站名sitee/站名sitef等 ~30 站），未知域名
   回退域名本身。挂接点：`_收尾汇总`（CLI/GUI 全路径）+ `task_manager` 完成
   置位（GUI 书名事件回填）。
 - **爬取历史页增强**：URL 明细表新增「书名/网站」两列（按 URL 反查清单，
@@ -836,27 +836,27 @@
 
 ## \[2.4.27] - 2026-09-12 (未发布)
 
-### 适配 — als1010.space 站点专项（EXE 低成功率根因 + 软限频防护）
+### 适配 — siteg.example.space 站点专项（EXE 低成功率根因 + 软限频防护）
 
 - **EXE 低成功率根因（配置层，非代码缺陷）**：EXE 运行读 **EXE 旁**的
   `captcha_config.json`（首启从合规模板复制，ddddocr 默认关）→ 自动识别被拒、
   只能人工兜底；源码运行读项目根配置（用户已显式开启）→ 成功率高。本机
   `dist/` 配置已对齐源码环境；**分发模板保持默认关**（合规边界不变）——
   EXE 用户如需自动识别，编辑 EXE 旁的该文件开启（与源码环境同一步骤）。
-- **站点档位压档**：`SITE_TIER_CAPS` 增 `als1010.space: 0`（最低档 1 线程）——
+- **站点档位压档**：`SITE_TIER_CAPS` 增 `siteg.example.space: 0`（最低档 1 线程）——
   并发/持续请求是软限频诱因，压档降低触发概率。
 - **专属域冷却**：限频写入的域冷却该域 **900s**（默认 300s；软限频实测
   静默 24 分钟未恢复，300s 不足以冷却）。
 - **软封页识别**（适配器）：对"请稍后再试"软封页返回 None —— 旧行为会把它
   当正文提取 342 字符垃圾入库（质检 62 分失败）；现直接判失败、章节存空占位
   可断点续传补抓（本批 8/9 号书失败即软封期产物）。
-- 样本 `测试样本/als1010_软封页.html` 入库；`test_als1010_site` ×5
+- 样本 `测试样本/siteg_软封页.html` 入库；`test_siteg_site` ×5
   （压档/专属冷却/软封页 None/验证页 None 回归/正常页不受影响），
   全量 **225 tests OK** + 静态检查干净。
 
-### 修复 — als1010 类"200 状态访问验证页"接入反爬层 + GUI 批量同域限流
+### 修复 — siteg 类"200 状态访问验证页"接入反爬层 + GUI 批量同域限流
 
-- **事故根因链（2026-09-12 批次）**：GUI 批量 11 URL 同站并发 → als1010 WAF
+- **事故根因链（2026-09-12 批次）**：GUI 批量 11 URL 同站并发 → siteg WAF
   拦截 → 拦截页以 **HTTP 200** 返回（1475 字符，标题"访问验证"+ check_code
   表单），状态码层识别不到 → 被当正文清洗成空章（8 本书正文全空，质检
   "中文占比 0%"失败）。两层修复分别治"触发"与"识别"。
@@ -874,10 +874,10 @@
   cookie 制（无 UA 绑定）——新增 `_解_表单验证页`：每轮重取被拦页取新图
   （验证码一次性），从页面提取 图片/表单/隐藏域/输入框名，ddddocr 识别后按
   原表单字段 POST，再以目标 URL 重取验证放行；ddddocr 未开启时**明确拒绝**
-  转人工（合规边界不变）。实测：als1010 拦截页首轮识别即通过。
-- 样本入库 `测试样本/als1010_访问验证页.html`；新增 13 例离线回归
+  转人工（合规边界不变）。实测：siteg 拦截页首轮识别即通过。
+- 样本入库 `测试样本/siteg_访问验证页.html`；新增 13 例离线回归
   （test_waf_verify_page ×5 / test_domain_gate ×5 / test_waf_form_solver ×3），
-  全量 220 tests OK + 静态检查干净；**实网取证**：对正在拦截的 als1010 章节页
+  全量 220 tests OK + 静态检查干净；**实网取证**：对正在拦截的 siteg 章节页
   实测命中 `waf_verify_page`（置信度 0.9）+ WAF 分支判定 True + 自动求解放行；
   11 URL 验收批次实跑中已完书全部 100 分（含 waf_verify_page×6 的书）。
 
@@ -936,14 +936,14 @@
 
 ## \[2.4.24] - 2026-09-12 (未发布)
 
-### 修复 — 章节页 URL 当任务 URL 时整单失败（yunshuzhai 实测）
+### 修复 — 章节页 URL 当任务 URL 时整单失败（sitef 实测）
 
 - **现象**：任务 URL 填章节页（`/book/{id}/{n}.html`）时"一直爬取失败"——
   通用管线把章节页当目录页解析，章节链接被导航过滤后只剩"目录"链接
   1 个"章节"，把详情页当正文抓（无正文容器）→ 1 章失败 = 整单失败；
   书名也错取成章节页标题
 - **修复**：站点适配契约新增可选能力 `catalog_from_chapter(chapter_url,
-  base_url) -> 目录URL | None`（纯字符串推导，不发请求）；yunshuzhai 适配器
+  base_url) -> 目录URL | None`（纯字符串推导，不发请求）；sitef 适配器
   声明 `/book/{id}/{n}.html → /book/{id}/`；通用层 `run()` 在书名提取前调用
   `sites_config.resolve_catalog_from_chapter` 规范化，推导失败按原 URL 继续
   （其他站点不受影响）
@@ -954,11 +954,11 @@
 - **run_crawl 标题预取时序修正**（09-12 批量实测 11 URL 发现）：unique_title
   路径的书名预取发生在 run() 规范化之前，章节页标题被当书名；规范化逻辑
   抽为 `_规范化目录URL()` 供 run_crawl（校验后立即调用）与 run() 共用（幂等）
-- **yunshuzhai 补 `paginate` 声明单页**（09-12 实测）：适配器此前未声明分页，
+- **sitef 补 `paginate` 声明单页**（09-12 实测）：适配器此前未声明分页，
   通用规则瞎猜 `_1.html` 续页致 404 并污染爬取历史失败统计；显式返回 None
-  停止分页（与 als1010 同款做法）
-- **批量回归（09-12，小说网站.txt 全部 11 URL）**：als1010×8 /
-  victor-w-ma.github.io / uuwxw.cc / yunshuzhai 章节页起任务 → 全部成功，
+  停止分页（与 siteg 同款做法）
+- **批量回归（09-12，小说网站.txt 全部 11 URL）**：siteg×8 /
+  victor-w-ma.github.io / siteh.example.cc / sitef 章节页起任务 → 全部成功，
   质检平均 100 分，产物已按需清理
 
 ***
@@ -1002,7 +1002,7 @@
   与相对导入；诊断输出补相对导入前导点。新增 测试/test_check_undefined_refs.py
   4 例（含"真实源码全量扫描必须为空"契约测试）
 
-### 修复 — 四项用户反馈（远控面板 / 适配器误报 / 云书斋 / 版本号）
+### 修复 — 四项用户反馈（远控面板 / 适配器误报 / 站名sitef / 版本号）
 
 - **EXE 远控面板缺失**：手机访问面板返回 `{"detail":"面板文件缺失"}` —— onefile
   不自动收集数据文件，`远控/面板.html` 与 `阅读.html` 未打包。build_exe 显式
@@ -1011,11 +1011,11 @@
   `_adapter_status` 里 `from sites_config import ADAPTERS` 按值绑定了加载前的
   旧 dict，而 `load_adapters()` 是整体换引用（M3）——页面永远看到空表。
   改为读 `sites_config.ADAPTERS` 当前属性。日志证实加载实际全部成功，纯显示层误报
-- **yunshuzhai.com 正文提取失败**：适配器缺 `extract_content`/`get_title`。
+- **sitef.example.com 正文提取失败**：适配器缺 `extract_content`/`get_title`。
   实测站点为 Tailwind 布局，正文容器 `#novel-content`（单页章节 ~5300 字，
   无章节内分页）；补 `extract_content` + `get_title`（书名取自
   `<title>` 前段，如"我的美母教师"），真实样本离线验证通过
-  （样本入 测试样本/yunshuzhai_*.html）
+  （样本入 测试样本/sitef_*.html）
 - **GUI 版本号显示**：顶栏应用名与窗口标题追加版本号 —— EXE 读版本资源
   ProductVersion（ctypes），源码模式读 `脚本/版本.json`；失败静默退化为纯应用名
 
@@ -1195,7 +1195,7 @@
 - **CI**（M12）: release 现场编译 rust_core.pyd（best-effort，失败降级纯
   Python）；test 门禁补跑手写回归脚本（不被 unittest discover 收集）
 - **验证链**（H2+M11）: 补"真实 pyd 存在才运行"的多形态样本 A/B 用例 +
-  ciyewk 真实样本（replace_map 非空）双路径逐字符一致；新增
+  sitep 真实样本（replace_map 非空）双路径逐字符一致；新增
   test_log_contract.py 把 GUI print 正则数据通道的文案契约固化为单测
   （进度/标题/完成终态/引擎/反爬/质检/增量，含"停止文案不得误标 completed"）
 
@@ -1205,7 +1205,7 @@
   配置热重载重构时丢失 `ADAPTERS[domain] = entry` 登记 — 适配器日志显示"已加载"
   但注册表恒空，`get_adapter()` 永远返回 None（爬虫从不停走适配器函数），站点
   管理页全部显示"加载失败或未注册"；补回登记后三个内置插件实测恢复注册
-  （als1010.space / uuwxw.cc / victor-w-ma.github.io）
+  （siteg.example.space / siteh.example.cc / victor-w-ma.github.io）
 - **任务表删除按钮被遮挡**（task_table.py）: 操作列在 v2.3.1 新增"预览"按钮后
   仍为 3 按钮时代的定宽 144px，4 按钮 × 40px 默认尺寸 ≈166px 溢出裁切 → 列宽
   164px + 四个 IconButton 显式 36×32（几何确定，任何 DPI 下不再裁切）
@@ -1227,7 +1227,7 @@
   数秒，此时重启会在同 task_id 上起新线程；旧线程退出时按 `task.status ==
   "running"` 判断会把新运行误标 completed/failed 并冻结其计时 → 新增
   `_is_task_thread_owner`（线程身份校验），终态只由登记线程写入
-- **tanmixs 并发 driver 泄漏**（爬虫.py）: 并发分支在方法内每次新建
+- **siten 并发 driver 泄漏**（爬虫.py）: 并发分支在方法内每次新建
   `threading.local()`，`hasattr` 恒 False → 每次调用创建新 Chrome driver 且
   从不 quit（验证码分支同样把可见 driver 存进局部 TLS）→ TLS 槽位提升为
   实例字段只建一次，新增登记表，`close()` 统一 quit 回收
@@ -1306,7 +1306,7 @@
 - **GUI 关闭时任务崩溃**（cannot schedule new futures after interpreter
   shutdown）：退出时停止全部运行中任务 + 线程池提交兜底
 - **适配器加载误报失败**（`entry['get_title']` KeyError）：未定义书名函数的
-  适配器（uuwxw 等）每次启动误报"加载失败"
+  适配器（siteh 等）每次启动误报"加载失败"
 - **详情抽屉收起时右缘竖排文字**：收起时隐藏内容
 - 移除遗留调试探针（每 3 秒写临时文件）
 
@@ -1336,7 +1336,7 @@
 - **速度全自动自适应**（新模块 `源码/速度自适应.py`）：程序依据设备画像
   （CPU 核数 / 可用内存 / CPU 忙碌率 / 单核 sha256 吞吐 / 4 线程扩展比，
   纯标准库，画像缓存 7 天）、任务规模（<30 章压档）与站点约束
-  （tanmixs 等反爬敏感站点压档）自动选出最快可用档位并默认以最快速度启动；
+  （siten 等反爬敏感站点压档）自动选出最快可用档位并默认以最快速度启动；
   运行中按实时信号动态调节——连续 3 章失败或限频/WAF 事件立即降档，
   冷静期 180s + 连续 30 章成功 + 无风险事件后回升（封顶启动档）；
   并发经动态闸门调节（降档立即收缩、回升立即恢复），章节间隔每章实时生效
@@ -1369,7 +1369,7 @@
 
 - 回归测试扩至 7 组 37 例全绿（新增：日志递归护栏 / 站点先验 delay=None /
   速度自适应降级回升与并发闸门）；离线解析 29 例全绿；
-  322zw.com 真实抓取 6 章集成测试：6/6 成功、质检 100/100、无乱码残留
+  siter.example.com 真实抓取 6 章集成测试：6/6 成功、质检 100/100、无乱码残留
 
 ***
 
@@ -1389,12 +1389,12 @@
 
 - **新站接入**：`脚本/probe_adapter.py` 探测辅助（URL → 适配草稿）、
   `脚本/replay_consistency.py` 样本回放验收（正文页模式判定一致率 5/5）、
-  xingguangks（星光书苑）分卷结构适配、《少年阿宾》124 卷完整抓取验证、
+  sitex（星光书苑）分卷结构适配、《少年阿宾》124 卷完整抓取验证、
   "找回新域名"类广告通用过滤
 
 ### 测试
 
-- 29 例离线回归全绿；8 站实测全过 + xingguangks 完整抓取 124 卷 0 失败
+- 29 例离线回归全绿；8 站实测全过 + sitex 完整抓取 124 卷 0 失败
 
 ***
 
@@ -1413,7 +1413,7 @@
 
 - **TLS 校验开关化**：默认开启证书校验，仅配置 `disable_tls_verify: true` 时关闭
 
-- **码点流解码**：修复压缩字映射丢失、支持 ciyewk 连续码点流
+- **码点流解码**：修复压缩字映射丢失、支持 sitep 连续码点流
 
 - **重构切块错位**：修复拆分脚本把通用章节提取段误切进 `_resolve_novel_paths`
   导致的运行时 NameError（误入段迁回 `get_chapter_list`）
