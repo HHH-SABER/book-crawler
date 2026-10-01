@@ -139,6 +139,9 @@ class Test网站清单(unittest.TestCase):
         self.assertEqual(条目[0]['小说名'], '禁神之下')
 
     def test_域名网站名映射与回退(self):
+        # 站点脱钩: 域名→站名映射外置本地 (公开形态空表) → 映射断言仅在本地形态跑
+        if not 清单._网站名映射:
+            self.skipTest('域名映射外置本地 (公开形态空表), 回退断言照常跑')
         self.assertEqual(清单.域名网站名('https://www.qiqishu.cc/x'),
                          '奇书网')
         self.assertEqual(清单.域名网站名('https://www.unknown-zzz.com/a'),
@@ -148,6 +151,12 @@ class Test网站清单(unittest.TestCase):
         self.assertEqual(
             清单.域名网站名('https://xn--vcsx64d.als1010.space/x.html'),
             '爱丽丝书屋')
+
+    def test_域名网站名未知回退(self):
+        """回退行为不依赖映射表 (公开形态也全绿)"""
+        self.assertEqual(清单.域名网站名('https://www.unknown-zzz.com/a'),
+                         'unknown-zzz.com')
+        self.assertEqual(清单.域名网站名(''), '')
 
     def test_记录不抹掉表头注释(self):
         """回写清单必须保留 # 注释头。

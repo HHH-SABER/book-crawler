@@ -9,10 +9,10 @@
   写入待审建议清单 —— **不自动改站点配置** (方案 A, 防静默污染用户配置)。
 
 打分算法与阈值来源 (2026-09-14 探针实测, probe_selfheal_a95e0468):
-- ltbook 抹掉 #rtext -> TOP1 找回 (0.968); 630wang 抹掉 .word_read -> TOP3 找回 (0.896)
-- yueliang 盲测 top1 = #chaptercontent.content (精确)
-- 负样本: qiqishu (base64 加密页) 最高分仅 0.179 —— 分数天然可作置信度门槛
-- 样本 yunshuzhai top1 命中外层 container (含导航) -> 正式版需"祖先去重",
+- 实测样本A 抹掉 #rtext -> TOP1 找回 (0.968); 实测样本B 抹掉 .word_read -> TOP3 找回 (0.896)
+- 盲测样本C top1 = #chaptercontent.content (精确)
+- 负样本: base64 加密页最高分仅 0.179 —— 分数天然可作置信度门槛
+- 明文快照样本 top1 命中外层 container (含导航) -> 正式版需"祖先去重",
   PoC 以"链接密度<=0.5 + 选择器回读唯一性"双重门槛压制该风险。
 
 挂载点: sites_config.extract_content 的 HTML_SELECTOR 分支, 仅在"规则选择器全部
@@ -73,7 +73,7 @@ def score_candidates(soup):
         out.append((s, node))
     out.sort(key=lambda x: -x[0])
     # ===== 祖先去重 (PoC-A 边界①): 大容器裹住真值容器时, 外层降权 =====
-    # 判据 (探针 yunshuzhai 案例): 外层与内层"直接块级子容器互含"且
+    # 判据 (明文快照探针案例): 外层与内层"直接块级子容器互含"且
     # 内层中文数 >= 外层的 90% → 内层才是正文本体, 外层文本只是包裹复制;
     # 外层分 *0.6 沉底, 内层顶上来。真含多块正文的容器 (多 <p> 群) 不受影响
     # (它们没有单一占绝大多数的子块)。

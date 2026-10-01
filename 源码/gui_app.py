@@ -56,7 +56,7 @@ try:
     import captcha_module  # noqa: F401
     import content_decoder  # noqa: F401
     import decrypt_utils  # noqa: F401
-    import waf_captcha  # noqa: F401  (WAF 验证码自动解决, banlvzw 等)
+    import waf_captcha  # noqa: F401  (WAF 验证码自动解决, 移动版站点等)
     import epub_exporter  # noqa: F401  (EPUB 导出, ebooklib 依赖收集)
     import ebooklib  # noqa: F401
     import gui_components.task_manager  # noqa: F401

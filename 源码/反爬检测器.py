@@ -10,7 +10,7 @@
   - rate_limit        请求频率限制 (429 / Retry-After / "访问频繁")
   - ua_block           User-Agent 校验拦截 (403/406 + UA 拦截特征)
   - waf_captcha        WAF 图片验证码 (__wafcaptcha)
-  - waf_verify_page    内容型"访问验证"图片验证码页 (HTTP 200, 如 als1010.space)
+  - waf_verify_page    内容型"访问验证"图片验证码页 (HTTP 200)
   - waf_js_challenge   WAF JS 动态令牌挑战 (@wafjs)
   - js_cookie          JS cookie 校验页 (document.cookie + reload)
   - dynamic_token      动态令牌/CSRF 表单 (需二次提交)
@@ -46,8 +46,8 @@ _BODY_SCAN_LIMIT = 65536
 # WAF 图片验证码特征 (与 waf_captcha 模块保持一致)
 _WAF_CAPTCHA_MARKERS = ('__wafcaptcha', '_waform')
 
-# 内容型"访问验证"拦截页特征 (als1010 等: 站点以 HTTP 200 返回图片验证码页,
-# 1475 字符样本见 测试样本/als1010_访问验证页.html; 两个标记必须同时命中且页短)
+# 内容型"访问验证"拦截页特征 (部分站点以 HTTP 200 返回图片验证码页,
+# 实锤样本见 测试样本_本地/ (不入库); 两个标记必须同时命中且页短)
 _VERIFY_PAGE_MARKERS = ('访问验证', 'check_code')
 
 # WAF JS 动态令牌挑战特征
@@ -148,7 +148,7 @@ class 反爬检测器:
                 建议策略={'retry_after': 0, 'rotate_ua': False,
                         'use_selenium': False, 'cooldown': 0})
 
-        # ---- 1b. 内容型"访问验证"图片验证码页 (als1010.space 等) ----
+        # ---- 1b. 内容型"访问验证"图片验证码页 (200 状态访问验证类) ----
         # 站点把验证码页以 HTTP 200 返回, 状态码层无法区分, 必须靠内容特征;
         # 命中后: 风控事件自动记录 (本方法包装器) + 调用方即时降档 (爬虫 974 行);
         # 页长上限防误伤"正文里偶然提到 访问验证/check_code"的正常长页

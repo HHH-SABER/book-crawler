@@ -20,7 +20,7 @@
                                能真实反映并发收益; 扩展比低说明并发无意义)
   B. 任务复杂度: 章节总数。小书 (<30章) 并发收益有限, 上限压到"快速"档;
      大书允许到设备允许的最高档。
-  C. 站点约束 (反爬敏感站点): tanmixs.com WAF 按 IP 限流, 强制上限"标准"档
+  C. 站点约束 (反爬敏感站点): WAF 按 IP 限流的站点强制上限"标准"档
      (实测多浏览器并发反而触发验证码, 见 run() 内历史注释)。
   D. 运行时信号 (评估方式):
      - 章节连续失败 >= 3       → 降一档 (站点可能被高并发惹恼)
@@ -83,14 +83,31 @@ def _tier_by_level(level):
     return _TIERS[level]
 
 
-# 反爬敏感站点: 并发上限强制压档 (WAF 按 IP 限流, 并发反而更慢)
-SITE_TIER_CAPS = {
-    'tanmixs.com': 0,   # 标准 (1线程)
-    # als1010 (爱丽丝书屋): 2026-09-12 实测——并发/持续请求触发站点软限频
-    # (整个 IP 被"请稍后再试"页拦截, 静默 24 分钟未恢复); 压到最低档
-    # 降低触发概率 (对照: 源码温和节奏跑成功率高)
-    'als1010.space': 0,
-}
+# 反爬敏感站点: 并发上限强制压档 (WAF 按 IP 限流, 并发反而更慢)。
+# 站点专属约束不入库 (站点脱钩): 从 站点适配_本地/站点表.json 的 tier_cap
+# 字段加载 (0=标准1线程; 2026-09-12 实测 并发/持续请求触发软限频的站点压 0)。
+SITE_TIER_CAPS = {}
+_档位上限已加载 = False
+
+
+def _加载档位上限():
+    """从 sites_config.SITE_PATTERNS 加载 tier_cap (幂等; 无该字段即无压档)。
+
+    数据来源覆盖三层 (站点脱钩: 具体站点全在本地): 站点表.json / 适配器
+    SITE dict / 用户 站点配置.json —— 统一经 sites_config 加载链后按字段读取。
+    """
+    global _档位上限已加载
+    if _档位上限已加载:
+        return
+    _档位上限已加载 = True
+    try:
+        import sites_config as _sc
+        _sc.load_adapters()   # 幂等: 站点表 + 适配器插件 + 提取器 全链加载
+        for _p in _sc.SITE_PATTERNS:
+            if isinstance(_p, dict) and _p.get('domain') and 'tier_cap' in _p:
+                SITE_TIER_CAPS[str(_p['domain']).lower()] = int(_p['tier_cap'])
+    except Exception:
+        pass  # 刻意静默: 档位上限加载失败退化为空表 (无压档), 不阻塞控制器构建
 
 # 小书并发收益有限, 上限压到"快速"档
 SMALL_BOOK_CHAPTERS = 30
@@ -520,7 +537,8 @@ def build_controller(catalog_url, total_chapters=None, manual_threads=None,
     except Exception:
         domain = ''
 
-    # 站点上限 (反爬敏感站点)
+    # 站点上限 (反爬敏感站点; 首次调用从本地站点表加载 tier_cap)
+    _加载档位上限()
     site_cap = 2
     for site, cap in SITE_TIER_CAPS.items():
         if site in domain:

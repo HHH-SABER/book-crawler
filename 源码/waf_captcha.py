@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""WAF 图片验证码自动解决（banlvzw 等站点）
+"""WAF 图片验证码自动解决（移动版站点等）
 
-背景: 部分站点 (如 m.banlvzw.com) 在 IP 访问频率过高时返回 401 验证码页:
+背景: 部分站点 (如 m.example.com) 在 IP 访问频率过高时返回 401 验证码页:
   <form method=POST action=<原URL>?_waform>
     <img src='/__wafcaptcha?<时间戳>'>
     <input name='__input'>  ← 输入图片中的字符
@@ -85,9 +85,9 @@ def is_waf_captcha_page(status_code: int, text: str) -> bool:
 
     两类形态:
     - 经典 __wafcaptcha (401/403/429 + 标记);
-    - 内容型"访问验证"页 (als1010 等站点以 **HTTP 200** 返回图片验证码表单,
+    - 内容型"访问验证"页 (部分站点以 **HTTP 200** 返回图片验证码表单,
       状态码层不可区分, 只能靠内容特征: 标题"访问验证" + check_code 接口 +
-      页短; 样本 测试样本/als1010_访问验证页.html)。
+      页短; 实锤样本见 测试样本_本地/ (不入库, 站点代号见本地映射))。
     命中第二类会进入爬虫既有 WAF 处理分支: 自动识别不适用时转人工兜底。
     """
     if not text:
@@ -103,7 +103,7 @@ def is_waf_captcha_page(status_code: int, text: str) -> bool:
 
 def _解_表单验证页(session, url: str, 页面文本: str, headers, timeout: int,
                   log, max_tries: int) -> bool:
-    """通用表单式验证码页自动求解 (als1010 类: HTTP 200 "访问验证" 页)。
+    """通用表单式验证码页自动求解 (200 状态"访问验证"页类)。
 
     实测结论 (2026-09-12 实网取证): 该站 WAF 为会话 cookie 制 (无 UA 绑定),
     页面内 `code` 输入框 + `/home/chapter/verify.html` 图片 + `check_code.html`
@@ -239,7 +239,7 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
     # 所有子请求带原始 headers (WAF 放行 cookie 与 UA 绑定, 无 UA 会被持续拦截)
     hdrs = dict(headers or {})
 
-    # 内容型表单验证码页 (als1010 类 200 状态"访问验证"页): 走通用表单求解分支
+    # 内容型表单验证码页 (200 状态"访问验证"页类): 走通用表单求解分支
     # (2026-09-12 实网实测: 该形态自动识别可用, 无需弹浏览器人工输入)
     try:
         _首 = session.get(url, headers=hdrs, timeout=timeout)
@@ -262,7 +262,7 @@ def solve_waf_captcha(session, url: str, headers=None, timeout: int = 20,
         if not m:
             if '访问验证' in r.text and 'check_code' in r.text:
                 log("[WAF验证码] 该站为内容型验证页 (非 __wafcaptcha 表单, "
-                    "如 als1010), 自动识别不适用 → 交由人工兜底流程处理")
+                    "图片型), 自动识别不适用 → 交由人工兜底流程处理")
             else:
                 log("[WAF验证码] 页面未包含验证码接口, 可能已放行")
             return False

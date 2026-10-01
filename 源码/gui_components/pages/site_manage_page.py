@@ -1276,7 +1276,7 @@ class SiteManagePage:
         """从 txt 网址清单导入: 每行一个 URL, 提取域名生成站点配置
 
         去重/物化规则:
-        - 已被当前配置覆盖 (自身或子域, 如 m.banlvzw.com 命中 banlvzw.com) → 跳过
+        - 已被当前配置覆盖 (自身或子域, 如 m.example.com 命中 example.com) → 跳过
         - 命中内置 SITE_PATTERNS 但配置里还没有 → 复制内置可序列化字段进配置
           (使该站点在站点管理页可见; 函数型字段如自定义分页由运行时合并保留)
         - 全新域名 → 生成默认 html_selector 配置

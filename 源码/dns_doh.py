@@ -2,7 +2,7 @@
 """DNS 污染回退 (DoH 解析): 自动识别被污染域名并用 DoH 获取真实 IP
 
 背景: 部分小说站域名被本地 DNS 污染 (解析到 0.0.0.0 / 127.0.0.1 / ::),
-而站点本身在线 (如 zhiruo.org → ceracdn CDN)。requests 走系统 DNS,
+而站点本身在线 (站点 → 其 CDN, DNS 记录被污染)。requests 走系统 DNS,
 导致连接失败 (getaddrinfo failed / 连不上)。
 
 方案: 进程内 patch socket.getaddrinfo —

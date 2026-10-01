@@ -354,7 +354,7 @@ class CaptchaHandler(ABC):
     def is_captcha_page(page_source):
         """通用验证码页检测 (支持多站点特征)"""
         markers = [
-            '__wafcaptcha', '_waform', '访问频率太高',   # tanmixs 风格 WAF
+            '__wafcaptcha', '_waform', '访问频率太高',   # 某类站点 WAF
             'captcha', 'geetest', 'verify-code',         # 通用验证码
             'sec_captcha', 'validate-code', 'slide-verify',
         ]
@@ -1238,7 +1238,7 @@ class CaptchaManager:
         return None
 
     def is_captcha_page(self, page_source):
-        """通用验证码页检测 (tanmixs 风格 WAF + 通用特征)"""
+        """通用验证码页检测 (移动版站点 WAF + 通用特征)"""
         return CaptchaHandler.is_captcha_page(page_source)
 
     # ---- 监控透传 ----
