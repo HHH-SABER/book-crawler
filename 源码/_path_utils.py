@@ -54,6 +54,11 @@ def get_default_output_dir() -> str:
 # 历史记录/书架/风控状态/阅读进度/日志 等"使用痕迹"存到用户级稳定目录,
 # 换 EXE、换安装目录、重装都不会丢; 抓取结果/站点适配/站点配置 仍留在
 # EXE 旁边 (用户要直接看到、要手改)。
+# 便携数据开关 (P1, 2026-10-01): EXE 旁放 便携模式.flag → 状态根改用 EXE 旁
+# (数据/日志随程序走, 真·绿色便携)。仅在打包模式 (is_frozen) 生效 —— 源码/
+# 测试模式的 LOCALAPPDATA 重定向隔离 (踩坑 K27/K28) 绝不受影响。启用便携
+# **不自动迁移**旧数据 (避免 U 盘体积惊吓), 旧数据留在默认根, is_portable_mode()
+# 供启动日志提示手动迁移路径。
 _STATE_ROOT = None
 # 修复(U9): 锁改为模块级直接创建。旧实现是惰性创建 (if _状态根锁 is None: ...),
 # "判断-创建"本身非原子 —— 两个线程可各自 new 出一把锁并同时进入临界区,
@@ -61,12 +66,32 @@ _STATE_ROOT = None
 import threading as _threading
 _状态根锁 = _threading.Lock()
 
+_便携标记文件 = "便携模式.flag"
+
+
+def is_portable_mode() -> bool:
+    """当前是否处于便携数据模式 (EXE 旁存在 便携模式.flag)。
+
+    仅供启动日志/GUI 提示用; 状态根解析以 get_state_root() 为准。
+    注意: 与 get_state_root 的判定一致 —— 仅打包模式生效。
+    """
+    return bool(is_frozen()) and os.path.isfile(
+        os.path.join(get_app_base_dir(), _便携标记文件))
+
 
 def get_state_root() -> str:
-    """状态数据根目录: %LOCALAPPDATA%/小说爬虫 (无则该变量时回退 BASE_DIR)。
+    """状态数据根目录。
+
+    优先级:
+      1. 便携数据开关 (仅打包模式): EXE 旁存在 便携模式.flag → root = EXE 旁
+         (BASE_DIR), 数据/日志 随程序走; **不做自动迁移**, 旧数据留在默认根
+         (启动日志经 is_portable_mode() 提示手动迁移路径)。
+      2. 默认 %LOCALAPPDATA%/小说爬虫 (无该变量时回退 BASE_DIR)。
 
     首次调用执行一次性迁移: 旧位置 BASE_DIR/数据、BASE_DIR/日志 → 新根
-    (复制而非移动, 迁移失败也不影响旧数据继续可用)。幂等、线程安全。"""
+    (复制而非移动, 迁移失败也不影响旧数据继续可用)。幂等、线程安全。
+    便携模式下 root == BASE_DIR, 数据/日志 本就在旁边, 跳过迁移只建目录。
+    """
     global _STATE_ROOT
     if _STATE_ROOT:
         return _STATE_ROOT
@@ -74,8 +99,12 @@ def get_state_root() -> str:
         if _STATE_ROOT:
             return _STATE_ROOT
         base = get_app_base_dir()
-        local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
-        root = os.path.join(local, "小说爬虫") if local else base
+        便携 = is_frozen() and os.path.isfile(os.path.join(base, _便携标记文件))
+        if 便携:
+            root = base
+        else:
+            local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+            root = os.path.join(local, "小说爬虫") if local else base
         try:
             os.makedirs(root, exist_ok=True)
         except OSError:
@@ -83,6 +112,13 @@ def get_state_root() -> str:
         for name in ("数据", "日志"):
             old = os.path.join(base, name)
             new = os.path.join(root, name)
+            if 便携:
+                # root == base: 数据/日志已在旁边, 只保证目录存在 (不迁移)
+                try:
+                    os.makedirs(new, exist_ok=True)
+                except OSError:
+                    pass  # 刻意静默: 本模块被 日志.py 依赖, 引入日志会循环导入
+                continue
             if os.path.isdir(old) and not os.path.exists(new):
                 try:
                     shutil.copytree(old, new)
@@ -94,7 +130,7 @@ def get_state_root() -> str:
             try:
                 os.makedirs(new, exist_ok=True)
             except OSError:
-                pass  # 刻意静默: 刻意静默: 本模块被 日志.py 依赖, 引入日志会循环导入; 失败回退默认路径即可
+                pass  # 刻意静默: 本模块被 日志.py 依赖, 引入日志会循环导入; 失败回退默认路径即可
         _STATE_ROOT = root
         return _STATE_ROOT
 
