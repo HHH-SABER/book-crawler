@@ -292,6 +292,16 @@ rust_core_poc/.toolchain/
 rust_core_poc/pyo3_ext/target/
 rust_core_poc/target/
 
+# ============ 站点脱钩 (2026-10-01, AGENTS §目录与文件管理规范 四) ============
+#   公开仓库只见机制 (SITE 契约/_模板.py/加载器/占位 fixture),
+#   真实站点资产全部放本地目录, 绝不入库:
+#   站点适配_本地/  —— 真实适配器 + 站点表.json + 站点配置模板.json + _提取器.py
+#   测试样本_本地/  —— 真实站点 HTML/数据文件快照 (含书名/正文, 高敏)
+#   测试_本地/      —— 读本地样本的站点专项测试
+/站点适配_本地/
+/测试样本_本地/
+/测试_本地/
+
 # ============ 交付清单类产物 (2026-10-01 补) ============
 # 按 AGENTS.md 入库白名单, 根级只允许 README/CHANGELOG/AGENTS/LICENSE/
 # requirements.txt/.gitignore/启动*.bat —— 下列为特定版本的交付校验产物,
