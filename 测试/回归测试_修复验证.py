@@ -302,7 +302,11 @@ def test_speed_adaptive():
     ok("手动模式不受信号影响", m.initial_params() == (2, 0.7))
 
     tan = sa.build_controller("https://m.tanmixs.com/abc/ml.html", total_chapters=500)
-    ok("tanmixs 站点上限压到标准", tan.tier.level == 0, tan.tier.name)
+    # 站点脱钩: tier_cap 外置本地 (公开形态空表无压档) → 本断言仅在本地形态跑
+    if sa.SITE_TIER_CAPS:
+        ok("tanmixs 站点上限压到标准", tan.tier.level == 0, tan.tier.name)
+    else:
+        ok("公开形态无站点约束表 (跳过压档断言)", tan.tier is not None)
 
     # 并发闸门: 降到标准档后同时进入抓取段的 worker 数 = 1
     g = sa.build_controller("https://gate.com/b", total_chapters=500)
