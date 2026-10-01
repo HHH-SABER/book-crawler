@@ -16,6 +16,13 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC = os.path.normpath(os.path.join(_HERE, "..", "源码"))
 sys.path.insert(0, _SRC)
 
+# v2.4.35: 本脚本里的 spider.run() 会走到 _收尾汇总 → 网站清单.记录。
+# 隔离清单落点, 避免把测试目标写进项目根的真实用户记录
+# (历史上 网站清单.txt 里的 %TEMP%\nc_t1_*\测试书.txt 污染即来自本脚本)。
+os.environ.setdefault('NC_LEDGER_PATH',
+                      os.path.join(tempfile.mkdtemp(prefix='nc_regr_ledger_'),
+                                   '网站清单.txt'))
+
 PASS = 0
 FAIL = 0
 

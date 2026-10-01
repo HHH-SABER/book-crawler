@@ -6047,7 +6047,9 @@ class NovelSpider:
         self._记录站点历史(catalog_url, novel_title, total, failed,
                             output_file, 质检摘要=质检摘要)
         # v2.4.28: 抓取结束 → 自动记录 网站清单 (网址+站名+书名, 去重)。
-        # CLI/GUI 全路径覆盖; 书名平时只在抓取完成后非空, 其余用站名占位
+        # CLI/GUI 全路径覆盖; 书名平时只在抓取完成后非空, 其余用站名占位。
+        # v2.4.35: 任务开跑时已在 run_crawl() 入口记过一条"尝试抓取",
+        # 此处按网址去重命中 → 只补齐书名, 不新增行。
         try:
             from 网站清单 import 记录 as _记清单, 域名网站名
             _小说名 = (novel_title or '').strip()
@@ -6881,6 +6883,16 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
     """
     if stop_event is not None and stop_event.is_set():
         return ""
+    # v2.4.35: 清单留痕前置到"尝试抓取"这一步 —— 任务真正开跑即记一条
+    # (网址 + 站名占位, 书名待 _收尾汇总 补齐)。旧实现只在抓取收尾时记,
+    # 那些在建立爬虫阶段就抛错的任务 (网址不合法/目录页取不到/标题预取失败)
+    # 在清单里完全看不到, 与"也能查看尝试抓取过什么"的诉求不符。
+    try:
+        import 网站清单 as _清单_尝试
+        _清单_尝试.记录(catalog_url, _清单_尝试.域名网站名(catalog_url), '')
+    except Exception as _e_清单尝试:
+        _log.debug(f'裸 except 吞异常: {type(_e_清单尝试).__name__}: '
+                   f'{_e_清单尝试} (尝试抓取留痕失败)')
     # B1: print 已迁移到 日志; 开启 console 镜像保证 CLI/GUI 实时可见 (无前缀)
     try:
         _app_log.enable_console()
