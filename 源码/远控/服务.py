@@ -604,7 +604,8 @@ def _扫描终态() -> list:
     with mgr._lock:
         快照 = list(mgr.tasks.values())
     for t in 快照:
-        if getattr(t, "_恢复项", False) or t.status not in ("completed", "failed", "stopped"):
+        if getattr(t, "_恢复项", False) or t.status not in ("completed", "failed", "stopped",
+                                                             "dead_pending"):
             continue
         end = t.metrics.end_time if t.metrics else 0
         键 = (t.task_id, t.status, end)
@@ -625,7 +626,7 @@ def _扫描终态() -> list:
             # 改为指到面板根 (token 已存面板本地), 用户从面板进阅读页, 不损失可达性。
             链接 = f"\n面板: {前}/"
         状态词 = {"completed": "抓取完成", "failed": "抓取失败",
-                  "stopped": "已停止"}.get(t.status, t.status)
+                  "stopped": "已停止", "dead_pending": "书已删除(待确认)"}.get(t.status, t.status)
         _发送推送(f"{t.title or t.url} · {状态词}",
                   f"{章节}{链接}")
         已触发.append((t.task_id, t.status))

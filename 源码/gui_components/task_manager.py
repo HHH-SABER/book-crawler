@@ -87,7 +87,7 @@ class TaskInfo:
     mode: str = "full"
     progress_current: int = 0
     progress_total: int = 0
-    status: str = "pending"  # pending/running/completed/failed
+    status: str = "pending"  # pending/running/completed/failed/stopped/interrupted/dead_pending(死书待确认,终态)
     logs: list = dataclasses.field(default_factory=TaskLogBuffer)
     output_file: str = ""
     error: str = ""
