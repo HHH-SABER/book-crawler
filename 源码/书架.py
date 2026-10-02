@@ -80,11 +80,18 @@ def 记录(标题: str, 目录URL: str, 输出文件: str = '') -> None:
         保存(items)
 
 
-def 移除(目录URL: str) -> None:
-    """从书架移除一条记录 (按目录URL)"""
+def 移除(目录URL: str) -> bool:
+    """从书架移除一条记录 (按目录URL)。命中并落盘返回 True。
+
+    2026-10-02: 返回值由 None 改为 bool (死书处理需要区分"删掉了"与
+    "本来就没有"); 全工程此前无任何调用方, 改返回类型零破坏。
+    """
     with _io_lock:
-        items = [it for it in 加载() if it.get('目录URL') != 目录URL]
-        保存(items)
+        items = 加载()
+        留 = [it for it in items if it.get('目录URL') != 目录URL]
+        if len(留) == len(items):
+            return False
+        return 保存(留)
 
 
 def 列出() -> list:
