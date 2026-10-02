@@ -19,9 +19,10 @@ def _fmt_elapsed(task: TaskInfo) -> str:
         return '—'  # 上轮实际中断时刻未知，不能当作仍在运行累计
     if not st:
         return "—"
-    # 已完成/失败/停止: 用结束时间冻结耗时, 不再随当前时间增长
+    # 已完成/失败/停止/死书待确认: 用结束时间冻结耗时, 不再随当前时间增长
+    # (dead_pending 是终态, 漏判会让耗时列每秒疯涨 —— 死书机制 阶段2)
     et = task.metrics.end_time
-    if task.status in ("completed", "failed", "stopped") and et:
+    if task.status in ("completed", "failed", "stopped", "dead_pending") and et:
         end = et
     else:
         end = time.time()
