@@ -231,6 +231,43 @@ def 记录(网址: str, 网站名: str = '', 小说名: str = '') -> bool:
             return False
 
 
+def 移除(网址: str) -> bool:
+    """按网址移除一条清单条目 (死书处理用)。命中并落盘返回 True。
+
+    匹配两轮: 先精确串匹配, 未命中再按规范化网址匹配 —— 清单是用户可手改的
+    文本文件, 手改常带尾斜杠/大小写差异。不调用 自动生成若缺失(): 对不存在的
+    文件执行移除是 no-op False, 绝不凭空生成模板文件。
+    """
+    网址 = (网址 or '').strip()
+    if not 网址:
+        return False
+    with _锁:                    # 串行化: 与 记录() 共用同一把锁, 不互相覆盖
+        try:
+            条目 = 读取()
+            留 = [x for x in 条目 if x['网址'] != 网址]
+            if len(留) == len(条目):          # 精确未命中 → 规范化兜底
+                _规范 = _规范化网址(网址)
+                留 = [x for x in 条目 if _规范化网址(x['网址']) != _规范]
+            if len(留) == len(条目):
+                return False
+            _原子写(文件路径(), _重建(留))    # _重建 自带 _注释头, 表头不被抹掉
+            return True
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e} '
+                       f'(移除网站清单条目失败)')
+            return False
+
+
+def _规范化网址(网址: str) -> str:
+    """去 fragment / 去尾斜杠 / netloc 小写 (仅本模块内匹配用)"""
+    try:
+        from urllib.parse import urlsplit
+        sp = urlsplit((网址 or '').strip())
+        return f"{(sp.netloc or '').lower()}{(sp.path or '').rstrip('/')}"
+    except Exception:
+        return (网址 or '').strip().lower()
+
+
 def 查(网址: str) -> dict:
     """按网址反查条目, 未命中返回 {}"""
     网址 = (网址 or '').strip()

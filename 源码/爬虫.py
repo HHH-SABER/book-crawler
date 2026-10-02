@@ -801,6 +801,7 @@ class NovelSpider:
         self._resp_cache = {}
         self._resp_cache_lock = threading.Lock()
         self._inspect_cache = {}
+        self.last_dead = None      # 死书判定结果 dict {类型,原因,可询问删除}; run_crawl 读取 (2026-10-02)
         self._inspect_cache_lock = threading.Lock()
         # ===== 反爬机制自动检测 + 内容语义质检 =====
         # _get_with_js_challenge 每次请求先过检测器: 限频退避/UA轮换自动处理,
@@ -2392,6 +2393,10 @@ class NovelSpider:
 
         # 先查看网页结构
         soup = self.inspect_page(catalog_url)
+        # 死书信号① (2026-10-02): 空 soup = 页面根本没拿到 ——
+        # inspect_page 三次重试耗尽 (:1493) 与 Selenium 兜底失败 (:1533-1534)
+        # 都 return BeautifulSoup('', 'lxml') 而不抛异常, 这是唯一可抓的信号。
+        self._目录页为空 = not str(soup).strip()
 
         # ===== 站点专属目录解析 (第 4 批重构: 原为内联的 ~660 行 if 链) =====
         # 命中站点即返回其章节列表; 未命中返回 None, 继续走下方通用流程。
@@ -6303,7 +6308,19 @@ class NovelSpider:
             total = len(chapters)
 
         if total == 0:
-            _log.info("⚠️ 未提取到任何章节，抓取终止")
+            # 死书判定 (2026-10-02): 0 章节时区分"站点不可达 / 书被删除 /
+            # 目录无章节", 供 run_crawl 抛出 死书错误 (取代泛用 RuntimeError)。
+            # 保持 return None 且不调 _收尾汇总 → last_failed is None 的既有
+            # 判定链完全不受影响。
+            try:
+                from 死书处理 import 判定死书
+                self.last_dead = 判定死书(页面为空=getattr(self, '_目录页为空', False),
+                                          书名=novel_title, 章节数=total)
+                _log.info(f"⚠️ 未提取到任何章节，抓取终止 (死书判定: "
+                          f"{self.last_dead['类型']} — {self.last_dead['原因']})")
+            except Exception as _de:
+                self.last_dead = None
+                _log.debug(f'裸 except 吞异常: {type(_de).__name__}: {_de}')
             return None
 
         # ===== 断点续传: 检测检查点 =====
@@ -7084,7 +7101,15 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         failed = getattr(src_spider, 'last_failed', None)
         total_n = getattr(src_spider, 'last_total', 0)
         if failed is None or total_n <= 0:
-            last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
+            # 死书判定优先 (2026-10-02): 本源判定出死书 → 抛 死书错误 (携带
+            # 类型/原因); 若前一源已判定死书而本源只给出笼统异常, 保留先前的
+            # 死书错误 (判定信息量更大, 不应被更笼统的异常覆盖)。
+            _死 = getattr(src_spider, 'last_dead', None)
+            from 死书处理 import 死书错误
+            if isinstance(_死, dict) and _死.get('类型'):
+                last_error = 死书错误(_死['类型'], _死['原因'], src)
+            elif not isinstance(last_error, 死书错误):
+                last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
             continue
         last_result = result
         any_content = any_content or total_n > len(failed)
