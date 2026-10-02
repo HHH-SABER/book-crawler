@@ -106,6 +106,10 @@ class TaskInfo:
     # 运行时指标 (GUI 表格列数据源)
     metrics: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
     selected: bool = False  # 当前是否被选中 (供抽屉/表格高亮)
+    # 死书信息 {类型,原因,可询问删除,网址,首次时间,...}; 非死书恒为 None
+    # (2026-10-02 新增; 用 Optional[dict] 而非 dataclass 子结构, 使序列化
+    #  白名单/恢复过滤/GUI 展示零改动即正确工作)
+    dead: Optional[dict] = None
     _恢复项: bool = False  # 启动恢复项不触发本轮完成推送 (不持久化)
 
 
@@ -646,6 +650,10 @@ class TaskManager:
         self._历史写锁 = threading.Lock()
         self._counter = 0
         self._selected_task_id: str = ""       # 当前选中任务 (表格高亮/抽屉联动)
+        # 死书待弹队列 (2026-10-02): 工作线程只塞 task_id, 主线程 _refresh_loop
+        # 每 tick 排空至多一条 → page.run_task 弹窗 (跨线程只调度不碰控件)。
+        # 纯内存: 重启后为空 → 不重弹 (与死书清单页状态一致)。
+        self._死书待弹: list = []
         self._加载任务历史()                    # 重启后恢复任务表 (含 running→interrupted)
 
     # ------------------------------------------------------ 任务历史持久化
@@ -679,6 +687,7 @@ class TaskManager:
             'progress_current': t.progress_current,
             'progress_total': t.progress_total,
             'status': t.status, 'output_file': t.output_file, 'error': t.error,
+            'dead': t.dead,
             'chapter_range': (list(t.chapter_range)
                               if t.chapter_range else None),
             'threads': t.threads, 'delay': t.delay, 'resume': t.resume,
@@ -886,10 +895,40 @@ class TaskManager:
 
     @staticmethod
     def _set_terminal(task: TaskInfo, status: str):
-        """置为终态 (completed/failed/stopped) 并冻结耗时 end_time"""
+        """置为终态 (completed/failed/stopped/dead_pending) 并冻结耗时 end_time"""
         task.status = status
         if task.metrics:
             task.metrics.end_time = time.time()
+
+    def _记死书(self, task: TaskInfo, exc: Exception) -> None:
+        """死书失败落点 (工作线程, 只碰数据不碰控件)。
+
+        非 死书错误 → 一行 no-op 直接返回。命中时: 登记死书清单 + 置状态
+        dead_pending + 首次才入待弹队列 (避免同一本书反复弹窗打扰)。
+        """
+        try:
+            from 死书处理 import 死书错误, 记录死书
+        except Exception as _e:
+            if app_log:
+                app_log.debug('任务管理', f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            return
+        if not isinstance(exc, 死书错误):
+            return
+        try:
+            记录, 首次 = 记录死书(task.url, task.title, exc.类型, exc.原因, task.task_id)
+            task.dead = 记录
+            task.status = 'dead_pending'      # end_time 已在 _set_terminal 冻结
+            if 首次:
+                with self._lock:
+                    self._死书待弹.append(task.task_id)
+        except Exception as _e2:
+            if app_log:
+                app_log.debug('任务管理', f'裸 except 吞异常: {type(_e2).__name__}: {_e2}')
+
+    def 取一条待弹死书(self) -> str:
+        """主线程消费待弹队列 (加锁 pop, 空则返回空串)。每 tick 至多取一条。"""
+        with self._lock:
+            return self._死书待弹.pop(0) if self._死书待弹 else ''
 
     def _is_task_thread_owner(self, task: TaskInfo) -> bool:
         """当前线程是否仍是该任务登记的运行线程。
@@ -978,6 +1017,7 @@ class TaskManager:
                     'time': time.strftime('%H:%M:%S'),
                     'msg': f"[错误] {e}"
                 })
+                self._记死书(task, e)      # 死书失败落点 (非死书异常为一行 no-op)
             if app_log is not None:
                 app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
         finally:
@@ -1119,6 +1159,7 @@ class TaskManager:
             task.status = "running"
             task.logs = TaskLogBuffer()
             task.error = ""
+            task.dead = None      # 重下成功后清死书标记 (2026-10-02, 与 error 同处)
             task.output_file = ""
             task.metrics = TaskMetrics(start_time=time.time())  # 重置运行时指标
             task.stop_flag = threading.Event()  # 新建停止标记 (旧标记可能已被置位)
