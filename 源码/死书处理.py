@@ -271,8 +271,11 @@ def 删除书记录(网址: str, 任务id: str = '', 范围: tuple = 范围_默�
             return False, '无任务id (非本任务删除)'
         mgr = task_manager
         if mgr is None:
-            from gui_components.task_manager import TaskManager
-            mgr = TaskManager()
+            # TaskManager.__init__ 需要 page 参数, 无参构造必 TypeError
+            # ("missing 1 required positional argument: 'page'", 阶段3 实测)。
+            # 无外部 manager 时只能放弃任务项 —— 诚实报失败, 不能伪成功:
+            # 任务行删不掉却告诉用户"已删除", 用户去清单页找不到残留行。
+            return False, '未提供任务管理器, 跳过任务行 (请在任务表内直接删除)'
         return bool(mgr.delete_task(任务id, delete_file=False)), '' if mgr else ''
 
     def _删书架():
