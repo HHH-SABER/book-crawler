@@ -69,19 +69,15 @@ class TestHtmlSelectorExtraction(unittest.TestCase):
         self.assertIn(FEATURE_OPENING, text)
 
     def test_siteq_junk_filter_removes_obfuscation(self):
-        """siteq 正文混有 &ap;ap;...toigdata 多层实体混淆, junk_filter 必须清干净。"""
-        from sites_config import extract_content_html_selector
-        html = _read('siteq_content.html')
-        text = extract_content_html_selector(
-            html, ['#rtext', '#content', 'div#content'], extractor='siteq_junk_filter')
-        self.assertGreater(len(text), 3000, f'siteq 正文过短: {len(text)}')
-        self.assertIn(FEATURE_OPENING, text)
-        # 已知缺陷 (2026-10-02 代号化后首次暴露, 非本次改动引入): junk_filter
-        # 未清干净多层实体混淆片段 "toigdata" —— 修复需动内容清洗规则, 另行立项
-        # (见 HANDOFF「已知缺陷」与 文档/审查报告汇总.md)。
-        self.skipTest('已知缺陷: junk_filter 未清 toigdata 混淆片段 (待清洗规则修复)')
-        self.assertNotIn('toigdata', text, '混淆片段未清除')
-        self.assertNotIn('ap;', text, '孤立 ap; 残留未清除')
+        """站点专属提取器 (entity_junk_filter) 的混淆清理断言。
+
+        站点脱钩: 该提取器只在本地 站点适配_本地/_提取器.py 注册, 且真实站点
+        样本不入库 —— 公开形态必然未注册 (走通用路径), 因此**公开侧只做归属
+        声明**, 真实行为断言在 测试_本地/test_entity_junk_filter.py。
+        (2026-10-02 修正: 此前误判为"清洗规则缺陷", 实为测试分层错误。)
+        """
+        self.skipTest('站点专属提取器与真实样本仅在本地形态可用; '
+                      '行为断言见 测试_本地/test_entity_junk_filter.py')
 
 
 # ============================================================
