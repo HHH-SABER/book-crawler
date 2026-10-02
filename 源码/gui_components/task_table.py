@@ -305,20 +305,38 @@ class TaskTable:
         )
         # 导出 EPUB (2026-09-29): 单本手动导出, 走 epub_exporter 同一转换链。
         # 已完成且有输出文件时高亮可点; 无输出/运行中置灰 (tooltip 说明原因)
-        _可导 = bool(task.output_file) and task.status != "running"
-        epub_btn = ft.IconButton(
-            icon=ft.Icons.MENU_BOOK_OUTLINED, icon_size=14,
-            tooltip=("导出 EPUB (单本导出)" if _可导
-                     else ("请等待抓取完成" if task.status == "running"
-                           else "无输出文件, 无法导出")),
-            disabled=not _可导,
-            on_click=lambda e, tid=task.task_id: self._on_export_epub(tid),
-            width=36, height=32,
-            style=ft.ButtonStyle(
-                padding=2, shape=ft.RoundedRectangleBorder(radius=6),
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-            ),
-        )
+        #
+        # 死书分支 (2026-10-03 阶段3): 死书必然没有输出文件 → epub_btn 恒 disabled
+        # 是纯死重按钮, 位置换成 忽略/删记录。**按钮数与列宽均不变** (仍 5 个 × 36px),
+        # 不动 _COLUMNS 的 200px 分配。
+        _死 = getattr(task, 'dead', None)
+        _是死书 = bool(isinstance(_死, dict) and _死.get('类型'))
+        if _是死书:
+            epub_btn = ft.IconButton(
+                icon=ft.Icons.DO_NOT_DISTURB_ON_OUTLINED, icon_size=14,
+                tooltip="忽略此书 (标记已知问题, 保留记录不再提示)",
+                on_click=lambda e, tid=task.task_id: self._on_ignore_dead(tid),
+                width=36, height=32,
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                ),
+            )
+        else:
+            _可导 = bool(task.output_file) and task.status != "running"
+            epub_btn = ft.IconButton(
+                icon=ft.Icons.MENU_BOOK_OUTLINED, icon_size=14,
+                tooltip=("导出 EPUB (单本导出)" if _可导
+                         else ("请等待抓取完成" if task.status == "running"
+                               else "无输出文件, 无法导出")),
+                disabled=not _可导,
+                on_click=lambda e, tid=task.task_id: self._on_export_epub(tid),
+                width=36, height=32,
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                ),
+            )
         redl_btn = ft.IconButton(
             icon=ft.Icons.REPLAY, icon_size=14,
             tooltip="重新下载 (从头重新抓取)",
@@ -331,8 +349,13 @@ class TaskTable:
         )
         del_btn = ft.IconButton(
             icon=ft.Icons.DELETE_OUTLINE, icon_size=14,
-            tooltip="删除任务",
-            on_click=lambda e, tid=task.task_id: self._on_delete(tid),
+            # 死书态: 删的是"任务行 + 书架 + 网站清单"三处记录 (走死书编排);
+            # 普通态: 只删任务行
+            tooltip=("删除这本书的记录 (任务/书架/网站清单)" if _是死书
+                     else "删除任务"),
+            on_click=lambda e, tid=task.task_id: (self._on_delete_dead(tid)
+                                                   if _是死书
+                                                   else self._on_delete(tid)),
             width=36, height=32,
             style=ft.ButtonStyle(
                 padding=2, shape=ft.RoundedRectangleBorder(radius=6),
@@ -406,6 +429,121 @@ class TaskTable:
             self.refresh()
         else:
             self._notify("任务正在收尾，请稍后重新下载")
+
+    # ---------------------------------------------------- 死书动作 (阶段3)
+    @staticmethod
+    def _死书信息(task) -> dict:
+        """取死书标记并做类型防御。
+
+        Mock 陷阱 (阶段1 踩坑): getattr 返回 Mock 是 truthy, 直接当 dict 读
+        键会 KeyError/TypeError。必须 isinstance(dict) + .get。
+        """
+        _死 = getattr(task, 'dead', None)
+        return _死 if isinstance(_死, dict) else {}
+
+    def _on_ignore_dead(self, task_id: str):
+        """忽略此书: 死书清单状态置 已忽略 + 清任务上的 dead 标记。
+
+        语义: 这本书的问题已知 (删了/不可达), 用户表态"不必再问"。
+        **只改死书清单与任务标记, 不动书架/网站清单/历史/产物**。
+        restart_task 同样会清 dead → 重下后本就不必再忽略。
+        """
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return
+        死 = self._死书信息(task)
+        键 = 死.get('键')
+        if not 键:
+            self._notify("该任务没有死书清单记录, 无法忽略")
+            return
+        try:
+            import 死书处理
+            ok = 死书处理.设状态(键, 死书处理.状态_已忽略)
+        except Exception as _e:
+            _dbg("任务表", f'忽略死书失败: {type(_e).__name__}: {_e}')
+            self._notify(f"忽略失败: {_e}")
+            return
+        if not ok:
+            self._notify("忽略失败: 死书清单写入未成功")
+            return
+        task.dead = None      # 清标记 → 状态胶囊回落, 行内按钮切回 EPUB
+        self._notify(f"已忽略: {task.title or task.url}")
+        _log("GUI", f"忽略死书: {task_id} ({task.url})")
+        self.refresh()
+
+    def _on_delete_dead(self, task_id: str):
+        """死书删除: 弹确认框 → 删除书记录(任务/书架/网站清单) 三处编排。"""
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return
+        死 = self._死书信息(task)
+        类型 = 死.get('类型') or '未知'
+        原因 = 死.get('原因') or ''
+        标题 = task.title or task.url
+        if self.page is None:
+            self._do_delete_dead(task_id)
+            return
+        # G-H1 教训 (v2.4.19): EXE 中 dialog 文字缺显式 color 会渲染成不可见。
+        # 这是删数据确认框, 文字不可见会放大误删风险 → 逐个显式指定。
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("删除这本书的记录", color=MORANDI_ON_SURFACE,
+                          font_family=FONT_STACK),
+            content=ft.Text(
+                f"书名: {标题}\n类型: {类型}\n\n"
+                f"将删除三处记录:\n"
+                f"  · 任务列表中的该行\n"
+                f"  · 书架中的该书\n"
+                f"  · 网站清单中的该网址\n\n"
+                f"已下载的文件不会被删除。\n"
+                f"判定原因: {原因}",
+                size=SIZE_SMALL, font_family=FONT_STACK,
+                color=MORANDI_ON_SURFACE),
+            actions=[
+                ft.TextButton("取消",
+                              on_click=lambda _: close_dialog(self.page, dialog)),
+                ft.TextButton("删除记录",
+                              on_click=lambda _: self._confirm_delete_dead(dialog, task_id)),
+            ],
+        )
+        open_dialog(self.page, dialog)
+
+    def _confirm_delete_dead(self, dialog, task_id: str):
+        try:
+            close_dialog(self.page, dialog)
+        except Exception as _e:
+            _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        self._do_delete_dead(task_id)
+
+    def _do_delete_dead(self, task_id: str):
+        """执行死书删除编排, 如实呈现部分成功 (删除书记录 不做回滚)。
+
+        产物文件恒不删 (delete_task 恒传 delete_file=False)。
+        """
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return
+        try:
+            import 死书处理
+            结果 = 死书处理.删除书记录(
+                task.url, 任务id=task_id, task_manager=self.task_manager)
+        except Exception as _e:
+            _dbg("任务表", f'死书删除编排异常: {type(_e).__name__}: {_e}')
+            self._notify(f"❌ 删除失败: {_e}")
+            return
+        try:
+            死书处理.设状态(死书处理._键(task.url), 死书处理.状态_已删除)
+        except Exception as _e2:
+            _dbg("任务表", f'死书状态置已删除失败: {type(_e2).__name__}: {_e2}')
+        失败 = [f"{k}: {v[1]}" for k, v in 结果.items()
+                if k != '全部成功' and isinstance(v, tuple) and not v[0]]
+        if 结果.get('全部成功'):
+            self._notify(f"✅ 已删除记录: {task.title or task.url}")
+        else:
+            # 部分成功必须如实说 —— 伪"已删除"会让用户以为干净了
+            self._notify(f"⚠️ 部分删除: {'; '.join(失败) or '未知'}")
+        _log("GUI", f"死书删除编排 {task_id}: {结果}")
+        self.refresh()
 
     def _on_export_epub(self, task_id: str):
         """导出 EPUB (2026-09-29 单本手动导出): 走 epub_exporter 同一转换链
@@ -486,7 +624,9 @@ class TaskTable:
 
     def _notify(self, msg: str):
         try:
-            open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
+            # 显式 color: EXE 中 SnackBar 文字缺色会渲染成不可见 (G-H1 教训)
+            open_dialog(self.page, ft.SnackBar(
+                ft.Text(msg, font_family=FONT_STACK, color=MORANDI_ON_SURFACE)))
         except Exception as _e:
             _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
