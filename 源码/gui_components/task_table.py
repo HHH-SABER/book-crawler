@@ -155,6 +155,9 @@ class TaskTable:
              t.metrics.quality_passed, t.metrics.incremental_skipped,
              t.output_file, bool(t.error),
              t.task_id == self._expanded_id,
+             # 死书标记(死书机制 阶段2): 状态与 status 同步变, 但阶段3 行内
+             # 按钮要按 dead 分流(重试/忽略/删记录), 缺这项则按钮不刷新
+             bool(getattr(t, "dead", None)),
              # M6 修复: 运行中任务的耗时按 5 秒桶纳入签名, 否则进度停滞时
              # 耗时列冻结、跳变
              (int((time.time() - t.metrics.start_time) // 5)
@@ -491,12 +494,13 @@ class TaskTable:
     def _on_clear_history(self, e=None):
         """清空历史: 批量删除终态任务记录 (不动输出文件), 弹确认框。
 
-        运行中/排队中的任务不会被清 (仅 completed/failed/stopped/interrupted)。
+        运行中/排队中的任务不会被清 (仅 completed/failed/stopped/interrupted/dead_pending)。
         文字显式 color 是 G-H1 教训 (EXE 中 dialog 无色文字不可见)。
         """
         try:
             终态 = [t.task_id for t in self.task_manager.get_all_tasks()
-                    if t.status in ("completed", "failed", "stopped", "interrupted")]
+                    if t.status in ("completed", "failed", "stopped", "interrupted",
+                                    "dead_pending")]
         except Exception as _e:
             _dbg("任务表", f'清空历史取任务列表失败: {type(_e).__name__}: {_e}')
             return

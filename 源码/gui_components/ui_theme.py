@@ -90,6 +90,9 @@ STATUS_STYLES = {
     'failed':    (ft.Colors.ON_ERROR_CONTAINER, ft.Colors.ERROR_CONTAINER),       # 红: 失败
     'pending':   (ft.Colors.ON_SURFACE_VARIANT, ft.Colors.SURFACE_CONTAINER),     # 灰: 等待中
     'stopped':   (ft.Colors.ON_SURFACE_VARIANT, ft.Colors.SURFACE_CONTAINER_HIGH),  # 灰: 已停止
+    # 死书待确认(终态, 需用户裁决删记录/忽略) —— 紫, 与"失败"红区分:
+    # 失败=可重试的技术故障, 死书=站点侧已无此书
+    'dead_pending': (ft.Colors.ON_TERTIARY_CONTAINER, ft.Colors.TERTIARY_CONTAINER),
 }
 
 STATUS_LABELS = {
@@ -99,6 +102,7 @@ STATUS_LABELS = {
     'pending': '等待中',
     'stopped': '已停止',
     'interrupted': '已中断',
+    'dead_pending': '书已删除',
 }
 
 
@@ -118,7 +122,8 @@ def status_chip(status: str) -> ft.Control:
 def status_color(status: str):
     """状态主色（进度环/圆点用）"""
     return {'running': ft.Colors.PRIMARY, 'completed': ft.Colors.SECONDARY,
-            'failed': ft.Colors.ERROR, 'interrupted': ft.Colors.TERTIARY}.get(
+            'failed': ft.Colors.ERROR, 'interrupted': ft.Colors.TERTIARY,
+            'dead_pending': ft.Colors.TERTIARY}.get(
                 status, ft.Colors.ON_SURFACE_VARIANT)
 
 

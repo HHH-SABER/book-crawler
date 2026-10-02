@@ -148,7 +148,7 @@ def main(page: ft.Page):
     from gui_components.ui_fluent import (
         make_morandi_theme, make_morandi_dark_theme,
         FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
-        MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING,
+        MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING, MORANDI_WARNING,
     )
     page.theme = make_morandi_theme()
     page.dark_theme = make_morandi_dark_theme()
@@ -356,11 +356,17 @@ def main(page: ft.Page):
                 running = sum(1 for t in tasks if t.status == "running")
                 failed = sum(1 for t in tasks if t.status == "failed")
                 done = sum(1 for t in tasks if t.status == "completed")
+                # 死书待确认(死书机制 阶段2): 独立分支 —— 它既非 running 也非
+                # failed, 不单独统计会走到 else 显示"就绪", 表里有待确认行而
+                # 状态栏说"就绪", 用户以为无事发生
+                dead = sum(1 for t in tasks if t.status == "dead_pending")
                 total = len(tasks)
                 if running > 0:
                     dot_color, label = MORANDI_RUNNING, f"抓取中 {running} 项 · 共 {total}"
                     if done:
                         label += f" · 已完成 {done}"
+                elif dead:
+                    dot_color, label = MORANDI_WARNING, f"书已删除 {dead} 项 · 待确认"
                 elif failed:
                     dot_color, label = MORANDI_ERROR, f"就绪 · 失败 {failed} 项"
                 elif done:
