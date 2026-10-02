@@ -149,6 +149,7 @@ def main(page: ft.Page):
         make_morandi_theme, make_morandi_dark_theme,
         FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING, MORANDI_WARNING,
+        MORANDI_ON_SURFACE,          # 死书弹窗文字 (EXE 缺色即不可见, G-H1 教训)
     )
     page.theme = make_morandi_theme()
     page.dark_theme = make_morandi_dark_theme()
@@ -179,6 +180,87 @@ def main(page: ft.Page):
 
     # ---- 全局任务管理器 ----
     task_manager = TaskManager(page)
+
+    # ---- 死书弹窗 (死书机制 阶段3) ----
+    # 分流契约: **由 死书处理.可询问删除类型 / 记录['可询问删除'] 决定, UI 不得自己判类型**。
+    #   True (书已删除) → modal AlertDialog 3 按钮 (删除记录/忽略此书/稍后处理)
+    #   False (站点不可达/目录无章节) → 仅 SnackBar 提示, 不询问删除
+    #   —— 判错类型会让用户误删仍可恢复的书 (误删代价远高于多问一句)。
+    def _提示死书(task_id: str):
+        """死书提示: 单一入口, modal/SnackBar 分流在此 (便于测试与追溯)。"""
+        t = task_manager.get_task(task_id)
+        if not t:
+            return
+        死 = getattr(t, 'dead', None)
+        if not isinstance(死, dict):     # Mock 防御: getattr 可能返回 Mock
+            return
+        类型 = 死.get('类型') or '未知'
+        原因 = 死.get('原因') or ''
+        标题 = t.title or t.url
+        可询问 = bool(死.get('可询问删除'))
+        # EXE 文字必须显式 color (v2.4.19 G-H1 教训): 缺色会渲染成不可见
+        正文 = f"《{标题}》\n类型: {类型}\n{原因}"
+        if not 可询问:
+            # 不询问删除的只提示: 站点可能不通/选择器可能失效, 删了可惜
+            page.show_dialog(ft.SnackBar(
+                ft.Text(f"抓取未成功 ({类型}): {标题}\n{原因}\n"
+                        f"→ 非书被删除, 已保留记录, 可稍后重试",
+                        color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
+                        size=SIZE_SMALL)))
+            app_log.info("死书", f"仅提示(不询问删除): {类型} {t.url}")
+            return
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("这本书可能已被删除", color=MORANDI_ON_SURFACE,
+                          font_family=FONT_STACK),
+            content=ft.Text(
+                f"{正文}\n\n"
+                f"是否删除这本书的记录?\n"
+                f"（任务/书架/网站清单三处, 已下载的文件不会删除）",
+                size=SIZE_SMALL, font_family=FONT_STACK,
+                color=MORANDI_ON_SURFACE),
+            actions=[
+                ft.TextButton("稍后处理",
+                              on_click=lambda _: _关死书弹窗(dialog)),
+                ft.TextButton("忽略此书",
+                              on_click=lambda _: _忽略死书(dialog, task_id)),
+                ft.TextButton("删除记录",
+                              on_click=lambda _: _删死书(dialog, task_id)),
+            ],
+        )
+        try:
+            page.show_dialog(dialog)
+        except Exception as e:
+            app_log.debug("死书", f"弹窗打开失败, 降级为提示: {type(e).__name__}: {e}")
+            page.show_dialog(ft.SnackBar(ft.Text(正文, color=MORANDI_ON_SURFACE,
+                                                font_family=FONT_STACK,
+                                                size=SIZE_SMALL)))
+        app_log.info("死书", f"询问删除: {类型} {t.url}")
+
+    def _关死书弹窗(dialog):
+        """稍后处理: 只关窗, 死书清单保持 待确认 (清单页仍可后续处理)。"""
+        try:
+            dialog.open = False
+            page.update()
+        except Exception as e:
+            app_log.debug("死书", f"关窗失败: {type(e).__name__}: {e}")
+
+    def _忽略死书(dialog, task_id: str):
+        _关死书弹窗(dialog)
+        task_table._on_ignore_dead(task_id)   # 复用行内按钮的单一实现
+
+    def _删死书(dialog, task_id: str):
+        _关死书弹窗(dialog)
+        task_table._on_delete_dead(task_id)   # 跳过二次确认 (已在本窗确认过)
+
+    def _排空死书队列():
+        """每 tick 至多弹一条, 避免批量失败时弹窗刷屏淹没界面。"""
+        try:
+            task_id = task_manager.取一条待弹死书()
+            if task_id:
+                page.run_task(_提示死书, task_id)   # 唯一跨线程调度入口
+        except Exception as e:
+            app_log.debug("死书", f"队列排空失败: {type(e).__name__}: {e}")
 
     # ---- 内嵌远控服务 (常驻): 与桌面客户端共用同一 TaskManager ----
     # 跨端同步: 手机端发起的任务实时出现在本窗口任务表 (同一对象, GUI 轮询
@@ -342,6 +424,9 @@ def main(page: ft.Page):
                     drawer.update_views()        # 仅更新面板内可见视图
                 if pages_map["remote"].visible:
                     remote_page.refresh()        # 远控页: 手机端记录实时呈现
+                # 死书待弹队列 (死书机制 阶段3): 不限页面可见性 —— 抓取可能在
+                # 任意页面运行, 队列排空与页面无关。每 tick 至多一条。
+                _排空死书队列()
             except Exception:
                 pass  # 刻意静默: 高频路径(_refresh_loop(), 逐行/每秒级), 补日志会刷屏
             await asyncio.sleep(1)
