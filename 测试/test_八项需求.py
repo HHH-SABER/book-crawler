@@ -245,6 +245,70 @@ class Test远控局域网直连(unittest.TestCase):
         for ip in 服务.局域网地址们():
             self.assertFalse(ip.startswith('127.'), f'回环地址混入: {ip}')
 
+    # ---- 2026-10-04 修 (#7 边界): 迁移一次性 + 地址可用性提示 ----
+
+    def test_已迁移标记后_用户有意设回环不再被改(self):
+        """迁移必须是一次性的: 否则用户日后有意只在本机开放会被每次启动改回 0.0.0.0
+
+        (旧实现只比值不看历史 → 静默扩大暴露面, 见 文档/审查报告汇总.md 2026-10-04)
+        """
+        cfg, _ = self._取配置({'绑定': '127.0.0.1', '_绑定迁移v2': True, 'token': 'x' * 32})
+        self.assertEqual(cfg['绑定'], '127.0.0.1', '已迁移过 → 应尊重用户当前选择')
+
+
+class Test远控地址提示(unittest.TestCase):
+    """#7 (2026-10-04): 地址"看着能用其实连不上"时必须给出原因"""
+
+    def test_回环绑定给出提示(self):
+        from 远控 import 服务
+        with mock.patch.object(服务, '取配置',
+                               lambda: {'绑定': '127.0.0.1', '端口': 8760}):
+            self.assertIn('仅本机可访问', 服务.地址提示())
+
+    def test_未探测到局域网地址给出提示(self):
+        from 远控 import 服务
+        with mock.patch.object(服务, '取配置', lambda: {'绑定': '0.0.0.0', '端口': 8760}), \
+                mock.patch.object(服务, '局域网地址们', lambda: []):
+            self.assertIn('未探测到局域网地址', 服务.地址提示())
+
+    def test_一切正常时不提示(self):
+        from 远控 import 服务
+        with mock.patch.object(服务, '取配置', lambda: {'绑定': '0.0.0.0', '端口': 8760}), \
+                mock.patch.object(服务, '局域网地址们', lambda: ['192.168.1.5']):
+            self.assertEqual(服务.地址提示(), '')
+
+    def test_远控页能真正显示提示(self):
+        """真构建控件树: 提示行接错/漏接都会让这条断言失败 (非字符串检查)"""
+        from gui_components.pages.remote_page import RemotePage
+
+        class _TM:
+            def get_all_tasks(self):
+                return []
+
+        p = RemotePage()
+        p.build()                      # 控件树在 build() 里创建, 不在 __init__
+        p.task_manager = _TM()
+        p.取信息 = lambda: {'运行': True, '地址': 'http://192.168.1.5:8760/',
+                          'token': 'x' * 32, '提示': '未探测到局域网地址: 测试'}
+        p.refresh()
+        self.assertEqual(p._hint.value, '未探测到局域网地址: 测试')
+        self.assertTrue(p._hint.visible)
+
+    def test_远控页无提示时隐藏该行(self):
+        from gui_components.pages.remote_page import RemotePage
+
+        class _TM:
+            def get_all_tasks(self):
+                return []
+
+        p = RemotePage()
+        p.build()
+        p.task_manager = _TM()
+        p.取信息 = lambda: {'运行': True, '地址': 'http://192.168.1.5:8760/',
+                          'token': 'x' * 32, '提示': ''}
+        p.refresh()
+        self.assertFalse(p._hint.visible)
+
 
 class Test静态契约(unittest.TestCase):
     """锁字符串防倒退: K37 async / 通知排空挂点 / 首次引导 / 滚动条 / 组装发布"""
@@ -283,10 +347,17 @@ class Test静态契约(unittest.TestCase):
             段 = 文本.split(anchor)[1][:800]
             self.assertIn('ft.ScrollMode.ALWAYS', 段, f'{rel} 的滚动条未改 ALWAYS')
 
-    def test_组装发布脚本隐私排除(self):
+    def test_组装发布脚本已改为默认清空私有适配(self):
+        """静态锁: 私有适配目录必须挂在显式开关后面 (行为验证见 test_组装发布隐私.py)
+
+        2026-10-04 改: 原用例只断言脚本文本里出现 '站点适配_本地' 等四个词 ——
+        那**反而把"复制私有适配"锁成了契约**(脚本跑不跑都通过, 且不校验产物)。
+        现改为锁定"必须由开关控制 + 必须有组装后自检", 真正的产物验证交给新行为测试。
+        """
         脚本 = (_ROOT / '脚本' / '组装发布.py').read_text(encoding='utf-8')
-        for 词 in ('抓取结果', '站点配置.json', 'captcha_config.json', '站点适配_本地'):
-            self.assertIn(词, 脚本, f'组装发布脚本缺 {词} 处置')
+        self.assertIn('--含本地适配器', 脚本, '私有适配必须由显式开关控制')
+        self.assertIn('_隐私自检', 脚本, '组装后必须有隐私自检兜底')
+        self.assertIn('_公开包禁入', 脚本, '公开包必须显式禁止私有适配目录')
 
     def test_发布目录已入gitignore(self):
         gi = (_ROOT / '.gitignore').read_text(encoding='utf-8')
