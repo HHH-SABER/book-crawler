@@ -78,8 +78,9 @@ class DetailDrawer:
             padding=8,
         )
 
-        # ---- 任务详情视图 (scroll+tight: 指标卡多时页面内滚, 不再被抽屉底裁掉) ----
-        self._detail_view = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO,
+        # ---- 任务详情视图 (scroll+tight: 指标卡多时页面内滚, 不再被抽屉底裁掉;
+        #       2026-10-03 改 ALWAYS 常显滚动条) ----
+        self._detail_view = ft.Column(spacing=8, scroll=ft.ScrollMode.ALWAYS,
                                       tight=True)
 
         # ---- 文件预览视图 ----

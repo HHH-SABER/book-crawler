@@ -113,7 +113,8 @@ class TaskTable:
         # 横滚主轴不约束宽度；ListView 必须取得有限横轴宽度才可布局。
         表宽 = sum(c[1] for c in _COLUMNS) + 6 * (len(_COLUMNS) - 1) + 16
         表格体 = ft.Column([header, self._list_view], spacing=4, width=表宽)
-        横滚 = ft.Row([表格体], spacing=0, scroll=ft.ScrollMode.AUTO,
+        # 2026-10-03 八项需求#6: 横滚改 ALWAYS 常显水平滚动条
+        横滚 = ft.Row([表格体], spacing=0, scroll=ft.ScrollMode.ALWAYS,
                       vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         return make_card(
             ft.Column([

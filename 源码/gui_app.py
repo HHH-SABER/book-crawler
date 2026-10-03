@@ -186,10 +186,17 @@ def main(page: ft.Page):
     # ---- 死书弹窗 (死书机制 阶段3) ----
     # 分流契约: **由 死书处理.可询问删除类型 / 记录['可询问删除'] 决定, UI 不得自己判类型**。
     #   True (书已删除) → modal AlertDialog 3 按钮 (删除记录/忽略此书/稍后处理)
-    #   False (站点不可达/目录无章节) → 仅 SnackBar 提示, 不询问删除
+    #   False (站点不可达/目录无章节) → 不再单独弹 SnackBar —— 八项需求 #2 起
+    #     任务终态通知 (书名+失败原因+音效) 已覆盖提示职责, 此处只记日志
+    #   记录['网站失效']=True (书籍与网站同时失效, 八项需求 #3) → "补址"窗:
+    #     告知书名 + 询问补充新网址 (用新网址重抓 / 删除记录 / 稍后处理)
     #   —— 判错类型会让用户误删仍可恢复的书 (误删代价远高于多问一句)。
-    def _提示死书(task_id: str):
-        """死书提示: 单一入口, modal/SnackBar 分流在此 (便于测试与追溯)。"""
+    async def _提示死书(task_id: str):
+        """死书提示: 单一入口, modal/补址/静默分流在此 (便于测试与追溯)。
+
+        2026-10-03 修复: 旧实现是同步 def —— flet 0.86 page.run_task 要求
+        协程函数, 调度瞬间抛 TypeError 被排空循环吞成 debug 日志, 死书弹窗
+        自上线起从未真正弹出过 (K37)。"""
         t = task_manager.get_task(task_id)
         if not t:
             return
@@ -200,17 +207,16 @@ def main(page: ft.Page):
         原因 = 死.get('原因') or ''
         标题 = t.title or t.url
         可询问 = bool(死.get('可询问删除'))
-        # EXE 文字必须显式 color (v2.4.19 G-H1 教训): 缺色会渲染成不可见
-        正文 = f"《{标题}》\n类型: {类型}\n{原因}"
+        if 死.get('网站失效'):
+            _弹双失效(task_id, 标题, 类型, 原因)
+            return
         if not 可询问:
-            # 不询问删除的只提示: 站点可能不通/选择器可能失效, 删了可惜
-            page.show_dialog(ft.SnackBar(
-                ft.Text(f"抓取未成功 ({类型}): {标题}\n{原因}\n"
-                        f"→ 非书被删除, 已保留记录, 可稍后重试",
-                        color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
-                        size=SIZE_SMALL)))
+            # 不询问删除: 站点可能不通/选择器可能失效, 删了可惜 —— 只记日志,
+            # 用户提示由终态通知 (SnackBar+音效) 承担, 不再重复弹
             app_log.info("死书", f"仅提示(不询问删除): {类型} {t.url}")
             return
+        # EXE 文字必须显式 color (v2.4.19 G-H1 教训): 缺色会渲染成不可见
+        正文 = f"《{标题}》\n类型: {类型}\n{原因}"
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("这本书可能已被删除", color=MORANDI_ON_SURFACE,
@@ -255,6 +261,60 @@ def main(page: ft.Page):
         _关死书弹窗(dialog)
         task_table._on_delete_dead(task_id)   # 跳过二次确认 (已在本窗确认过)
 
+    def _弹双失效(task_id: str, 标题: str, 类型: str, 原因: str):
+        """书籍与网站同时失效 (八项需求 #3): 告知书名 + 询问补充新网址。
+
+        用新网址重抓 → 旧死书记录清理 (任务/书架/清单三处, 已下载文件不删);
+        删除记录 → 同上但不重抓; 稍后处理 → 保留在死书清单, 不强迫当场抉择。"""
+        地址框 = ft.TextField(
+            hint="粘贴新的小说目录页网址 (http:// 或 https://)",
+            text_style=ft.TextStyle(size=SIZE_SMALL, font_family=FONT_STACK,
+                                    color=MORANDI_ON_SURFACE),
+            dense=True,
+        )
+
+        def _重抓(_e=None):
+            新址 = (地址框.value or '').strip()
+            if not 新址.lower().startswith(("http://", "https://")):
+                page.show_dialog(ft.SnackBar(ft.Text(
+                    "请先粘贴有效的新目录页网址 (以 http:// 或 https:// 开头)",
+                    color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
+                    size=SIZE_SMALL)))
+                return
+            try:
+                task_manager.create_task(url=新址, mode="full")
+                app_log.info("死书", f"双失效补址重抓: 《{标题}》 → {新址}")
+            except Exception as e:
+                app_log.info("死书",
+                             f"补址重抓任务创建失败: {type(e).__name__}: {e}")
+            _删死书(dialog, task_id)
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("网站与书籍都已失效", color=MORANDI_ON_SURFACE,
+                          font_family=FONT_STACK),
+            content=ft.Column([
+                ft.Text(f"《{标题}》\n类型: {类型}\n{原因}\n\n"
+                        f"该书的网站已无法访问。换一个网址可继续抓取同名书籍;\n"
+                        f"不补充则删除这本书的记录 (已下载的文件不会删除)。",
+                        size=SIZE_SMALL, font_family=FONT_STACK,
+                        color=MORANDI_ON_SURFACE),
+                地址框,
+            ], tight=True, spacing=10),
+            actions=[
+                ft.TextButton("稍后处理",
+                              on_click=lambda _: _关死书弹窗(dialog)),
+                ft.TextButton("删除记录",
+                              on_click=lambda _: _删死书(dialog, task_id)),
+                ft.TextButton("用新网址重抓", on_click=_重抓),
+            ],
+        )
+        try:
+            page.show_dialog(dialog)
+        except Exception as e:
+            app_log.debug("死书", f"双失效弹窗打开失败: {type(e).__name__}: {e}")
+        app_log.info("死书", f"双失效询问补址: {类型} task_id={task_id}")
+
     def _排空死书队列():
         """每 tick 至多弹一条, 避免批量失败时弹窗刷屏淹没界面。"""
         try:
@@ -264,6 +324,29 @@ def main(page: ft.Page):
         except Exception as e:
             app_log.debug("死书", f"队列排空失败: {type(e).__name__}: {e}")
 
+    def _排空通知():
+        """终态通知排空 (八项需求 #2): 每 tick 至多一条 SnackBar —— 书名+状态+
+        失败原因, 音效已在 _set_terminal (工作线程侧) 播放, 后台挂机可感知。"""
+        try:
+            n = task_manager.取一条待弹通知()
+            if not n:
+                return
+            if n.get('状态') == 'success':
+                行 = f"抓取完成: 《{n.get('书名', '')}》"
+                色 = MORANDI_SUCCESS
+            else:
+                行 = f"抓取失败: 《{n.get('书名', '')}》"
+                原因 = (n.get('原因') or '').strip()
+                if 原因:
+                    行 += f"\n{原因}"
+                色 = MORANDI_ERROR
+            # EXE 显式 color 契约 (G-H1): 终态字用主题色, 正文兜底 ON_SURFACE
+            page.show_dialog(ft.SnackBar(
+                ft.Text(行, color=色, font_family=FONT_STACK,
+                        size=SIZE_SMALL), duration=6000))
+        except Exception as e:
+            app_log.debug("通知", f"终态通知展示失败: {type(e).__name__}: {e}")
+
     # ---- 内嵌远控服务 (常驻): 与桌面客户端共用同一 TaskManager ----
     # 跨端同步: 手机端发起的任务实时出现在本窗口任务表 (同一对象, GUI 轮询
     # 即可见); 桌面方发的任务手机同样可见。客户端关闭则服务随之停止。
@@ -272,11 +355,10 @@ def main(page: ft.Page):
         _远控.注入任务管理器(task_manager)
         _t = _远控.后台启动()
         if _t is not None:
-            _cfg = _远控.取配置()
+            # 2026-10-03 #7: 展示地址经 展示地址() 解析 (0.0.0.0 → 首个局域网 IP)
             app_log.info("远控",
-                         f"内嵌远控已启动: http://{_cfg.get('绑定')}:"
-                         f"{_cfg.get('端口')}/ (手机访问需 Tailscale; "
-                         f"token 见 数据/远控配置.json)")
+                         f"内嵌远控已启动: {_远控.展示地址()} "
+                         f"(局域网直连; token 见 数据/远控配置.json)")
     except Exception as _e_远控:
         app_log.info("远控", f"内嵌远控启动失败 (不影响本机使用): "
                              f"{type(_e_远控).__name__}: {_e_远控}")
@@ -448,6 +530,8 @@ def main(page: ft.Page):
                 # 死书待弹队列 (死书机制 阶段3): 不限页面可见性 —— 抓取可能在
                 # 任意页面运行, 队列排空与页面无关。每 tick 至多一条。
                 _排空死书队列()
+                # 终态通知队列 (八项需求 #2): 成功/失败 SnackBar, 与音效配合
+                _排空通知()
             except Exception:
                 pass  # 刻意静默: 高频路径(_refresh_loop(), 逐行/每秒级), 补日志会刷屏
             await asyncio.sleep(1)
@@ -492,6 +576,115 @@ def main(page: ft.Page):
     page.run_task(_refresh_loop)
     page.run_task(_status_loop)
 
+    # ---- 首次启动引导 (八项需求 #5): 询问创建桌面快捷方式 ----
+    # flag 落 状态根/数据/首次启动.flag —— 问过一次就不再打扰;
+    # 用户无论选创建还是拒绝都写 flag (拒绝 ≠ 下次再问)。
+    def _写首次flag():
+        try:
+            import time as _tm
+            p = os.path.join(get_state_root(), "数据", "首次启动.flag")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(f"已询问创建桌面快捷方式: {_tm.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        except Exception as e:
+            app_log.debug("引导", f"首次启动 flag 写入失败: {type(e).__name__}: {e}")
+
+    def _建桌面快捷方式() -> None:
+        """PowerShell WScript.Shell 创建桌面快捷方式 (失败抛异常)。
+
+        实现注记: 桌面路径在 PS 侧取 ([Environment]::GetFolderPath 才拿得到
+        OneDrive 重定向后的真实桌面); 中文经 -EncodedCommand (UTF-16LE Base64)
+        传参, 规避 -Command 代码页转义坑; 只看退出码不捕获文本输出
+        (PS 中文 stdout 捕获不可靠, 2026-10-03 实测)。
+        """
+        import base64
+        import subprocess
+        if getattr(sys, "frozen", False):
+            target = os.path.abspath(sys.executable)
+        else:
+            target = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "启动GUI.bat")
+        workdir = os.path.dirname(target)
+        ps = (
+            "$ErrorActionPreference='Stop';"
+            "$desk=[Environment]::GetFolderPath('Desktop');"
+            "$ws=New-Object -ComObject WScript.Shell;"
+            "$lnk=$ws.CreateShortcut((Join-Path $desk '小说爬虫.lnk'));"
+            f"$lnk.TargetPath='{target.replace(chr(39), chr(39) * 2)}';"
+            f"$lnk.WorkingDirectory='{workdir.replace(chr(39), chr(39) * 2)}';"
+            f"$lnk.IconLocation='{target.replace(chr(39), chr(39) * 2)},0';"
+            "$lnk.Description='小说爬虫 - 网文离线阅读与远控';"
+            "$lnk.Save();exit 0"
+        )
+        enc = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
+            capture_output=True, timeout=20)
+        if r.returncode != 0:
+            raise RuntimeError(f"PowerShell 退出码 {r.returncode}")
+
+    async def _首次引导():
+        try:
+            import asyncio
+            flag = os.path.join(get_state_root(), "数据", "首次启动.flag")
+            if os.path.exists(flag):
+                return
+            await asyncio.sleep(1.5)   # 让位窗口居中/首帧渲染, 避免抢焦点
+            if os.path.exists(flag):   # 双检: sleep 期间可能已被远控端处理
+                return
+
+            def _关窗():
+                try:
+                    dlg.open = False
+                    page.update()
+                except Exception as e:
+                    app_log.debug("引导", f"引导窗关闭失败: {type(e).__name__}: {e}")
+
+            async def _创建(_e=None):
+                try:
+                    await asyncio.to_thread(_建桌面快捷方式)
+                    page.show_dialog(ft.SnackBar(ft.Text(
+                        "桌面快捷方式已创建", color=MORANDI_ON_SURFACE,
+                        font_family=FONT_STACK, size=SIZE_SMALL)))
+                    app_log.info("引导", "桌面快捷方式创建成功")
+                except Exception as e:
+                    app_log.info("引导",
+                                 f"快捷方式创建失败: {type(e).__name__}: {e}")
+                    page.show_dialog(ft.SnackBar(ft.Text(
+                        f"快捷方式创建失败: {type(e).__name__}",
+                        color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
+                        size=SIZE_SMALL)))
+                finally:
+                    _写首次flag()
+                    _关窗()
+
+            def _跳过(_e=None):
+                app_log.info("引导", "用户选择暂不创建快捷方式")
+                _写首次flag()
+                _关窗()
+
+            dlg = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("欢迎使用小说爬虫", color=MORANDI_ON_SURFACE,
+                              font_family=FONT_STACK),
+                content=ft.Text(
+                    "是否在桌面创建一个快捷方式, 方便下次打开?\n"
+                    "(也可以稍后从程序目录直接运行)",
+                    size=SIZE_SMALL, font_family=FONT_STACK,
+                    color=MORANDI_ON_SURFACE),
+                actions=[
+                    ft.TextButton("暂不创建", on_click=_跳过),
+                    ft.TextButton("创建快捷方式", on_click=_创建),
+                ],
+            )
+            page.show_dialog(dlg)
+            app_log.info("引导", "首次启动引导已弹出 (询问创建桌面快捷方式)")
+        except Exception as e:
+            app_log.debug("引导", f"首次引导异常 (不影响主流程): {type(e).__name__}: {e}")
+
+    page.run_task(_首次引导)
+
     # ---- 顶栏 (苹果风格: 标题 + 醒目主题切换按钮) ----
     _theme_toggle_btn[0] = build_theme_toggle(page, 'light', toggle_theme)
     # ---- 远控开关 (顶栏胶囊): 控制内嵌远控启用/禁用 ----
@@ -532,7 +725,8 @@ def main(page: ft.Page):
                 ok = _远控切.运行中()
                 _更新远控外观(ok)
                 _cfg = _远控切.取配置()
-                msg = (f"远控已启用: http://{_cfg.get('绑定')}:{_cfg.get('端口')}/"
+                # 2026-10-03 #7: 绑定 0.0.0.0 时展示可用局域网地址 (0.0.0.0 不是可访问 URL)
+                msg = (f"远控已启用: {_远控切.展示地址()}"
                        if ok else "远控启用失败 (端口 8760 可能被占用)")
                 app_log.info("远控", msg)
                 page.show_dialog(ft.SnackBar(ft.Text(msg)))
@@ -553,8 +747,9 @@ def main(page: ft.Page):
         try:
             import 远控.服务 as _s
             cfg = _s.取配置()
+            # 2026-10-03 #7: 展示地址经 展示地址() 解析 (0.0.0.0 → 首个局域网 IP)
             return {"运行": _s.运行中(),
-                    "地址": f"http://{cfg.get('绑定')}:{cfg.get('端口')}/",
+                    "地址": _s.展示地址(),
                     "token": cfg.get("token", "")}
         except Exception:
             return {"运行": False, "地址": "", "token": ""}

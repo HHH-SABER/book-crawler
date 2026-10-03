@@ -103,7 +103,8 @@ class DeadBookPage:
     def build(self):
         self._摘要 = txt("—", size=SIZE_SMALL, weight=WEIGHT_BODY,
                          color=MORANDI_ON_SURFACE_VARIANT, font_family=FONT_STACK)
-        self._列表 = ft.Column(spacing=6, tight=True, scroll=ft.ScrollMode.AUTO)
+        # scroll=ALWAYS: 常显滚动条 (2026-10-03 八项需求#6 统一可见滚动条)
+        self._列表 = ft.Column(spacing=6, tight=True, scroll=ft.ScrollMode.ALWAYS)
         self._空态 = ft.Column([
             ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=44,
                     color=MORANDI_SUCCESS),
