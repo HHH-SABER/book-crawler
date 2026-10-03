@@ -6,7 +6,9 @@
 <title>小说爬虫 · 界面设计预览</title>
 <style>
 /* ============================================================
-   设计系统 — Windows Fluent 风格 Design Tokens
+   设计系统 — 莫兰迪暖色系 Design Tokens
+   ⚠️ 2026-10-03 实机校对：软件早已从 Fluent 蓝改为暖色系，
+      本节色值已全部按真机截图重校，勿再回退到 Fluent 蓝。
    ============================================================ */
 :root {
   /* 字体 */
@@ -30,20 +32,25 @@
   --fw-regular: 400;
   --fw-light: 300;
 
-  /* 间距 */
+  /* 间距 —— 4px 栅格。--sp-7 供卡片内大块留白使用 */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
   --sp-4: 16px;
   --sp-5: 20px;
   --sp-6: 24px;
+  --sp-7: 28px;
   --sp-8: 32px;
+  --sp-10: 40px;
 
-  /* 圆角 — Windows 11 控件圆角偏小 */
-  --radius-sm: 3px;
-  --radius-md: 4px;
+  /* 圆角 —— 统一收敛到 3 档 + 胶囊。
+     ⚠️ 修正：旧稿 radius-sm 3px / md 4px / lg 8px / xl 8px 四档里
+        lg 与 xl 同值、md 与 sm 仅差 1px，组件各取各的 ⇒ 视觉噪声。
+        现改为：sm=控件(按钮/输入/胶囊内) / md=卡片内小方块 / lg=卡片 / pill=胶囊。 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
   --radius-lg: 8px;
-  --radius-xl: 8px;
+  --radius-xl: 12px;
   --radius-pill: 999px;
 
   /* 阴影 */
@@ -59,116 +66,264 @@
   --duration-slow: 400ms;
 }
 
-/* ===== 日间模式 (Light) — Windows 11 Fluent 色板 ===== */
+/* ============================================================
+   色彩架构（2026-10-03 审计重构）
+   ------------------------------------------------------------
+   旧稿最大问题是「品牌色 = 功能色 = 文字色」三者混用同一个变量：
+     --accent-blue 的值其实是橙色（命名与值自相矛盾）；
+     白字直接压 #D9781A 只有 3.16:1，日夜都不达 AA。
+   现拆成三层，各司其职：
+     1. 品牌层  --brand-*        纯色值，用于大色块/图形/进度，不承载文字
+     2. 可读层  --on-brand-*     「压在品牌色上的文字/图标」，保证 ≥4.5:1
+     3. 功能层  --status-*       状态语义，另拆 -fg（前景）/ -bg（底）
+   日间模式：品牌色块上用「近黑」字（而非白字），对比度 8:1+；
+             白字只允许出现在 ≥4.5:1 的深底上（如 --btn-primary-bg）。
+   ============================================================ */
+
+/* ===== 日间模式 (Light) — 莫兰迪暖色系（实机采样真值）===== */
 :root {
-  --bg-primary: #F3F3F3;
+  --bg-primary: #F5F5F5;
   --bg-secondary: #FFFFFF;
   --bg-tertiary: #F5F5F5;
   --bg-elevated: #FFFFFF;
+  /* 实机：侧栏 #F1F1F1，比页面底略深 */
   --bg-sidebar: #F1F1F1;
   --bg-sidebar-hover: #E7E7E7;
-  --bg-sidebar-active: #DEDEDE;
+  /* 实机：选中态是暖橙底 #FAF1E7，不是中性灰 */
+  --bg-sidebar-active: #FAF1E7;
+  /* 悬停层：表格行/卡片行 hover，比 bg-tertiary 再深一档 */
+  --bg-row-hover: #FAFAF9;
 
-  --text-primary: #1B1B1B;
-  --text-secondary: #5C5C5C;
-  --text-tertiary: #8A8A8A;
-  --text-quaternary: #A6A6A6;
+  /* 文字层级 —— 四档全部 ≥4.5:1（WCAG AA 正文）
+     旧稿 tertiary #8A8A8A=3.45:1、quaternary #A6A6A6=2.43:1 均不达标，
+     而它们被大量用于表头、任务 URL、meta 行等**实读文本**。 */
+  --text-primary: #1B1B1B;     /* 17.4:1  标题/正文   */
+  --text-secondary: #5C5C5C;   /*  7.0:1  次要正文   */
+  --text-tertiary: #6E6E6E;    /*  5.1:1  表头/辅助   ← 原 #8A8A8A 不达标 */
+  --text-quaternary: #767676;  /*  4.5:1  占位/极次要 ← 原 #A6A6A6 不达标 */
   --text-inverse: #FFFFFF;
+  /* 实机：侧栏选中字 #B85919，但压 #FAF1E7 仅 4.2:1 → 收到 #9C4A0C = 5.5:1 */
+  --text-sidebar-active: #9C4A0C;
 
   --border-subtle: rgba(0,0,0,0.08);
-  --border-medium: rgba(0,0,0,0.12);
-  --border-strong: rgba(0,0,0,0.18);
+  --border-medium: rgba(0,0,0,0.14);
+  --border-strong: rgba(0,0,0,0.22);
 
-  --accent-blue: #0067C0;
-  --accent-blue-hover: #00549B;
-  --accent-blue-light: #E7F1FA;
-  --accent-green: #0F7B0F;
-  --accent-green-light: #DFF6DD;
-  --accent-orange: #C19C00;
-  --accent-orange-light: #FFF4CE;
-  --accent-red: #C42B1C;
-  --accent-red-light: #FDE7E9;
-  --accent-purple: #5B2BD5;
-  --accent-purple-light: #EDEBF9;
-  --accent-teal: #038387;
-  --accent-teal-light: #E5F6F6;
+  /* ---- 品牌层：莫兰迪橙 #D9781A（实机真值，不动色相）---- */
+  --brand: #D9781A;
+  --brand-hover: #C16816;
+  --brand-subtle: #FAF1E7;     /* 选中/浅底 */
+  --brand-border: rgba(217,120,26,0.42);
 
-  --status-success: #0F7B0F;
-  --status-success-bg: #DFF6DD;
-  --status-warning: #9D5D00;
-  --status-warning-bg: #FFF4CE;
-  --status-error: #C42B1C;
-  --status-error-bg: #FDE7E9;
-  --status-running: #0067C0;
-  --status-running-bg: #E7F1FA;
-  --status-pending: #8A8A8A;
+  /* 品牌色作为「文字 / 图标前景」的可读版本。
+     纯品牌橙 #D9781A 压浅底只有 2.8~3.2:1，作为图形（进度环/选中条）可以，
+     一旦拿去写文字就不达标 —— 旧稿正是直接拿 --btn-primary-bg 当文字色用，
+     导致 metric-value / 抽屉标题图标 / 布局图例在夜间整片不达标。 */
+  --accent-fg: #A6510E;        /* 白底 5.5:1 / #F5F5F5 5.1:1 / 侧栏 4.9:1 */
+
+  /* ---- 可读层：压在品牌浅底上的文字 ---- */
+  --on-brand-subtle: #8A4310;  /* 6.5:1 on #FAF1E7 */
+  --on-brand: #FFFFFF;
+
+  /* ---- 主按钮 ----
+     旧稿白字压 #D9781A = 3.16:1，不达 AA。
+     现改为「深橙底 + 白字」= 5.06:1，色相仍是同一个橙。 */
+  --btn-primary-bg: #AD5710;       /* 白字 5.06:1  AA */
+  --btn-primary-bg-hover: #9C4A0C; /* 白字 6.18:1 */
+  --btn-primary-fg: #FFFFFF;
+  --btn-primary-ring: rgba(173,87,16,0.40);
+
+  /* ---- 次按钮：描边式，比实心轻，不与主按钮争视觉权重 ---- */
+  --btn-secondary-bg: #FFFFFF;
+  --btn-secondary-bg-hover: #F5F5F5;
+  --btn-secondary-fg: #3A3A3A;
+  --btn-secondary-border: rgba(0,0,0,0.16);
+
+  /* 实机：停止按钮是蓝紫 #5C5CD9，不是红色 */
+  --accent-stop: #5C5CD9;          /* 白字 5.27:1  AA */
+  --accent-stop-hover: #4F4FC4;    /* 白字 6.47:1 */
+  --accent-stop-light: #EDEDFB;
+  --accent-stop-fg: #FFFFFF;
+  --on-accent-stop-light: #3F3FB0; /* 7.1:1 on #EDEDFB */
+
+  --accent-red: #A03D33;            /* 6.5:1 on 白 */
+  --accent-red-light: #FBE9E7;
+  --on-accent-red-light: #8E3428;  /* 6.7:1 */
+
+  --accent-purple: #4F4FC4;
+  --accent-purple-light: #EDEDFB;
+  --on-accent-purple-light: #3F3FB0;
+
+  --accent-teal: #35696B;           /* 6.2:1 on 白 ← 原 #4A8C8F 仅 3.9:1 */
+  --accent-teal-light: #E4F1F1;
+  --on-accent-teal-light: #2E5C5E;
+
+  --accent-green: #237A47;          /* 5.3:1 on 白 */
+  --accent-green-light: #DFF6E5;
+  --on-accent-green-light: #1E6B3C; /* 5.7:1 */
+
+  /* ---- 状态语义：-fg 压 -bg，全部 ≥4.5:1 ----
+     旧稿 5 个状态色压在各自浅底上只有 2.8~4.2:1，全部不达标。 */
+  --status-success: #1E6B3C;
+  --status-success-bg: #DFF6E5;
+  --status-success-line: rgba(30,107,60,0.34);
+  --status-warning: #8A4310;
+  --status-warning-bg: #FAF1E7;
+  --status-warning-line: rgba(138,67,16,0.34);
+  --status-error: #8E3428;
+  --status-error-bg: #FBE9E7;
+  --status-error-line: rgba(142,52,40,0.34);
+  --status-running: #8A4310;
+  --status-running-bg: #FAF1E7;
+  --status-running-line: rgba(138,67,16,0.34);
+  --status-pending: #5E5E5E;
   --status-pending-bg: #F0F0F0;
+  --status-pending-line: rgba(94,94,94,0.30);
+  --status-info: #3F3FB0;
+  --status-info-bg: #EDEDFB;
+  --status-info-line: rgba(63,63,176,0.30);
 
-  --terminal-bg: #1F1F1F;
-  --terminal-text: #CCCCCC;
-  --terminal-dim: #767676;
-  --terminal-green: #16C60C;
-  --terminal-red: #C50F1F;
-  --terminal-yellow: #F9F1A5;
-  --terminal-blue: #3B78FF;
-  --terminal-cyan: #61D6D6;
-  --terminal-purple: #B4009E;
+  /* 焦点环（键盘可达统一色，日夜各自 ≥3:1） */
+  --focus-ring: #AD5710;
+  --focus-ring-offset: #FFFFFF;
+
+  /* 实机：远控按钮暖白底 #F9F4EE + 深橙字 */
+  --remote-bg: #F9F4EE;
+  --remote-text: #8A4310;          /* 6.5:1 on #F9F4EE */
+  --remote-border: rgba(138,67,16,0.28);
+
+  /* GitHub 入口（侧栏底 #F1F1F1 上实测对比度） */
+  --github-link: #8A4310;          /* 6.5:1  AA 正文 */
+  --github-link-hover: #74390B;    /* 8.1:1  hover 加深 */
+  --github-link-hover-bg: #FAF1E7; /* 与选中态同源，浅底微暖 */
+  --github-focus: #8A4310;         /* 焦点环 6.5:1 */
+  --github-hint: #5E5E5E;          /* 5.7:1  AA 正文 */
+
+  /* 实机：日志终端恒深底，日夜不变 */
+  --terminal-bg: #171717;
+  --terminal-text: #C8C8C8;
+  --terminal-dim: #9A9A9A;
+  --terminal-green: #5BD675;
+  --terminal-red: #F09A8C;
+  --terminal-yellow: #E8C57A;
+  --terminal-blue: #8FB8E0;
+  --terminal-cyan: #6FDCDC;
+  --terminal-purple: #D98CD4;
 }
 
-/* ===== 夜间模式 (Dark) — Windows 11 深色主题 ===== */
+/* ===== 夜间模式 (Dark) — 实机采样真值 ===== */
 html[data-theme="dark"] {
   --bg-primary: #202020;
   --bg-secondary: #2B2B2B;
   --bg-tertiary: #383838;
   --bg-elevated: #2B2B2B;
-  --bg-sidebar: #262626;
-  --bg-sidebar-hover: #383838;
-  --bg-sidebar-active: #4A4A4A;
+  /* ⚠️ 实机：夜间侧栏是纯黑 #171717，比卡片 #202020 更暗（旧稿相反） */
+  --bg-sidebar: #171717;
+  --bg-sidebar-hover: #2B2B2B;
+  /* 实机：选中态暖褐 #382614 */
+  --bg-sidebar-active: #382614;
+  --bg-row-hover: #303030;
 
-  --text-primary: #FFFFFF;
-  --text-secondary: #C8C8C8;
-  --text-tertiary: #9A9A9A;
-  --text-quaternary: #777777;
+  --text-primary: #FFFFFF;     /* 18.1:1 */
+  --text-secondary: #C8C8C8;   /*  9.7:1 */
+  /* ⚠️ 旧稿 #9A9A9A 在 --bg-tertiary(#383838) 上只有 4.17:1，
+     而 metric-label / 图标 / 表头等辅助文字恰恰都压在 tertiary 底上 ⇒ 夜间整屏不达标。
+     提到 #A6A6A6 后：在 #383838 上 4.82:1，在 #2B2B2B 上 5.82:1，两处均过 AA。 */
+  --text-tertiary: #A6A6A6;    /* 4.8~5.8:1  AA */
+  --text-quaternary: #9A9A9A;  /* 4.2:1 on #383838 —— 仅用于禁用态等非关键信息 */
   --text-inverse: #1B1B1B;
+  --text-sidebar-active: #E8A96A;  /* 7.1:1 on #382614 */
 
-  --border-subtle: rgba(255,255,255,0.08);
-  --border-medium: rgba(255,255,255,0.12);
-  --border-strong: rgba(255,255,255,0.18);
+  --border-subtle: rgba(255,255,255,0.09);
+  --border-medium: rgba(255,255,255,0.15);
+  --border-strong: rgba(255,255,255,0.24);
 
-  --accent-blue: #4CC2FF;
-  --accent-blue-hover: #60CDFF;
-  --accent-blue-light: #12253C;
-  --accent-green: #6CCB5F;
-  --accent-green-light: #14351B;
-  --accent-orange: #FCE100;
-  --accent-orange-light: #3A3200;
-  --accent-red: #FF99A4;
-  --accent-red-light: #431D20;
-  --accent-purple: #C4A8FF;
-  --accent-purple-light: #2B2340;
+  --brand: #E08A3C;
+  --brand-hover: #EAA261;
+  --brand-subtle: #382614;
+  --brand-border: rgba(224,138,60,0.46);
+  --accent-fg: #EAA261;        /* #2B2B2B 6.6:1 / #383838 5.5:1 / 侧栏 8.4:1 */
+
+  --on-brand-subtle: #E8A96A;  /* 7.1:1 on #382614 */
+  --on-brand: #1B1B1B;
+
+  /* 夜间主按钮：品牌色底 + 近黑字 = 6.5:1
+     （沿用「白字」的旧写法在夜间只有 2.7:1，必须反色） */
+  --btn-primary-bg: #E08A3C;
+  --btn-primary-bg-hover: #EAA261;
+  --btn-primary-fg: #1B1B1B;       /* 6.5:1 */
+  --btn-primary-ring: rgba(224,138,60,0.46);
+
+  --btn-secondary-bg: #2B2B2B;
+  --btn-secondary-bg-hover: #383838;
+  --btn-secondary-fg: #E4E4E4;
+  --btn-secondary-border: rgba(255,255,255,0.18);
+
+  --accent-stop: #7B7BE0;
+  --accent-stop-hover: #9494EC;
+  --accent-stop-light: #26264A;
+  --accent-stop-fg: #1B1B1B;
+  --on-accent-stop-light: #B8B8F5;
+
+  --accent-red: #E88A7A;
+  --accent-red-light: #432723;
+  --on-accent-red-light: #F0A99C;
+
+  --accent-purple: #A5A5F0;
+  --accent-purple-light: #2B2B4A;
+  --on-accent-purple-light: #C0C0F6;
+
   --accent-teal: #61D6D6;
   --accent-teal-light: #12303A;
+  --on-accent-teal-light: #8AE0E0;
 
-  --status-success: #6CCB5F;
-  --status-success-bg: #14351B;
-  --status-warning: #FCE100;
-  --status-warning-bg: #3A3200;
-  --status-error: #FF99A4;
-  --status-error-bg: #431D20;
-  --status-running: #4CC2FF;
-  --status-running-bg: #12253C;
-  --status-pending: #9A9A9A;
+  --accent-green: #6CCB5F;
+  --accent-green-light: #1B3D22;
+  --on-accent-green-light: #8ADB7D;
+
+  --status-success: #7FD472;
+  --status-success-bg: #1B3D22;
+  --status-success-line: rgba(127,212,114,0.36);
+  --status-warning: #E8A96A;
+  --status-warning-bg: #382614;
+  --status-warning-line: rgba(232,169,106,0.36);
+  --status-error: #F0A99C;
+  --status-error-bg: #432723;
+  --status-error-line: rgba(240,169,156,0.36);
+  --status-running: #E8A96A;
+  --status-running-bg: #382614;
+  --status-running-line: rgba(232,169,106,0.36);
+  --status-pending: #B0B0B0;       /* 5.4:1 on #383838 ← 原 #9A9A9A 仅 4.2:1 */
   --status-pending-bg: #383838;
+  --status-pending-line: rgba(176,176,176,0.32);
+  --status-info: #A5A5F0;
+  --status-info-bg: #2B2B4A;
+  --status-info-line: rgba(165,165,240,0.34);
 
-  --terminal-bg: #0C0C0C;
-  --terminal-text: #CCCCCC;
-  --terminal-dim: #767676;
-  --terminal-green: #16C60C;
-  --terminal-red: #C50F1F;
-  --terminal-yellow: #F9F1A5;
-  --terminal-blue: #3B78FF;
-  --terminal-cyan: #61D6D6;
-  --terminal-purple: #B4009E;
+  --focus-ring: #E8A96A;
+  --focus-ring-offset: #202020;
+
+  --remote-bg: #2B2419;
+  --remote-text: #E8A96A;
+  --remote-border: rgba(232,169,106,0.30);
+
+  /* GitHub 入口（夜间侧栏底 #171717 上实测对比度） */
+  --github-link: #E8964A;          /* 7.6:1  AAA */
+  --github-link-hover: #F2A85C;    /* 9.0:1  hover 提亮 */
+  --github-link-hover-bg: #382614; /* 与选中态同源 */
+  --github-focus: #F2A85C;         /* 焦点环 9.0:1 */
+  --github-hint: #A6A6A6;          /* 7.4:1  AA+ */
+
+  /* 实机：日志区恒深底 #171717，不随主题变化 */
+  --terminal-bg: #171717;
+  --terminal-text: #C8C8C8;
+  --terminal-dim: #9A9A9A;
+  --terminal-green: #5BD675;
+  --terminal-red: #F09A8C;
+  --terminal-yellow: #E8C57A;
+  --terminal-blue: #8FB8E0;
+  --terminal-cyan: #6FDCDC;
+  --terminal-purple: #D98CD4;
 }
 
 /* ============================================================
@@ -184,13 +339,21 @@ html, body {
   line-height: 1.5;
   transition: background-color var(--duration-base) var(--ease-out),
               color var(--duration-base) var(--ease-out);
+  /* 设计说明区（.docs-section）是 .page-wrapper 的兄弟节点，不受 wrapper
+     的 width 约束。若 body 不显式限宽，文档块会按内容固有宽度撑到 733px，
+     在 1024 及以下视口造成整页横向溢出。 */
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* ============================================================
    页面结构
    ============================================================ */
 .page-wrapper {
-  min-height: 100vh;
+  /* 应用区严格等于一屏：min-height 只是下限，内容仍可突破，
+     导致内部 overflow:auto 全部失效。改用 height + overflow:hidden。 */
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
@@ -221,7 +384,7 @@ html, body {
   width: 20px;
   height: 20px;
   border-radius: 4px;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  background: linear-gradient(135deg, var(--btn-primary-bg), var(--accent-purple));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -242,6 +405,43 @@ html, body {
   align-items: center;
   gap: var(--sp-3);
   align-self: stretch;
+}
+
+/* 远控开关胶囊 — 实机：暖白底 #F9F4EE + 深橙字 #8C5119 */
+.remote-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--remote-bg);
+  color: var(--remote-text);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.remote-toggle:hover {
+  filter: brightness(0.97);
+}
+.remote-toggle.on {
+  background: var(--btn-primary-bg);
+  color: #FFFFFF;
+  border-color: transparent;
+}
+.remote-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.75;
+}
+.remote-toggle.on .remote-toggle-dot {
+  background: #FFFFFF;
+  opacity: 1;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.25);
 }
 
 /* 主题切换按钮 — 醒目顶栏位置 */
@@ -310,6 +510,9 @@ html, body {
   flex: 1;
   display: flex;
   overflow: hidden;
+  /* 同 .main-content：flex 子项默认 min-height:auto，
+     不归零则整个内容区被内容撑出视口，内部滚动全部失效。 */
+  min-height: 0;
 }
 
 /* 侧边导航栏 */
@@ -358,8 +561,8 @@ html, body {
   color: var(--text-primary);
 }
 .nav-item.active {
-  background: var(--accent-blue-light);
-  color: var(--accent-blue);
+  background: var(--bg-sidebar-active);
+  color: var(--text-sidebar-active);
   font-weight: var(--fw-medium);
 }
 .nav-item-icon {
@@ -371,7 +574,7 @@ html, body {
   font-size: 16px;
 }
 .nav-item.active .nav-item-icon {
-  color: var(--accent-blue);
+  color: var(--text-sidebar-active);
 }
 
 .sidebar-footer {
@@ -418,6 +621,10 @@ html, body {
   padding: var(--sp-5);
   gap: var(--sp-5);
   overflow-y: auto;
+  /* 关键：flex 子项默认 min-height:auto，会让整条链被内容撑到视口之外，
+     内部滚动容器的 overflow:auto 形同虚设（内容被裁且滚不动）。
+     归零后高度才受视口约束，纵向滚动才真正生效。 */
+  min-height: 0;
 }
 
 /* ===== 页面头 ===== */
@@ -469,60 +676,141 @@ html, body {
   padding: var(--sp-4) var(--sp-5);
 }
 
-/* 按钮 */
+/* ============================================================
+   按钮体系（2026-10-03 审计重构）
+   ------------------------------------------------------------
+   旧稿问题：.btn / .btn-sm / .btn-icon / .icon-btn 四套尺寸各写各的
+     （高 34/28/32/32，圆角 6/3/4/6，内外边距全不一致），
+     同一页面并排时出现 2px 高差和 3 种圆角 —— 视觉噪声最大来源。
+   现规范：一律 4 档命名 + 单一尺寸来源
+     .btn          标准 34px   主/次/幽灵/危险
+     .btn-sm       紧凑 28px   工具栏、卡片头
+     .btn-lg       大号 40px   页面级主操作
+     .btn-icon     34×34 方形 纯图标
+   状态：hover / active / focus-visible / disabled 四态齐全。
+   旧稿只有 hover，键盘用户看不到焦点、禁用态只是变灰但仍可点。
+   ============================================================ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
+  gap: var(--sp-2);
+  height: 34px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-sm);
   font-size: var(--fs-body);
   font-weight: var(--fw-medium);
   font-family: var(--font-display);
+  line-height: 1;
   cursor: pointer;
-  border: none;
-  transition: all var(--duration-fast) var(--ease-out);
+  border: 1px solid transparent;
+  transition: background-color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
   white-space: nowrap;
+  user-select: none;
 }
+
+/* 主按钮 —— 深橙底 + 白字 = 5.06:1（AA） */
 .btn-primary {
-  background: var(--accent-blue);
-  color: white;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border-color: transparent;
 }
 .btn-primary:hover {
-  background: var(--accent-blue-hover);
+  background: var(--btn-primary-bg-hover);
+  border-color: transparent;
 }
+.btn-primary:active {
+  background: var(--btn-primary-bg-hover);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.18);
+}
+
+/* 次按钮 —— 描边式，视觉权重低于主按钮 */
 .btn-secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-medium);
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-fg);
+  border-color: var(--btn-secondary-border);
 }
 .btn-secondary:hover {
-  background: var(--bg-sidebar-hover);
+  background: var(--btn-secondary-bg-hover);
+  border-color: var(--border-strong);
 }
-.btn-danger {
-  background: var(--accent-red);
-  color: white;
+.btn-secondary:active {
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.12);
 }
-.btn-danger:hover {
-  background: #A11D12;
-}
+
+/* 幽灵按钮 —— 无底色，用于低优先操作 */
 .btn-ghost {
   background: transparent;
-  color: var(--accent-blue);
+  color: var(--btn-secondary-fg);
+  border-color: transparent;
 }
 .btn-ghost:hover {
-  background: var(--accent-blue-light);
+  background: var(--btn-secondary-bg-hover);
+  color: var(--text-primary);
 }
-.btn-icon {
-  padding: 8px;
-  width: 32px;
-  height: 32px;
+.btn-ghost:active {
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.12);
 }
+
+/* 停止按钮 —— ⚠️ 实机是蓝紫 #5C5CD9，不是红色 */
+.btn-danger {
+  background: var(--accent-stop);
+  color: var(--accent-stop-fg);
+  border-color: transparent;
+}
+.btn-danger:hover {
+  background: var(--accent-stop-hover);
+  border-color: transparent;
+}
+.btn-danger:active {
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.20);
+}
+
+/* 尺寸档 */
 .btn-sm {
-  padding: 5px 12px;
+  height: 28px;
+  padding: 0 var(--sp-3);
   font-size: var(--fs-small);
   border-radius: var(--radius-sm);
+}
+.btn-lg {
+  height: 40px;
+  padding: 0 var(--sp-5);
+  font-size: var(--fs-h3);
+}
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+/* 禁用态 —— 旧稿缺失，导致「灰按钮还能点」 */
+.btn:disabled,
+.btn.is-disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  background: var(--bg-tertiary);
+  color: var(--text-quaternary);
+  border-color: var(--border-subtle);
+  box-shadow: none;
+  pointer-events: none;
+}
+
+/* 焦点环 —— 键盘可达统一规格：2px 实心 + 2px 偏移，日夜各自 ≥3:1 */
+.btn:focus-visible,
+.chip-btn:focus-visible,
+.filter-chip:focus-visible,
+.switch:focus-visible,
+.view-toggle-btn:focus-visible,
+.icon-btn:focus-visible,
+.nav-item:focus-visible,
+.sidebar-github a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 /* 输入框 */
@@ -538,8 +826,8 @@ html, body {
   outline: none;
 }
 .input-field:focus {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px var(--accent-blue-light);
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 3px var(--brand-subtle);
 }
 .input-field::placeholder {
   color: var(--text-quaternary);
@@ -560,21 +848,103 @@ html, body {
   transition: all var(--duration-fast) var(--ease-out);
 }
 .select-field:focus {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px var(--accent-blue-light);
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 3px var(--brand-subtle);
   outline: none;
 }
 
-/* 标签 / 状态徽章 */
+/* ============================================================
+   工具类（2026-10-03 审计重构）
+   ------------------------------------------------------------
+   旧稿把「辅助文字颜色」「靠右对齐」「输入框宽度」这些
+   重复出现 ≥3 次的样式写成 31 处内联 style。
+   现全部提为类：改一处即全局生效，也便于开发照单实现。
+   ============================================================ */
+
+/* 工具栏右侧辅助说明（统计/计数/时间范围） */
+.toolbar-note {
+  margin-left: auto;
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.push-right { margin-left: auto; }
+
+/* 语义文字色 —— 与徽章同一套前景色，保证跨组件色值一致 */
+.text-note   { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.text-muted  { color: var(--text-tertiary); }
+.text-ok     { color: var(--status-success); }
+.text-warn   { color: var(--status-warning); }
+.text-err    { color: var(--status-error); }
+.text-err-strong { color: var(--status-error); font-weight: var(--fw-medium); }
+.text-dim    { color: var(--terminal-dim); }
+.text-strong-ellipsis {
+  font-size: var(--fs-small);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.block-note { margin-top: var(--sp-3); color: var(--text-secondary); }
+.block-note-caption { margin-top: var(--sp-3); font-size: var(--fs-caption); color: var(--text-tertiary); }
+
+/* 输入框宽度档 —— 对应实机 ft.TextField(width=...) */
+.field-xs { width: 70px;  flex: 0 0 70px; }
+.field-md { width: 150px; flex: 0 1 150px; min-width: 110px; }
+.field-lg { width: 200px; flex: 0 1 200px; min-width: 140px; }
+.field-xl { flex: 1 1 260px; min-width: 160px; }
+
+/* 布局骨架 */
+.flex-1 { flex: 1; min-width: 0; }
+.stack-sm { display: flex; flex-direction: column; gap: var(--sp-2); }
+.card-flex-fill { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.flex-scroll-y { flex: 1; min-height: 0; overflow-y: auto; }
+.mini-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+.is-hidden { display: none; }
+.ta-center { text-align: center; }
+.ta-right  { text-align: right; }
+.icon-inline { font-size: 16px; }
+
+/* 站点页：开关列居中 + 状态行语义色（替代原内联 style） */
+.site-switch-cell {
+  display: flex;
+  justify-content: center;
+}
+.site-status-line.alert-ok      { color: var(--status-success); }
+.site-status-line.alert-warning { color: var(--status-warning); }
+.site-status-line.alert-error   { color: var(--status-error); }
+.adapter-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.adapter-icon { font-size: 18px; }
+.adapter-status-icon { font-size: 16px; }
+
+/* ============================================================
+   徽章体系（2026-10-03 审计重构）
+   ------------------------------------------------------------
+   旧稿两套并存：.badge（padding 3/10、pill）与
+   .cap-tag（padding 2/8、pill），同屏出现时高度差 2px。
+   现统一为单一规格，两者仅换语义色，不再各写尺寸。
+   前景色全部用 --status-*（压在各自浅底上 ≥4.5:1）。
+   ============================================================ */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: var(--sp-1);
+  height: 20px;
+  padding: 0 var(--sp-2);
   border-radius: var(--radius-pill);
   font-size: var(--fs-micro);
   font-weight: var(--fw-medium);
-  line-height: 1.4;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .badge-success {
   background: var(--status-success-bg);
@@ -597,8 +967,8 @@ html, body {
   color: var(--status-pending);
 }
 .badge-info {
-  background: var(--accent-purple-light);
-  color: var(--accent-purple);
+  background: var(--status-info-bg);
+  color: var(--status-info);
 }
 
 /* 开关 — Windows 11 风格：开启态用主题色（蓝），非 iOS 绿色 */
@@ -625,7 +995,7 @@ html, body {
   transition: transform var(--duration-fast) var(--ease-out);
 }
 .switch.on {
-  background: var(--accent-blue);
+  background: var(--btn-primary-bg);
 }
 .switch.on::after {
   transform: translateX(20px);
@@ -653,13 +1023,6 @@ html, body {
   transition: stroke-dashoffset var(--duration-base) var(--ease-out);
 }
 
-/* 分割线 */
-.divider {
-  height: 1px;
-  background: var(--border-subtle);
-  margin: var(--sp-4) 0;
-}
-
 /* ============================================================
    抓取工作台
    ============================================================ */
@@ -675,9 +1038,15 @@ html, body {
   display: flex;
   gap: var(--sp-3);
   align-items: stretch;
+  /* 窄视口下 URL 输入框必须能收缩到 0，否则 flex 子项默认
+     min-width:auto 会被内容撑开，把右侧按钮顶出视口。
+     注意不可加 flex-wrap —— 实机这一行是单行不换行的（Flet Row 不换行），
+     加了 wrap 会让 select 掉到第二行，反而在 1024 触发新溢出。 */
+  min-width: 0;
 }
 .input-row-primary .url-input {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 .input-row-secondary {
   display: flex;
@@ -696,28 +1065,60 @@ html, body {
   color: var(--text-secondary);
 }
 
-.chip-btn {
+/* ============================================================
+   胶囊按钮（2026-10-03 审计重构）
+   ------------------------------------------------------------
+   旧稿 .chip-btn（26px 高、方角、圆边框）与 .filter-chip（23px 高、
+   实心选中态）两套规范并存，同为「可选中的小按钮」却长得不像。
+   现合并为一套：高度 28px、圆角 pill、描边式；
+   选中态用「品牌浅底 + 深橙字 + 品牌描边」，不用实心块
+   （实心块上白字对比度不达标，深色字又显得像禁用态）。
+   ============================================================ */
+.chip-btn,
+.filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
+  gap: var(--sp-1);
+  height: 28px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: var(--btn-secondary-bg);
   border: 1px solid var(--border-subtle);
   font-size: var(--fs-small);
+  font-weight: var(--fw-regular);
+  font-family: var(--font-display);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
 }
-.chip-btn:hover {
-  background: var(--bg-sidebar-hover);
+.chip-btn:hover,
+.filter-chip:hover {
+  background: var(--btn-secondary-bg-hover);
+  border-color: var(--border-medium);
   color: var(--text-primary);
 }
-.chip-btn.active {
-  background: var(--accent-blue-light);
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
+.chip-btn.active,
+.filter-chip.active {
+  background: var(--brand-subtle);
+  border-color: var(--brand-border);
+  color: var(--on-brand-subtle);
   font-weight: var(--fw-medium);
+}
+/* 语义色选中态：底/字都换，但对比度一律 ≥4.5:1 */
+.filter-chip.active.success { background: var(--status-success-bg); border-color: var(--status-success-line); color: var(--status-success); }
+.filter-chip.active.warning { background: var(--status-warning-bg); border-color: var(--status-warning-line); color: var(--status-warning); }
+.filter-chip.active.error   { background: var(--status-error-bg);   border-color: var(--status-error-line);   color: var(--status-error); }
+.filter-chip.active.info    { background: var(--status-info-bg);    border-color: var(--status-info-line);    color: var(--status-info); }
+.chip-btn:disabled,
+.filter-chip:disabled {
+  cursor: not-allowed;
+  color: var(--text-quaternary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-subtle);
+  pointer-events: none;
 }
 
 /* 工作台主区域：任务表格 + 日志条 + 抽屉 */
@@ -734,9 +1135,13 @@ html, body {
   flex-direction: column;
   gap: var(--sp-5);
   min-width: 0;
+  min-height: 0;      /* 纵向同理：让内部 .task-table-scroll 接管滚动 */
 }
 
 /* 任务表格 */
+/* 实机 task_table._COLUMNS：8 列全固定宽，合计 852px，无 expand 列
+   （横向滚动容器内 expand 会报错）。外层是 scroll=AUTO 的横滚 Row：
+   窄窗口时整表左右滚，操作列永不被裁。 */
 .task-table-container {
   flex: 1;
   display: flex;
@@ -744,12 +1149,29 @@ html, body {
   overflow: hidden;
 }
 
+/* 横滚容器：padding 4px，border-top 在容器上（对应实机 ft.Container） */
+.task-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+  padding: 4px;
+}
+
+/* 表格体固定总宽 = 852(列宽和) + 6×7(间距) + 16(行左右 padding) = 910px */
+.task-table-inner {
+  width: 910px;
+}
+
+/* 列宽严格对齐实机 _COLUMNS；gap 6 = 实机 ft.Row(spacing=6)；
+   左右 padding 8 = 实机行 ft.Padding.symmetric(horizontal=8) */
 .task-table-header {
   display: grid;
-  grid-template-columns: 32fr 12fr 8fr 8fr 9fr 7fr 8fr 16fr;
-  padding: var(--sp-3) var(--sp-4);
+  grid-template-columns: 200px 100px 72px 84px 84px 56px 56px 200px;
+  gap: 6px;
+  padding: 10px 8px;
   border-bottom: 1px solid var(--border-subtle);
-  gap: var(--sp-2);
 }
 .table-header-cell {
   font-size: var(--fs-micro);
@@ -759,16 +1181,15 @@ html, body {
 }
 
 .task-table-body {
-  flex: 1;
-  overflow-y: auto;
+  min-height: 0;
 }
 
 .task-row {
   display: grid;
-  grid-template-columns: 32fr 12fr 8fr 8fr 9fr 7fr 8fr 16fr;
-  padding: var(--sp-3) var(--sp-4);
+  grid-template-columns: 200px 100px 72px 84px 84px 56px 56px 200px;
+  gap: 6px;
+  padding: 10px 8px;
   border-bottom: 1px solid var(--border-subtle);
-  gap: var(--sp-2);
   align-items: center;
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-out);
@@ -777,7 +1198,7 @@ html, body {
   background: var(--bg-tertiary);
 }
 .task-row.selected {
-  background: var(--accent-blue-light);
+  background: var(--brand-subtle);
 }
 
 .task-cell-title {
@@ -828,27 +1249,57 @@ html, body {
   gap: 4px;
   justify-content: flex-end;
 }
+/* 实机 task_table 操作按钮：36×32，radius 6。
+   圆角改用 --radius-md(6px) 与实机一致；补 active 与 focus 态。 */
 .icon-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  display: flex;
+  width: 36px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-tertiary);
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
   font-size: 14px;
+  line-height: 1;
+  transition: background-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
 }
 .icon-btn:hover {
-  background: var(--bg-sidebar-hover);
+  background: var(--btn-secondary-bg-hover);
+  border-color: var(--border-medium);
   color: var(--text-primary);
+}
+.icon-btn:active {
+  background: var(--bg-sidebar-hover);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.14);
 }
 .icon-btn.danger:hover {
   background: var(--accent-red-light);
-  color: var(--accent-red);
+  border-color: var(--accent-red-light);
+  color: var(--on-accent-red-light);
+}
+/* 实机 disabled：置灰不可点（tooltip 说明原因）
+   用 aria-disabled 而非仅样式，便于读屏识别。
+   前景用 --text-tertiary（AA 4.8:1）而非 --text-quaternary：
+   禁用态虽不承载关键信息，但仍应可读，纯靠降透明度会让低视力用户完全看不到。 */
+.icon-btn.disabled,
+.icon-btn[aria-disabled="true"] {
+  opacity: 1;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-color: var(--border-subtle);
+}
+.icon-btn.disabled:hover,
+.icon-btn[aria-disabled="true"]:hover {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--text-tertiary);
 }
 
 /* 空状态 */
@@ -923,7 +1374,14 @@ html, body {
 .log-body.expanded {
   max-height: 400px;
 }
-.log-line { white-space: pre-wrap; word-break: break-all; }
+/* 日志行必须 display:block —— inline 元素溢出不会增加 scrollHeight，
+   会让滚动容器误判「没溢出」，滚动条永远不出现（对应实机
+   detail_drawer.py 文件预览视图无 expand 的同类问题）。 */
+.log-line {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .log-info { color: var(--terminal-text); }
 .log-success { color: var(--terminal-green); }
 .log-error { color: var(--terminal-red); }
@@ -957,7 +1415,7 @@ html, body {
   margin-bottom: var(--sp-3);
 }
 .drawer-section-title .icon {
-  color: var(--accent-blue);
+  color: var(--accent-fg);
 }
 
 /* 大进度环 */
@@ -1030,7 +1488,7 @@ html, body {
 .metric-value.success { color: var(--status-success); }
 .metric-value.warning { color: var(--status-warning); }
 .metric-value.error { color: var(--status-error); }
-.metric-value.info { color: var(--accent-blue); }
+.metric-value.info { color: var(--accent-fg); }
 
 /* ============================================================
    爬取历史页
@@ -1060,9 +1518,9 @@ html, body {
   margin-bottom: var(--sp-1);
   font-variant-numeric: tabular-nums;
 }
-.stat-value.blue { color: var(--accent-blue); }
+.stat-value.blue { color: var(--accent-fg); }
 .stat-value.green { color: var(--status-success); }
-.stat-value.orange { color: var(--accent-orange); }
+.stat-value.orange { color: var(--brand); }
 .stat-value.red { color: var(--status-error); }
 .stat-value.purple { color: var(--accent-purple); }
 .stat-label {
@@ -1077,35 +1535,13 @@ html, body {
   flex-wrap: wrap;
 }
 
+/* 筛选胶囊组容器 —— 规格已在通用胶囊区统一，此处只管排布 */
 .filter-chips {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
+  align-items: center;
 }
-.filter-chip {
-  padding: 5px 12px;
-  border-radius: var(--radius-md);
-  font-size: var(--fs-caption);
-  font-weight: var(--fw-medium);
-  color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-.filter-chip:hover {
-  color: var(--text-primary);
-  border-color: var(--border-medium);
-}
-.filter-chip.active {
-  color: var(--text-inverse);
-  border-color: transparent;
-}
-.filter-chip.active.all { background: var(--accent-blue); }
-.filter-chip.active.success { background: var(--status-success); }
-.filter-chip.active.warning { background: var(--status-warning); }
-.filter-chip.active.error { background: var(--status-error); }
-.filter-chip.active.info { background: var(--accent-purple); }
 
 .view-toggle {
   display: flex;
@@ -1162,6 +1598,9 @@ html, body {
 .history-cell.mono { font-family: var(--font-mono); font-size: var(--fs-micro); }
 .history-cell.url { color: var(--text-primary); }
 .history-cell.error { color: var(--status-error); }
+/* 旧稿 HTML 用了 .history-cell.warning 但样式表里没有这条规则
+   ⇒ 「503 / 429」这类非致命失败码被渲染成普通灰字，告警语义丢失。 */
+.history-cell.warning { color: var(--status-warning); font-weight: var(--fw-medium); }
 
 /* ============================================================
    站点管理页
@@ -1190,7 +1629,7 @@ html, body {
 }
 
 .adapter-section {
-  background: var(--accent-orange-light);
+  background: var(--brand-subtle);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: var(--sp-4) var(--sp-5);
@@ -1235,19 +1674,28 @@ html, body {
 }
 .adapter-caps {
   display: flex;
-  gap: 4px;
+  gap: var(--sp-1);
   margin-left: auto;
+  flex-shrink: 0;
 }
+/* 能力标签（适配器「目录 / 正文」）—— 与 .badge 同规格，仅换语义色。
+   旧稿这里是独立一套 padding 2/8 + fs-micro，与 .badge 并排时差 2px 高。 */
 .cap-tag {
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--sp-2);
   border-radius: var(--radius-pill);
   font-size: var(--fs-micro);
-  background: var(--accent-orange-light);
-  color: var(--accent-orange);
   font-weight: var(--fw-medium);
+  line-height: 1;
+  white-space: nowrap;
+  background: var(--brand-subtle);
+  color: var(--on-brand-subtle);
 }
 
-/* 站点表格行 */
+/* 站点表格行 —— 表头与数据行共用同一 grid 模板 + 同一 padding，
+   彻底消除旧稿「两处各写一遍内联 grid，padding 差 4px」的错位。 */
 .site-row {
   display: grid;
   grid-template-columns: 26fr 14fr 30fr 10fr 20fr;
@@ -1255,10 +1703,43 @@ html, body {
   border-bottom: 1px solid var(--border-subtle);
   gap: var(--sp-2);
   align-items: center;
-  transition: background var(--duration-fast) var(--ease-out);
+  transition: background-color var(--duration-fast) var(--ease-out);
 }
-.site-row:hover { background: var(--bg-tertiary); }
-.site-row.disabled { opacity: 0.5; }
+.site-row:hover { background: var(--bg-row-hover); }
+.site-row.disabled { opacity: 0.55; }
+
+/* 表头：与数据行同 padding，仅换字重字色 + 去掉 hover 底色 */
+.site-row-head {
+  background: transparent;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-medium);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.site-row-head:hover { background: transparent; }
+.site-th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.site-th.center { text-align: center; }
+.site-th.right  { text-align: right; }
+
+.site-table-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.site-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 .site-domain {
   font-size: var(--fs-small);
@@ -1306,6 +1787,9 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* flex 子项默认 min-height:auto，会被内容撑破视口高度 ⇒ 内容被 overflow:hidden 裁掉且无法滚动。
+     必须显式归零，才能让内部 .log-viewer 真正接管纵向滚动。 */
+  min-height: 0;
 }
 
 .log-toolbar {
@@ -1315,16 +1799,214 @@ html, body {
   padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-tertiary);
+  /* 旧稿 4 个控件固定宽合计 > 960 可用宽，实测溢出 21px 被裁。
+     默认即可换行，窄屏由断点规则再把控件改为弹性伸缩。 */
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+.log-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+/* 工具栏内控件统一走弹性伸缩，避免内联固定宽撑破容器 */
+.log-toolbar .select-field,
+.log-toolbar .input-field {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.log-toolbar-row2 {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.log-row-count {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
 }
 
 .log-viewer {
   flex: 1;
+  min-height: 0;          /* 同上：必须归零，否则自身被内容撑破，滚动条成摆设 */
   background: var(--terminal-bg);
   padding: var(--sp-4);
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   line-height: 1.8;
+}
+
+/* ============================================================
+   死书清单页 / 远控页（实机 v2.4.39）
+   ============================================================ */
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.summary-line {
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+  margin-top: calc(-1 * var(--sp-2));
+}
+
+.deadbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  /* 死书条目可无限增长 → 必须自己接管纵向滚动，
+     否则条目被视口下沿裁掉且无法滚动（对应实机 dead_book_page.py 的 scroll=AUTO）。 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 死书条目卡片 —— 旧稿只有 .deadbook-card-body 有样式，
+   外层 .card deadbook-card 没有自己的规则，条目间无视觉分隔。 */
+.deadbook-card {
+  border-left: 3px solid var(--status-error-line);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.deadbook-card:hover {
+  border-left-color: var(--status-error);
+  box-shadow: var(--shadow-md);
+}
+.deadbook-card-body {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+
+.deadbook-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.deadbook-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  margin-bottom: 5px;
+}
+
+.deadbook-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+}
+.deadbook-meta .mono { color: var(--text-secondary); }
+
+.dot-sep { opacity: 0.5; }
+
+.deadbook-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* 远控状态卡 */
+.remote-status-card {
+  padding: var(--sp-4) var(--sp-5);
+}
+
+.remote-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.remote-status-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.remote-status-title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.remote-status-desc {
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.status-dot.stopped {
+  background: var(--text-tertiary);
+  box-shadow: none;
+}
+
+.remote-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--sp-4) 0;
+}
+
+.remote-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.remote-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-field-label {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+  margin-bottom: 5px;
+}
+
+.remote-field-value {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-small);
+  color: var(--text-primary);
+}
+.remote-field-value .mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  color: var(--text-primary);
+}
+
+.remote-field-hint {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  margin-top: 5px;
+}
+
+.phone-records-card { flex: 1; display: flex; flex-direction: column; }
+.phone-records-card .card-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ============================================================
@@ -1344,6 +2026,10 @@ html, body {
 .docs-container {
   max-width: 1200px;
   margin: 0 auto;
+  /* 关键：容器必须能收缩，否则内部 grid 按内容固有宽度撑开，
+     文档块被钉死在 733px，窄视口整页横向溢出。 */
+  min-width: 0;
+  width: 100%;
 }
 .docs-title {
   font-size: var(--fs-h1);
@@ -1364,12 +2050,24 @@ html, body {
   gap: var(--sp-6);
   margin-bottom: var(--sp-8);
 }
+/* 文档区内部子网格 —— 旧稿三处各写一遍内联 grid-template-columns: 1fr 1fr，
+   没有断点，窄视口下每列被压到 ~340px 仍强行两列 ⇒ 内容溢出视口。
+   现提为类，≤960px 由断点统一降为单列。 */
+.docs-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+}
+.span-2 { grid-column: 1 / -1; }
 
 .docs-block {
   background: var(--bg-tertiary);
   border-radius: var(--radius-lg);
   padding: var(--sp-5);
   border: 1px solid var(--border-subtle);
+  /* grid/flex 子项默认 min-width:auto，不归零则被内部长表格/代码块撑开 */
+  min-width: 0;
 }
 .docs-block h3 {
   font-size: var(--fs-h2);
@@ -1380,7 +2078,7 @@ html, body {
   align-items: center;
   gap: var(--sp-2);
 }
-.docs-block h3 .icon { color: var(--accent-blue); font-size: 18px; }
+.docs-block h3 .icon { color: var(--accent-fg); font-size: 18px; }
 
 .docs-block h4 {
   font-size: var(--fs-h3);
@@ -1412,7 +2110,41 @@ html, body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-blue);
+  background: var(--btn-primary-bg);
+}
+
+/* ============================================================
+   行内代码 / 等宽片段
+   ------------------------------------------------------------
+   ⚠️ 修正：.mono 在 HTML 里被用了 200+ 次（说明区的令牌名、
+   文件行号、命令片段），但样式表里只有 3 条**作用域限定**规则
+   （.history-cell.mono / .deadbook-meta .mono / .remote-field-value .mono），
+   文档区的 .mono 完全没有落到任何规则上 ⇒
+     1. 代码片段与正文同字号同颜色，说明区「令牌名 / 路径 / 命令」
+        视觉上根本读不出来是代码；
+     2. 更要紧的是它没有换行控制，长片段（如 auto-fit minmax(260px,1fr)）
+        把表格撑宽，≤720px 出现横向溢出。
+   补一条全局基准规则；上面 3 条作用域规则仍在其后生效，可覆盖。
+   ============================================================ */
+.mono,
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;          /* 略小于正文，视觉上退居次要 */
+  color: var(--text-primary); /* 等宽片段比正文更重，才像「引用」 */
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  /* 长片段必须能断行，否则撑宽容器 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* 表格单元格内的代码片段不加底色块，避免表格显得脏 */
+.color-table .mono,
+.color-table code {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
 }
 
 /* 配色对比表 */
@@ -1474,7 +2206,7 @@ html, body {
 .layout-area.titlebar {
   grid-column: 1 / -1;
   background: var(--bg-tertiary);
-  color: var(--accent-blue);
+  color: var(--accent-fg);
 }
 .layout-area.sidebar {
   background: var(--bg-sidebar);
@@ -1485,21 +2217,344 @@ html, body {
 }
 
 /* ============================================================
-   滚动条样式
+   滚动条规范（全局统一，取代原先分散的 8px 版本）
+   ------------------------------------------------------------
+   1. 滚动条**仅在内容溢出时出现**，不占布局宽度
+      → 用 overflow: auto（非 hidden / 非 scroll）
+      → 覆写为 scrollbar-gutter: stable 时才预留轨道
+   2. 避免双滚动条 / 横向抖动
+      → 每个轴只允许一个滚动容器负责（见各页备注）
+      → 禁止父容器与子容器在同一轴上同时滚动
+   3. 样式沿用实机暖色系，轨道透明、细滑块
+   4. 键盘可达：滚动容器 tabindex="0" + 焦点环
+      （Chrome/Firefox：可聚焦滚动区自动响应方向键）
+   5. 滚轮 / 触摸板：原生行为，无需额外代码
+   6. 拖拽：::-webkit-scrollbar-thumb 默认可拖
    ============================================================ */
+
+/* 默认：细滑块 + 透明轨道 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border-medium);
-  border-radius: 4px;
+  border-radius: 5px;
+  /* 上下左右留 2px，让滑块看起来更细 */
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-quaternary);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-medium) transparent;
+}
+
+/* 键盘焦点：可聚焦滚动区统一焦点环。
+   只在「确实是滚动容器」时套用，避免误加到普通块上 */
+[tabindex="0"][data-scrollable] {
+  outline: 2px solid transparent;
+  outline-offset: -1px;
+  border-radius: var(--radius-sm, 4px);
+  transition: outline-color var(--duration-fast, 120ms) var(--ease-out, ease-out);
+}
+[tabindex="0"][data-scrollable]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+/* 滚动容器统一类：内容溢出才出滚动条，且不占布局宽度 */
+.scrollable {
+  overflow: auto;          /* 非 hidden / 非 scroll ⇒ 仅溢出时出现 */
+  scrollbar-gutter: stable;
+}
+
+/* 所有打了 data-scrollable 标记的元素一律预留轨道。
+   为什么必须预留：Chrome/Edge 的 classic 滚动条会占布局宽度，
+   若不预留，滚动条一出现就把内容整体挤窄 → 表格列错位 / 横向抖动。
+   预留后轨道宽度恒定，滚动条出现与消失不引起任何位移。 */
+[data-scrollable] {
+  scrollbar-gutter: stable;
+}
+/* 横向滚动容器（如任务表）：只在横向溢出时滚动，纵向不参与 */
+.scrollable-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+/* ============================================================
+   小屏 / 断点适配
+   ------------------------------------------------------------
+   实机约束：Flet 窗口 min_width=960、min_height=640
+             ⇒ 桌面端实际不会窄于 960，无需移动端布局
+   本设计稿保留两档断点，用于：
+     a) 校验 960 下限内滚动是否正常（不出双滚动条）
+     b) 溢出到 960 以下时给出可接受的退化，而非布局崩坏
+
+   核心原则：**任何断点下都不新增滚动容器**
+     —— 断点只调宽度/字号/间距，不碰 overflow
+     —— 避免出现「页面滚 + 内容区滚」的双滚动条与横向抖动
+   ============================================================ */
+
+/* 断点 A：≤1100px 收窄留白与输入区，避免过早触发横向溢出 */
+@media (max-width: 1100px) {
+  .main-content {
+    padding: var(--sp-4);
+    gap: var(--sp-4);
+  }
+  /* 侧栏导航项文字在窄屏下留足可点区域，不压缩图标 */
+  .github-link {
+    padding: 3px 4px;
+    margin: -3px -4px;
+  }
+}
+
+/* 断点 B：≤960px（实机下限）——滚动条仍常驻可拖，不遮挡内容 */
+@media (max-width: 960px) {
+  /* 滚动条略收窄，给内容让出 2px，避免表格最后一列被挤到视口外 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .task-table-scroll {
+    padding: 2px;              /* 横滚容器内边距收窄，净增 4px 可视宽 */
+  }
+  /* 底部状态栏固定在视口底部，不参与滚动 ⇒ 永不遮挡内容 */
+  .sidebar-footer {
+    flex-shrink: 0;
+  }
+  .log-body.expanded {
+    max-height: 260px;         /* 展开态在小屏限高，避免吃掉整屏 */
+  }
+  /* 详情抽屉 320px 在 960 视口下占掉 1/3，任务表只剩 ~470px。
+     实机抽屉是固定 320px 不可变，此处收窄到 280px 是**设计稿层的建议值**，
+     开发落地时若必须对齐实机，可保留 320 并接受任务表横滚。 */
+  .detail-drawer {
+    width: 280px;
+  }
+  /* 运行日志工具栏：旧稿 4 个控件固定宽合计 180+140+360+3 按钮 > 960-侧栏-内边距，
+     实测横向溢出 21px 且被 overflow:hidden 裁掉。
+     改为「可换行 + 搜索框弹性伸缩」，任何宽度都不再溢出。 */
+  .log-toolbar {
+    flex-wrap: wrap;
+    row-gap: var(--sp-2);
+  }
+  .log-toolbar .select-field,
+  .log-toolbar .input-field {
+    flex: 1 1 140px;
+    min-width: 120px;
+    width: auto !important;   /* 覆盖内联 width，避免固定宽撑破 */
+  }
+  .log-toolbar .input-field[type="text"] {
+    flex: 2 1 220px;
+  }
+  /* 右侧按钮组不再靠 margin-left:auto 推到最右（换行后会错位），
+     改为跟随流排列并在末尾靠右 */
+  .log-toolbar .log-toolbar-actions {
+    margin-left: auto;
+  }
+  /* 统计卡 5 列在 960 下每列不足 130px，数字换行 → 降为 3 列 */
+  .stats-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  /* 文档区两列在窄屏下每列过窄 */
+  .docs-grid {
+    grid-template-columns: 1fr;
+    gap: var(--sp-5);
+  }
+  .docs-section {
+    padding: var(--sp-6) var(--sp-4);
+  }
+  /* 布局层级图在窄屏改为纵向堆叠，避免侧栏块被压成 1 字宽 */
+  .layout-diagram {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48px 56px 1fr;
+    height: auto;
+  }
+}
+
+/* 断点 C：≤720px（低于实机下限，仅保证不崩坏）
+   退化策略：侧栏收为图标条 + 主内容单列 + 抽屉移到主列下方。
+   仍然只有一个纵向滚动容器（.main-content），不加新的。 */
+@media (max-width: 720px) {
+  .sidebar {
+    width: 56px;
+    padding: var(--sp-3) 0;
+  }
+  /* 图标条模式：隐藏文字与 Star 提示行。
+     ⚠️ 旧稿这里写 .sidebar .nav-label 但 HTML 里导航文字没有这个类，
+     规则完全空转 ⇒ 文字继续显示并各溢出 32px。现已给文字补上该类。 */
+  .sidebar .nav-label,
+  .sidebar-section-title,
+  .github-link span,
+  .github-hint {
+    display: none;
+  }
+  /* 图标条模式下导航项改为居中，命中区保持 40px 见方 */
+  .nav-item {
+    justify-content: center;
+    padding: var(--sp-2) 0;
+    margin: 0 var(--sp-1);
+  }
+  .github-link {
+    justify-content: center;   /* 图标居中，仍可点、仍有焦点环 */
+    padding: var(--sp-2);
+    margin: calc(-1 * var(--sp-2));
+  }
+  .sidebar-github {
+    padding: var(--sp-2) 6px;
+  }
+  .main-content {
+    padding: var(--sp-3);
+    gap: var(--sp-3);
+  }
+  /* 工作台主区域由「表格 + 抽屉」横排改为纵排，
+     抽屉宽度不再挤占任务表（实机不可改，此为设计稿退化建议） */
+  .workbench-area {
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .detail-drawer {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .detail-drawer > * {
+    flex: 1 1 200px;
+  }
+  /* 统计卡降到 2 列 */
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--sp-2);
+  }
+  /* 卡片内边距收紧 */
+  .card-header,
+  .card-body {
+    padding: var(--sp-3);
+  }
+  .page-title-block h1 {
+    font-size: var(--fs-h1);
+  }
+}
+
+/* 断点 D：≤480px（极端退化，仅保证内容可读不被裁） */
+@media (max-width: 480px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    width: 48px;
+  }
+  .main-content {
+    padding: var(--sp-2);
+  }
+  .detail-drawer {
+    flex-direction: column;
+  }
+  .docs-section {
+    padding: var(--sp-5) var(--sp-3);
+  }
+}
+
+/* 触屏：滚动容器加大命中区，避免误触；不改变滚动语义 */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--text-quaternary);
+    background-clip: content-box;
+  }
+}
+
+/* ============================================================
+   GitHub 入口（侧栏底部）
+   ------------------------------------------------------------
+   落点依据：实机**没有**「关于」面板，也**没有**「设置」面板
+   ⇒ 放在侧栏导航列表之下、弹性留白之上
+     （对应 icon_rail.py:299 的 ft.Container(expand=True) 留白）
+
+   对比度（WCAG，浅色底 = 侧栏 #F1F1F1）：
+     主行 #A85510 = 4.68:1  ✅ AA 正文达标
+       （主橙 #D9781A 在浅色底仅 2.80:1，不达 AA，故不用）
+     副行 #6E6E6E = 4.51:1  ✅ AA 正文达标
+       （现用 --text-tertiary #8A8A8A 仅 3.06:1，偏浅）
+   夜间（底 = 侧栏 #171717）：
+     主行 #E8964A = 7.59:1  ✅ AAA
+     副行 #9A9A9A = 6.37:1  ✅ AA+
+   ============================================================ */
+.sidebar-github {
+  margin-top: auto;      /* 推到侧栏底部（导航列表之后的弹性留白） */
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 主行：超链接。inline-flex 保证图标与文字同一基线 */
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-small, 13px);
+  font-weight: var(--fw-medium, 500);
+  line-height: 1.4;
+  color: var(--github-link);
+  text-decoration: none;
+  border-radius: var(--radius-sm, 4px);
+  padding: 3px 6px;
+  margin: -3px -6px;     /* 视觉内缩，不改变占位宽度 */
+  cursor: pointer;
+  /* 键盘可达：Tab 序与导航项同级，焦点环清晰可见 */
+  transition: background-color var(--duration-fast, 120ms) var(--ease-out, ease-out),
+              color var(--duration-fast, 120ms) var(--ease-out, ease-out);
+}
+.github-link:hover {
+  color: var(--github-link-hover);
+  background: var(--github-link-hover-bg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* 鼠标悬停与键盘聚焦视觉一致 —— 焦点环用双层描边，浅深底都清晰 */
+.github-link:focus-visible {
+  outline: 2px solid var(--github-focus);
+  outline-offset: 1px;
+  color: var(--github-link-hover);
+  background: var(--github-link-hover-bg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.github-link:active {
+  color: var(--github-link-hover);
+  background: var(--brand-subtle);
+}
+.github-icon {
+  flex-shrink: 0;
+  display: block;
+}
+
+/* 副行：纯说明文字，单独成行。
+   pointer-events:none + user-select 允许 —— 彻底不继承主行可点击性 */
+.github-hint {
+  margin: 2px 0 0;
+  padding-left: 2px;
+  font-size: var(--fs-micro, 11px);
+  line-height: 1.5;
+  color: var(--github-hint);
+  pointer-events: none;        /* 点击穿透到下层，不抢主行的点击区 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* ============================================================
@@ -1517,34 +2572,43 @@ html, body {
   color: var(--text-secondary);
   z-index: 1000;
   box-shadow: var(--shadow-lg);
-}
-
-/* 页面导航指示器 */
-.page-nav-dots {
-  position: fixed;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 50;
+  align-items: center;
+  gap: var(--sp-2);
+  transition: opacity var(--duration-base) var(--ease-out),
+              transform var(--duration-base) var(--ease-out);
 }
-.page-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-strong);
+/* 提示条是「预览指引」不是界面本身：
+   1. 滚到设计说明区时自动淡出，避免长期遮挡配色表 / 规范表；
+   2. 任何时候都不拦截点击（pointer-events:none），
+      否则它会盖住右下角控件，交付稿里这是个实打实的可用性缺陷。 */
+.demo-badge.is-hidden {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+.demo-badge-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--fs-caption);
+  line-height: 1;
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
 }
-.page-dot:hover {
-  background: var(--text-tertiary);
-  transform: scale(1.2);
+.demo-badge-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
-.page-dot.active {
-  background: var(--accent-blue);
-  transform: scale(1.3);
+.demo-badge-close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 </style>
 </head>
@@ -1559,6 +2623,10 @@ html, body {
       <span class="app-title">小说爬虫</span>
     </div>
     <div class="titlebar-right">
+      <div class="remote-toggle" id="remoteToggle" title="开启/关闭远程控制（手机端发任务）">
+        <span class="remote-toggle-dot"></span>
+        <span id="remoteToggleLabel">远控 关</span>
+      </div>
       <div class="theme-toggle" id="themeToggle" title="切换日间/夜间模式">
         <span class="theme-toggle-icon" id="themeIcon">🌙</span>
         <span class="theme-toggle-label" id="themeLabel">夜间</span>
@@ -1590,22 +2658,57 @@ html, body {
     <nav class="sidebar">
       <div class="sidebar-section">
         <div class="sidebar-section-title">主功能</div>
-        <div class="nav-item active" data-page="crawl">
-          <span class="nav-item-icon">⬇️</span>
-          <span>抓取工作台</span>
+        <div class="nav-item active" data-page="crawl" role="tab" tabindex="0" aria-selected="true">
+          <span class="nav-item-icon" aria-hidden="true">⬇️</span>
+          <span class="nav-label">抓取工作台</span>
         </div>
-        <div class="nav-item" data-page="history">
-          <span class="nav-item-icon">📊</span>
-          <span>爬取历史</span>
+        <div class="nav-item" data-page="history" role="tab" tabindex="0" aria-selected="false">
+          <span class="nav-item-icon" aria-hidden="true">📊</span>
+          <span class="nav-label">爬取历史</span>
         </div>
-        <div class="nav-item" data-page="sites">
-          <span class="nav-item-icon">🌐</span>
-          <span>站点管理</span>
+        <div class="nav-item" data-page="deadbook" role="tab" tabindex="0" aria-selected="false">
+          <span class="nav-item-icon" aria-hidden="true">📦</span>
+          <span class="nav-label">死书清单</span>
         </div>
-        <div class="nav-item" data-page="log">
-          <span class="nav-item-icon">📝</span>
-          <span>运行日志</span>
+        <div class="nav-item" data-page="sites" role="tab" tabindex="0" aria-selected="false">
+          <span class="nav-item-icon" aria-hidden="true">🌐</span>
+          <span class="nav-label">站点管理</span>
         </div>
+        <div class="nav-item" data-page="log" role="tab" tabindex="0" aria-selected="false">
+          <span class="nav-item-icon" aria-hidden="true">📝</span>
+          <span class="nav-label">运行日志</span>
+        </div>
+        <div class="nav-item" data-page="remote" role="tab" tabindex="0" aria-selected="false">
+          <span class="nav-item-icon" aria-hidden="true">📡</span>
+          <span class="nav-label">远控</span>
+        </div>
+      </div>
+
+      <!-- ========== GitHub 入口 ==========
+           实机现状：软件没有「关于」面板，也没有「设置」面板
+           ⇒ 落点取侧栏导航列表下方、弹性留白之上
+           （对应 icon_rail.py:299 的 ft.Container(expand=True) 留白区）
+           参照先例：远控页「教程」链接点击后 webbrowser.open()
+           （remote_page.py:141-143），本行行为一致 -->
+      <div class="sidebar-github">
+        <a class="github-link"
+           href="https://github.com/HHH-SABER/book-crawler"
+           target="_blank"
+           rel="noopener noreferrer"
+           title="在默认浏览器中打开项目仓库页面，可下载最新版本">
+          <svg class="github-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+                     0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01
+                     1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95
+                     0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 4 0
+                     c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15
+                     0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2
+                     0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                  fill="currentColor"/>
+          </svg>
+          <span>访问 GitHub</span>
+        </a>
+        <p class="github-hint">如果觉得软件好用请不要吝啬你的 Star</p>
       </div>
 
       <div class="sidebar-footer">
@@ -1617,7 +2720,7 @@ html, body {
     </nav>
 
     <!-- 主内容 -->
-    <main class="main-content">
+    <main class="main-content" tabindex="0" data-scrollable role="region" aria-label="页面内容，可滚动">
 
       <!-- ========== 页面1: 抓取工作台 ========== -->
       <section class="page-view active" id="page-crawl">
@@ -1634,8 +2737,8 @@ html, body {
             <!-- 第一行：主操作 -->
             <div class="input-row-primary">
               <input type="text" class="input-field url-input"
-                     placeholder="粘贴小说目录页URL，例如 https://m.tanmixs.com/YzN6/ml.html">
-              <select class="select-field" style="width: 140px;">
+                     placeholder="粘贴小说目录页URL，例如 https://siteA.example.com/novel/1001.html">
+              <select class="select-field field-md">
                 <option>完整抓取</option>
                 <option>仅看目录</option>
                 <option>测试首章</option>
@@ -1648,7 +2751,7 @@ html, body {
                 <span>■</span> 停止
               </button>
             </div>
-            <!-- 第二行：次操作 -->
+            <!-- 第二行：次操作（实机顺序：导入/粘贴/起止章/断点续传/导出EPUB/输出目录/文件夹，wrap 自适应） -->
             <div class="input-row-secondary">
               <button class="chip-btn">
                 <span>📁</span> 导入网址
@@ -1656,16 +2759,20 @@ html, body {
               <button class="chip-btn">
                 <span>📋</span> 粘贴网址
               </button>
-              <div class="input-group" style="display: none;">
-                <input class="input-field" style="width: 70px;" placeholder="起始章">
-                <input class="input-field" style="width: 70px;" placeholder="结束章">
+              <div class="input-group" class="is-hidden">
+                <input class="input-field field-xs" placeholder="起始章">
+                <input class="input-field field-xs" placeholder="结束章">
               </div>
               <div class="input-group">
                 <div class="switch on"></div>
                 <label>断点续传</label>
               </div>
-              <div class="input-group" style="margin-left: auto;">
-                <input class="input-field" style="width: 160px;" value="抓取结果">
+              <div class="input-group">
+                <div class="switch"></div>
+                <label title="抓取完成后同时生成 .epub 电子书 (可选)">导出EPUB</label>
+              </div>
+              <div class="input-group" class="push-right">
+                <input class="input-field field-lg" value="抓取结果">
                 <button class="btn btn-secondary btn-sm">
                   <span>📂</span> 文件夹
                 </button>
@@ -1675,30 +2782,32 @@ html, body {
         </div>
 
         <!-- 工作台主区域 -->
-        <div class="workbench-area" style="flex: 1; min-height: 400px;">
+        <div class="workbench-area" class="workbench-area">
           <div class="workbench-main">
             <!-- 任务表格卡片 -->
             <div class="card task-table-container">
               <div class="card-header">
                 <span class="card-title">任务列表</span>
-                <span style="font-size: var(--fs-caption); color: var(--text-tertiary);">共 3 个任务</span>
+                <span class="toolbar-note">共 3 个任务</span>
               </div>
+              <div class="task-table-scroll" tabindex="0" data-scrollable role="region" aria-label="任务表格，可横向与纵向滚动">
+               <div class="task-table-inner">
               <div class="task-table-header">
                 <div class="table-header-cell">任务 / URL</div>
                 <div class="table-header-cell">进度</div>
-                <div class="table-header-cell" style="text-align: center;">状态</div>
+                <div class="table-header-cell" class="ta-center">状态</div>
                 <div class="table-header-cell">引擎</div>
                 <div class="table-header-cell">反爬</div>
                 <div class="table-header-cell">耗时</div>
                 <div class="table-header-cell">质检</div>
-                <div class="table-header-cell" style="text-align: right;">操作</div>
+                <div class="table-header-cell" class="ta-right">操作</div>
               </div>
               <div class="task-table-body">
                 <!-- 任务1：进行中 -->
                 <div class="task-row selected">
                   <div class="task-cell-title">
-                    <span class="task-title">凡人修仙传 · 灵界篇</span>
-                    <span class="task-url">https://m.tanmixs.com/YzN6/ml.html</span>
+                    <span class="task-title">示例长篇 A</span>
+                    <span class="task-url">https://siteA.example.com/novel/1001.html</span>
                   </div>
                   <div class="task-cell-progress">
                     <div class="progress-ring">
@@ -1715,19 +2824,20 @@ html, body {
                     <span class="badge badge-running">抓取中</span>
                   </div>
                   <div class="task-cell">
-                    <span style="color: var(--status-success);">curl_cffi</span>
+                    <span class="text-ok">curl_cffi</span>
                   </div>
                   <div class="task-cell">
-                    <span style="color: var(--status-warning);">rate_limit</span>
+                    <span class="text-warn">rate_limit</span>
                   </div>
                   <div class="task-cell">08:42</div>
                   <div class="task-cell">
-                    <span style="color: var(--status-success); font-weight: 500;">87分</span>
+                    <span class="text-ok">87分</span>
                   </div>
                   <div class="task-actions">
-                    <button class="icon-btn" title="展开详情">⌄</button>
-                    <button class="icon-btn" title="预览文件">📄</button>
-                    <button class="icon-btn" title="重新下载">↻</button>
+                    <button class="icon-btn" title="展开/收起详情">⌄</button>
+                    <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                    <button class="icon-btn disabled" title="请等待抓取完成">📖</button>
+                    <button class="icon-btn" title="重新下载（从头重新抓取）">↻</button>
                     <button class="icon-btn danger" title="删除">🗑</button>
                   </div>
                 </div>
@@ -1735,8 +2845,8 @@ html, body {
                 <!-- 任务2：已完成 -->
                 <div class="task-row">
                   <div class="task-cell-title">
-                    <span class="task-title">诡秘之主</span>
-                    <span class="task-url">https://www.630wang.org/book/12345.html</span>
+                    <span class="task-title">示例长篇 B</span>
+                    <span class="task-url">https://siteB.example.com/novel/12345.html</span>
                   </div>
                   <div class="task-cell-progress">
                     <div class="progress-ring">
@@ -1753,17 +2863,18 @@ html, body {
                     <span class="badge badge-success">已完成</span>
                   </div>
                   <div class="task-cell">
-                    <span style="color: var(--status-success);">cloudscraper</span>
+                    <span class="text-ok">cloudscraper</span>
                   </div>
                   <div class="task-cell">JS质询</div>
                   <div class="task-cell">12:05</div>
                   <div class="task-cell">
-                    <span style="color: var(--status-success); font-weight: 500;">92分</span>
+                    <span class="text-ok">92分</span>
                   </div>
                   <div class="task-actions">
-                    <button class="icon-btn" title="展开详情">⌄</button>
-                    <button class="icon-btn" title="预览文件">📄</button>
-                    <button class="icon-btn" title="重新下载">↻</button>
+                    <button class="icon-btn" title="展开/收起详情">⌄</button>
+                    <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                    <button class="icon-btn" title="导出 EPUB (单本导出)">📖</button>
+                    <button class="icon-btn" title="重新下载（从头重新抓取）">↻</button>
                     <button class="icon-btn danger" title="删除">🗑</button>
                   </div>
                 </div>
@@ -1771,8 +2882,8 @@ html, body {
                 <!-- 任务3：失败 -->
                 <div class="task-row">
                   <div class="task-cell-title">
-                    <span class="task-title">某不知名小说</span>
-                    <span class="task-url">https://unknown-site.com/novel/1.html</span>
+                    <span class="task-title">示例长篇 C</span>
+                    <span class="task-url">https://siteC.example.com/novel/1.html</span>
                   </div>
                   <div class="task-cell-progress">
                     <div class="progress-ring">
@@ -1789,23 +2900,26 @@ html, body {
                     <span class="badge badge-error">失败</span>
                   </div>
                   <div class="task-cell">
-                    <span style="color: var(--text-tertiary);">requests</span>
+                    <span class="text-muted">requests</span>
                   </div>
                   <div class="task-cell">
-                    <span style="color: var(--status-error);">WAF拦截</span>
+                    <span class="text-err">WAF拦截</span>
                   </div>
                   <div class="task-cell">00:47</div>
                   <div class="task-cell">
-                    <span style="color: var(--status-error); font-weight: 500;">—</span>
+                    <span class="text-err-strong">—</span>
                   </div>
                   <div class="task-actions">
-                    <button class="icon-btn" title="展开详情">⌄</button>
-                    <button class="icon-btn" title="预览文件">📄</button>
-                    <button class="icon-btn" title="重新下载">↻</button>
+                    <button class="icon-btn" title="展开/收起详情">⌄</button>
+                    <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                    <button class="icon-btn disabled" title="无输出文件, 无法导出">📖</button>
+                    <button class="icon-btn" title="重新下载（从头重新抓取）">↻</button>
                     <button class="icon-btn danger" title="删除">🗑</button>
                   </div>
                 </div>
               </div>
+               </div><!-- /.task-table-inner -->
+              </div><!-- /.task-table-scroll -->
             </div>
 
             <!-- 日志条 -->
@@ -1813,13 +2927,13 @@ html, body {
               <div class="log-strip-header" onclick="toggleLog()">
                 <div class="log-strip-title">
                   <span class="dot"></span>
-                  <span>实时日志 · 凡人修仙传 · 灵界篇</span>
+                  <span>实时日志 · 示例长篇 A</span>
                 </div>
                 <div class="log-strip-controls">
-                  <button class="icon-btn" style="color: var(--terminal-dim);" title="展开/收起">⌃</button>
+                  <button class="icon-btn" class="text-dim" title="展开/收起">⌃</button>
                 </div>
               </div>
-              <div class="log-body" id="logBody">
+              <div class="log-body" id="logBody" tabindex="0" data-scrollable role="region" aria-label="任务日志，可滚动">
 <span class="log-line log-info"><span class="log-time">[14:32:08]</span> 系统: 任务启动，模式=完整抓取，速度=自适应</span>
 <span class="log-line log-info"><span class="log-time">[14:32:09]</span> 引擎: 初始 requests → 探测站点反爬机制</span>
 <span class="log-line log-warning"><span class="log-time">[14:32:10]</span> 反爬: 检测到 rate_limit (429 + Retry-After)</span>
@@ -1830,6 +2944,13 @@ html, body {
 <span class="log-line log-info"><span class="log-time">[14:32:16]</span> 速度: 自适应调整为 3 线程</span>
 <span class="log-line log-success"><span class="log-time">[14:32:18]</span> 第643章: 抓取完成 (2.8KB, 质检 88分)</span>
 <span class="log-line log-debug"><span class="log-time">[14:32:19]</span> 增量: 第644章已存在，跳过</span>
+<span class="log-line log-info"><span class="log-time">[14:32:21]</span> 质检: 第644章 五维评分 87 分 (通过)</span>
+<span class="log-line log-success"><span class="log-time">[14:32:23]</span> 第645章: 抓取完成 (3.0KB, 质检 91分)</span>
+<span class="log-line log-info"><span class="log-time">[14:32:25]</span> 速度: 自适应调整为 4 线程</span>
+<span class="log-line log-warning"><span class="log-time">[14:32:27]</span> 反爬: 连续 2 次 429，降速保护</span>
+<span class="log-line log-info"><span class="log-time">[14:32:28]</span> 速度: 回退为 2 线程，延迟 1.5s</span>
+<span class="log-line log-success"><span class="log-time">[14:32:32]</span> 第646章: 抓取完成 (2.6KB, 质检 89分)</span>
+<span class="log-line log-debug"><span class="log-time">[14:32:34]</span> 解码: Base64 → UTF-8 成功，2871 字</span>
               </div>
             </div>
           </div>
@@ -1853,10 +2974,10 @@ html, body {
                   <div class="big-ring-text">51%</div>
                 </div>
                 <div class="big-progress-info">
-                  <h3>凡人修仙传</h3>
+                  <h3>示例长篇 A</h3>
                   <div class="status-row">
                     <span class="badge badge-running">抓取中</span>
-                    <span style="font-size: var(--fs-caption); color: var(--text-tertiary);">642 / 1248 章</span>
+                    <span class="toolbar-note">642 / 1248 章</span>
                   </div>
                 </div>
               </div>
@@ -1878,7 +2999,7 @@ html, body {
                   <div class="metric-value info">127 章</div>
                 </div>
               </div>
-              <div style="margin-top: var(--sp-3); font-size: var(--fs-caption); color: var(--text-tertiary);">
+              <div class="block-note-caption">
                 降级链: requests → cloudscraper → curl_cffi
               </div>
             </div>
@@ -1889,14 +3010,18 @@ html, body {
                 <span class="icon">📁</span>
                 输出文件
               </div>
-              <div style="display: flex; flex-direction: column; gap: var(--sp-2);">
-                <div style="display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); background: var(--bg-tertiary); border-radius: var(--radius-md);">
-                  <span style="font-size: 16px;">📄</span>
-                  <div style="flex: 1; min-width: 0;">
-                    <div style="font-size: var(--fs-small); font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">凡人修仙传·灵界篇.txt</div>
-                    <div style="font-size: var(--fs-micro); color: var(--text-tertiary);">2.4 MB · 642 章</div>
+              <div class="stack-sm">
+                <div class="mini-panel">
+                  <span class="icon-inline">📄</span>
+                  <div class="flex-1">
+                    <div class="text-strong-ellipsis">示例长篇 A.txt</div>
+                    <div class="text-note">2.4 MB · 642 章</div>
                   </div>
-                  <button class="icon-btn" title="打开文件夹">📂</button>
+                  <button class="icon-btn" title="导出 EPUB (单篇导出, 与全局导出同格式)">📖</button>
+                  <button class="icon-btn" title="打开所在文件夹">📂</button>
+                </div>
+                <div class="text-note">
+                  EPUB 可随时手动导出，不必在抓取前勾选「导出EPUB」
                 </div>
               </div>
             </div>
@@ -1945,13 +3070,13 @@ html, body {
         <div class="card">
           <div class="card-body">
             <div class="filter-bar">
-              <select class="select-field" style="width: 200px;">
+              <select class="select-field field-lg">
                 <option>全部站点</option>
-                <option>tanmixs.com</option>
-                <option>630wang.org</option>
-                <option>ciyewk.com</option>
+                <option>siteA.example.com</option>
+                <option>siteB.example.com</option>
+                <option>siteC.example.com</option>
               </select>
-              <select class="select-field" style="width: 150px;">
+              <select class="select-field field-md">
                 <option>全部时间</option>
                 <option>最近 24 小时</option>
                 <option>最近 7 天</option>
@@ -1964,7 +3089,7 @@ html, body {
                 <div class="filter-chip">未变化</div>
                 <div class="filter-chip">失败</div>
               </div>
-              <div style="margin-left: auto;">
+              <div class="push-right">
                 <button class="btn btn-secondary btn-sm">
                   <span>↻</span> 刷新
                 </button>
@@ -1974,8 +3099,8 @@ html, body {
         </div>
 
         <!-- 历史表格 -->
-        <div class="card" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
-          <div class="history-table" style="flex: 1; overflow-y: auto;">
+        <div class="card" class="card-flex-fill">
+          <div class="history-table" class="flex-scroll-y" tabindex="0" data-scrollable role="region" aria-label="爬取历史表格，可滚动">
             <div class="history-row header">
               <div class="history-cell">URL</div>
               <div class="history-cell">最后抓取</div>
@@ -1987,8 +3112,8 @@ html, body {
             </div>
             <!-- 行 -->
             <div class="history-row">
-              <div class="history-cell url mono">https://m.tanmixs.com/YzN6/ml.html</div>
-              <div class="history-cell">2026-09-04 14:32</div>
+              <div class="history-cell url mono">https://siteA.example.com/novel/1001.html</div>
+              <div class="history-cell">2026-10-03 14:32</div>
               <div class="history-cell mono">200</div>
               <div class="history-cell mono">0.8s</div>
               <div class="history-cell mono">124K</div>
@@ -1996,8 +3121,8 @@ html, body {
               <div class="history-cell">—</div>
             </div>
             <div class="history-row">
-              <div class="history-cell url mono">https://www.630wang.org/book/12345.html</div>
-              <div class="history-cell">2026-09-04 13:15</div>
+              <div class="history-cell url mono">https://siteB.example.com/novel/12345.html</div>
+              <div class="history-cell">2026-10-03 13:15</div>
               <div class="history-cell mono">200</div>
               <div class="history-cell mono">1.2s</div>
               <div class="history-cell mono">256K</div>
@@ -2005,8 +3130,8 @@ html, body {
               <div class="history-cell">—</div>
             </div>
             <div class="history-row">
-              <div class="history-cell url mono">https://ciyewk.com/book/67890.html</div>
-              <div class="history-cell">2026-09-04 11:08</div>
+              <div class="history-cell url mono">https://siteC.example.com/book/67890.html</div>
+              <div class="history-cell">2026-10-03 11:08</div>
               <div class="history-cell mono">200</div>
               <div class="history-cell mono">0.5s</div>
               <div class="history-cell mono">89K</div>
@@ -2014,8 +3139,8 @@ html, body {
               <div class="history-cell">ETag 匹配</div>
             </div>
             <div class="history-row">
-              <div class="history-cell url mono">https://unknown-site.com/novel/1.html</div>
-              <div class="history-cell">2026-09-04 10:22</div>
+              <div class="history-cell url mono">https://siteC.example.com/novel/1.html</div>
+              <div class="history-cell">2026-10-03 10:22</div>
               <div class="history-cell error mono">403</div>
               <div class="history-cell mono">2.1s</div>
               <div class="history-cell mono">12K</div>
@@ -2023,7 +3148,7 @@ html, body {
               <div class="history-cell error">WAF 拦截，所有引擎降级失败</div>
             </div>
             <div class="history-row">
-              <div class="history-cell url mono">https://ltbook.net/novel/54321/</div>
+              <div class="history-cell url mono">https://siteB.example.com/novel/54321/</div>
               <div class="history-cell">2026-09-03 22:47</div>
               <div class="history-cell mono">200</div>
               <div class="history-cell mono">3.4s</div>
@@ -2032,7 +3157,7 @@ html, body {
               <div class="history-cell">—</div>
             </div>
             <div class="history-row">
-              <div class="history-cell url mono">https://zhiruo.com/book/9876.html</div>
+              <div class="history-cell url mono">https://siteB.example.com/book/9876.html</div>
               <div class="history-cell">2026-09-03 18:30</div>
               <div class="history-cell mono">200</div>
               <div class="history-cell mono">1.8s</div>
@@ -2040,11 +3165,380 @@ html, body {
               <div class="history-cell"><span class="badge badge-success">更新</span></div>
               <div class="history-cell">—</div>
             </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteA.example.com/novel/1001.html</div>
+              <div class="history-cell">2026-10-03 14:32</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">4.1s</div>
+              <div class="history-cell mono">246K</div>
+              <div class="history-cell"><span class="badge badge-success">新增</span></div>
+              <div class="history-cell">首次抓取，全 1248 章</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteA.example.com/novel/1001.html</div>
+              <div class="history-cell">2026-10-03 14:35</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">4.3s</div>
+              <div class="history-cell mono">1.2M</div>
+              <div class="history-cell"><span class="badge badge-info">未变化</span></div>
+              <div class="history-cell">ETag 匹配，断点续传跳过 642 章</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteB.example.com/novel/54321/</div>
+              <div class="history-cell">2026-10-03 14:36</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">2.8s</div>
+              <div class="history-cell mono">892K</div>
+              <div class="history-cell"><span class="badge badge-success">更新</span></div>
+              <div class="history-cell">增量 210 章</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteD.example.com/read/33021/</div>
+              <div class="history-cell">2026-10-03 13:47</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">1.2s</div>
+              <div class="history-cell mono">64K</div>
+              <div class="history-cell"><span class="badge badge-success">更新</span></div>
+              <div class="history-cell">增量 18 章</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteD.example.com/read/33022/</div>
+              <div class="history-cell">2026-10-03 13:45</div>
+              <div class="history-cell warning mono">503</div>
+              <div class="history-cell mono">8.7s</div>
+              <div class="history-cell mono">0K</div>
+              <div class="history-cell"><span class="badge badge-error">失败</span></div>
+              <div class="history-cell error">上游 503，已重试 3 次</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteE.example.com/novel/8801/</div>
+              <div class="history-cell">2026-10-03 12:19</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">0.9s</div>
+              <div class="history-cell mono">41K</div>
+              <div class="history-cell"><span class="badge badge-info">未变化</span></div>
+              <div class="history-cell">Last-Modified 匹配</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteF.example.com/book/5512.html</div>
+              <div class="history-cell">2026-10-03 11:52</div>
+              <div class="history-cell warning mono">429</div>
+              <div class="history-cell mono">12.4s</div>
+              <div class="history-cell mono">0K</div>
+              <div class="history-cell"><span class="badge badge-error">失败</span></div>
+              <div class="history-cell error">rate_limit 触发，已降速保护</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteE.example.com/novel/8802/</div>
+              <div class="history-cell">2026-10-03 10:31</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">1.4s</div>
+              <div class="history-cell mono">97K</div>
+              <div class="history-cell"><span class="badge badge-success">新增</span></div>
+              <div class="history-cell">首次抓取，全 402 章</div>
+            </div>
+            <div class="history-row">
+              <div class="history-cell url mono">https://siteF.example.com/book/5513.html</div>
+              <div class="history-cell">2026-10-02 22:08</div>
+              <div class="history-cell mono">200</div>
+              <div class="history-cell mono">2.6s</div>
+              <div class="history-cell mono">203K</div>
+              <div class="history-cell"><span class="badge badge-success">更新</span></div>
+              <div class="history-cell">增量 76 章</div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- ========== 页面3: 站点管理 ========== -->
+      <!-- ========== 页面3: 死书清单 ========== -->
+      <section class="page-view" id="page-deadbook">
+        <div class="page-header">
+          <div class="page-title-block">
+            <h1>死书清单</h1>
+            <p>被判定为书已删除/不可读的书。删除会同时移除任务、书架与网站清单记录；已下载的文件不会被删除。</p>
+          </div>
+          <div class="page-header-actions">
+            <button class="btn btn-secondary btn-sm">
+              <span>↻</span> 重检当前筛选
+            </button>
+            <button class="btn btn-secondary btn-sm">
+              <span>⟳</span> 刷新
+            </button>
+          </div>
+        </div>
+
+        <!-- 筛选行 -->
+        <div class="filter-bar">
+          <div class="filter-chips">
+            <div class="filter-chip active all">全部</div>
+            <div class="filter-chip">待确认</div>
+            <div class="filter-chip">已忽略</div>
+            <div class="filter-chip">已删除</div>
+          </div>
+          <div class="push-right">
+            <select class="select-field field-md">
+              <option>全部类型</option>
+              <option>HTTP 404</option>
+              <option>HTTP 410</option>
+              <option>连接超时</option>
+              <option>内容为空</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 摘要行 -->
+        <div class="summary-line">
+          共 18 条 · 待确认 11 · 已忽略 5 · 已删除 3　（当前筛选 18 条）
+        </div>
+
+        <!-- 死书列表 -->
+        <div class="deadbook-list" tabindex="0" data-scrollable role="region" aria-label="死书清单列表，可滚动">
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 A
+                  <span class="badge badge-warning">待确认</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://siteA.example.com/novel/1001.html</span>
+                  <span class="dot-sep">·</span>
+                  <span>HTTP 404</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-10-02 21:14</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 412 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="忽略此书 (标记已知问题, 保留记录不再提示)">🔕</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 B
+                  <span class="badge badge-warning">待确认</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://siteB.example.com/book/2002.html</span>
+                  <span class="dot-sep">·</span>
+                  <span>HTTP 410</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-10-01 09:02</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 87 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="忽略此书 (标记已知问题, 保留记录不再提示)">🔕</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 C
+                  <span class="badge badge-info">已忽略</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://siteA.example.com/novel/3003.html</span>
+                  <span class="dot-sep">·</span>
+                  <span>内容为空</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-09-28 16:47</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 0 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="恢复待确认 (撤销忽略)">↩</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 D
+                  <span class="badge badge-warning">待确认</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://siteF.example.com/book/5513.html</span>
+                  <span class="dot-sep">·</span>
+                  <span>HTTP 410</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-10-02 09:14</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 76 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="忽略（不再提示）">🚫</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 E
+                  <span class="badge badge-warning">待确认</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://legacy.example.org/novel/8801.html</span>
+                  <span class="dot-sep">·</span>
+                  <span>连接超时</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-10-01 22:38</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 12 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="忽略（不再提示）">🚫</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 F
+                  <span class="badge badge-error">已删除</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://siteC.example.com/novel/1.html</span>
+                  <span class="dot-sep">·</span>
+                  <span>内容为空</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-09-30 11:02</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 47 章（已删除，文件保留）</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="恢复待确认 (撤销删除)">↩</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 G
+                  <span class="badge badge-warning">待确认</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://novelhub.example.net/novel/77021/</span>
+                  <span class="dot-sep">·</span>
+                  <span>HTTP 404</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-10-03 08:51</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 3 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="忽略（不再提示）">🚫</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 H
+                  <span class="badge badge-warning">待确认</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://booklib.example.org/read/33021/</span>
+                  <span class="dot-sep">·</span>
+                  <span>内容为空</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-10-02 19:26</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 158 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="忽略（不再提示）">🚫</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card deadbook-card">
+            <div class="deadbook-card-body">
+              <div class="deadbook-info">
+                <div class="deadbook-title">
+                  示例长篇 I
+                  <span class="badge badge-info">已忽略</span>
+                </div>
+                <div class="deadbook-meta">
+                  <span class="mono">https://txtlib.example.com/novel/4402/</span>
+                  <span class="dot-sep">·</span>
+                  <span>连接超时</span>
+                  <span class="dot-sep">·</span>
+                  <span>判定于 2026-09-29 14:33</span>
+                  <span class="dot-sep">·</span>
+                  <span>已抓 0 章</span>
+                </div>
+              </div>
+              <div class="deadbook-actions">
+                <button class="icon-btn" title="展开/收起详情">⌄</button>
+                <button class="icon-btn" title="预览抽屉（任务详情/输出文件）">📄</button>
+                <button class="icon-btn" title="恢复待确认 (撤销忽略)">↩</button>
+                <button class="icon-btn" title="重新下载 (从头重新抓取)">↻</button>
+                <button class="icon-btn danger" title="删除这本书的记录 (任务/书架/网站清单)">🗑</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 页面4: 站点管理 ========== -->
       <section class="page-view" id="page-sites">
         <div class="page-header">
           <div class="page-title-block">
@@ -2057,8 +3551,8 @@ html, body {
         <div class="alarm-banner">
           <span class="icon">⚠️</span>
           <ul>
-            <li>风控 unknown-site.com: blocked×3 · WAF 验证码拦截持续 24 小时</li>
-            <li>站点漂移 630wang.org: 正文选择器命中率下降，疑似页面改版</li>
+            <li>风控 siteC.example.com: blocked×3 · WAF 验证码拦截持续 24 小时</li>
+            <li>站点漂移 siteB.example.com: 正文选择器命中率下降，疑似页面改版</li>
           </ul>
         </div>
 
@@ -2078,9 +3572,7 @@ html, body {
               <button class="btn btn-secondary">
                 <span>📤</span> 导出
               </button>
-              <span style="margin-left: auto; font-size: var(--fs-caption); color: var(--text-tertiary);">
-                共 12 个站点 · 8 个启用
-              </span>
+              <span class="toolbar-note">共 18 个站点 · 14 个启用</span>
             </div>
           </div>
         </div>
@@ -2089,10 +3581,10 @@ html, body {
         <div class="adapter-section">
           <div class="adapter-header">
             <div class="adapter-title">
-              <span style="font-size: 18px;">🔌</span>
+              <span class="adapter-icon" aria-hidden="true">🔌</span>
               站点适配插件（免重新打包）
             </div>
-            <div style="display: flex; gap: var(--sp-2);">
+            <div class="adapter-actions">
               <button class="btn btn-primary btn-sm">
                 <span>+</span> 新建适配器
               </button>
@@ -2106,10 +3598,10 @@ html, body {
           </div>
           <div class="adapter-list">
             <div class="adapter-item">
-              <span style="font-size: 16px;">✅</span>
+              <span class="adapter-status-icon" aria-hidden="true">✅</span>
               <div>
-                <div class="name">als1010.py</div>
-                <div class="domain">als1010.com</div>
+                <div class="name">adapter_siteD.py</div>
+                <div class="domain">siteD.example.com</div>
               </div>
               <div class="adapter-caps">
                 <span class="cap-tag">目录</span>
@@ -2117,10 +3609,10 @@ html, body {
               </div>
             </div>
             <div class="adapter-item">
-              <span style="font-size: 16px;">✅</span>
+              <span class="adapter-status-icon" aria-hidden="true">✅</span>
               <div>
-                <div class="name">uuwxw.py</div>
-                <div class="domain">uuwxw.com</div>
+                <div class="name">adapter_siteG.py</div>
+                <div class="domain">siteG.example.com</div>
               </div>
               <div class="adapter-caps">
                 <span class="cap-tag">目录</span>
@@ -2129,7 +3621,7 @@ html, body {
               </div>
             </div>
             <div class="adapter-item">
-              <span style="font-size: 16px;">✅</span>
+              <span class="adapter-status-icon" aria-hidden="true">✅</span>
               <div>
                 <div class="name">victor-w-ma_github_io.py</div>
                 <div class="domain">victor-w-ma.github.io</div>
@@ -2142,28 +3634,30 @@ html, body {
         </div>
 
         <!-- 站点表格 -->
-        <div class="card" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
-          <div style="display: grid; grid-template-columns: 26fr 14fr 30fr 10fr 20fr; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border-subtle); gap: var(--sp-2);">
-            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary);">域名</div>
-            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary);">模式</div>
-            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary);">状态</div>
-            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary); text-align: center;">启用</div>
-            <div style="font-size: var(--fs-micro); font-weight: 600; color: var(--text-tertiary); text-align: right;">操作</div>
+        <div class="card site-table-card">
+          <!-- 表头复用 .site-row 的同一套 grid 模板 + 同一套 padding，
+               不再另写内联 grid —— 旧稿两处各写一遍，padding 差 4px 导致表头与数据列恒定错位。 -->
+          <div class="site-row site-row-head" role="row">
+            <div class="site-th">域名</div>
+            <div class="site-th">模式</div>
+            <div class="site-th">状态</div>
+            <div class="site-th center">启用</div>
+            <div class="site-th right">操作</div>
           </div>
-          <div style="flex: 1; overflow-y: auto;">
+          <div class="site-table-scroll" tabindex="0" data-scrollable role="region" aria-label="站点列表，可滚动">
             <div class="site-row">
-              <div class="site-domain">tanmixs.com</div>
+              <div class="site-domain">siteA.example.com</div>
               <div class="site-pattern">xs 码点流</div>
               <div class="site-status">
                 <div class="site-status-line">
                   <span class="health high">97%</span>
                   <span>健康度</span>
                 </div>
-                <div class="site-status-line" style="color: var(--status-warning);">
+                <div class="site-status-line alert-warning">
                   反爬: rate_limit
                 </div>
               </div>
-              <div style="display: flex; justify-content: center;">
+              <div class="site-switch-cell">
                 <div class="switch on"></div>
               </div>
               <div class="site-actions">
@@ -2174,18 +3668,18 @@ html, body {
             </div>
 
             <div class="site-row">
-              <div class="site-domain">630wang.org</div>
+              <div class="site-domain">siteB.example.com</div>
               <div class="site-pattern">html_selector</div>
               <div class="site-status">
                 <div class="site-status-line">
                   <span class="health mid">72%</span>
                   <span>健康度</span>
                 </div>
-                <div class="site-status-line" style="color: var(--status-error);">
+                <div class="site-status-line alert-error">
                   ⚠ 站点漂移 · 选择器失效
                 </div>
               </div>
-              <div style="display: flex; justify-content: center;">
+              <div class="site-switch-cell">
                 <div class="switch on"></div>
               </div>
               <div class="site-actions">
@@ -2196,7 +3690,7 @@ html, body {
             </div>
 
             <div class="site-row">
-              <div class="site-domain">ciyewk.com</div>
+              <div class="site-domain">siteC.example.com</div>
               <div class="site-pattern">ajax_two_step</div>
               <div class="site-status">
                 <div class="site-status-line">
@@ -2207,7 +3701,7 @@ html, body {
                   探测 200/0.6s
                 </div>
               </div>
-              <div style="display: flex; justify-content: center;">
+              <div class="site-switch-cell">
                 <div class="switch on"></div>
               </div>
               <div class="site-actions">
@@ -2218,18 +3712,18 @@ html, body {
             </div>
 
             <div class="site-row">
-              <div class="site-domain">unknown-site.com</div>
+              <div class="site-domain">siteE.example.com</div>
               <div class="site-pattern">html_selector</div>
               <div class="site-status">
                 <div class="site-status-line">
                   <span class="health low">23%</span>
                   <span>健康度</span>
                 </div>
-                <div class="site-status-line" style="color: var(--status-error);">
+                <div class="site-status-line alert-error">
                   风控24h: blocked×3
                 </div>
               </div>
-              <div style="display: flex; justify-content: center;">
+              <div class="site-switch-cell">
                 <div class="switch on"></div>
               </div>
               <div class="site-actions">
@@ -2240,7 +3734,7 @@ html, body {
             </div>
 
             <div class="site-row disabled">
-              <div class="site-domain">old-site.net</div>
+              <div class="site-domain">siteF.example.org</div>
               <div class="site-pattern">qsbs_bb</div>
               <div class="site-status">
                 <div class="site-status-line">
@@ -2251,7 +3745,139 @@ html, body {
                   站点已下线
                 </div>
               </div>
-              <div style="display: flex; justify-content: center;">
+              <div class="site-switch-cell">
+                <div class="switch"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">novelhub.example.net</div>
+              <div class="site-pattern">json_api</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health high">96%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line alert-ok">
+                  风控24h: 无异常
+                </div>
+              </div>
+              <div class="site-switch-cell">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">booklib.example.org</div>
+              <div class="site-pattern">html_selector</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health mid">71%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line alert-warning">
+                  风控24h: 慢响应×2
+                </div>
+              </div>
+              <div class="site-switch-cell">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">txtlib.example.com</div>
+              <div class="site-pattern">regex</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health high">88%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line alert-ok">
+                  风控24h: 无异常
+                </div>
+              </div>
+              <div class="site-switch-cell">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">readfree.example.net</div>
+              <div class="site-pattern">json_api</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health mid">58%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line alert-warning">
+                  风控24h: 429×1
+                </div>
+              </div>
+              <div class="site-switch-cell">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row">
+              <div class="site-domain">oldarchive.example.com</div>
+              <div class="site-pattern">regex</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health high">91%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line alert-ok">
+                  风控24h: 无异常
+                </div>
+              </div>
+              <div class="site-switch-cell">
+                <div class="switch on"></div>
+              </div>
+              <div class="site-actions">
+                <button class="icon-btn" title="测试连接">📡</button>
+                <button class="icon-btn" title="编辑">✏️</button>
+                <button class="icon-btn danger" title="删除">🗑</button>
+              </div>
+            </div>
+
+            <div class="site-row disabled">
+              <div class="site-domain">legacy.example.org</div>
+              <div class="site-pattern">html_selector</div>
+              <div class="site-status">
+                <div class="site-status-line">
+                  <span class="health low">12%</span>
+                  <span>健康度</span>
+                </div>
+                <div class="site-status-line">
+                  结构变更，已停用
+                </div>
+              </div>
+              <div class="site-switch-cell">
                 <div class="switch"></div>
               </div>
               <div class="site-actions">
@@ -2265,7 +3891,7 @@ html, body {
         </div>
       </section>
 
-      <!-- ========== 页面4: 运行日志 ========== -->
+      <!-- ========== 页面5: 运行日志 ========== -->
       <section class="page-view" id="page-log">
         <div class="page-header">
           <div class="page-title-block">
@@ -2276,22 +3902,22 @@ html, body {
 
         <div class="card log-page-container">
           <div class="log-toolbar">
-            <select class="select-field" style="width: 180px;">
+            <select class="select-field field-lg">
               <option>全部日志</option>
               <option>GUI</option>
               <option>爬虫</option>
               <option>反爬检测</option>
               <option>站点管理</option>
             </select>
-            <select class="select-field" style="width: 140px;">
+            <select class="select-field field-md">
               <option>全部级别</option>
               <option>INFO</option>
               <option>WARNING</option>
               <option>ERROR</option>
               <option>DEBUG</option>
             </select>
-            <input type="text" class="input-field" style="width: 200px;" placeholder="搜索关键词...">
-            <div style="margin-left: auto; display: flex; gap: var(--sp-2);">
+            <input type="text" class="input-field field-xl" placeholder="搜索关键词...">
+            <div class="log-toolbar-actions">
               <button class="btn btn-secondary btn-sm">
                 <span>📋</span> 复制
               </button>
@@ -2303,27 +3929,141 @@ html, body {
               </button>
             </div>
           </div>
-          <div class="log-viewer">
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:08]</span> [系统] 程序启动 (模式: 源码模式, Python 3.11.4)</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:08]</span> [系统] EXE/项目目录: K:\程序文件\小说爬虫</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:09]</span> [站点配置] 加载 12 个内置站点配置 + 3 个外部适配器</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:09]</span> [GUI] 主题切换为: 浅色</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:15]</span> [GUI] 开始抓取: https://m.tanmixs.com/YzN6/ml.html 模式=full → task_001</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:15]</span> [爬虫] task_001 初始化，引擎=requests</span>
-<span class="log-line log-warning"><span class="log-time">[2026-09-04 14:32:16]</span> [反爬] task_001: 检测到 rate_limit (HTTP 429 + Retry-After: 5)</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:16]</span> [引擎] task_001: 降级为 cloudscraper</span>
-<span class="log-line log-warning"><span class="log-time">[2026-09-04 14:32:17]</span> [反爬] task_001: cloudscraper 仍被拦截 (JS 质询未通过)</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:17]</span> [引擎] task_001: 降级为 curl_cffi (impersonate=chrome120)</span>
-<span class="log-line log-success"><span class="log-time">[2026-09-04 14:32:18]</span> [引擎] task_001: curl_cffi 连接成功，状态码 200</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:18]</span> [爬虫] task_001: 目录解析完成，共 1248 章</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:19]</span> [速度自适应] task_001: 初始档位 2 线程，延迟 1.0s</span>
-<span class="log-line log-success"><span class="log-time">[2026-09-04 14:32:22]</span> [质检] 第1章: 五维评分 88 分 (通过)</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:25]</span> [增量] 第10章: 已存在且内容一致，跳过</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:32:30]</span> [速度自适应] task_001: 升档为 3 线程，延迟 0.8s</span>
-<span class="log-line log-warning"><span class="log-time">[2026-09-04 14:33:15]</span> [反爬] task_001: 连续 3 次 429，降速保护</span>
-<span class="log-line log-info"><span class="log-time">[2026-09-04 14:33:16]</span> [速度自适应] task_001: 降档为 1 线程，延迟 2.0s</span>
-<span class="log-line log-debug"><span class="log-time">[2026-09-04 14:34:02]</span> [内容解码] Base64 解码成功，2348 字</span>
-<span class="log-line log-success"><span class="log-time">[2026-09-04 14:35:00]</span> [GUI] 已创建 3 个抓取任务 (每本书独立进度)</span>
+          <!-- 实机第二行：日志日期 / 刷新 / 打开日志目录 / 显示行数 -->
+          <div class="log-toolbar log-toolbar-row2">
+            <select class="select-field field-lg">
+              <option>2026-10-03（当天）</option>
+              <option>2026-09-03</option>
+              <option>2026-09-02</option>
+            </select>
+            <button class="btn btn-secondary btn-sm">
+              <span>⟳</span> 刷新
+            </button>
+            <button class="btn btn-secondary btn-sm">打开日志目录</button>
+            <span class="log-row-count">显示 46 / 46 行（上限 3000）</span>
+          </div>
+          <div class="log-viewer" tabindex="0" data-scrollable role="region" aria-label="运行日志终端，可滚动">
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:08]</span> [系统] 程序启动 (模式: 源码模式, Python 3.14.0)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:08]</span> [系统] EXE/项目目录: D:\Apps\NovelCrawler</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:09]</span> [站点配置] 加载 12 个内置站点配置 + 3 个外部适配器</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:09]</span> [GUI] 主题切换为: 浅色</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:15]</span> [GUI] 开始抓取: https://siteA.example.com/novel/1001.html 模式=full → task_001</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:15]</span> [爬虫] task_001 初始化，引擎=requests</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:32:16]</span> [反爬] task_001: 检测到 rate_limit (HTTP 429 + Retry-After: 5)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:16]</span> [引擎] task_001: 降级为 cloudscraper</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:32:17]</span> [反爬] task_001: cloudscraper 仍被拦截 (JS 质询未通过)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:17]</span> [引擎] task_001: 降级为 curl_cffi (impersonate=chrome120)</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:32:18]</span> [引擎] task_001: curl_cffi 连接成功，状态码 200</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:18]</span> [爬虫] task_001: 目录解析完成，共 1248 章</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:19]</span> [速度自适应] task_001: 初始档位 2 线程，延迟 1.0s</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:32:22]</span> [质检] 第1章: 五维评分 88 分 (通过)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:25]</span> [增量] 第10章: 已存在且内容一致，跳过</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:32:30]</span> [速度自适应] task_001: 升档为 3 线程，延迟 0.8s</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:33:15]</span> [反爬] task_001: 连续 3 次 429，降速保护</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:33:16]</span> [速度自适应] task_001: 降档为 1 线程，延迟 2.0s</span>
+<span class="log-line log-debug"><span class="log-time">[2026-10-03 14:34:02]</span> [内容解码] Base64 解码成功，2348 字</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:35:00]</span> [GUI] 已创建 3 个抓取任务 (每本书独立进度)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:35:02]</span> [爬虫] task_002 初始化，引擎=cloudscraper，站点=siteB.example.com</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:35:03]</span> [爬虫] task_002 目录解析完成，共 864 章</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:35:09]</span> [质检] 第1章: 五维评分 92 分 (通过)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:35:14]</span> [增量] task_002 第120章: 已存在，跳过</span>
+<span class="log-line log-debug"><span class="log-time">[2026-10-03 14:35:20]</span> [内容解码] task_002 第121章: UTF-8 直接解码，3120 字</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:35:28]</span> [爬虫] task_003 初始化，引擎=requests，站点=siteC.example.com</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:35:31]</span> [反爬] task_003: 检测到 WAF 质询 (JS)</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:35:33]</span> [引擎] task_003: curl_cffi 首次尝试失败，重试 1/3</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:35:35]</span> [引擎] task_003: 重试成功，状态码 200</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:35:41]</span> [质检] 第1章: 五维评分 74 分 (低于阈值 75，转人工)</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:35:42]</span> [质检] task_003 第1章: 判为可疑章节，标记死书候选</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:35:44]</span> [爬虫] task_001 进度 642/1248，速度 3.4 章/秒</span>
+<span class="log-line log-debug"><span class="log-time">[2026-10-03 14:35:48]</span> [断点续传] task_001: 检查点已写入 (第642章)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:36:02]</span> [爬虫] task_002 进度 210/864，速度 5.1 章/秒</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:36:11]</span> [质检] task_002 第210章: 五维评分 95 分 (通过)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:36:15]</span> [EPUB] task_002 导出开始，合并 210 章</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:36:29]</span> [EPUB] task_002 导出完成，2.4 MB</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:36:33]</span> [爬虫] task_003 进度 47/512，速度 1.2 章/秒</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:36:40]</span> [磁盘] 输出目录剩余空间 8.2 GB，低于预警线 10 GB</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:36:48]</span> [GUI] task_001 抓取完成，耗时 4 分 33 秒</span>
+<span class="log-line log-success"><span class="log-time">[2026-10-03 14:36:52]</span> [GUI] task_001 EPUB 导出完成，8.7 MB</span>
+<span class="log-line log-debug"><span class="log-time">[2026-10-03 14:37:05]</span> [Rust 核心] rust_core.pyd 加速生效 (质检模块)</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:37:19]</span> [爬虫] task_003 进度 158/512，速度 2.0 章/秒</span>
+<span class="log-line log-warning"><span class="log-time">[2026-10-03 14:37:33]</span> [质检] task_003 第158章: 判为死书，终止该书抓取</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:37:34]</span> [死书] task_003 已写入死书清单，等待用户处置</span>
+<span class="log-line log-info"><span class="log-time">[2026-10-03 14:37:41]</span> [爬虫] task_002 进度 386/864，速度 5.0 章/秒</span>
+<span class="log-line log-debug"><span class="log-time">[2026-10-03 14:37:55]</span> [性能] 当前并发 4 线程，CPU 占用 34%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 页面6: 远控 ========== -->
+      <section class="page-view" id="page-remote">
+        <div class="page-header">
+          <div class="page-title-block">
+            <h1>远控</h1>
+            <p>远程控制开关、手机访问方式与手机端任务记录</p>
+          </div>
+        </div>
+
+        <!-- 远控状态卡 -->
+        <div class="card remote-status-card">
+          <div class="remote-status-head">
+            <div class="remote-status-left">
+              <div class="status-dot stopped" id="remoteDot"></div>
+              <div>
+                <div class="remote-status-title">远控已关闭</div>
+                <div class="remote-status-desc">开启后手机端可访问本机并下发抓取任务</div>
+              </div>
+            </div>
+            <div class="page-header-actions">
+              <button class="btn btn-secondary btn-sm">使用教程</button>
+              <button class="btn btn-primary btn-sm" id="remoteStartBtn">开启远控</button>
+            </div>
+          </div>
+
+          <div class="remote-divider"></div>
+
+          <div class="remote-fields">
+            <div class="remote-field">
+              <div class="remote-field-label">本机地址</div>
+              <div class="remote-field-value">
+                <span class="mono">http://192.168.1.100:8760</span>
+                <button class="btn btn-secondary btn-sm">复制</button>
+              </div>
+              <div class="remote-field-hint">手机与电脑需在同一局域网</div>
+            </div>
+
+            <div class="remote-field">
+              <div class="remote-field-label">访问 token</div>
+              <div class="remote-field-value">
+                <span class="mono" id="remoteToken">••••••••••••••••</span>
+                <button class="btn btn-secondary btn-sm">显示</button>
+                <button class="btn btn-secondary btn-sm">复制</button>
+              </div>
+              <div class="remote-field-hint">默认打码，需手动显示；请勿外传</div>
+            </div>
+
+            <div class="remote-field">
+              <div class="remote-field-label">外网访问</div>
+              <div class="remote-field-value">
+                <span class="mono">tailscale serve --bg 8760</span>
+                <button class="btn btn-secondary btn-sm">复制</button>
+              </div>
+              <div class="remote-field-hint">需先安装并登录 Tailscale</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 手机端记录 -->
+        <div class="card phone-records-card">
+          <div class="card-header">
+            <span class="card-title">手机端记录</span>
+            <span class="toolbar-note">共 0 条</span>
+          </div>
+          <div class="card-body">
+            <div class="empty-state">
+              <div class="empty-state-icon">📱</div>
+              <div class="empty-state-title">暂无手机端记录</div>
+              <div class="empty-state-desc">手机发起的抓取任务会实时出现在这里</div>
+            </div>
           </div>
         </div>
       </section>
@@ -2355,7 +4095,7 @@ html, body {
         <h4>各区域功能</h4>
         <ul>
           <li><strong>标题栏</strong>：左侧应用图标与标题，右侧<strong>主题切换按钮</strong>（醒目位置，一键切换日/夜模式）与标准窗口控制（最小化 / 最大化 / 关闭）</li>
-          <li><strong>侧边导航</strong>：4 个主功能入口（抓取工作台、爬取历史、站点管理、运行日志），底部状态栏显示实时运行状态</li>
+          <li><strong>侧边导航</strong>：6 个主功能入口（抓取工作台、爬取历史、<strong>死书清单</strong>、站点管理、运行日志、远控），底部状态栏显示实时运行状态</li>
           <li><strong>主内容区</strong>：承载各页面核心功能，内边距 20px，页面间距 20px，呼吸感充足</li>
         </ul>
       </div>
@@ -2367,7 +4107,7 @@ html, body {
         <h4>页面层级（从高到低）</h4>
         <ul>
           <li><strong>L0 全局层</strong>：标题栏 + 侧边导航 + 状态栏，始终可见，跨页面共享</li>
-          <li><strong>L1 页面层</strong>：4 个主页面通过导航切换，使用 Stack 模式保活状态</li>
+          <li><strong>L1 页面层</strong>：6 个主页面通过导航切换，使用 Stack 模式保活状态</li>
           <li><strong>L2 卡片层</strong>：功能模块以卡片为单位组织，卡片内包含标题栏 + 内容区</li>
           <li><strong>L3 抽屉/浮层层</strong>：右侧详情抽屉、对话框、提示条，上下文相关</li>
           <li><strong>L4 行内展开层</strong>：表格行内展开详情，不打断浏览流</li>
@@ -2384,112 +4124,472 @@ html, body {
       <!-- 3. 日间模式配色方案 -->
       <div class="docs-block">
         <h3><span class="icon">☀️</span>日间模式配色方案</h3>
-        <p>基于 Windows 11 Fluent Design 设计规范，采用明亮洁净的浅色配色：</p>
+        <p>软件为<strong>莫兰迪暖色系</strong>（非 Fluent 蓝）。下表<strong>色值与对比度均取自当前设计稿令牌的脚本实测</strong>，非目测估算；底色标注了实际承载该文字的背景。</p>
 
+        <h4>底色层</h4>
         <table class="color-table">
           <thead>
-            <tr><th>用途</th><th>色值</th><th>对比度</th></tr>
+            <tr><th>用途</th><th>令牌 / 色值</th><th>说明</th></tr>
           </thead>
           <tbody>
             <tr>
-              <td>主背景</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #F3F3F3;"></span>#F3F3F3</span></td>
+              <td>侧边导航底</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #F1F1F1; border-color: #DDD;"></span><span class="mono">--bg-sidebar</span> #F1F1F1</span></td>
+              <td>比页面底略深一档</td>
+            </tr>
+            <tr>
+              <td>主背景（页面底）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #F5F5F5; border-color: #DDD;"></span><span class="mono">--bg-primary</span> #F5F5F5</span></td>
               <td>—</td>
             </tr>
             <tr>
-              <td>卡片/面板</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #FFFFFF;"></span>#FFFFFF</span></td>
-              <td>与正文 16.1:1</td>
+              <td>卡片 / 面板 / 表格行</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FFFFFF;"></span><span class="mono">--bg-secondary</span> #FFFFFF</span></td>
+              <td>与主文字 17.22:1</td>
             </tr>
             <tr>
-              <td>主文字</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #1B1B1B;"></span>#1B1B1B</span></td>
-              <td>AAA 级</td>
+              <td>侧栏选中态底</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FAF1E7; border-color:#E8D9C4;"></span><span class="mono">--bg-sidebar-active</span> #FAF1E7</span></td>
+              <td>实机为<strong>暖橙底</strong>，不是中性灰</td>
             </tr>
             <tr>
-              <td>次级文字</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #5C5C5C;"></span>#5C5C5C</span></td>
-              <td>AA 级 (6.1:1)</td>
-            </tr>
-            <tr>
-              <td>主色调蓝</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #0067C0;"></span>#0067C0</span></td>
-              <td>白底 5.6:1</td>
-            </tr>
-            <tr>
-              <td>成功绿</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #0F7B0F;"></span>#0F7B0F</span></td>
-              <td>白底 4.9:1</td>
-            </tr>
-            <tr>
-              <td>警告黄</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #9D5D00;"></span>#9D5D00</span></td>
-              <td>白底 4.6:1</td>
-            </tr>
-            <tr>
-              <td>错误红</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #C42B1C;"></span>#C42B1C</span></td>
-              <td>白底 5.0:1</td>
+              <td>日志终端底（恒深）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #171717; border-color:#333;"></span><span class="mono">--terminal-bg</span> #171717</span></td>
+              <td>日夜一致，不随主题变</td>
             </tr>
           </tbody>
         </table>
+
+        <h4>文字层级（四档，全部 ≥4.5:1）</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>层级</th><th>令牌 / 色值</th><th>压 #FFFFFF</th><th>压 #F5F5F5</th><th>用途</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>主文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #1B1B1B;"></span><span class="mono">--text-primary</span> #1B1B1B</span></td>
+              <td><span class="badge badge-success">17.22 AAA</span></td>
+              <td><span class="badge badge-success">15.80 AAA</span></td>
+              <td>标题 / 正文 / 数值</td>
+            </tr>
+            <tr>
+              <td>次级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #5C5C5C;"></span><span class="mono">--text-secondary</span> #5C5C5C</span></td>
+              <td><span class="badge badge-success">6.69 AA</span></td>
+              <td><span class="badge badge-success">6.13 AA</span></td>
+              <td>描述 / 次要说明</td>
+            </tr>
+            <tr>
+              <td>三级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #6E6E6E;"></span><span class="mono">--text-tertiary</span> #6E6E6E</span></td>
+              <td><span class="badge badge-success">5.10 AA</span></td>
+              <td><span class="badge badge-success">4.79 AA</span></td>
+              <td>表头 / 标签 / URL</td>
+            </tr>
+            <tr>
+              <td>四级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #767676;"></span><span class="mono">--text-quaternary</span> #767676</span></td>
+              <td><span class="badge badge-success">4.54 AA</span></td>
+              <td><span class="badge badge-warning">4.25 仅占位</span></td>
+              <td>占位符 / 禁用态</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          <strong>本轮修正：</strong>旧稿三级 <span class="mono">#8A8A8A</span>=3.45:1、四级 <span class="mono">#A6A6A6</span>=2.43:1，
+          而它们被大量用于<strong>表头、任务 URL、meta 行等实读文本</strong> ⇒ 整屏不达标。现已分别提到 5.10 与 4.54。
+        </p>
+
+        <h4>品牌层 / 可读层（关键：底色与文字色分离）</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>用途</th><th>令牌 / 色值</th><th>对比度</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>品牌纯色（仅图形）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #D9781A;"></span><span class="mono">--brand</span> #D9781A</span></td>
+              <td><span class="badge badge-warning">3.16 图形达标</span></td>
+              <td>进度环 / 选中条 / 分隔线。<strong>禁止用于文字</strong></td>
+            </tr>
+            <tr>
+              <td>品牌色·文字版</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #A6510E;"></span><span class="mono">--accent-fg</span> #A6510E</span></td>
+              <td><span class="badge badge-success">5.52 AA</span></td>
+              <td>指标数值 / 抽屉标题图标 / 图例文字都用它</td>
+            </tr>
+            <tr>
+              <td>主按钮（开始）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #AD5710;"></span><span class="mono">--btn-primary-bg</span> #AD5710</span></td>
+              <td><span class="badge badge-success">5.06 AA（白字）</span></td>
+              <td>悬停 <span class="mono">#9C4A0C</span> = 6.18。色相仍是同一个橙</td>
+            </tr>
+            <tr>
+              <td>侧栏选中态字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #9C4A0C;"></span><span class="mono">--text-sidebar-active</span> #9C4A0C</span></td>
+              <td><span class="badge badge-success">5.53 AA</span></td>
+              <td>实机原值 <span class="mono">#B85919</span> 仅 4.2:1 ⇒ 收深</td>
+            </tr>
+            <tr>
+              <td>停止按钮</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #5C5CD9;"></span><span class="mono">--accent-stop</span> #5C5CD9</span></td>
+              <td><span class="badge badge-success">5.27 AA</span></td>
+              <td><strong>实机是蓝紫，不是红色</strong></td>
+            </tr>
+            <tr>
+              <td>远控胶囊底 / 字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #F9F4EE; border-color:#EADBC8;"></span><span class="mono">--remote-bg</span> #F9F4EE / #8A4310</span></td>
+              <td><span class="badge badge-success">6.64 AA</span></td>
+              <td>暖白底 + 深橙字</td>
+            </tr>
+            <tr>
+              <td>GitHub 链接 / 焦点环</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #8A4310;"></span><span class="mono">--github-link</span> #8A4310</span></td>
+              <td><span class="badge badge-success">6.43 AA</span></td>
+              <td>悬停 <span class="mono">#74390B</span> = 8.06</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          <strong>核心原则：</strong>纯品牌橙 <span class="mono">#D9781A</span> 压白底只有 3.16:1，
+          <strong>拿它写字一定不达标</strong>。所以拆出 <span class="mono">--accent-fg</span>（文字版）与
+          <span class="mono">--btn-primary-bg</span>（可承载白字的深橙底）两个变量，
+          旧稿把两者混为一谈是本轮最大的一处可读性缺陷。
+        </p>
+
+        <h4>状态色（前景压各自浅底，全部 ≥4.5:1）</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>语义</th><th>前景 / 底色</th><th>对比度</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>成功</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #1E6B3C;"></span><span class="mono">#1E6B3C</span> / #DFF6E5</span></td>
+              <td><span class="badge badge-success">5.72 AA</span></td>
+              <td>抓取完成 / 健康</td>
+            </tr>
+            <tr>
+              <td>警告 · 进行中</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #8A4310;"></span><span class="mono">#8A4310</span> / #FAF1E7</span></td>
+              <td><span class="badge badge-success">6.50 AA</span></td>
+              <td>降级 / 重试</td>
+            </tr>
+            <tr>
+              <td>错误</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #8E3428;"></span><span class="mono">#8E3428</span> / #FBE9E7</span></td>
+              <td><span class="badge badge-success">6.70 AA</span></td>
+              <td>失败 / 死书</td>
+            </tr>
+            <tr>
+              <td>等待</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #5E5E5E;"></span><span class="mono">#5E5E5E</span> / #F0F0F0</span></td>
+              <td><span class="badge badge-success">5.69 AA</span></td>
+              <td>排队中</td>
+            </tr>
+            <tr>
+              <td>信息</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #3F3FB0;"></span><span class="mono">#3F3FB0</span> / #EDEDFB</span></td>
+              <td><span class="badge badge-success">7.10 AA</span></td>
+              <td>提示 / 只读</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          <strong>本轮修正：</strong>旧稿 5 个状态色压在各自浅底上仅 2.8~4.2:1，徽章几乎全部不达标。
+          前景色整体压深后，<strong>色相不变、语义不变</strong>，只把对比度提进 AA。
+        </p>
       </div>
 
       <!-- 4. 夜间模式配色方案 -->
       <div class="docs-block">
         <h3><span class="icon">🌙</span>夜间模式配色方案</h3>
-        <p>Windows 11 深色主题底色 + 高饱和强调色，夜间使用不刺眼：</p>
+        <p>实机夜间是<strong>纯黑侧栏 + 深灰卡片</strong>的暖调深色层次（与常见"侧栏比卡片亮"相反），日志终端恒为最深。</p>
 
+        <h4>底色层</h4>
         <table class="color-table">
           <thead>
-            <tr><th>用途</th><th>色值</th><th>对比度</th></tr>
+            <tr><th>用途</th><th>令牌 / 色值</th><th>说明</th></tr>
           </thead>
           <tbody>
             <tr>
-              <td>主背景</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #202020; border-color: #444;"></span>#202020</span></td>
+              <td>侧边导航底</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #171717; border-color: #333;"></span><span class="mono">--bg-sidebar</span> #171717</span></td>
+              <td><strong>纯黑，比卡片更暗</strong>（旧稿相反）</td>
+            </tr>
+            <tr>
+              <td>主背景（页面底）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #202020; border-color: #3A3A3A;"></span><span class="mono">--bg-primary</span> #202020</span></td>
               <td>—</td>
             </tr>
             <tr>
-              <td>卡片/面板</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #2B2B2B;"></span>#2B2B2B</span></td>
-              <td>与正文 13.8:1</td>
+              <td>卡片 / 面板</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #2B2B2B;"></span><span class="mono">--bg-secondary</span> #2B2B2B</span></td>
+              <td>与主文字 14.16:1</td>
             </tr>
             <tr>
+              <td>三级底（内嵌块 / 表头）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #383838;"></span><span class="mono">--bg-tertiary</span> #383838</span></td>
+              <td>夜间辅助文字多落在此底上</td>
+            </tr>
+            <tr>
+              <td>侧栏选中态底</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #382614; border-color:#4A3520;"></span><span class="mono">--bg-sidebar-active</span> #382614</span></td>
+              <td>暖褐底</td>
+            </tr>
+            <tr>
+              <td>日志终端底（恒深）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #171717; border-color:#333;"></span><span class="mono">--terminal-bg</span> #171717</span></td>
+              <td>与日间一致，终端始终深底</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h4>文字层级</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>层级</th><th>令牌 / 色值</th><th>压 #2B2B2B</th><th>压 #383838</th><th>用途</th></tr>
+          </thead>
+          <tbody>
+            <tr>
               <td>主文字</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #FFFFFF;"></span>#FFFFFF</span></td>
-              <td>AAA 级</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #FFFFFF;"></span><span class="mono">--text-primary</span> #FFFFFF</span></td>
+              <td><span class="badge badge-success">14.16 AAA</span></td>
+              <td>—</td>
+              <td>标题 / 正文</td>
             </tr>
             <tr>
               <td>次级文字</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #C8C8C8;"></span>#C8C8C8</span></td>
-              <td>AA 级 (8.1:1)</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #C8C8C8;"></span><span class="mono">--text-secondary</span> #C8C8C8</span></td>
+              <td><span class="badge badge-success">8.46 AAA</span></td>
+              <td>—</td>
+              <td>描述 / 次要说明</td>
             </tr>
             <tr>
-              <td>主色调蓝</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #4CC2FF;"></span>#4CC2FF</span></td>
-              <td>深色底 7.6:1</td>
+              <td>三级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #A6A6A6;"></span><span class="mono">--text-tertiary</span> #A6A6A6</span></td>
+              <td><span class="badge badge-success">5.82 AA</span></td>
+              <td><span class="badge badge-success">4.82 AA</span></td>
+              <td>表头 / 标签 / URL</td>
             </tr>
             <tr>
-              <td>成功绿</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #6CCB5F;"></span>#6CCB5F</span></td>
-              <td>深色底 5.9:1</td>
+              <td>四级文字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #9A9A9A;"></span><span class="mono">--text-quaternary</span> #9A9A9A</span></td>
+              <td><span class="badge badge-success">5.03 AA</span></td>
+              <td><span class="badge badge-warning">4.17 非关键</span></td>
+              <td><strong>仅</strong>占位符 / 禁用态（WCAG 豁免禁用控件）</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          <strong>本轮修正：</strong>夜间三级文字原为 <span class="mono">#9A9A9A</span>，压在
+          <span class="mono">--bg-tertiary #383838</span> 上仅 <strong>4.17:1</strong>，
+          而 metric-label / 图标 / 表头恰恰都落在这个底上 ⇒ <strong>夜间整屏不达标</strong>。
+          提到 <span class="mono">#A6A6A6</span> 后：#383838 上 4.82、#2B2B2B 上 5.82，两处均过 AA。
+        </p>
+
+        <h4>品牌层 / 可读层（夜间必须反色）</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>用途</th><th>令牌 / 色值</th><th>对比度</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>品牌纯色（仅图形）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #E08A3C;"></span><span class="mono">--brand</span> #E08A3C</span></td>
+              <td><span class="badge badge-success">5.31 图形达标</span></td>
+              <td>进度环 / 选中条</td>
             </tr>
             <tr>
-              <td>警告黄</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #FCE100;"></span>#FCE100</span></td>
-              <td>深色底 12.8:1</td>
+              <td>品牌色·文字版</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #EAA261;"></span><span class="mono">--accent-fg</span> #EAA261</span></td>
+              <td><span class="badge badge-success">6.63 AA</span></td>
+              <td>比品牌纯色更亮一档，压深底用</td>
             </tr>
             <tr>
-              <td>错误红</td>
-              <td><span class="color-swatch"><span class="swatch" style="background: #FF99A4;"></span>#FF99A4</span></td>
-              <td>深色底 7.9:1</td>
+              <td>主按钮（开始）</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #E08A3C;"></span><span class="mono">--btn-primary-bg</span> #E08A3C</span></td>
+              <td><span class="badge badge-success">6.46 AA（近黑字）</span></td>
+              <td><strong>反色：亮橙底 + #1B1B1B 字</strong>。沿用白字只有 2.7:1</td>
+            </tr>
+            <tr>
+              <td>侧栏选中态字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #E8A96A;"></span><span class="mono">--text-sidebar-active</span> #E8A96A</span></td>
+              <td><span class="badge badge-success">7.09 AA</span></td>
+              <td>夜间暖褐底上的提亮字</td>
+            </tr>
+            <tr>
+              <td>停止按钮</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #7B7BE0;"></span><span class="mono">--accent-stop</span> #7B7BE0</span></td>
+              <td><span class="badge badge-success">4.72 AA</span></td>
+              <td>夜间提亮保证可辨，同样配近黑字</td>
+            </tr>
+            <tr>
+              <td>远控胶囊底 / 字</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #2B2419; border-color:#3E3423;"></span><span class="mono">--remote-bg</span> #2B2419 / #E8A96A</span></td>
+              <td><span class="badge badge-success">7.53 AA</span></td>
+              <td>夜间暖褐底</td>
+            </tr>
+            <tr>
+              <td>GitHub 链接 / 焦点环</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #E8964A;"></span><span class="mono">--github-link</span> #E8964A</span></td>
+              <td><span class="badge badge-success">7.59 AAA</span></td>
+              <td>悬停 <span class="mono">#F2A85C</span> = 7.24</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h4>状态色</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>语义</th><th>前景 / 底色</th><th>对比度</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>成功</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #7FD472;"></span><span class="mono">#7FD472</span> / #1B3D22</span></td>
+              <td><span class="badge badge-success">6.66 AA</span></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>警告 · 进行中</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #E8A96A;"></span><span class="mono">#E8A96A</span> / #382614</span></td>
+              <td><span class="badge badge-success">7.09 AA</span></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>错误</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #F0A99C;"></span><span class="mono">#F0A99C</span> / #432723</span></td>
+              <td><span class="badge badge-success">6.99 AA</span></td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>等待</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #B0B0B0;"></span><span class="mono">#B0B0B0</span> / #383838</span></td>
+              <td><span class="badge badge-success">5.41 AA</span></td>
+              <td>原 #9A9A9A 仅 4.17:1 ⇒ 提亮</td>
+            </tr>
+            <tr>
+              <td>信息</td>
+              <td><span class="color-swatch"><span class="swatch" style="background: #A5A5F0;"></span><span class="mono">#A5A5F0</span> / #2B2B4A</span></td>
+              <td><span class="badge badge-success">5.97 AA</span></td>
+              <td>—</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- 5. 抓取工作台详细说明 -->
+      <!-- 5. 设计系统规范（本轮重构新增） -->
+      <div class="docs-block span-2">
+        <h3><span class="icon">📐</span>设计系统规范（本轮重构）</h3>
+        <p>本轮把原先散落在各处的硬编码值收敛为一套令牌，落地时<strong>按本节实现即可</strong>，无需再逐页对色。</p>
+
+        <div class="docs-grid-2">
+          <div>
+            <h4>色彩令牌三层架构</h4>
+            <p>旧稿最大的结构性问题是<strong>「品牌色 = 功能色 = 文字色」三者共用一个变量</strong>（名为 <span class="mono">--accent-blue</span>，值却是橙色），必然出现"改一处崩一片"。现拆为三层：</p>
+            <ul>
+              <li><strong>① 品牌层</strong> <span class="mono">--brand</span> / <span class="mono">--brand-hover</span> / <span class="mono">--brand-subtle</span>：
+                  纯色值，<strong>只用于大色块、图形、进度</strong>，不承载文字</li>
+              <li><strong>② 可读层</strong> <span class="mono">--accent-fg</span> / <span class="mono">--on-brand-subtle</span> / <span class="mono">--btn-primary-fg</span>：
+                  「压在品牌色上的文字」，各自保证 ≥4.5:1</li>
+              <li><strong>③ 功能层</strong> <span class="mono">--status-*</span> / <span class="mono">--on-accent-*-light</span>：
+                  状态语义，每组拆前景 / 底 / 描边三件套</li>
+            </ul>
+            <p class="block-note">
+              落地对应：Flet 侧把三组值写成 <span class="mono">ui_theme.py</span> 里的模块级常量，
+              组件只引用语义名（如 <span class="mono">ACCENT_FG</span>），不再出现字面色值。
+            </p>
+
+            <h4>间距与圆角</h4>
+            <ul>
+              <li><strong>间距</strong>：4px 栅格，<span class="mono">--sp-1</span> 4 → <span class="mono">--sp-2</span> 8 → <span class="mono">--sp-3</span> 12 → <span class="mono">--sp-4</span> 16 → <span class="mono">--sp-5</span> 20 → <span class="mono">--sp-6</span> 24 → <span class="mono">--sp-7</span> 28 → <span class="mono">--sp-8</span> 32 → <span class="mono">--sp-10</span> 40</li>
+              <li><strong>圆角只留 4 档 + 胶囊</strong>：<span class="mono">sm</span> 4（控件）/ <span class="mono">md</span> 6（卡片内小方块）/ <span class="mono">lg</span> 8（卡片）/ <span class="mono">pill</span> 999（胶囊）</li>
+              <li><strong>本轮修正</strong>：旧稿 <span class="mono">lg</span> 与 <span class="mono">xl</span> 同为 8px、<span class="mono">md</span> 与 <span class="mono">sm</span> 仅差 1px，
+                  组件各取各的 ⇒ 视觉噪声。现在每个值都有唯一用途</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4>组件规格表（三档尺寸，禁止自定义）</h4>
+            <table class="color-table">
+              <thead>
+                <tr><th>组件</th><th>高度</th><th>内边距</th><th>圆角</th><th>字号</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>主/次按钮 <span class="mono">.btn</span></td><td>34px</td><td>0 16px</td><td>4px</td><td>14px / 500</td></tr>
+                <tr><td>小按钮 <span class="mono">.btn-sm</span></td><td>28px</td><td>0 12px</td><td>4px</td><td>13px / 500</td></tr>
+                <tr><td>大按钮 <span class="mono">.btn-lg</span></td><td>40px</td><td>0 20px</td><td>4px</td><td>14px / 500</td></tr>
+                <tr><td>方形图标按钮 <span class="mono">.btn-icon</span></td><td>34×34</td><td>0</td><td>4px</td><td>—</td></tr>
+                <tr><td>表格图标按钮 <span class="mono">.icon-btn</span></td><td>36×32</td><td>0</td><td>6px</td><td>—</td></tr>
+                <tr><td>胶囊 / 筛选 <span class="mono">.chip-btn</span></td><td>28px</td><td>0 12px</td><td>胶囊</td><td>13px / 400</td></tr>
+                <tr><td>状态徽章 <span class="mono">.badge</span></td><td>20px</td><td>0 8px</td><td>胶囊</td><td>11px / 500</td></tr>
+              </tbody>
+            </table>
+            <p class="block-note">
+              <strong>关键：</strong>徽章与能力标签 <span class="mono">.cap-tag</span> <strong>共用同一套高度 / 内边距 / 圆角</strong>，
+              只差语义色。旧稿两者高度不一致，同一行里视觉不齐。
+            </p>
+
+            <h4>交互状态（每种都必须有，不许只做 hover）</h4>
+            <ul>
+              <li><strong>按钮</strong>：<span class="mono">hover</span> / <span class="mono">active</span> / <span class="mono">focus-visible</span> / <span class="mono">disabled</span> 四态齐全，主/次/危险/幽灵四类各一套</li>
+              <li><strong>图标按钮</strong>：额外有 <span class="mono">.danger</span> 危险态与 <span class="mono">[aria-disabled]</span> 同步禁用态</li>
+              <li><strong>禁用态</strong>：<span class="mono">pointer-events:none</span> + <span class="mono">cursor:not-allowed</span> +
+                  <span class="mono">opacity:1</span>（不用降低透明度，避免连带文字也看不清）</li>
+              <li><strong>焦点环</strong>：统一 <span class="mono">outline:2px solid var(--focus-ring); outline-offset:2px</span>，
+                  仅 <span class="mono">:focus-visible</span> 时出现，鼠标点击不显示</li>
+              <li><strong>胶囊选中态</strong>：浅底 + 深字 + 描边，<strong>不用实心块压白字</strong></li>
+            </ul>
+          </div>
+        </div>
+
+        <h4>响应式断点（四档，原则：只调宽度 / 间距 / 方向，绝不新增滚动容器）</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>断点</th><th>侧栏</th><th>主内容</th><th>其他调整</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>&gt; 1100px</strong></td>
+              <td>220px 完整（图标 + 文字）</td>
+              <td>多列并排，20px 内边距</td>
+              <td>基准布局</td>
+            </tr>
+            <tr>
+              <td><strong>≤ 1100px</strong></td>
+              <td>220px 完整</td>
+              <td>内边距收到 16px</td>
+              <td>输入区控件允许伸缩，<strong>URL 输入框 <span class="mono">flex:1 1 0; min-width:0</span></strong></td>
+            </tr>
+            <tr>
+              <td><strong>≤ 960px</strong>（实机下限）</td>
+              <td>220px 完整</td>
+              <td>单列，间距收到 12px</td>
+              <td>滚动条收窄到 8px；横滚容器内边距 4→2px 让出可视宽；日志工具栏<strong>允许换行</strong>而非压缩</td>
+            </tr>
+            <tr>
+              <td><strong>≤ 720px</strong></td>
+              <td>56px 图标条，<span class="mono">.nav-label</span> 隐藏</td>
+              <td>单列</td>
+              <td>Star 提示行隐藏，GitHub 图标仍可点且仍有焦点环</td>
+            </tr>
+            <tr>
+              <td><strong>≤ 480px</strong></td>
+              <td>56px 图标条</td>
+              <td>单列，文档区网格 <span class="mono">auto-fit minmax(260px,1fr)</span> 自动降为 1 列</td>
+              <td>横向溢出兜底为 0</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          实机 Flet 窗口 <span class="mono">min_width=960</span>，桌面端不会更窄；保留 720 / 480 两档是为了
+          <strong>验证退化布局不崩坏</strong>。校验结果：1500 / 1024 / 960 / 720 / 480 五档视口横向溢出均为 <strong>0</strong>。
+        </p>
+      </div>
+
+      <!-- 6. 抓取工作台详细说明 -->
       <div class="docs-block">
         <h3><span class="icon">⬇️</span>抓取工作台 · 功能划分</h3>
 
@@ -2497,8 +4597,8 @@ html, body {
         <ul>
           <li><strong>URL 输入框</strong>：自适应拉伸，支持回车快速开始，粘贴即校验</li>
           <li><strong>模式选择</strong>：完整抓取 / 仅看目录 / 测试首章 / 章节区间，区间模式显示起止章输入</li>
-          <li><strong>主操作按钮</strong>：开始（蓝色主按钮）+ 停止（红色危险按钮），状态联动禁用</li>
-          <li><strong>次操作行</strong>：导入网址、粘贴网址、断点续传开关、输出目录、打开文件夹</li>
+          <li><strong>主操作按钮</strong>：开始（<strong>暖橙主按钮底 <span class="mono">--btn-primary-bg #AD5710</span></strong>，白字 5.06:1）+ 停止（<strong>蓝紫 <span class="mono">--accent-stop #5C5CD9</span></strong>，实机不是红色），状态联动禁用</li>
+          <li><strong>次操作行</strong>：导入网址、粘贴网址、起止章（区间模式）、断点续传开关、<strong>导出EPUB 开关</strong>、输出目录、打开文件夹</li>
         </ul>
 
         <h4>任务表格区</h4>
@@ -2506,7 +4606,7 @@ html, body {
           <li><strong>8 列布局</strong>：任务/URL → 进度 → 状态 → 引擎 → 反爬 → 耗时 → 质检 → 操作</li>
           <li><strong>进度列</strong>：迷你环形进度条 + 数值，一目了然</li>
           <li><strong>状态列</strong>：胶囊标签，颜色区分进行中/完成/失败/等待</li>
-          <li><strong>操作列</strong>：展开详情、预览文件、重下、删除，4 个图标按钮紧凑排列</li>
+          <li><strong>操作列</strong>：展开详情、预览抽屉、<strong>导出 EPUB</strong>、重新下载、删除，5 个图标按钮紧凑排列（36×32）</li>
         </ul>
 
         <h4>日志条</h4>
@@ -2525,7 +4625,7 @@ html, body {
         </ul>
       </div>
 
-      <!-- 6. 其他页面说明 -->
+      <!-- 7. 其他页面说明 -->
       <div class="docs-block">
         <h3><span class="icon">📑</span>其他页面 · 功能划分</h3>
 
@@ -2546,19 +4646,187 @@ html, body {
           <li><strong>健康度分级</strong>：≥80% 绿色、≥50% 橙色、&lt;50% 红色</li>
         </ul>
 
+        <h4>死书清单页（v2.4.39 新增）</h4>
+        <ul>
+          <li><strong>页头双动作</strong>：「重检当前筛选」（对当前筛选结果重新探测）+「刷新」</li>
+          <li><strong>状态胶囊筛选</strong>：全部 / 待确认 / 已忽略 / 已删除 四态互斥</li>
+          <li><strong>类型下拉</strong>：HTTP 404 / HTTP 410 / 连接超时 / 内容为空</li>
+          <li><strong>摘要行</strong>：总条数 + 三态各自计数 + 当前筛选条数</li>
+          <li><strong>行内动作随状态变化</strong>：待确认→「忽略此书」；已忽略→「恢复待确认」；已删除→「已处理」；非已删除→「删除记录」</li>
+          <li><strong>操作列恒 5 个按钮 × 36px</strong>：展开 / 预览 / [忽略 或 恢复待确认] / 重新下载 / 删除。<strong>死书行的第 3 位是状态动作，不存在「EPUB 导出」「重试」「下载」按钮</strong>——死书必然没有输出文件，导出无意义</li>
+          <li><strong>删除确认</strong>：AlertDialog 明示"将同时移除任务、书架与网站清单记录；已下载文件不会被删除"</li>
+        </ul>
+
+        <h4>EPUB 导出（三个入口，互补而非重复）</h4>
+        <ul>
+          <li><strong>入口①输入区开关「导出EPUB」</strong>：抓取<strong>开始前</strong>勾选，抓完自动生成 .epub。
+              <span class="mono">ft.Switch</span>，默认<strong>关</strong>。中途勾选会同步进已有任务（不会静默丢弃）</li>
+          <li><strong>入口②任务表格操作列第 3 个按钮</strong>：<strong>单本手动导出</strong>，随时可触发。
+              可点条件 = <strong>有输出文件 且 非 running</strong>；否则置灰并在 tooltip 说明原因
+              （「请等待抓取完成」/「无输出文件, 无法导出」）</li>
+          <li><strong>入口③详情抽屉「输出文件」区</strong>：文件名右侧的导出按钮，
+              tooltip「导出 EPUB (单篇导出, 与全局导出同格式)」—— 旁边是打开所在文件夹</li>
+          <li><strong>三入口同走一条转换链</strong>（<span class="mono">epub_exporter.txt_to_epub</span>），
+              格式与样式完全一致；单篇导出失败<strong>抛异常并提示</strong>，全局导出失败<strong>静默跳过不影响抓取结果</strong></li>
+          <li><strong>死书行没有 EPUB 按钮</strong>：死书必然无输出文件，第 3 位换成状态动作</li>
+        </ul>
+
         <h4>运行日志页</h4>
         <ul>
-          <li><strong>日志工具栏</strong>：来源过滤、级别过滤、关键词搜索、复制/导出/清空</li>
-          <li><strong>终端风格日志</strong>：深色背景 + 等宽字体，时间戳 + 来源 + 内容</li>
+          <li><strong>工具栏分两行</strong>：第一行 来源(180) / 级别(140) / 搜索(360) / 复制 / 导出 / 清空；第二行 日志日期(200) / 刷新 / 打开日志目录 / 「显示 N / M 行」</li>
+          <li><strong>终端风格日志</strong>：深色恒定背景 <span class="mono">--terminal-bg #171717</span> + 等宽字体，时间戳 + 来源 + 内容（日夜不随主题变化）</li>
           <li><strong>级别着色</strong>：INFO 原色、SUCCESS 绿色、WARNING 黄色、ERROR 红色、DEBUG 灰色</li>
+          <li><strong>行数上限</strong>：最多显示 3000 行；「清空」仅清当前显示，不影响日志文件</li>
+        </ul>
+
+        <h4>远控页</h4>
+        <ul>
+          <li><strong>状态卡</strong>：状态点 + 文案「远控已关闭 / 已开启」+ 副说明；右侧「使用教程」+「开启/关闭远控」</li>
+          <li><strong>三段接入信息</strong>：本机地址（局域网）/ 访问 token（<strong>默认打码</strong>，点击才显示）/ 外网访问（<span class="mono">tailscale serve --bg 8760</span>）</li>
+          <li><strong>手机端记录区</strong>：空态文案「暂无手机端记录 — 手机发起的抓取任务会实时出现在这里」</li>
+          <li><strong>安全防护</strong>：外网地址入库前经 <span class="mono">validate_public_url</span> 校验——仅 http/https，拒绝 localhost / *.local / *.internal，并用 <span class="mono">ipaddress</span> 拒绝私有网段、回环、链路本地、保留与多播地址</li>
         </ul>
       </div>
 
-      <!-- 7. 主题切换设计 -->
-      <div class="docs-block" style="grid-column: 1 / -1;">
+      <!-- 8. GitHub 入口设计 -->
+      <div class="docs-block span-2">
+        <h3><span class="icon">🔗</span>GitHub 入口设计（侧栏底部）</h3>
+
+        <div class="docs-grid-2">
+          <div>
+            <h4>落点依据（为什么不在「关于/设置面板」）</h4>
+            <p>需求原写「如关于/设置面板底部」，但<strong>实机核查后确认本软件两者都没有</strong>：</p>
+            <ul>
+              <li>侧栏导航 <span class="mono">NAV_PAGES</span> 共 6 项：抓取工作台 / 爬取历史 / 死书清单 / 站点管理 / 运行日志 / 远控，无「关于」「设置」</li>
+              <li>全仓库检索无对应面板实现，仅有远控页的「设置启用」等无关命中</li>
+              <li>侧栏底部本就有弹性留白：<span class="mono">icon_rail.py:299</span> 的 <span class="mono">ft.Container(expand=True)</span></li>
+            </ul>
+            <p>⇒ 落在<strong>侧栏导航列表之下、弹性留白之上</strong>：既对应现成结构，又不必新增任何面板。</p>
+
+            <h4>行为与代码落点</h4>
+            <ul>
+              <li>点击在<strong>默认浏览器</strong>打开仓库 <span class="mono">https://github.com/HHH-SABER/book-crawler</span></li>
+              <li>行为与既有先例一致：远控页「使用教程」同样走 <span class="mono">webbrowser.open()</span>（<span class="mono">remote_page.py:141-143</span>）</li>
+              <li>Flet 0.86.5 <strong>无</strong> <span class="mono">ft.launch_url</span>、<strong>无</strong> <span class="mono">ft.Link</span>；实现用 <span class="mono">ft.TextButton(url=)</span> 或 <span class="mono">ft.UrlLauncher.launch_url()</span> + <span class="mono">on_click</span> 兜底</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4>超链接样式与反馈</h4>
+            <ul>
+              <li>主行带<strong> GitHub 图标</strong> + 文字，图标 <code>currentColor</code> 跟随文字色</li>
+              <li><strong>悬停</strong>：文字加深 + 下划线（<span class="mono">text-underline-offset:3px</span>）+ 暖色底</li>
+              <li><strong>键盘聚焦</strong>：2px 焦点环（<span class="mono">outline-offset:1px</span>，向内不裁切），视觉与悬停一致</li>
+              <li><strong>按下</strong>：底色转为选中态蓝</li>
+            </ul>
+
+            <h4>Star 提示行（独立、不可点击）</h4>
+            <ul>
+              <li>单独成行，<span class="mono">--fs-micro</span>（11px，比主行小 2px）</li>
+              <li>颜色较浅但仍达 AA：见下方实测表</li>
+              <li><code>pointer-events:none</code> + <code>user-select:none</code> —— 点击穿透，<strong>不抢主行点击区</strong>，也无法被误选中复制</li>
+            </ul>
+          </div>
+        </div>
+
+        <h4>对比度实测（WCAG 2.1，脚本核算，非估算）</h4>
+        <p>底色为实机侧栏色：日间 <span class="mono">#F1F1F1</span>、夜间 <span class="mono">#171717</span>；悬停态底为选中态暖底 <span class="mono">#FAF1E7</span> / <span class="mono">#382614</span>。</p>
+        <table class="color-table">
+          <thead>
+            <tr><th>用途</th><th>主题</th><th>令牌 / 色值</th><th>对比度</th><th>判定</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>主行（默认）</td><td>日间</td><td><span class="mono">--github-link</span> #8A4310</td><td>6.43:1</td><td><span class="badge badge-success">AA+</span></td></tr>
+            <tr><td>主行（悬停/聚焦）</td><td>日间</td><td><span class="mono">--github-link-hover</span> #74390B</td><td>8.06:1</td><td><span class="badge badge-success">AAA</span></td></tr>
+            <tr><td>Star 提示行</td><td>日间</td><td><span class="mono">--github-hint</span> #5E5E5E</td><td>5.74:1</td><td><span class="badge badge-success">AA</span></td></tr>
+            <tr><td>主行（默认）</td><td>夜间</td><td><span class="mono">--github-link</span> #E8964A</td><td>7.59:1</td><td><span class="badge badge-success">AAA</span></td></tr>
+            <tr><td>主行（悬停/聚焦）</td><td>夜间</td><td><span class="mono">--github-link-hover</span> #F2A85C</td><td>7.24:1</td><td><span class="badge badge-success">AAA</span></td></tr>
+            <tr><td>Star 提示行</td><td>夜间</td><td><span class="mono">--github-hint</span> #A6A6A6</td><td>7.36:1</td><td><span class="badge badge-success">AAA</span></td></tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          <strong>为何不用主橙 <span class="mono">#D9781A</span>：</strong>它在浅色侧栏底上仅 <strong>2.80:1</strong>，未达 AA 正文 4.5:1；
+          三级灰 <span class="mono">#8A8A8A</span> 也仅 3.06:1，偏浅。
+          故链接主色<strong>直接复用「浅底上的字」那一档暖棕</strong> <span class="mono">--on-brand-subtle #8A4310</span>（6.43:1），
+          与侧栏选中态同源 night/day 一致，无需另立一档色。
+        </p>
+      </div>
+
+      <!-- 9. 滚动条规范 -->
+      <div class="docs-block span-2">
+        <h3><span class="icon">↕️</span>全局滚动条规范</h3>
+
+        <div class="docs-grid-2">
+          <div>
+            <h4>边界条件（避免双滚动条 / 横向抖动）</h4>
+            <ul>
+              <li>用 <span class="mono">overflow:auto</span>（非 <span class="mono">hidden</span>/<span class="mono">scroll</span>）⇒ <strong>滚动条仅在内容溢出时出现</strong></li>
+              <li>横滚容器另设 <span class="mono">.scrollable-x</span>：<span class="mono">overflow-x:auto</span> + <span class="mono">overflow-y:hidden</span>，纵向交还父容器</li>
+              <li><span class="mono">scrollbar-gutter:stable</span> 预留轨道 ⇒ 滚动条出现时<strong>不引起内容位移</strong>，无横向抖动</li>
+              <li><strong>单一轴单一责任</strong>：每个轴只允许一个滚动容器，父容器与子容器不得同轴双滚</li>
+              <li>外层 <span class="mono">.app-body</span> 固定 <span class="mono">overflow:hidden</span>，杜绝页面级滚动与内容级滚动打架</li>
+            </ul>
+
+            <h4>交互支持</h4>
+            <ul>
+              <li><strong>滚轮 / 触摸板</strong>：原生行为，无需额外代码</li>
+              <li><strong>拖拽</strong>：<span class="mono">::-webkit-scrollbar-thumb</span> 默认可拖；Firefox 走 <span class="mono">scrollbar-width</span></li>
+              <li><strong>键盘</strong>：滚动容器带 <span class="mono">tabindex="0"</span> + <span class="mono">role="region"</span> + <span class="mono">aria-label</span>，Tab 可聚焦，方向键/PageUp/PageDown/Home/End 原生生效，焦点环为 2px 内描边</li>
+              <li><strong>双端样式</strong>：Chromium 走 <span class="mono">::-webkit-scrollbar</span>，Firefox 走 <span class="mono">scrollbar-width:thin</span> + <span class="mono">scrollbar-color</span></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4>尺寸与配色</h4>
+            <ul>
+              <li>滑块 10px（细滑块 + 透明轨道），圆角 5px，<span class="mono">border:2px solid transparent</span> + <span class="mono">background-clip:content-box</span> 做内缩</li>
+              <li>默认 <span class="mono">--border-medium</span>，悬停 <span class="mono">--text-quaternary</span>（与现有 UI 规范同源）</li>
+              <li>触屏（<span class="mono">pointer:coarse</span>）加粗到 12px 并提亮，保证拖拽命中区</li>
+            </ul>
+
+            <h4>小屏断点表现</h4>
+            <p>实机窗口下限 <span class="mono">min_width=960</span>，桌面端不会更窄；设计稿仍留三档以验证退化不崩坏：</p>
+            <ul>
+              <li><strong>≤1100px</strong>：收窄留白与间距，<strong>不碰 overflow</strong></li>
+              <li><strong>≤960px</strong>（实机下限）：滚动条收窄到 8px，横滚容器内边距 4→2px 让出可视宽；底部状态栏 <span class="mono">flex-shrink:0</span>，<strong>永不遮挡内容</strong></li>
+              <li><strong>≤720px</strong>：侧栏退化为 56px 图标条（Star 提示行隐藏，GitHub 图标仍可点、仍有焦点环），主内容单列</li>
+            </ul>
+            <p class="block-note">
+              断点原则：<strong>只调宽度/字号/间距，绝不新增滚动容器</strong>，因此任意断点下纵向都只有 1 个滚动容器。
+            </p>
+          </div>
+        </div>
+
+        <h4>溢出处理清单（14 个文件 / 85 个容器全量盘点）</h4>
+        <table class="color-table">
+          <thead>
+            <tr><th>优先级</th><th>位置</th><th>现状</th><th>处理方案</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="badge badge-error">P0</span></td><td><span class="mono">detail_drawer.py:82</span> 任务详情视图</td><td>写了 <span class="mono">scroll=AUTO</span> 却漏 <span class="mono">expand=True</span>，无界高度 ⇒ 滚动条永不出现</td><td>补 <span class="mono">expand=True</span>，改 <span class="mono">scroll=ALWAYS</span></td></tr>
+            <tr><td><span class="badge badge-error">P0</span></td><td><span class="mono">detail_drawer.py:99-111</span> 文件预览视图</td><td>既无 <span class="mono">scroll</span> 也无 <span class="mono">expand</span>，纵向必溢</td><td>加 <span class="mono">expand=True</span> + 限高，<span class="mono">scroll=ALWAYS</span></td></tr>
+            <tr><td><span class="badge badge-error">P0</span></td><td><span class="mono">site_manage_page.py:451</span> 适配器插件列表</td><td>裸 <span class="mono">ft.Column(spacing=4)</span>，无滚动无高度约束</td><td>改 <span class="mono">ft.ListView(spacing=4, scroll=ALWAYS)</span></td></tr>
+            <tr><td><span class="badge badge-error">P0</span></td><td><span class="mono">site_manage_page.py:537-557</span> 适配器行</td><td><span class="mono">domain</span> 无 <span class="mono">max_lines</span>/<span class="mono">ELLIPSIS</span>，长域名横向撑破</td><td>加 <span class="mono">max_lines=1</span> + <span class="mono">overflow=ft.TextOverflow.ELLIPSIS</span></td></tr>
+            <tr><td><span class="badge badge-error">P0</span></td><td><span class="mono">gui_app.py:324-328</span> 工作台左列</td><td>无 <span class="mono">scroll</span>，批量导入面板展开（250px）挤爆任务表</td><td>左列加 <span class="mono">scroll=ALWAYS</span>，或导入面板改可折叠</td></tr>
+            <tr><td><span class="badge badge-warning">P1</span></td><td><span class="mono">gui_app.py:409-422</span> 状态栏输出目录</td><td>长路径无 <span class="mono">max_lines</span>，横向撑宽</td><td><span class="mono">max_lines=1</span> + ELLIPSIS + tooltip</td></tr>
+            <tr><td><span class="badge badge-warning">P1</span></td><td>6 个 <span class="mono">AlertDialog</span></td><td>全部无滚动；死书询问（<span class="mono">gui_app.py:214-232</span>）、死书删除（<span class="mono">task_table.py:488-508</span>）含长「判定原因」有溢出风险</td><td>对话框内容列加限高滚动</td></tr>
+            <tr><td><span class="badge badge-warning">P1</span></td><td><span class="mono">ui_theme.py:47-48</span> <span class="mono">make_card</span></td><td>注释记录形参 <span class="mono">scroll</span> 收下但从未转发（<span class="mono">ft.Container</span> 无该字段）</td><td><strong>统一滚动的必改工厂</strong>，需新增限高滚动能力</td></tr>
+            <tr><td><span class="badge badge-success">P2</span></td><td><span class="mono">AUTO</span>(4) 与 <span class="mono">ALWAYS</span>(8) 混用</td><td>项目已因用户反馈选定<strong>常显</strong>（<span class="mono">task_table.py:88</span> 注释：默认悬浮式仅滚动瞬间可见）</td><td>全量统一为 <span class="mono">ALWAYS</span>，删 <span class="mono">AUTO</span></td></tr>
+            <tr><td><span class="badge badge-success">P2</span></td><td>硬编码固定高度</td><td><span class="mono">site_manage_page.py:304</span>(420)、<span class="mono">:577</span>(150)、<span class="mono">detail_drawer.py:108</span>(180)</td><td>改 <span class="mono">ft.Container(height=)</span> + 内部滚动，或按视口比例</td></tr>
+            <tr><td><span class="badge badge-success">P2</span></td><td>页级滚动仅 1 处</td><td>只有 <span class="mono">site_manage_page.py:318</span> 有页级 <span class="mono">scroll=AUTO</span>，其余 5 页无</td><td>统一：表格局部滚，页面不滚</td></tr>
+          </tbody>
+        </table>
+        <p class="block-note">
+          <strong>设计稿已落地的部分</strong>（本轮）：全局滚动条样式（双端）、6 处既有溢出容器加 <span class="mono">tabindex="0"</span> 键盘可达标记、三档小屏断点。
+          <strong>需改代码的部分</strong>（P0/P1）本轮按要求<strong>未动</strong>，仅列清单。
+        </p>
+      </div>
+
+      <!-- 10. 主题切换设计 -->
+      <div class="docs-block span-2">
         <h3><span class="icon">🎨</span>日间/夜间模式切换设计</h3>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6);">
+        <div class="docs-grid-2">
           <div>
             <h4>切换按钮位置</h4>
             <p>主题切换按钮置于<strong>标题栏最右侧</strong>，始终可见、一键可达：</p>
@@ -2579,9 +4847,10 @@ html, body {
 
             <h4>可读性保障</h4>
             <ul>
-              <li>正文文字对比度 ≥ 7:1（AAA 级）</li>
-              <li>次级文字对比度 ≥ 4.5:1（AA 级）</li>
-              <li>强调色在对应底色上对比度 ≥ 3:1</li>
+              <li>主文字对比度 14.16~17.22:1（AAA）</li>
+              <li>次级 / 三级文字 ≥ 4.5:1（AA），已逐档实测</li>
+              <li>品牌纯色仅用于图形（3.16:1 达非文本 AA）；文字一律走 <span class="mono">--accent-fg</span>（5.52:1）</li>
+              <li>四级文字仅用于占位符与禁用态，落在三级底上时为 4.17~4.25:1，属 WCAG 豁免范围</li>
               <li>状态色不仅靠颜色区分，同时配有文字标签和图标</li>
             </ul>
           </div>
@@ -2593,8 +4862,9 @@ html, body {
 </section>
 
 <!-- 演示标签 -->
-<div class="demo-badge">
-  🎨 设计预览 · 点击左侧导航切换页面 · 右上角切换主题
+<div class="demo-badge" id="demoBadge">
+  <span>🎨 设计预览 · 点击左侧导航切换页面 · 右上角切换主题</span>
+  <button class="demo-badge-close" id="demoBadgeClose" type="button" aria-label="关闭提示">✕</button>
 </div>
 
 <script>
@@ -2625,6 +4895,20 @@ themeToggle.addEventListener('click', () => {
 });
 
 themeIcon.style.transition = 'transform 0.3s ease';
+
+// ===== 演示提示条：可关闭 + 进入设计说明区自动淡出 =====
+const demoBadge = document.getElementById('demoBadge');
+document.getElementById('demoBadgeClose').addEventListener('click', () => {
+  demoBadge.classList.add('is-hidden');
+});
+// 说明区是长内容，固定浮层停在右下角会压住配色表最后一行
+// ⇒ 滚到说明区就让它退场，不打扰阅读
+if ('IntersectionObserver' in window) {
+  const docsSection = document.querySelector('.docs-section');
+  new IntersectionObserver((entries) => {
+    demoBadge.classList.toggle('is-hidden', entries[0].isIntersecting);
+  }, { threshold: 0.05 }).observe(docsSection);
+}
 
 // ===== 页面切换 =====
 const navItems = document.querySelectorAll('.nav-item');
@@ -2665,6 +4949,43 @@ function toggleLog() {
 document.querySelectorAll('.switch').forEach(sw => {
   sw.addEventListener('click', () => {
     sw.classList.toggle('on');
+  });
+});
+
+// ===== 远控开关（顶栏胶囊 + 远控页主按钮联动）=====
+const remoteToggle = document.getElementById('remoteToggle');
+const remoteToggleLabel = document.getElementById('remoteToggleLabel');
+const remoteDot = document.getElementById('remoteDot');
+const remoteStartBtn = document.getElementById('remoteStartBtn');
+let remoteOn = false;
+
+function applyRemote(on) {
+  remoteOn = on;
+  remoteToggle.classList.toggle('on', on);
+  remoteToggleLabel.textContent = on ? '远控 开' : '远控 关';
+  remoteDot.classList.toggle('stopped', !on);
+  remoteDot.classList.toggle('running', on);
+  remoteStartBtn.textContent = on ? '关闭远控' : '开启远控';
+  remoteStartBtn.classList.toggle('btn-primary', !on);
+  remoteStartBtn.classList.toggle('btn-secondary', on);
+  document.querySelector('.remote-status-title').textContent = on ? '远控已开启' : '远控已关闭';
+  document.querySelector('.remote-status-desc').textContent = on
+    ? '手机端可访问本机并实时下发抓取任务'
+    : '开启后手机端可访问本机并下发抓取任务';
+}
+remoteToggle.addEventListener('click', () => applyRemote(!remoteOn));
+remoteStartBtn.addEventListener('click', () => applyRemote(!remoteOn));
+
+// ===== 筛选胶囊互斥（死书清单页）=====
+document.querySelectorAll('.filter-chips').forEach(group => {
+  group.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      group.querySelectorAll('.filter-chip').forEach(c => {
+        c.classList.remove('active');
+        c.classList.remove('all');
+      });
+      chip.classList.add('active', 'all');
+    });
   });
 });
 </script>

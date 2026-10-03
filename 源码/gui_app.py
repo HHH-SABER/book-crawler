@@ -370,6 +370,8 @@ def main(page: ft.Page):
     def toggle_theme():
         _theme_dark[0] = not _theme_dark[0]
         page.theme_mode = ft.ThemeMode.DARK if _theme_dark[0] else ft.ThemeMode.LIGHT
+        # 暖色令牌同步: rail.toggle_theme_icon 内部会调 ui_fluent.同步主题()
+        # -> ui_tokens.设置主题() 触发已登记控件换色 (单一同步点, 勿在此重复)
         rail.toggle_theme_icon(_theme_dark[0])
         # 同步更新顶栏主题切换按钮
         if _theme_toggle_btn[0] and hasattr(_theme_toggle_btn[0], 'update_theme_state'):
@@ -1011,17 +1013,21 @@ def main(page: ft.Page):
     top_bar = build_top_bar(page, _应用名, _theme_toggle_btn[0],
                             extra_controls=[_远控按钮])
 
-    # ---- 整体布局 (Fluent 三段式: 顶栏 + 侧边导航 + 主内容) ----
+    # ---- 整体布局 (三段式: 顶栏 + 侧边导航 + 主内容) ----
     main_row = ft.Row([
         rail.build(),
-        # 主内容区: Fluent 平涂底色 (日间 #F3F3F3 / 夜间 #202020, 由主题解析)
+        # 主内容区底色 = --bg-primary (日间 #F5F5F5 / 夜间 #202020)。
+        # ⚠️ 注意: 不能用 ft.Colors.SURFACE_CONTAINER —— 那个槽位在当前主题里
+        #    对应 --bg-tertiary (夜间 #383838), 比设计稿要求的页面底亮一档,
+        #    会让「页面底 vs 卡片底」的两档层次在夜间糊掉。页面底没有对应的
+        #    ColorScheme 槽位(0.86 无 background), 只能在此显式赋值。
         ft.Container(
             content=ft.Container(
                 content=content_stack, expand=True,
                 padding=ft.Padding.symmetric(horizontal=20, vertical=16),
             ),
             expand=True,
-            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            bgcolor=ft.Colors.SURFACE,   # ← 页面底走 surface, 卡片在页面内另行赋白
         ),
     ], expand=True, spacing=0, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
