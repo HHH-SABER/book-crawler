@@ -124,5 +124,72 @@ class Test便携数据开关(unittest.TestCase):
         self.assertFalse(_path_utils.is_portable_mode())
 
 
+class Test只读基目录容错(unittest.TestCase):
+    """BASE_DIR 不可写时**不得抛异常** (2026-10-03 修)。
+
+    原缺陷: get_default_output_dir / resolve_output_dir 里的
+    os.makedirs 是裸调用无 try, 而同文件 get_state_root 内 3 处 makedirs
+    都有 `except OSError: pass` —— 风格不一致, 且这是启动路径上唯一会抛的
+    建目录。get_default_output_dir 被 爬虫.py:6733 模块级调用(导入期执行)
+    → BASE_DIR 不可写时 PermissionError 直接崩在 import 阶段, 用户连界面
+    都看不到, 日志里也只有一句 makedirs traceback。
+
+    触发场景与"是否装成安装版"无关, 现在就能踩到:
+      · EXE 放在只读介质 / U 盘只读分区 / C 盘根目录
+      · 便携模式.flag 状态下 EXE 位于受保护目录
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix='nc_ro_')
+        # 让 BASE_DIR 指向一个**文件**(而非目录): 建其子目录必然 OSError,
+        # 比 mock 掉 makedirs 更接近真实的"路径存在但不可写"现场
+        self._占位 = os.path.join(self._tmp, '占位')
+        Path(self._占位).write_text('x', encoding='utf-8')
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_默认输出目录不抛(self):
+        with unittest.mock.patch('_path_utils.get_app_base_dir',
+                                 return_value=self._占位):
+            路径 = _path_utils.get_default_output_dir()
+        self.assertTrue(路径.endswith('抓取结果'),
+                        f'返回值应仍指向抓取结果, 实为 {路径}')
+
+    def test_默认输出目录已存在时正常(self):
+        """可写场景不得被容错改动行为 (回归护栏)。"""
+        正常 = os.path.join(self._tmp, '正常')
+        with unittest.mock.patch('_path_utils.get_app_base_dir',
+                                 return_value=正常):
+            路径 = _path_utils.get_default_output_dir()
+        self.assertTrue(os.path.isdir(路径), '可写时应正常建出目录')
+
+    def test_resolve_output_相对路径不抛(self):
+        with unittest.mock.patch('_path_utils.get_app_base_dir',
+                                 return_value=self._占位):
+            路径 = _path_utils.resolve_output_dir('子目录/书名')
+        self.assertTrue(路径.endswith(os.path.join('子目录', '书名')),
+                        f'相对路径应仍按 BASE_DIR 解析, 实为 {路径}')
+
+    def test_resolve_output_绝对路径不抛(self):
+        绝对 = os.path.join(self._占位, '绝对子目录')
+        路径 = _path_utils.resolve_output_dir(绝对)
+        self.assertEqual(路径, os.path.normpath(绝对))
+
+    def test_resolve_output_空值走默认(self):
+        with unittest.mock.patch('_path_utils.get_app_base_dir',
+                                 return_value=self._占位):
+            路径 = _path_utils.resolve_output_dir('')
+        self.assertTrue(路径.endswith('抓取结果'), '空值应回落默认输出目录')
+
+    def test_两处makedirs都有容错(self):
+        """源码级钉死: 防止后人"统一风格"时把 try 又摘掉。"""
+        import inspect
+        for 名 in ('get_default_output_dir', 'resolve_output_dir'):
+            源码 = inspect.getsource(getattr(_path_utils, 名))
+            self.assertIn('except OSError', 源码,
+                          f'{名} 的 makedirs 又变回裸调用了 (只读目录会崩在 import)')
+
+
 if __name__ == '__main__':
     unittest.main()
