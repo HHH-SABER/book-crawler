@@ -291,6 +291,28 @@ def 展示地址() -> str:
     return f"http://{bind}:{port}/"
 
 
+def 地址提示() -> str:
+    """地址可用性提示 (空串 = 无需提示)。
+
+    2026-10-04 修八项需求 #7: 旧实现里「绑定 0.0.0.0 但一个局域网地址都没探测到」时,
+    `展示地址()` 会回落成 `http://127.0.0.1:端口/` 并**当作局域网地址**展示 ——
+    手机必然连不上, 界面却毫无线索。这里把两种"看着能用其实不能用"说清楚。
+    """
+    try:
+        cfg = 取配置()
+    except Exception:
+        return ""
+    bind = str(cfg.get("绑定", "") or "")
+    if bind and bind not in ("0.0.0.0", "::"):
+        if bind in ("127.0.0.1", "localhost", "::1"):
+            return ("仅本机可访问 (绑定为回环地址); 如需手机访问, "
+                    "请把绑定改为 0.0.0.0")
+        return ""
+    if not 局域网地址们():
+        return "未探测到局域网地址: 请确认电脑已联网并连上 Wi-Fi; 此时手机可能连不上"
+    return ""
+
+
 def _日志留痕(msg: str) -> None:
     try:
         import 日志 as _alog

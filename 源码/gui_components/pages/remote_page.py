@@ -23,7 +23,7 @@ def _dbg(source: str, message: str):
 
 from ..ui_fluent import (txt, FONT_STACK, SIZE_SMALL, SIZE_BODY, SIZE_TITLE,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
-                         MORANDI_SUCCESS, MORANDI_STOPPED,
+                         MORANDI_SUCCESS, MORANDI_STOPPED, MORANDI_WARNING,
                          MORANDI_SURFACE_CONTAINER, MORANDI_OUTLINE_VARIANT,
                          make_morandi_card)
 from ..ui_theme import page_header
@@ -36,7 +36,7 @@ class RemotePage:
         self.page = None
         self.task_manager = None
         self.切换远控 = None       # callable(e): 与顶栏开关同一实现
-        self.取信息 = None         # callable() -> {"运行", "地址", "token"}
+        self.取信息 = None         # callable() -> {"运行", "地址", "token", "提示"}
 
     # ---------------------------------------------------------------- 外观
     def 同步外观(self, 启用: bool):
@@ -70,6 +70,10 @@ class RemotePage:
                          font_family=FONT_STACK, selectable=True)
         self._token = txt("—", size=SIZE_SMALL, weight=WEIGHT_BODY,
                           font_family=FONT_STACK, selectable=True)
+        # 2026-10-04 #7: 地址可用性提示 —— 手机连不上时给出原因 (空串自动隐藏该行)
+        self._hint = txt("", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                         color=MORANDI_WARNING, font_family=FONT_STACK,
+                         visible=False)
 
         self._status_card = ft.Container(
             content=ft.Column([
@@ -91,6 +95,8 @@ class RemotePage:
                         self._addr], spacing=8),
                 ft.Row([txt("token   ", size=SIZE_SMALL, weight=WEIGHT_BODY),
                         self._token], spacing=8),
+                # 2026-10-04 #7: 地址可用性提示行 (内容为空时 visible=False 自动隐藏)
+                self._hint,
                 ft.Text("外网访问 (可选): 在电脑执行 tailscale serve --bg 8760, "
                         "手机浏览器打开它给出的 https://….ts.net 地址",
                         size=SIZE_SMALL, weight=WEIGHT_BODY,
@@ -162,6 +168,10 @@ class RemotePage:
                 self.同步外观(bool(info.get("运行")))
                 self._addr.value = info.get("地址") or "—"
                 self._token.value = info.get("token") or "—"
+                # 2026-10-04 #7: 地址可用性提示 (回环绑定 / 未探测到局域网地址时非空)
+                _提示 = info.get("提示") or ""
+                self._hint.value = _提示
+                self._hint.visible = bool(_提示)
         except Exception:
             pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
         try:
