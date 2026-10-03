@@ -44,9 +44,25 @@ def get_app_base_dir() -> str:
 
 
 def get_default_output_dir() -> str:
-    """抓取结果/ 默认输出目录（永远写 BASE_DIR/抓取结果）。"""
+    """抓取结果/ 默认输出目录（写 BASE_DIR/抓取结果）。
+
+    容错 (2026-10-03 修): 这里的 makedirs 原是裸调用无 try, 而本文件
+    get_state_root() 内 3 处 makedirs 都有 `except OSError: pass` —— 风格不一致,
+    且它是**启动路径上唯一会抛异常的建目录**。被 爬虫.py:6733 模块级调用
+    (导入期执行) → BASE_DIR 不可写时直接 PermissionError 崩在 import 阶段。
+
+    触发场景 (与"是否装成安装版"无关, 现在就能踩到):
+      · EXE 放在只读介质 / U 盘只读分区 / C 盘根目录
+      · 便携模式.flag 状态下 EXE 位于受保护目录
+      · 未来若改安装版, 装到 Program Files 后 BASE_DIR 不可写 (必然触发)
+    故: 建目录失败不抛, 返回该路径让调用方在真正写入时自然报错 —— 静默返回
+    一个不存在的路径好过启动即崩, 且错误现场更靠近真正的写入动作。
+    """
     path = os.path.join(get_app_base_dir(), "抓取结果")
-    os.makedirs(path, exist_ok=True)
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        pass  # 刻意静默: BASE_DIR 不可写时不阻断启动, 由真正写入时报错
     return path
 
 
@@ -138,6 +154,9 @@ def get_state_root() -> str:
 def resolve_output_dir(output_dir) -> str:
     """对调用方传入的 output_dir 做规范化。
     相对路径一律相对于 BASE_DIR 解析，创建并返回绝对路径。
+
+    容错 (2026-10-03 修): 同 get_default_output_dir —— 建目录失败不抛,
+    返回路径让调用方在真正写入时自然报错 (静默返回不存在路径好过启动即崩)。
     """
     if not output_dir:
         return get_default_output_dir()
@@ -145,7 +164,10 @@ def resolve_output_dir(output_dir) -> str:
         resolved = output_dir
     else:
         resolved = os.path.normpath(os.path.join(get_app_base_dir(), output_dir))
-    os.makedirs(resolved, exist_ok=True)
+    try:
+        os.makedirs(resolved, exist_ok=True)
+    except OSError:
+        pass  # 刻意静默: 同 get_default_output_dir, 建目录失败交由写入时报错
     return resolved
 
 
