@@ -35,6 +35,7 @@ from gui_components.log_tab import LogTab
 from gui_components.pages.history_page import HistoryPage
 from gui_components.pages.site_manage_page import SiteManagePage
 from gui_components.pages.remote_page import RemotePage
+from gui_components.pages.dead_book_page import DeadBookPage
 
 # 打包后路径约定（源码/EXE 双模式）
 from _path_utils import get_default_output_dir, get_state_root  # noqa: E402
@@ -69,6 +70,7 @@ try:
     import gui_components.ui_theme  # noqa: F401
     import gui_components.pages.history_data  # noqa: F401
     import gui_components.pages.history_page  # noqa: F401
+    import gui_components.pages.dead_book_page  # noqa: F401  (死书清单, 阶段4)
     import gui_components.pages.site_manage_page  # noqa: F401
 except Exception as _e:
     # 允许在未装所有爬虫依赖时 GUI 仍可启动（可预览/配置，抓取按钮点时报错）
@@ -327,26 +329,36 @@ def main(page: ft.Page):
         drawer.build(),
     ], expand=True, spacing=8)
 
-    # ---- 其他三个页面 ----
+    # ---- 其他页面 ----
     history_page = HistoryPage()
     site_page = SiteManagePage()
     log_tab = LogTab()
     remote_page = RemotePage()
+    dead_page = DeadBookPage()          # 死书清单 (死书机制 阶段4)
     history_page.page = page
     history_page.task_manager = task_manager   # 一键更新书架需创建任务
     site_page.page = page
     log_tab.page = page
     remote_page.page = page
     remote_page.task_manager = task_manager    # 手机端记录数据源
+    dead_page.page = page
+    dead_page.task_manager = task_manager      # 删除编排需任务管理器(可删任务行)
 
     # ---- 页面切换 (Stack 保状态) ----
+    # ⚠️ 键顺序必须与 icon_rail.NAV_PAGES **严格一致**(死书机制 阶段4 新增页):
+    #    下游 content_stack 按 [pages_map[k] for k,_,_,_ in NAV_PAGES] 建 Stack,
+    #    且首屏可见性按 pages_map.values() 的索引 0 判定 —— 顺序错位会首屏显示错页。
     pages_map = {
         "crawl": crawl_workbench,
         "history": history_page.build(),
+        "deadbook": dead_page.build(),
         "sites": site_page.build(),
         "log": log_tab.build(),
         "remote": remote_page.build(),
     }
+    # 自检: 顺序不一致时立刻炸, 别等用户看到错页才发现
+    if list(pages_map) != [k for k, _, _, _ in NAV_PAGES]:
+        raise RuntimeError(f"pages_map 键序与 NAV_PAGES 不一致: {list(pages_map)}")
     content_stack = ft.Stack(
         controls=[pages_map[k] for k, _, _, _ in NAV_PAGES],
         expand=True)
@@ -363,6 +375,11 @@ def main(page: ft.Page):
         if key == "history":
             try:
                 history_page.refresh()
+            except Exception as _e:
+                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        elif key == "deadbook":
+            try:
+                dead_page.refresh()
             except Exception as _e:
                 app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         elif key == "log":
@@ -424,6 +441,10 @@ def main(page: ft.Page):
                     drawer.update_views()        # 仅更新面板内可见视图
                 if pages_map["remote"].visible:
                     remote_page.refresh()        # 远控页: 手机端记录实时呈现
+                if pages_map["deadbook"].visible:
+                    # 死书清单页: 数据源在磁盘(其他会话/远控也可能改),
+                    # 2s 轮询同 remote_page; 页内有签名比对, 无变化不重建
+                    dead_page.refresh()
                 # 死书待弹队列 (死书机制 阶段3): 不限页面可见性 —— 抓取可能在
                 # 任意页面运行, 队列排空与页面无关。每 tick 至多一条。
                 _排空死书队列()
