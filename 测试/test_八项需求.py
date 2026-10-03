@@ -21,6 +21,29 @@ def _读(相对: str) -> str:
     return (_SRC / 相对).read_text(encoding='utf-8')
 
 
+def _控件树含(根, 目标) -> bool:
+    """递归遍历 Flet 控件树, 判断 `目标` 是否真的被挂载 (content / controls)。
+
+    用途: "控件建了但没放进布局"是静默失败 —— 用户看不到、测试也只 `hasattr` 就过。
+    这里真构建一次控件树再走一遍, 把这类孤儿控件钉死。
+    """
+    待查 = [根]
+    已见 = set()
+    while 待查:
+        当前 = 待查.pop()
+        if 当前 is None or id(当前) in 已见:
+            continue
+        已见.add(id(当前))
+        if 当前 is 目标:
+            return True
+        for 子 in (getattr(当前, 'controls', None) or []):
+            待查.append(子)
+        内容 = getattr(当前, 'content', None)
+        if 内容 is not None:
+            待查.append(内容)
+    return False
+
+
 class Test终态通知行为(unittest.TestCase):
     """#2: _set_terminal 入队 + 音效静默 + 队列 FIFO 消费"""
 
@@ -81,6 +104,83 @@ class Test终态通知行为(unittest.TestCase):
         self.mgr._set_terminal(b, 'completed')
         self.assertEqual(self.mgr.取一条待弹通知()['书名'], '甲')
         self.assertEqual(self.mgr.取一条待弹通知()['书名'], '乙')
+
+
+class Test通知队列与静音(unittest.TestCase):
+    """#2 (2026-10-04 修复): 有界队列 / 相邻去重 / 幂等 / 状态白名单 / 静音开关
+
+    旧实现的四个缺口: 队列无上限(集中结束会长时间连弹)、append 不持锁、
+    `else` 把任何非 completed/stopped 都当失败通知、无静音入口。
+    """
+
+    def setUp(self):
+        from gui_components.task_manager import TaskManager
+        self.mgr = TaskManager(page=None)
+
+    def _任务(self, tid, title):
+        from gui_components.task_manager import TaskInfo
+        return TaskInfo(task_id=tid, url='https://example.com/b', title=title)
+
+    def test_队列有界_只留最近N条(self):
+        上限 = self.mgr._通知上限
+        for i in range(上限 + 7):
+            self.mgr._入队通知({'书名': f'书{i}', '状态': 'success', '原因': ''})
+        self.assertEqual(len(self.mgr._通知待弹), 上限)
+        self.assertEqual(self.mgr._通知待弹[-1]['书名'], f'书{上限 + 6}',
+                         '有界裁剪必须保留最新的那条')
+
+    def test_相邻同书同状态合并为一条(self):
+        self.mgr._入队通知({'书名': 'A', '状态': 'fail', '原因': '第一次'})
+        self.mgr._入队通知({'书名': 'A', '状态': 'fail', '原因': '第二次'})
+        self.assertEqual(len(self.mgr._通知待弹), 1, '相邻同书同状态应合并')
+        self.assertEqual(self.mgr._通知待弹[0]['原因'], '第二次', '合并须保留最新原因')
+
+    def test_未知状态不再被当失败通知(self):
+        t = self._任务('t1', '书')
+        self.mgr._set_terminal(t, 'queued')      # 未来新增的状态
+        self.assertIsNone(self.mgr.取一条待弹通知(),
+                          '非白名单状态不得走"失败"分支 (旧实现 else 通吃)')
+
+    def test_重复置同终态幂等(self):
+        t = self._任务('t1', '书')
+        self.mgr._set_terminal(t, 'completed')
+        self.mgr._set_terminal(t, 'completed')
+        self.assertIsNotNone(self.mgr.取一条待弹通知())
+        self.assertIsNone(self.mgr.取一条待弹通知(), '重复置同终态不得重复通知')
+
+    def test_偏好往返与持久化(self):
+        import 界面偏好
+        界面偏好.清空缓存()
+        self.assertTrue(界面偏好.设置('提示音', False))
+        界面偏好.清空缓存()                      # 丢缓存, 强制重新读盘
+        self.assertFalse(界面偏好.取('提示音', True), '偏好应真的落盘')
+
+    def test_静音后不播放音效_开启后播放(self):
+        import 界面偏好
+        界面偏好.清空缓存()
+        播放 = []
+        假模块 = mock.MagicMock()
+        假模块.MessageBeep = lambda *a, **k: 播放.append(a)
+        with mock.patch.dict(sys.modules, {'winsound': 假模块}):
+            界面偏好.设置('提示音', False)
+            self.mgr._播放终态音效('completed')
+            self.assertEqual(播放, [], '静音后不得播放提示音')
+            界面偏好.设置('提示音', True)
+            self.mgr._播放终态音效('completed')
+            self.assertEqual(len(播放), 1, '开启后应播放提示音')
+
+    def test_输入条有提示音开关且真的在布局里并能持久化(self):
+        from gui_components.input_bar import InputBar
+        import 界面偏好
+        界面偏好.清空缓存()
+        bar = InputBar(self.mgr)
+        根 = bar.build()                     # 只建一次, 之后属性引用才有效
+        self.assertTrue(hasattr(bar, '提示音_switch'), '输入条应提供静音入口')
+        self.assertTrue(_控件树含(根, bar.提示音_switch),
+                        '提示音开关必须真的挂进布局 —— 建了不挂=孤儿控件, 用户看不到')
+        bar._on_提示音切换(mock.Mock(control=mock.Mock(value=False)))
+        界面偏好.清空缓存()
+        self.assertFalse(界面偏好.取('提示音', True), '开关切换应持久化')
 
 
 class Test异常路径顺序(unittest.TestCase):
