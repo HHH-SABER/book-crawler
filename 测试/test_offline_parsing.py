@@ -158,6 +158,68 @@ class TestDecodeData(unittest.TestCase):
 
 
 # ============================================================
+# 2b. 数据文件引用探测 (detect_data_refs) —— 后缀白名单回归
+# ============================================================
+
+class TestDetectDataRefs(unittest.TestCase):
+    """探测正则的后缀白名单 (2026-10-03 补 word)。
+
+    背景: 某站 (lukutxt 系阅读站) 章节页只有"章节内容加载中"占位, 正文由
+    initTxt("//j.<主域>/data/chapter/<书号>/<卷>/<N>.word") 异步拉取。
+    探测正则的 _DATA_EXT 漏了 word → detect_data_refs 返回空 → decode_chapter_data
+    直接 (None, None) → 该站被误判"无正文"。decode_data 本身能解(word 内容
+    就是码点流), 纯粹是探测层把它挡在了门外。
+    """
+
+    def test_detects_word_suffix(self):
+        from content_decoder import detect_data_refs
+        html = ('<script>initTxt("//j.example.com/data/chapter/BOOK1/v1/1.word",'
+                '"第 1 篇")</script>')
+        refs = detect_data_refs(html)
+        self.assertTrue(refs, 'initTxt(...word) 应被探测到')
+        self.assertIn('.word', refs[0][0])
+
+    def test_detects_existing_suffixes_regression(self):
+        """既有后缀不能被本次改动挤掉 (回归护栏)。"""
+        from content_decoder import detect_data_refs
+        for 后缀 in ('xs', 'book', 'data', 'txt', 'json', 'word'):
+            with self.subTest(后缀=后缀):
+                html = f'<script>initTxt("//j.example.com/data/c/1.{后缀}")</script>'
+                self.assertTrue(detect_data_refs(html), f'{后缀} 后缀应可探测')
+
+    def test_data_path_pattern_covers_word(self):
+        """data路径 模式 (无 initTxt 包装) 也应覆盖 word。"""
+        from content_decoder import detect_data_refs
+        html = '<script>var u="/data/chapter/B1/1.word";</script>'
+        refs = detect_data_refs(html)
+        self.assertTrue(refs, '/data/... 路径形态的 .word 应被探测')
+        self.assertIn('.word', refs[0][0])
+
+    def test_pagination_regex_includes_word(self):
+        """分页替换正则的后缀清单必须与 _DATA_EXT 一致。
+
+        漏 word 会让 page>1 的请求仍取第 1 页 → 每页内容相同, 只能靠
+        指纹去重才没炸出重复正文 (行为上不易察觉, 但等于分页失效)。
+        """
+        import inspect
+        import content_decoder
+        源码 = inspect.getsource(content_decoder.decode_chapter_data)
+        # 分页替换语句可能跨两行 (re.sub 的 pattern 与 repl 分行写), 故整段找
+        分页段 = [ln for ln in 源码.splitlines() if 're.sub' in ln]
+        self.assertTrue(分页段, '未找到分页替换语句')
+        self.assertTrue(any('word' in ln for ln in 分页段),
+                        '分页正则的后缀清单缺 word → 分页请求会重复取第 1 页')
+
+    def test_source_keeps_word_in_ext_list(self):
+        """源码级断言: word 必须在 _DATA_EXT 里 (钉死不被后人摘掉)。"""
+        import inspect
+        import content_decoder
+        源码 = inspect.getsource(content_decoder)
+        self.assertIn("json|word", 源码,
+                      '_DATA_EXT 缺 word —— 该后缀站会静默退化为"无正文"')
+
+
+# ============================================================
 # 3. 爬虫.py 纯函数
 # ============================================================
 

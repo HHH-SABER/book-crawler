@@ -42,7 +42,12 @@ except (ImportError, OSError):
 
 # 常见的数据文件引用模式: (正则, 说明)
 # 数据文件常见后缀: .xs / .book / .data / .txt / .json
-_DATA_EXT = r'(?:xs|book|data|txt|json)'
+# 2026-10-03: 补 word —— lukutxt 系阅读站 (胡来书吧等) 的章节页只有
+# `章节内容加载中` 占位, 正文由 initTxt("//j.<主域>/data/chapter/<书>/<卷>/<N>.word")
+# 异步拉取。实测该族正文是 `_txt_call({"content":"\x02\x0e..."})` 包装的
+# 码点流, 本模块 decode_data() 可直接解出 (codepoint_stream) —— 但探测
+# 正则漏了 word 后缀, 导致 detect_data_refs 返回空, 站点被误判为"无正文"。
+_DATA_EXT = r'(?:xs|book|data|txt|json|word)'
 DATA_REF_PATTERNS = [
     (r'initTxt\s*\(\s*["\']([^"\']+?\.' + _DATA_EXT + r')["\']', 'initTxt()'),
     (r'loadChapter\s*\(\s*["\']([^"\']+)["\']', 'loadChapter()'),
@@ -376,8 +381,11 @@ def decode_chapter_data(chapter_url, page_html=None, page=1, headers=None):
             _log.info(f"[数据文件] 跳过非法引用 ({kind}): {e}")
             continue
         # 分页: 页码形式的文件名 (如 1.xs -> 2.xs, 1.book -> 2.book)
+        # 后缀清单必须与 _DATA_EXT 一致 —— 漏 word 会让分页请求仍取第 1 页,
+        # 表现为"每页内容都一样", 靠指纹去重才没造成重复正文 (2026-10-03)
         if page > 1:
-            url = re.sub(r'/(\d+)\.(xs|data|txt|json|book)$', f'/{page}.\\2', url)
+            url = re.sub(r'/(\d+)\.(xs|data|txt|json|book|word)$',
+                         f'/{page}.\\2', url)
         try:
             r = requests.get(url, timeout=30, headers=hdrs,
                              proxies={'http': None, 'https': None})  # 直连, 忽略系统代理
