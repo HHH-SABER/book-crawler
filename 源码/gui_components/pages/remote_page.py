@@ -75,7 +75,8 @@ class RemotePage:
             content=ft.Column([
                 ft.Row([self._btn,
                         ft.Container(expand=True),
-                        ft.Text("手机访问: 需与电脑同一 Tailscale 账号",
+                        # 2026-10-03 #7: 默认 0.0.0.0 局域网直连, Tailscale 降为外网可选
+                        ft.Text("手机访问: 与电脑连同一 Wi-Fi, 浏览器打开本机地址",
                                 size=SIZE_SMALL, weight=WEIGHT_BODY,
                                 color=ft.Colors.ON_SURFACE_VARIANT,
                                 font_family=FONT_STACK),
@@ -90,7 +91,7 @@ class RemotePage:
                         self._addr], spacing=8),
                 ft.Row([txt("token   ", size=SIZE_SMALL, weight=WEIGHT_BODY),
                         self._token], spacing=8),
-                ft.Text("外网访问: 在电脑执行 tailscale serve --bg 8760, "
+                ft.Text("外网访问 (可选): 在电脑执行 tailscale serve --bg 8760, "
                         "手机浏览器打开它给出的 https://….ts.net 地址",
                         size=SIZE_SMALL, weight=WEIGHT_BODY,
                         color=ft.Colors.ON_SURFACE_VARIANT,

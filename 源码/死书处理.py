@@ -58,6 +58,24 @@ def 是错误页标题(书名) -> bool:
     t = str(书名 or '').strip().lower()
     return bool(t) and any(k in t for k in 错误页标题特征)
 
+
+# 网站失效异常特征 (2026-10-03 八项需求 #3): 书与网站同时失效的判定信号。
+# 域名死 (DNS 无解析) 时 requests 抛 ConnectionError, 文本含以下特征;
+# K36 类临时 502/断连**不含**这些特征 → 不会被误判, 仍走"稍后重试"。
+# 注意 DoH 回退已在前: dns_doh 会在系统解析失败后用 DoH 重试,
+# 走到这里说明系统与 DoH 双双失败 —— 域名大概率真死。
+网站失效特征 = (
+    'getaddrinfo failed', 'nameresolutionerror', 'failed to resolve',
+    'no address associated', 'errno 11001', 'errno 11004',
+    'temporary failure in name resolution', 'name or service not known',
+)
+
+
+def 是网站失效异常(文本) -> bool:
+    """异常/日志文本是否命中域名失效特征 (纯函数, 大小写不敏感)。"""
+    t = str(文本 or '').lower()
+    return bool(t) and any(k in t for k in 网站失效特征)
+
 # 状态取值 (3 态, 不设"新增"态 —— 落盘即"待确认")
 状态_待确认 = '待确认'
 状态_已删除 = '已删除'

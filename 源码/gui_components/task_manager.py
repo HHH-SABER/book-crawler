@@ -654,6 +654,7 @@ class TaskManager:
         # 每 tick 排空至多一条 → page.run_task 弹窗 (跨线程只调度不碰控件)。
         # 纯内存: 重启后为空 → 不重弹 (与死书清单页状态一致)。
         self._死书待弹: list = []
+        self._通知待弹: list = []   # 任务终态通知队列 (gui_app 每 tick 排空弹 SnackBar)
         self._加载任务历史()                    # 重启后恢复任务表 (含 running→interrupted)
 
     # ------------------------------------------------------ 任务历史持久化
@@ -893,12 +894,50 @@ class TaskManager:
         t.start()
         return task_id
 
-    @staticmethod
-    def _set_terminal(task: TaskInfo, status: str):
-        """置为终态 (completed/failed/stopped/dead_pending) 并冻结耗时 end_time"""
+    def _set_terminal(self, task: TaskInfo, status: str):
+        """置为终态 (completed/failed/stopped/dead_pending) 并冻结耗时 end_time。
+
+        八项需求 #2: completed/failed/dead_pending 入**终态通知队列** (工作线程
+        侧只碰数据, gui_app 每 tick 排空弹 SnackBar) 并播放提示音效 —— 用户
+        后台挂机时靠声音感知任务成败。stopped 是用户主动操作, 不通知不响铃
+        (自己停的自己知道)。音效 winsound 为 Windows 内置模块, 零依赖;
+        非 Windows / 声音设备缺失时静默跳过 (通知文案仍入队)。
+        """
         task.status = status
         if task.metrics:
             task.metrics.end_time = time.time()
+        if status == "stopped":
+            return
+        书名 = (task.title or '').strip() or '未知书名'
+        if status == "completed":
+            原因 = ''
+            self._通知待弹.append({'书名': 书名, '状态': 'success', '原因': ''})
+        else:
+            # failed / dead_pending: 失败原因优先 task.error, 死书用判定原因
+            原因 = ''
+            if isinstance(task.dead, dict):
+                原因 = f"{task.dead.get('类型', '')}: {task.dead.get('原因', '')}"
+            elif task.error:
+                原因 = task.error
+            self._通知待弹.append({'书名': 书名, '状态': 'fail', '原因': 原因[:200]})
+        self._播放终态音效(status)
+
+    @staticmethod
+    def _播放终态音效(status: str) -> None:
+        """终态提示音 (八项需求 #2): 成功叮咚 / 失败低鸣。线程安全, 失败静默。"""
+        try:
+            import winsound
+            if status == "completed":
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)   # 成功: 叮
+            else:
+                winsound.MessageBeep(winsound.MB_ICONHAND)       # 失败: 低鸣
+        except Exception:
+            pass  # 非 Windows / 无声音设备: 音效静默, 通知文案仍会展示
+
+    def 取一条待弹通知(self) -> dict:
+        """主线程消费终态通知队列 (加锁 pop, 空则返回 None)。每 tick 至多取一条。"""
+        with self._lock:
+            return self._通知待弹.pop(0) if self._通知待弹 else None
 
     def _记死书(self, task: TaskInfo, exc: Exception) -> None:
         """死书失败落点 (工作线程, 只碰数据不碰控件)。
@@ -916,8 +955,19 @@ class TaskManager:
             return
         try:
             记录, 首次 = 记录死书(task.url, task.title, exc.类型, exc.原因, task.task_id)
+            # 八项需求 #3: "书籍与网站同时失效"信号 —— 异常文本命中域名失效特征
+            # (DNS 无解析, DoH 回退也失败) 时在 dead 记录上补标记, GUI 弹窗据此
+            # 分流为"告知书名 + 询问补充新网址"。K36 类临时 502 不命中, 不误弹。
+            try:
+                from 死书处理 import 是网站失效异常
+                if exc.类型 == '站点不可达' and 是网站失效异常(str(exc)):
+                    记录['网站失效'] = True
+                    task.dead = 记录
+            except Exception as _e_flag:
+                if app_log:
+                    app_log.debug('任务管理', f'裸 except 吞异常: {type(_e_flag).__name__}: {_e_flag}')
             task.dead = 记录
-            task.status = 'dead_pending'      # end_time 已在 _set_terminal 冻结
+            task.status = 'dead_pending'      # end_time 由随后的 _set_terminal 冻结
             if 首次:
                 with self._lock:
                     self._死书待弹.append(task.task_id)
@@ -1029,13 +1079,18 @@ class TaskManager:
                                       f"{type(_e_清单).__name__}")
         except Exception as e:
             if self._is_task_thread_owner(task) and not task.stop_flag.is_set():
-                self._set_terminal(task, "failed")
+                # 八项需求 #2 顺序修正: 先填 error / 判死书, 再置终态 ——
+                # _set_terminal 里的终态通知要展示真实失败原因 (旧序 task.error
+                # 尚为空, 通知原因恒为 ''), 死书路径还能带上 dead 判定原因
                 task.error = str(e)
+                self._记死书(task, e)      # 死书失败落点 (非死书异常为一行 no-op)
+                self._set_terminal(
+                    task,
+                    task.status if task.status == 'dead_pending' else "failed")
                 task.logs.append({
                     'time': time.strftime('%H:%M:%S'),
                     'msg': f"[错误] {e}"
                 })
-                self._记死书(task, e)      # 死书失败落点 (非死书异常为一行 no-op)
             if app_log is not None:
                 app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
         finally:
