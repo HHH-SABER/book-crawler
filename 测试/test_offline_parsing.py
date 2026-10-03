@@ -914,5 +914,341 @@ class TestSortSampleIndex(unittest.TestCase):
         self.assertEqual(bad, [], f'调用处出现了解包写法: {bad}')
 
 
+class TestNovelPathIndexList(unittest.TestCase):
+    """_resolve_novel_paths 模式5 扩展 (2026-10-03)。
+
+    某书吧站目录页形如 /{书号}/indexlist.html (书号含大写字母), 章节链接
+    /{书号}/{N}.html。旧模式5正则只认「小写书号 + index.html/index_N.html」,
+    两道限制都匹配不上 → novel_path 为空 → 通用提取的 `novel_path and
+    novel_path in href` 恒假, 即使分页处理器重新取到真页面也判 0 章节
+    (61 个链接全部被过滤, 日志可见"链接 12: 第 1 篇 -> /{书号}/1.html")。
+    """
+
+    def setUp(self):
+        import 爬虫
+        self.解析 = 爬虫._resolve_novel_paths
+
+    def test_indexlist_with_upper_book_id(self):
+        self.assertEqual(
+            self.解析('https://www.example.com/mmHJ/indexlist.html'),
+            ('/mmHJ/', '/mmHJ/'))
+
+    def test_indexlist_lower_book_id(self):
+        self.assertEqual(
+            self.解析('https://www.example.com/mmhj/indexlist.html'),
+            ('/mmhj/', '/mmhj/'))
+
+    def test_legacy_index_page_still_works(self):
+        """原 banlvzw 形态 /4y9k/index_1.html 不得回归。"""
+        self.assertEqual(
+            self.解析('https://www.example.com/4y9k/index_1.html'),
+            ('/4y9k/', '/4y9k/'))
+        self.assertEqual(
+            self.解析('https://www.example.com/ab12/index.html'),
+            ('/ab12/', '/ab12/'))
+
+    def test_upper_book_id_plain_index(self):
+        """扩展大写支持后 /AbC12/index.html 也能提取 (原返回空)。"""
+        self.assertEqual(
+            self.解析('https://www.example.com/AbC12/index.html'),
+            ('/AbC12/', '/AbC12/'))
+
+    def test_earlier_patterns_take_precedence(self):
+        """模式2/3 (小写前缀+数字ID) 优先级高于模式5, 不得被扩展改变。"""
+        self.assertEqual(
+            self.解析('https://www.example.com/books/301597.html'),
+            ('/books/301597/', '/books/301597/'))
+        self.assertEqual(
+            self.解析('https://www.example.com/infos/5523629.html'),
+            ('/infos/5523629/', '/infos/5523629/'))
+
+    def test_plain_root_still_empty(self):
+        self.assertEqual(self.解析('https://www.example.com/'), ('', ''))
+
+
+class _FakeWafResp:
+    """脚本化响应: 覆盖检测器/WAF循环访问到的最小属性面。"""
+
+    def __init__(self, status_code, text):
+        self.status_code = status_code
+        self.text = text
+        self.content = text.encode('utf-8')
+        self.headers = {}
+        self.url = 'https://www.example.com/x'
+        self.encoding = 'utf-8'
+        self.apparent_encoding = 'utf-8'
+
+
+# 裸 401 质询页形态 (meta-refresh + Set-Cookie, 无任何已知反爬特征)
+_BARE_401_BODY = ('<html><head><meta http-equiv="refresh" content="0">'
+                  '</head><body></body></html>')
+_REAL_PAGE_BODY = ('<html><body><div id="real">真页面标记</div>'
+                   '</body></html>')
+
+
+class _ScriptedSession:
+    """按脚本顺序吐响应的假会话, 记录每次 get 调用。"""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def get(self, url, headers=None, timeout=None):
+        self.calls.append({'url': url, 'headers': headers})
+        if not self._responses:
+            raise AssertionError(f'脚本响应耗尽, 第 {len(self.calls)} 次调用: {url}')
+        return self._responses.pop(0)
+
+
+class TestBareWafChallengeRetry(unittest.TestCase):
+    """裸 401/403 质询页必须重发而非当正文返回 (2026-10-03)。
+
+    某书吧站 WAF 三段式 (实测):
+      ① 无/过期 _wa_ cookie → 401 + meta-refresh 小页面 (无任何已知特征)
+      ② 带 _wa_ → 401 + @wafjs JS 质询页 (检测器置信度 0.90 可识别)
+      ③ 浏览器解出令牌 cookie → 200
+    旧实现在 ① 直接把质询页当真实页面返回: 适配器找不到容器 return None、
+    通用提取 0 章节 → "目录无章节"死书。修复后在 WAF 循环新增第 3 关:
+    401/403 且 body <4KB → 视为裸质询, 延迟重发。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from 爬虫 import NovelSpider
+        cls.spider = NovelSpider('https://www.example.com')  # 离线可构造 (~0.8s)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.spider.close()
+
+    def setUp(self):
+        import unittest.mock as _mock
+        # 测试内所有 sleep 瞬时完成 (裸质询重发固定 sleep(1))
+        _sleep_patcher = _mock.patch('time.sleep')
+        _sleep_patcher.start()
+        self.addCleanup(_sleep_patcher.stop)
+
+    def _inspect(self, path, responses):
+        session = _ScriptedSession(responses)
+        self.spider.session = session
+        url = f'https://www.example.com/{path}'
+        soup = self.spider.inspect_page(url, polite_delay=False)
+        return session, soup
+
+    def test_bare_401_then_200_recovers(self):
+        """裸 401 → 重发 → 200: 必须拿到真页面, 恰好发 2 次请求。"""
+        session, soup = self._inspect('bare401_ok/index.html', [
+            _FakeWafResp(401, _BARE_401_BODY),
+            _FakeWafResp(200, _REAL_PAGE_BODY),
+        ])
+        self.assertEqual(len(session.calls), 2)
+        self.assertIn('真页面标记', str(soup))
+
+    def test_bare_401_loop_is_bounded(self):
+        """始终裸 401: 重发有界 (WAF 循环 4 轮), 不得死循环, 最终返回最后一次页面。"""
+        session, soup = self._inspect('bare401_loop/index.html', [
+            _FakeWafResp(401, _BARE_401_BODY),
+        ] * 10)
+        # 首次 + 每轮 1 次重发 = 5 次
+        self.assertEqual(len(session.calls), 5)
+        self.assertIn('refresh', str(soup))   # 返回的是质询页本身, 不崩溃
+
+    def test_large_401_body_not_retried(self):
+        """401 但 body >=4KB: 不视为裸质询 (真实内容页可能 403/401 附大页面), 只发 1 次。"""
+        big = '<html><body>' + 'x' * 5000 + '</body></html>'
+        session, soup = self._inspect('bare401_big/index.html', [
+            _FakeWafResp(401, big),
+        ])
+        self.assertEqual(len(session.calls), 1)
+        self.assertIn('xxxx', str(soup))
+
+    def test_wafjs_challenge_still_solved_by_stage2(self):
+        """@wafjs 质询体必须由第 2 关 (浏览器解令牌) 处理, 不得被第 3 关截胡。"""
+        import unittest.mock as _mock
+        challenge = ('<html><body>Loading...<script src="/@wafjs?x=1">'
+                     '</script></body></html>')
+        # 检测器会对 @wafjs 返回 waf_js_challenge → 引擎分支会调 cloudscraper
+        # (真实网络 I/O) → 测试中置空实例级引擎管理器, 验证"保留原响应走
+        # 现有流程"后第 2 关接管的路径。
+        原引擎 = self.spider._引擎管理器
+        self.spider._引擎管理器 = None
+        self.addCleanup(setattr, self.spider, '_引擎管理器', 原引擎)
+        with _mock.patch.object(self.spider, '_solve_waf_js_challenge',
+                                return_value=True) as solve:
+            session, soup = self._inspect('wafjs_stage2/index.html', [
+                _FakeWafResp(401, challenge),
+                _FakeWafResp(200, _REAL_PAGE_BODY),
+            ])
+        solve.assert_called_once()
+        self.assertEqual(len(session.calls), 2)
+        self.assertIn('真页面标记', str(soup))
+
+    def test_200_never_retried(self):
+        """正常 200: WAF 循环不触发任何重发。"""
+        session, soup = self._inspect('ok200/index.html', [
+            _FakeWafResp(200, _REAL_PAGE_BODY),
+        ])
+        self.assertEqual(len(session.calls), 1)
+        self.assertIn('真页面标记', str(soup))
+
+
+class TestContentPaginationNone(unittest.TestCase):
+    """适配器声明 content_pagination: None (单页直出) 不得炸正文提取 (K35)。
+
+    hulaisb 适配器 SITE 写有 "content_pagination": None (单页直出意图)。
+    get_chapter_content 旧守卫 'content_pagination' in site_pattern 只查键存在,
+    None.get('max_pages', 30) 抛 TypeError, 被 _fetch_with_qc 吞成
+    "[质检] 抓取异常: 'NoneType' object has no attribute 'get'" →
+    全部章节 ~0.5s 瞬时空正文 (hulaisb task_9 2026-10-03 实测, 5 篇全灭)。
+    修后: None → 视为无 dict 分页配置, 且第 2 页直接停止、不构造 _1.html。
+    URL 全部 example.com 脱钩。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from 爬虫 import NovelSpider
+        cls.spider = NovelSpider('https://www.example.com')  # 离线可构造 (~0.8s)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.spider.close()
+
+    def setUp(self):
+        import unittest.mock as _mock
+        from bs4 import BeautifulSoup
+        # 站点配置: hulaisb 形态 —— html_selector 模式 + content_pagination=None。
+        # pattern 用 generic 走通用检测, 避免 html_selector 提取器真实取页。
+        site_pattern = {
+            'domain': 'example.com',
+            'pattern': 'generic',
+            'content_pagination': None,      # 单页直出 (K35 触发点)
+        }
+        p1 = _mock.patch('爬虫.get_site_pattern', return_value=site_pattern)
+        p1.start()
+        self.addCleanup(p1.stop)
+        # 外部适配器缺席 (分页/正文都落通用路径)
+        p2 = _mock.patch('sites_config.get_adapter', return_value=None)
+        p2.start()
+        self.addCleanup(p2.stop)
+        # 数据文件探测不命中 (hulaisb 真站走 .word, 离线无需覆盖)
+        p3 = _mock.patch('content_decoder.decode_chapter_data',
+                         return_value=('', ''))
+        p3.start()
+        self.addCleanup(p3.stop)
+        # 页面请求全部 mock: 恒定最小页面, 记录收到的 URL
+        self.inspected_urls = []
+        _soup = BeautifulSoup(
+            '<html><body><div id="content">测试正文内容。</div></body></html>',
+            'html.parser')
+
+        def _fake_inspect(url, *args, **kwargs):
+            self.inspected_urls.append(url)
+            return _soup
+
+        p4 = _mock.patch.object(type(self.spider), 'inspect_page',
+                                side_effect=_fake_inspect)
+        p4.start()
+        self.addCleanup(p4.stop)
+        # 清洗统计 contextvar 无关紧要; 睡眠瞬时化 (防通用路径退避)
+        p5 = _mock.patch('time.sleep')
+        p5.start()
+        self.addCleanup(p5.stop)
+
+    def test_none_pagination_no_typeerror(self):
+        """K35 主断言: content_pagination=None 时 get_chapter_content 不抛 TypeError。"""
+        content = self.spider.get_chapter_content(
+            'https://www.example.com/book/1.html')
+        self.assertIsInstance(content, str)
+
+    def test_none_pagination_never_builds_page2_url(self):
+        """单页直出第 2 页必须停止: 任何后续请求都不得是 _1.html 形态。"""
+        self.spider.get_chapter_content('https://www.example.com/book/1.html')
+        for u in self.inspected_urls:
+            self.assertNotIn('_1.html', u,
+                             f'单页直出站点不应构造分页 URL: {u}')
+
+    def test_dict_pagination_still_reads_max_pages(self):
+        """回归保护: content_pagination 为 dict 时 max_pages 照常生效。"""
+        import unittest.mock as _mock
+        site_pattern = {
+            'domain': 'example.com',
+            'pattern': 'generic',
+            'content_pagination': {'max_pages': 1},
+        }
+        p = _mock.patch('爬虫.get_site_pattern', return_value=site_pattern)
+        p.start()
+        self.addCleanup(p.stop)
+        # max_pages=1 → 只请求第 1 页; 不抛异常即守卫未破坏
+        content = self.spider.get_chapter_content(
+            'https://www.example.com/book/1.html')
+        self.assertIsInstance(content, str)
+
+
+class TestServerErrorRetry(unittest.TestCase):
+    """5xx 错误页必须重试而非当正文返回 (K36, 2026-10-03)。
+
+    shuhaige 源站间歇 502: 目录页 GET → 502 + "502 Bad Gateway" 错误页,
+    旧实现把错误页当正常响应解析 → 书名 "502 Bad Gateway" → 0 章节 →
+    死书[目录无章节] (误导用户查选择器)。修后 inspect_page 对 5xx
+    与网络异常同等重试 (3 次退避), 耗尽返回空 soup → 死书判定走
+    "站点不可达" (_目录页为空=True)。URL 全部 example.com 脱钩。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from 爬虫 import NovelSpider
+        cls.spider = NovelSpider('https://www.example.com')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.spider.close()
+
+    def setUp(self):
+        import unittest.mock as _mock
+        _sleep_patcher = _mock.patch('time.sleep')
+        _sleep_patcher.start()
+        self.addCleanup(_sleep_patcher.stop)
+
+    def _inspect(self, path, responses):
+        session = _ScriptedSession(responses)
+        self.spider.session = session
+        # 每用例独立 URL: inspect_page 有 20s TTL 缓存, 同 URL 会命中缓存跳过请求
+        soup = self.spider.inspect_page(
+            f'https://www.example.com/{path}', polite_delay=False)
+        return session, soup
+
+    def test_502_then_200_recovers(self):
+        """502 → 重试 → 200: 必须拿到真页面, 恰好发 2 次请求。"""
+        session, soup = self._inspect('502_ok/index.html', [
+            _FakeWafResp(502, _BARE_401_BODY),
+            _FakeWafResp(200, _REAL_PAGE_BODY),
+        ])
+        self.assertEqual(len(session.calls), 2)
+        self.assertIn('真页面标记', str(soup))
+
+    def test_persistent_502_bounded_and_empty(self):
+        """恒 502: 重试 3 次有界, 最终返回空 soup (站点不可达信号, 不崩溃)。"""
+        session, soup = self._inspect('502_loop/index.html',
+                                      [_FakeWafResp(502, _BARE_401_BODY)] * 10)
+        self.assertEqual(len(session.calls), 3)
+        self.assertEqual(str(soup).strip(), '',
+                         '5xx 耗尽必须返回空 soup (触发 _目录页为空 → 站点不可达)')
+
+    def test_503_also_retried(self):
+        """503 同样重试 (与 502 同族)。"""
+        session, soup = self._inspect('503_ok/index.html', [
+            _FakeWafResp(503, _BARE_401_BODY),
+            _FakeWafResp(200, _REAL_PAGE_BODY),
+        ])
+        self.assertEqual(len(session.calls), 2)
+        self.assertIn('真页面标记', str(soup))
+
+    def test_404_not_retried(self):
+        """404 不是服务器错误: 不重试 (资源真不存在, 重试无意义)。"""
+        session, soup = self._inspect('404_once/index.html',
+                                      [_FakeWafResp(404, '<html><body>404</body></html>')])
+        self.assertEqual(len(session.calls), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
