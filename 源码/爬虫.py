@@ -266,6 +266,25 @@ def _format_range_chapter_title(text):
     return text
 
 
+def _排序样本下标(total: int, 样本数: int = 5):
+    """返回用于 console 展示的下标序列: 头 N + 尾 N (去重, 升序)。
+
+    2026-10-03: 章节列表原先逐条 `_log.info`。2000 章的书单本就 2000+ 行,
+    而 `_write` 的 console 镜像是 `print(flush=True)` —— 远控/EXE 走管道时
+    下游一旦读得慢(批量 driver 轮询任务表), 写端被反压, 进程表面"消失"。
+    实测远控起 1m17s 后无异常退出, 日志停在章节排序中途, 而三本书的目录
+    其实都已解析成功 —— 是日志量把进程压死的, 不是站点或代码故障。
+
+    完整列表仍在 debug 级完整保留 (排错时开 debug 即可复现), console
+    只留头尾各 N 条样本, 足以判断"排序是否正确"而不制造日志洪水。
+    """
+    if total <= 0:
+        return []
+    if total <= 样本数 * 2:
+        return list(range(total))
+    return sorted(set(list(range(样本数)) + list(range(total - 样本数, total))))
+
+
 def _chapter_sort_key(chap):
     """统一的章节排序键：按章节号 → 楔子 → URL数字 → 番外排序"""
     title = chap.get('title', '')
@@ -2986,17 +3005,17 @@ class NovelSpider:
 
                 # 特殊处理楔子
                 if '楔子' in title:
-                    _log.info(f"[排序键值] '{title[:30]}' -> 0 (楔子)")
+                    _log.debug(f"[排序键值] '{title[:30]}' -> 0 (楔子)")
                     return 0
 
                 # 特殊处理"开始阅读"，视为第1章
                 if '开始阅读' in title:
-                    _log.info(f"[排序键值] '{title[:30]}' -> 1 (开始阅读)")
+                    _log.debug(f"[排序键值] '{title[:30]}' -> 1 (开始阅读)")
                     return 1
 
                 # 特殊处理番外
                 if '番外' in title:
-                    _log.info(f"[排序键值] '{title[:30]}' -> 99999 (番外)")
+                    _log.debug(f"[排序键值] '{title[:30]}' -> 99999 (番外)")
                     return 99999
 
                 # 中文数字映射
@@ -3028,12 +3047,12 @@ class NovelSpider:
                             # 如果是纯数字
                             if num_str.isdigit():
                                 key = int(num_str)
-                                _log.info(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 数字)")
+                                _log.debug(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 数字)")
                                 return key
                             # 如果是中文数字
                             if num_str in chinese_nums:
                                 key = chinese_nums[num_str]
-                                _log.info(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 中文数字)")
+                                _log.debug(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 中文数字)")
                                 return key
                             # 尝试解析复杂中文数字（如二十三）
                             if '十' in num_str:
@@ -3041,9 +3060,9 @@ class NovelSpider:
                                 tens = chinese_nums.get(parts[0], 1) if parts[0] else 1
                                 ones = chinese_nums.get(parts[1], 0) if len(parts) > 1 and parts[1] else 0
                                 key = tens * 10 + ones
-                                _log.info(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 复杂中文数字)")
+                                _log.debug(f"[排序键值] '{title[:30]}' -> {key} (模式{i+1}: 复杂中文数字)")
                                 return key
-                            _log.info(f"[排序键值] '{title[:30]}' -> 9999 (模式{i+1}: 无法解析)")
+                            _log.debug(f"[排序键值] '{title[:30]}' -> 9999 (模式{i+1}: 无法解析)")
                             return 9999
                         except (ValueError, KeyError, IndexError):
                             pass  # 该模式解析失败, 尝试下一模式
@@ -3064,33 +3083,41 @@ class NovelSpider:
                     if match:
                         try:
                             key = int(match.group(1))
-                            _log.info(f"[排序键值] '{title[:30]}' -> {key} (URL模式{i+1})")
+                            _log.debug(f"[排序键值] '{title[:30]}' -> {key} (URL模式{i+1})")
                             return key
                         except (ValueError, IndexError):
                             pass  # 数字转换失败, 尝试下一模式
 
                 # 默认值
-                _log.info(f"[排序键值] '{title[:30]}' -> 9999 (默认值，无法提取)")
+                _log.debug(f"[排序键值] '{title[:30]}' -> 9999 (默认值，无法提取)")
                 return 9999
 
-            # 记录排序前的顺序
-            _log.info("[章节排序] 排序前顺序:")
-            for i, chap in enumerate(chapters):
+            # 记录排序前的顺序。
+            # 2026-10-03: 原为逐章 info 全量打印 —— 2000 章的书单本吐 2000+ 行,
+            #   远控/EXE 的 stdout 管道 1 分钟内被撑爆, 进程被输出量拖死
+            #   (表现为任务"从任务表消失" + 远控无异常退出)。全量降为 debug,
+            #   console 只留头尾各 5 条样本, 排错需要时开 debug 级即可复现。
+            _log.info(f"[章节排序] 排序前顺序 (共 {len(chapters)} 章, 展示头尾各5条):")
+            for i, chap in _排序样本下标(len(chapters)):
                 _log.info(f"  {i+1}. {chap['title'][:40]}")
 
             chapters.sort(key=chapter_sort_key)
 
-            _log.info("[章节排序] 排序后顺序:")
-            for i, chap in enumerate(chapters):
+            _log.info(f"[章节排序] 排序后顺序 (共 {len(chapters)} 章, 展示头尾各5条):")
+            for i, chap in _排序样本下标(len(chapters)):
                 _log.info(f"  {i+1}. {chap['title'][:40]}")
+            for i, chap in enumerate(chapters):
+                _log.debug(f"  {i+1}. {chap['title'][:40]}")
         else:
             _log.info("保持原目录顺序，不进行自动排序")
 
         _log.info(f"\n共找到 {len(chapters)} 个章节（已去重并排序）")
         _任务事件.发布('章节总数', 总数=len(chapters))        # U19 结构化事件
-        # 打印章节列表
-        for i, chap in enumerate(chapters):
+        # 打印章节列表 (同 2026-10-03 的降级理由: 逐章 info 会撑爆 stdout 管道)
+        for i, chap in _排序样本下标(len(chapters)):
             _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
+        for i, chap in enumerate(chapters):
+            _log.debug(f"  {i+1}. {chap['title']} -> {chap['url']}")
 
         return chapters
     def clean_chapter_title(self, title):
