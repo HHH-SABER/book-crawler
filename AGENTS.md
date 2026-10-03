@@ -1,26 +1,34 @@
 # 项目指令 — 小说爬虫 (Book Crawler)
 
-多站点小说爬虫,Python 3.10+ / Flet 0.86 GUI / PyInstaller 打包。约 2 万行。
+多站点小说爬虫,Python 3.10+ / Flet 0.86 GUI / PyInstaller 打包。源码/ 50 个 .py, 约 2.6 万行 (25,931 行, 2026-10-03 实测; 其中 爬虫.py 单文件 7,630 行)。
 所有工作遵循项目合规边界:仅供学习研究,验证码自动识别**默认必须关闭**。
 
 ## 常用命令
 
 ```bash
-# 虚拟环境 (所有命令在 .venv 下执行)
-.venv\Scripts\activate
+# 解释器（两者均实测可用, 2026-10-03 复验; 推荐前者: 随包、不依赖 .venv 状态）
+#   .runtime\python314\python.exe   随包嵌入式运行时 (Python 3.14.0; 启动脚本首选)
+#   .venv\Scripts\python.exe        虚拟环境 (pyvenv.cfg 的 home 指向 .runtime\python314,
+#                                   2026-10-03 13:54 已修复; 依赖装在其 Lib\site-packages)
+#   ⚠️ .runtime\python314\python314._pth 把 ../../.venv/Lib/site-packages 加进搜索路径,
+#      二者互相依赖 → 不可单独删除 .venv
+#   EXE 相关环境变量: FLET_CACHE_DIR 指向 .runtime\flet_client
 
 # 离线回归测试 (unittest 发现式, 必须全绿才算完成)
-python -m unittest discover -s 测试 -v
+.runtime\python314\python.exe -m unittest discover -s 测试 -v
 
 # 未定义引用静态检查 (改完代码必跑)
-python 脚本\check_undefined_refs.py
+.runtime\python314\python.exe 脚本\check_undefined_refs.py
 
 # 打包 EXE (自动递增版本号 + 同步 CHANGELOG; CI 用同一脚本)
-python 脚本\build_exe.py
+.runtime\python314\python.exe 脚本\build_exe.py
 ```
 
+⚠️ **门禁只可在「完全权限」会话中运行**（DSH 受限沙箱下状态文件写盘被拒，
+会得到大面积**假失败**，见 踩坑总表 K42）。
+
 注意:`测试/回归测试_修复验证.py`、`_test_gui_v3.py`、`_test_task_metrics.py` 是手写
-`__main__` 脚本,不被 unittest discover 收集,需单独 `python 测试\xxx.py` 运行。
+`__main__` 脚本,不被 unittest discover 收集,需单独 `.runtime\python314\python.exe 测试\xxx.py` 运行。
 
 ## 文件上传规约 (2026-09-13 定稿, 所有会话必须遵守)
 
@@ -29,7 +37,7 @@ python 脚本\build_exe.py
 | 目录/模式 | 性质 |
 |---|---|
 | `源码/`、`测试/`、`站点适配/`、`脚本/` | 源码与工具脚本 |
-| `测试样本/` | 离线测试 fixture (删除会破坏测试) |
+| ~~`测试样本/`~~（**已废止**） | 2026-10-01 起该目录**不复存在**; 真实站点快照改放**不入库**的 `测试样本_本地/`, 公开侧机制测试读不到 fixture 时 `skipTest` |
 | `文档/`、`界面设计预览/` | 项目文档与设计资源 |
 | `配置/`(模板)、`.github/` | 分发配置模板与 CI |
 | 根级 `README/CHANGELOG/AGENTS/LICENSE/requirements.txt/.gitignore`、`启动*.bat`、`脚本/图标.ico` | 项目元文件 |
@@ -59,7 +67,14 @@ python 脚本\build_exe.py
 | 内容质检器.py / content_decoder.py / decrypt_utils.py | 五维质检 / 码点流·Base64 解码 / 六种正文解密 (质检与解码有 rust_core 加速路径) |
 | 爬取历史.py / 站点历史.py / 书架.py | URL 维度历史(增量) / 站点先验 / 已抓书目 |
 | captcha_module.py / waf_captcha.py / browser_driver.py | 验证码框架 (自动识别默认关) / WAF 流程 / Playwright 反检测驱动 |
-| gui_app.py + gui_components/ | Flet 0.86 界面; TaskManager 单一数据源, 爬虫线程只写数据不碰控件 |
+| gui_app.py + gui_components/ | Flet 0.86 界面; TaskManager 单一数据源, 爬虫线程只写数据不碰控件。**页面顺序是硬契约**: `NAV_PAGES`(icon_rail.py) 与 `pages_map`(gui_app.py) 键序必须一致, 错位 = 启动即显示错页且静默不报错 |
+| 死书处理.py | 死书判定 (三信号五级短路) / 清单三态 (待确认·已删除·已忽略) / 删除编排 (任务表+书架+清单) |
+| 选择器自愈.py | 选择器候选打分 + 自愈建议 (落盘 → 取待审建议 → 采纳写回站点配置) |
+| 网站清单.py | 网址台账 (BASE_DIR/网站清单.txt, 非状态根; `NC_LEDGER_PATH` 可覆盖以隔离测试) |
+| 日志.py / _path_utils.py | 单例日志 (单文件 5MB 轮转, 活动文件带 `_N` 后缀) / 路径契约 get_resource_dir·get_app_base_dir·get_state_root |
+| 任务事件.py | 结构化事件通道 (ContextVar, 随 copy_context 进 worker; 取代正则解析指标) |
+| 远控/ (服务.py·配置.py) | FastAPI 远控服务 (`python -m 远控`; 内嵌模式下与 GUI 共享同一 TaskManager) |
+| site_probe.py / epub_exporter.py / 启动器.py | 站点探针 / TXT→EPUB / CLI ASCII 启动壳 (注意 GUI 入口**不经**它) |
 | rust_core_poc/ | PyO3 扩展源码 (质检/解码加速); 编译产物 源码/rust_core.pyd 不入库 |
 
 ## 编码规约 (本项目既有约定, 新代码必须遵守)
@@ -76,7 +91,8 @@ python 脚本\build_exe.py
 
 ## 修复工作流
 
-1. 改代码 → 2. 为该修复补回归用例 (离线, 用 测试样本/ 快照) → 3. `unittest discover` 全绿
+1. 改代码 → 2. 为该修复补回归用例 (离线; 真实站点快照放**不入库**的 `测试样本_本地/`, 公开侧用内联 HTML,
+  读不到 fixture 时 `skipTest`) → 3. `unittest discover` 全绿
 → 4. `check_undefined_refs.py` 无新告警 → 5. 更新 CHANGELOG.md (对齐其条目格式)
 → 6. 提交信息格式 `fix(域): 一句话` 或 `feat(域): ...` (中文, 参照 git log)。
 
@@ -118,7 +134,7 @@ python 脚本\build_exe.py
    每次 push 前**逐文件自查**;拿不准 = 不传,先问用户。
    站点相关实现一律走「站点脱钩机制」(见 §目录与文件管理规范 四)。
    ⚠️ 生效口径:自本条起**向后约束**;仓库既有历史中的站点内容按「站点脱钩」分阶段清理
-   (未完成前,历史提交仍可查到,见 `文档/实施计划.md` 对应提案)。
+   (未完成前,历史提交仍可查到,见 `文档/实施计划.md` 的「站点脱钩 阶段 2（Wave 2）」小节)。
 
 ## 目录与文件管理规范 (2026-10-01 定稿, 所有会话必须遵守)
 
@@ -189,7 +205,8 @@ python 脚本\build_exe.py
 > 本机打包把 `站点适配_本地/` 复制进 dist（本机全功能），公开环境自动跳过
 > （Release 产物无站点）；**dist 为本机交付物，严禁直接上传公开渠道**。
 >
-> **阶段 2（待立项，公开侧仍有站点信息残留）**：`爬虫.py` 域名 if 特判与
+> **阶段 2（待立项，公开侧仍有站点信息残留）** —— 提案全文见 `文档/实施计划.md` 的
+> 「站点脱钩 阶段 2（Wave 2）」小节：`爬虫.py` 域名 if 特判与
 > `_parse_catalog_*` 分发表、`网站清单.py` 域名站名映射表、`速度自适应.py`
 > `SITE_TIER_CAPS`、`gui_components/input_bar.py` 示例 hint、残余测试 URL
 > （website_ledger_speed / dns_doh / domain_gate / 回归测试_修复验证）的**站点代号化**。
