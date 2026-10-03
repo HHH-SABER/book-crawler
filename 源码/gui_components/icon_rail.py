@@ -1,29 +1,45 @@
 # -*- coding: utf-8 -*-
-"""Windows 11 Fluent 风格 220px 侧边导航栏 + 顶栏 (方案 A, 还原设计预览)
+"""220px 侧边导航栏 + 顶栏 (还原界面设计预览/index.html 的暖色侧栏)
 
 布局结构 (与 index.html 一致):
   ┌────────────────────────┐
   │  主功能                  │  ← 分区标题
-  │  ⬇  抓取工作台           │  ← 选中态: 浅蓝底 + 蓝字
+  │  ⬇  抓取工作台           │  ← 选中态: 浅橙底 + 橙字
   │  📊  爬取历史            │
   │  📦  死书清单            │
   │  🌐  站点管理            │
   │  📝  运行日志            │
+  │  ⚙  远控                 │
   │  (弹性留白)              │
-  │  ──────────────────     │
-  │  🟢 抓取中 · 2 项        │  ← 底部状态指示器
   └────────────────────────┘
 
-宽度 220px, 背景 #F1F1F1 (日间) / #171717 (夜间)
-导航项: icon(18px) + 文字(14px), 圆角 4px, 选中态浅蓝底蓝字
+宽度 220px, 背景 #F1F1F1 (日间) / #171717 (夜间, 比卡片更暗)
+导航项: icon(18px) + 文字(14px), 圆角 4px, 选中态浅橙底 #FAF1E7 + 橙字 #9C4A0C
+
+======================================================================
+⚠️ 本模块承担一个额外职责: 主题状态同步 (别删!)
+======================================================================
+gui_app.toggle_theme() 的调用顺序是:
+    page.theme_mode = DARK/LIGHT   ← 先改 Flutter 侧
+    rail.toggle_theme_icon(夜间)   ← 再调这里 (本模块)
+    page.update()
+IconRail.toggle_theme_icon() 是**本轮唯一不需要改 gui_app.py 就能挂上
+的同步点**。它在这里调 ui_fluent.同步主题(), 把 ui_tokens 的主题状态
+改过来并触发所有已登记控件换色。没有这一步, 用了 ui_tokens.取色()
+的组件切主题后会掉色。
+
+⚠️ 硬契约: NAV_PAGES 的顺序与内容**不得改动** —— gui_app.pages_map
+   依赖 dict 插入序 == 本列表序, 两处不同序会导致首屏静默显示错页。
 """
 import flet as ft
 
 from .ui_fluent import (
     txt, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
     WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
-    MORANDI_SIDEBAR_BG, MORANDI_SIDEBAR_HOVER, MORANDI_SIDEBAR_ACTIVE,
 )
+from . import ui_tokens
+from .ui_tokens import 取色, 登记重刷
+from .ui_fluent import 同步主题
 try:
     import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
 except Exception:
@@ -62,16 +78,17 @@ NAV_PAGES = [
 # ====================================================================
 
 def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
-    """构建醒目的主题切换按钮 (胶囊形, 精确还原预览样式)
+    """构建主题切换按钮 (胶囊形, 还原设计稿: 浅底 + 图标 + 文字)
 
-    样式: padding 6×12, 圆角 999px, 背景 terciary, 边框 subtle
+    样式: 高 28 (--chip-btn 规格) 内距 0 12, 圆角 999 胶囊,
+          背景 brand-subtle, 文字 on-brand-subtle
     """
     is_dark = current_mode == 'dark'
     icon_name = ft.Icons.DARK_MODE_ROUNDED if is_dark else ft.Icons.LIGHT_MODE_ROUNDED
     label = '夜间' if is_dark else '日间'
 
-    icon = ft.Icon(icon_name, size=16, color=ft.Colors.ON_SURFACE_VARIANT)
-    label_text = txt(label, size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+    icon = ft.Icon(icon_name, size=16, color=取色('on-brand-subtle'))
+    label_text = txt(label, size=SIZE_TINY, color=取色('on-brand-subtle'),
                      weight=WEIGHT_EMPHASIS)
 
     btn = ft.Container(
@@ -79,11 +96,13 @@ def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
             [icon, label_text],
             spacing=8,
             alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
-        padding=ft.Padding.symmetric(horizontal=12, vertical=6),
-        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-        border_radius=999,
-        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+        height=ui_tokens.CHIP_H,
+        padding=ft.Padding.symmetric(horizontal=ui_tokens.CHIP_PAD_X, vertical=0),
+        bgcolor=取色('brand-subtle'),
+        border_radius=ui_tokens.CHIP_RADIUS,
+        border=ft.Border.all(1, 取色('brand-subtle')),
         on_click=lambda e: on_toggle(),
         tooltip='切换日间/夜间模式',
         ink=True,
@@ -101,6 +120,15 @@ def build_theme_toggle(page, current_mode: str, on_toggle) -> ft.Container:
             _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     btn.update_theme_state = update_theme_state
+
+    # 主题切换后胶囊配色跟随 (底/字/图标/边框)
+    def _换色(c):
+        c.bgcolor = 取色('brand-subtle')
+        c.border = ft.Border.all(1, 取色('brand-subtle'))
+        c.content.controls[0].color = 取色('on-brand-subtle')
+        c.content.controls[1].color = 取色('on-brand-subtle')
+
+    登记重刷(btn, _换色)
     return btn
 
 
@@ -112,26 +140,29 @@ def build_remote_toggle(on_click):
     """顶栏远控开关 (胶囊按钮, 与主题切换同款形态)。
 
     返回 (控件, 更新状态函数): 更新(启用: bool) 刷新文案/配色/提示。
-    默认启用 — 与 数据/远控配置.json 的 "启用" 一致。"""
+    默认启用 — 与 数据/远控配置.json 的 "启用" 一致。
+
+    配色按设计稿远控层: --remote-bg 底 + --remote-text 字。"""
     def _外观(启用: bool):
-        btn.bgcolor = (ft.Colors.PRIMARY_CONTAINER if 启用
-                       else ft.Colors.SURFACE_CONTAINER_HIGH)
-        lab.color = (ft.Colors.ON_PRIMARY_CONTAINER if 启用
-                     else ft.Colors.ON_SURFACE_VARIANT)
+        btn.bgcolor = (取色('remote-bg') if 启用 else 取色('bg-tertiary'))
+        lab.color = (取色('remote-text') if 启用 else 取色('text-tertiary'))
+        dot.color = (取色('status-success') if 启用 else 取色('text-tertiary'))
         lab.value = "远控 开" if 启用 else "远控 关"
         btn.tooltip = ("手机/外部设备可访问 (Tailscale)"
                        if 启用 else
                        "远控已停用——手机端将无法访问, 点击启用")
 
     lab = txt("远控 开", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE)
+    dot = ft.Icon(ft.Icons.CIRCLE, size=8, color=取色('status-success'))
     btn = ft.Container(
         content=ft.Row(
-            [ft.Icon(ft.Icons.WIFI_TETHERING, size=14), lab],
+            [ft.Icon(ft.Icons.WIFI_TETHERING, size=14), dot, lab],
             spacing=6, tight=True,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
-        padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-        border_radius=16,
+        height=ui_tokens.CHIP_H,
+        padding=ft.Padding.symmetric(horizontal=ui_tokens.CHIP_PAD_X, vertical=0),
+        border_radius=ui_tokens.CHIP_RADIUS,
         on_click=on_click,
         ink=True,
     )
@@ -140,20 +171,21 @@ def build_remote_toggle(on_click):
 
 
 def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) -> ft.Container:
-    """构建 Fluent 顶栏 (48px 高, 匹配设计稿 titlebar)
+    """构建顶栏 (48px 高, 匹配设计稿 titlebar)
 
     布局: [📖 小说爬虫] ──────────────────── [🌙 夜间]
     """
-    # 左侧: 应用图标 (Fluent 蓝底圆角) + 应用名
+    # 左侧: 应用图标 (品牌橙底圆角 4) + 应用名
     app_icon = ft.Container(
-        content=ft.Icon(ft.Icons.MENU_BOOK_OUTLINED, size=14, color=ft.Colors.WHITE),
+        content=ft.Icon(ft.Icons.MENU_BOOK_OUTLINED, size=14,
+                        color=取色('on-brand')),
         width=24, height=24,
-        border_radius=4,
-        bgcolor=ft.Colors.PRIMARY,
+        border_radius=ui_tokens.RADIUS_SM,
+        bgcolor=取色('btn-primary-bg'),
         alignment=ft.Alignment.CENTER,
     )
     app_title = txt(title_text, size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
-                    color=ft.Colors.ON_SURFACE)
+                    color=取色('text-primary'))
 
     bar = ft.Container(
         content=ft.Row(
@@ -166,9 +198,14 @@ def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) 
         padding=ft.Padding.symmetric(horizontal=16, vertical=0),
         bgcolor=ft.Colors.SURFACE,
         border=ft.Border.only(
-            bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)
+            bottom=ft.BorderSide(1, 取色('border-subtle'))
         ),
     )
+    登记重刷(app_icon, lambda c: (
+        setattr(c, 'bgcolor', 取色('btn-primary-bg')),
+        setattr(c.content, 'color', 取色('on-brand')),
+    ))
+    登记重刷(app_title, lambda c: setattr(c, 'color', 取色('text-primary')))
     return bar
 
 
@@ -208,30 +245,48 @@ class IconRail:
             _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def toggle_theme_icon(self, is_dark: bool):
-        # 兼容保留: 主题按钮的实际刷新由 build_theme_toggle.update_theme_state
-        # 负责 (gui_app toggle_theme 中调用), 此处仅同步内部状态标记
-        self._is_dark = is_dark
+        """主题切换同步点 (gui_app.toggle_theme 在 page.theme_mode 赋值后
+        调用本方法)。
+
+        做两件事:
+          1. 同步 ui_tokens 的主题状态 + 触发所有已登记控件换色
+          2. 刷新本侧栏自己的导航项配色
+        主题按钮文案/图标的刷新由 build_theme_toggle.update_theme_state
+        负责 (gui_app 另行调用), 此处只管配色。
+        """
+        同步主题(bool(is_dark))
+        for k, btn in self._nav_buttons.items():
+            self._update_btn_style(btn, k == self._active_key)
+        try:
+            if self._control:
+                self._control.update()
+        except Exception as _e:
+            _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _update_btn_style(self, btn, is_active: bool):
-        """更新导航按钮选中/未选中样式 (Fluent: 选中=浅蓝底蓝字)"""
+        """更新导航按钮选中/未选中样式 (暖色: 选中=浅橙底 + 橙字)
+
+        设计稿 --bg-sidebar-active 日#FAF1E7/夜#382614,
+                 --text-sidebar-active 日#9C4A0C/夜#E8A96A
+        """
         icon_ctrl = btn.content.controls[0]
         label_ctrl = btn.content.controls[1]
 
         if is_active:
-            btn.bgcolor = MORANDI_SIDEBAR_ACTIVE
-            icon_ctrl.color = ft.Colors.PRIMARY
-            label_ctrl.color = ft.Colors.PRIMARY
+            btn.bgcolor = 取色('bg-sidebar-active')
+            icon_ctrl.color = 取色('text-sidebar-active')
+            label_ctrl.color = 取色('text-sidebar-active')
             label_ctrl.weight = WEIGHT_SUBTITLE
         else:
             btn.bgcolor = None
-            icon_ctrl.color = ft.Colors.ON_SURFACE_VARIANT
-            label_ctrl.color = ft.Colors.ON_SURFACE
+            icon_ctrl.color = 取色('text-tertiary')
+            label_ctrl.color = 取色('text-primary')
             label_ctrl.weight = WEIGHT_BODY
 
     def _make_nav_btn(self, key, icon, label):
-        """构建单个导航按钮 (220px 宽, icon + 文字, Fluent 4px 圆角)"""
-        icon_ctrl = ft.Icon(icon, size=18, color=ft.Colors.ON_SURFACE_VARIANT)
-        label_ctrl = txt(label, size=SIZE_BODY, color=ft.Colors.ON_SURFACE)
+        """构建单个导航按钮 (220px 宽, icon + 文字, 圆角 4px = --radius-sm)"""
+        icon_ctrl = ft.Icon(icon, size=18, color=取色('text-tertiary'))
+        label_ctrl = txt(label, size=SIZE_BODY, color=取色('text-primary'))
 
         btn = ft.Container(
             content=ft.Row(
@@ -240,7 +295,7 @@ class IconRail:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-            border_radius=4,
+            border_radius=ui_tokens.RADIUS_SM,
             on_click=lambda e, k=key: self._on_btn_click(k),
             on_hover=self._on_nav_hover,
             tooltip=label,
@@ -251,6 +306,13 @@ class IconRail:
         self._nav_buttons[key] = btn
 
         self._update_btn_style(btn, key == self._active_key)
+
+        # 登记重刷: 切主题时导航项也要换色 (Container 无 on_focus, 但换色
+        # 由 IconRail.toggle_theme_icon 统一驱动, 这里只登记不驱动)
+        选中键 = key
+        def _换色(c):
+            self._update_btn_style(c, 选中键 == self._active_key)
+        登记重刷(btn, _换色)
         return btn
 
     def _on_btn_click(self, key: str):
@@ -271,7 +333,7 @@ class IconRail:
             btn = e.control
             is_active = btn._key == self._active_key
             if e.data == 'true' and not is_active:
-                btn.bgcolor = MORANDI_SIDEBAR_HOVER
+                btn.bgcolor = 取色('bg-sidebar-hover')
             else:
                 self._update_btn_style(btn, is_active)
             btn.update()
@@ -280,9 +342,10 @@ class IconRail:
 
     def build(self) -> ft.Control:
         """构建 220px 宽侧边栏"""
-        # 分区标题
-        section_title = txt('主功能', size=11, weight=WEIGHT_SUBTITLE,
-                            color=ft.Colors.ON_SURFACE_VARIANT)
+        # 分区标题 (--fs-micro 11px + 600)
+        section_title = txt('主功能', size=ui_tokens.FS_MICRO,
+                            weight=WEIGHT_SUBTITLE,
+                            color=取色('text-tertiary'))
 
         # 导航按钮列表
         nav_btns = [self._make_nav_btn(k, ic, lb) for k, ic, lb, _ in NAV_PAGES]
@@ -302,12 +365,17 @@ class IconRail:
             expand=True,
         )
 
-        self._control = ft.Container(
+        侧栏 = ft.Container(
             content=body,
             width=220,
             # 注意: 不能同时设 expand=True — Row 中 expand 会使 width 失效,
             # 侧栏被拉成窗口一半 (历史遗留 Bug, 曾把内容区挤压一半)
-            bgcolor=MORANDI_SIDEBAR_BG,
+            bgcolor=取色('bg-sidebar'),
             padding=ft.Padding.symmetric(horizontal=8, vertical=12),
         )
+        # 侧栏底色 + 分区标题随主题重刷
+        登记重刷(侧栏, lambda c: setattr(c, 'bgcolor', 取色('bg-sidebar')))
+        登记重刷(section_title, lambda c: setattr(c, 'color', 取色('text-tertiary')))
+
+        self._control = 侧栏
         return self._control
