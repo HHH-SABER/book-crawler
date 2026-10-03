@@ -148,6 +148,20 @@ class InputBar:
             label_position=ft.LabelPosition.LEFT,
             tooltip="抓取完成后同时生成 .epub 电子书 (可选)",
         )
+        # 2026-10-04 (八项需求 #2 修复): 终态**提示音开关** —— 夜间挂机不想被吵时关掉;
+        # 关掉后通知 SnackBar 照常弹, 只是不响。偏好持久化到 状态根/数据/界面偏好.json。
+        try:
+            import 界面偏好 as _偏好
+            _提示音初值 = bool(_偏好.取('提示音', True))
+        except Exception as _e偏好:
+            _dbg('输入条', f'提示音偏好读取失败, 按默认(开): {type(_e偏好).__name__}')
+            _提示音初值 = True
+        self.提示音_switch = ft.Switch(
+            label="提示音", value=_提示音初值,
+            label_position=ft.LabelPosition.LEFT,
+            tooltip="任务成功/失败的提示音开关 (关掉后仍会弹通知)",
+            on_change=self._on_提示音切换,
+        )
         self.output_dir_input = ft.TextField(
             label="输出目录", width=170, dense=True,
             text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
@@ -197,6 +211,7 @@ class InputBar:
                 # 第二行: 次操作 (自动换行)
                 ft.Row([import_btn, paste_btn, self.start_chapter,
                         self.end_chapter, self.resume_switch, self.epub_switch,
+                        self.提示音_switch,
                         self.output_dir_input, open_folder_btn],
                        wrap=True, spacing=6),
                 self.batch_panel,
@@ -205,6 +220,16 @@ class InputBar:
         )
 
     # --------------------------------------------------------------- 回调
+    def _on_提示音切换(self, e):
+        """提示音开关 → 持久化界面偏好 (八项需求 #2 修复: 提供静音入口)"""
+        try:
+            import 界面偏好
+            self.提示音_switch.value = bool(e.control.value)
+            if not 界面偏好.设置('提示音', bool(e.control.value)):
+                _log('输入条', '提示音偏好写入失败 (仅本次会话生效)')
+        except Exception as _ex:
+            _log('输入条', f'提示音偏好保存异常: {type(_ex).__name__}: {_ex}')
+
     def _on_mode_change(self, e):
         """模式切换时显示/隐藏章节区间输入"""
         is_range = self.mode_dropdown.value == "range"

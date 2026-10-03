@@ -894,6 +894,31 @@ class TaskManager:
         t.start()
         return task_id
 
+    # 队列上限 (2026-10-04 修八项需求 #2): 主循环每秒只弹一条、每条 SnackBar 6 秒,
+    # 无界队列会让"一批任务集中结束"后的通知滞后很久且用户取消不掉。满则丢最旧 ——
+    # 保住最近发生的 (用户最关心的正是刚出结果的那本)。
+    _通知上限 = 5
+    _死书待弹上限 = 20
+
+    def _入队通知(self, item: dict) -> None:
+        """线程安全入队 + 相邻去重 + 有界 (2026-10-04 #2 修复)。
+
+        - **相邻去重**: 同一本书连续两次同状态 (例如失败→重试→又失败) 合并为一条,
+          保留最新原因, 避免同一本书刷满队列;
+        - **有界**: 超出上限丢最旧的, 防止通知无休止滞后。
+        与 `_死书待弹` 使用同一把 `_lock`, 纪律统一 (旧实现 append 不持锁、pop 持锁)。
+        """
+        with self._lock:
+            队列 = self._通知待弹
+            if (队列 and 队列[-1].get('书名') == item.get('书名')
+                    and 队列[-1].get('状态') == item.get('状态')):
+                队列[-1] = item
+                return
+            队列.append(item)
+            超出 = len(队列) - self._通知上限
+            if 超出 > 0:
+                del 队列[:超出]
+
     def _set_terminal(self, task: TaskInfo, status: str):
         """置为终态 (completed/failed/stopped/dead_pending) 并冻结耗时 end_time。
 
@@ -902,16 +927,22 @@ class TaskManager:
         后台挂机时靠声音感知任务成败。stopped 是用户主动操作, 不通知不响铃
         (自己停的自己知道)。音效 winsound 为 Windows 内置模块, 零依赖;
         非 Windows / 声音设备缺失时静默跳过 (通知文案仍入队)。
+
+        2026-10-04 (#2 审查修复): ①状态改为**显式白名单** —— 旧实现 `else` 把任何
+        非 completed/stopped 的状态都当"失败"通知, 将来新增状态会静默变假失败;
+        ②**幂等** —— 同一任务重复以同一终态调用不再重复入队/重复响铃。
         """
+        _原先状态 = getattr(task, 'status', '')
         task.status = status
         if task.metrics:
             task.metrics.end_time = time.time()
-        if status == "stopped":
-            return
+        if status not in ('completed', 'failed', 'dead_pending'):
+            return                      # stopped 及未来状态: 不通知不响铃
+        if _原先状态 == status:
+            return                      # 幂等: 重复置同终态不重复打扰
         书名 = (task.title or '').strip() or '未知书名'
         if status == "completed":
-            原因 = ''
-            self._通知待弹.append({'书名': 书名, '状态': 'success', '原因': ''})
+            self._入队通知({'书名': 书名, '状态': 'success', '原因': ''})
         else:
             # failed / dead_pending: 失败原因优先 task.error, 死书用判定原因
             原因 = ''
@@ -919,20 +950,34 @@ class TaskManager:
                 原因 = f"{task.dead.get('类型', '')}: {task.dead.get('原因', '')}"
             elif task.error:
                 原因 = task.error
-            self._通知待弹.append({'书名': 书名, '状态': 'fail', '原因': 原因[:200]})
+            self._入队通知({'书名': 书名, '状态': 'fail', '原因': 原因[:200]})
         self._播放终态音效(status)
 
     @staticmethod
     def _播放终态音效(status: str) -> None:
-        """终态提示音 (八项需求 #2): 成功叮咚 / 失败低鸣。线程安全, 失败静默。"""
+        """终态提示音 (八项需求 #2): 成功叮咚 / 失败低鸣。线程安全, 失败留痕。
+
+        2026-10-04 (#2 修复): 先查用户偏好 `提示音` —— 关掉后**完全静默**
+        (通知 SnackBar 仍照常弹, 只是不响), 解决"夜间挂机被强制响铃"的抱怨。
+        """
+        try:
+            import 界面偏好
+            if not 界面偏好.取('提示音', True):
+                return
+        except Exception as _e偏好:
+            if app_log:
+                app_log.debug('任务管理',
+                              f'提示音偏好读取失败, 按默认(响)处理: {type(_e偏好).__name__}')
         try:
             import winsound
             if status == "completed":
                 winsound.MessageBeep(winsound.MB_ICONASTERISK)   # 成功: 叮
             else:
                 winsound.MessageBeep(winsound.MB_ICONHAND)       # 失败: 低鸣
-        except Exception:
-            pass  # 非 Windows / 无声音设备: 音效静默, 通知文案仍会展示
+        except Exception as _e:
+            if app_log:
+                app_log.debug('任务管理',
+                              f'提示音未播放(非 Windows/无声音设备): {type(_e).__name__}: {_e}')
 
     def 取一条待弹通知(self) -> dict:
         """主线程消费终态通知队列 (加锁 pop, 空则返回 None)。每 tick 至多取一条。"""
@@ -967,7 +1012,12 @@ class TaskManager:
             task.status = 'dead_pending'      # end_time 由随后的 _set_terminal 冻结
             if 首次:
                 with self._lock:
-                    self._死书待弹.append(task.task_id)
+                    队列 = self._死书待弹
+                    if task.task_id not in 队列:
+                        队列.append(task.task_id)
+                    超出 = len(队列) - self._死书待弹上限
+                    if 超出 > 0:
+                        del 队列[:超出]
         except Exception as _e2:
             if app_log:
                 app_log.debug('任务管理', f'裸 except 吞异常: {type(_e2).__name__}: {_e2}')

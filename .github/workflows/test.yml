@@ -46,3 +46,10 @@ jobs:
       # M12: 手写回归脚本不被 unittest discover 收集, 显式纳入门禁
       - name: Run standalone regression suite
         run: python 测试/回归测试_修复验证.py
+
+      # M13: 本机 脚本/发布流程.py 的门禁是**三步**(单测 / 手写回归 / 静态检查),
+      # 而 CI 此前只有前两步 —— 造成"CI 绿灯 ≠ 可打包" (2026-10-04 审查发现)。
+      # check_undefined_refs.py 用 symtable + AST 抓"引用未定义 / from X import 不存在的名字",
+      # 历史上真抓出过 NameError 事故, 必须有"非 0 退出即失败"的门禁地位。
+      - name: Run undefined-reference static check
+        run: python 脚本/check_undefined_refs.py
