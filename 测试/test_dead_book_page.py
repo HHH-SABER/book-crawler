@@ -139,10 +139,17 @@ class Test清单页逻辑(unittest.TestCase):
         self.assertIn('恢复待确认', 块, '已忽略态无恢复入口 → 用户反悔无法回退')
 
     def test_确认框显式颜色(self):
-        """EXE 契约: 弹窗文字缺显式 color 会渲染成不可见 (v2.4.19 G-H1)。"""
+        """EXE 契约: 弹窗文字缺显式 color 会渲染成不可见 (v2.4.19 G-H1)。
+
+        2026-10-04 (Phase 3): 迁移后正文改用 `ft.Colors.ON_SURFACE`（Flet 按
+        theme_mode 自动适配），不再绑 `ui_fluent` 的 MORANDI 字符串常量。
+        断言随之改为"必须显式给颜色"，并同时接受令牌写法 `取色(...)` ——
+        不再锁死某一个常量名（那会让注释里提一句旧名就能骗过测试）。
+        """
         块 = self.src.split('ft.AlertDialog')[1][:1200]
-        self.assertIn('MORANDI_ON_SURFACE', 块,
-                      '确认框文字未显式着色 → EXE 中不可见')
+        self.assertIn('color=', 块, '确认框文字未显式着色 → EXE 中不可见')
+        self.assertTrue(('ft.Colors.ON_SURFACE' in 块) or ('取色(' in 块),
+                        '确认框文字须有显式颜色 (ft.Colors.ON_SURFACE 或 取色(...))')
         self.assertIn('modal=True', 块, '删除确认应为模态')
 
     def test_不可询问类型有额外警示(self):

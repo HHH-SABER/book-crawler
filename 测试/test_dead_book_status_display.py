@@ -166,7 +166,9 @@ class Test状态栏死书分支(unittest.TestCase):
                       '_status_loop 未统计 dead_pending -> 有待确认死书却显示"就绪"')
         # 死书分支必须排在 failed 之前: 死书不该被红"失败 N 项"吞掉
         序 = 块.find('dead_pending')
-        失败位 = 块.find('MORANDI_ERROR')
+        # 2026-10-04 (Phase 3): 失败分支的颜色已由 MORANDI_ERROR 常量改为
+        # 令牌取色 取色('status-error') —— 位置判据随之更新。
+        失败位 = 块.find("取色('status-error')")
         self.assertTrue(序 >= 0 and 失败位 >= 0)
         self.assertLess(序, 失败位,
                         '死书分支应排在失败分支之前, 否则死书被误报为失败')

@@ -43,19 +43,23 @@ def _dbg(source: str, message: str):
 
 from ..ui_fluent import (txt, FONT_STACK, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
                          WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
-                         MORANDI_ERROR, MORANDI_WARNING, MORANDI_SUCCESS,
-                         MORANDI_STOPPED, MORANDI_SURFACE_CONTAINER,
-                         MORANDI_ON_SURFACE_VARIANT,
-                         MORANDI_ON_SURFACE,
                          open_dialog, close_dialog)
 from ..ui_theme import page_header
+# Phase 3 (2026-10-04): 页面颜色一律走令牌 + 登记重刷。旧写法 `from ..ui_fluent
+# import MORANDI_*` 绑到的是**构建期求值的字符串**, 切主题时
+# ui_fluent.刷新兼容常量() 的 globals().update 改不动页面本地引用
+# → 切夜间主题这些控件纹丝不动 (见 文档/审查报告汇总.md 的 Phase 3 结论)。
+from ..ui_tokens import 取色, 登记重刷
+from .. import states
 
 
 # 三态 → 展示配置 (与 死书处理.状态_* 严格对应; 缺一回落 待确认)
+# Phase 3: 色值改为存**令牌键** —— 色值在构建期由 取色(键) 求值, 且必须
+# 配套 登记重刷 才能在切主题时重算 (只写 取色 不登记 = 依然不会重刷)。
 _状态展示 = {
-    '待确认': (MORANDI_WARNING, '待确认'),
-    '已忽略': (MORANDI_STOPPED, '已忽略'),
-    '已删除': (MORANDI_SUCCESS, '已删除'),
+    '待确认': ('status-warning', '待确认'),
+    '已忽略': ('status-pending', '已忽略'),
+    '已删除': ('status-success', '已删除'),
 }
 _筛选全部 = '全部'
 # 批量重检单次上限: 每本都要真发一轮请求, 无上限会在用户点一下的瞬间
@@ -74,6 +78,7 @@ class DeadBookPage:
         self._列表 = None
         self._摘要 = None
         self._空态 = None
+        self._筛选空态 = None     # 「筛选后为空」统一空态槽 (Phase 3 UX, 与 _空态 互斥)
         self._类型下拉 = None
         self._上次签名 = None     # 列表签名, 无变化跳过重建
 
@@ -101,20 +106,30 @@ class DeadBookPage:
 
     # ---------------------------------------------------------------- 构建
     def build(self):
-        self._摘要 = txt("—", size=SIZE_SMALL, weight=WEIGHT_BODY,
-                         color=MORANDI_ON_SURFACE_VARIANT, font_family=FONT_STACK)
+        # Phase 3: 取色() 只在构建期取值, 必须配 登记重刷 —— 否则切主题仍不变色
+        self._摘要 = 登记重刷(
+            txt("—", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                color=取色('text-secondary'), font_family=FONT_STACK),
+            lambda c: setattr(c, 'color', 取色('text-secondary')))
         # scroll=ALWAYS: 常显滚动条 (2026-10-03 八项需求#6 统一可见滚动条)
         self._列表 = ft.Column(spacing=6, tight=True, scroll=ft.ScrollMode.ALWAYS)
+        # Phase 3: 图标/说明文字同样走令牌 + 登记重刷
+        空态图标 = ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=44,
+                          color=取色('status-success'))
+        登记重刷(空态图标, lambda c: setattr(c, 'color', 取色('status-success')))
+        空态说明 = ft.Text("抓取失败若被判定为「书已删除」会记到这里, 可在此集中处置。\n"
+                          "若列表为空但任务表有「书已删除」行, 可刷新本页。",
+                          size=SIZE_SMALL, weight=WEIGHT_BODY,
+                          color=取色('text-secondary'), font_family=FONT_STACK,
+                          text_align=ft.TextAlign.CENTER)
+        登记重刷(空态说明, lambda c: setattr(c, 'color', 取色('text-secondary')))
         self._空态 = ft.Column([
-            ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=44,
-                    color=MORANDI_SUCCESS),
+            空态图标,
             txt("死书清单为空", size=SIZE_BODY, weight=WEIGHT_SUBTITLE),
-            ft.Text("抓取失败若被判定为「书已删除」会记到这里, 可在此集中处置。\n"
-                    "若列表为空但任务表有「书已删除」行, 可刷新本页。",
-                    size=SIZE_SMALL, weight=WEIGHT_BODY,
-                    color=MORANDI_ON_SURFACE_VARIANT, font_family=FONT_STACK,
-                    text_align=ft.TextAlign.CENTER),
+            空态说明,
         ], spacing=8, alignment=ft.MainAxisAlignment.CENTER, tight=True)
+        # 「筛选后为空」槽 (Phase 3 UX): 有数据但被筛选条件滤空时用它, 不再是一片空白
+        self._筛选空态 = ft.Container(visible=False)
 
         头 = page_header(
             "死书清单",
@@ -132,8 +147,8 @@ class DeadBookPage:
             头,
             self._筛选栏(),
             self._摘要,
-            ft.Container(content=ft.Column([self._列表, self._空态], spacing=0,
-                                          expand=True),
+            ft.Container(content=ft.Column([self._列表, self._空态, self._筛选空态],
+                                          spacing=0, expand=True),
                          expand=True),
         ], expand=True, spacing=10)
 
@@ -159,16 +174,21 @@ class DeadBookPage:
 
     def _胶囊(self, 文本: str, 选中: bool, on_click) -> ft.Container:
         """筛选胶囊 (选中态: 强调底色 + 深字; 未选中: 中性)"""
+        # Phase 3: 未选中的次级字色走令牌 (取色) + 登记重刷; 选中态与底色用的
+        # ft.Colors.* 是 M3 语义别名, 由 Flet 按 theme_mode 自适应, 保持原样。
+        胶囊字 = ft.Text(文本, size=SIZE_SMALL,
+                        weight=(WEIGHT_EMPHASIS if 选中 else WEIGHT_BODY),
+                        color=(ft.Colors.ON_PRIMARY_CONTAINER if 选中
+                               else 取色('text-secondary')),
+                        font_family=FONT_STACK)
+        if not 选中:
+            登记重刷(胶囊字, lambda c: setattr(c, 'color', 取色('text-secondary')))
         return ft.Container(
-            content=ft.Text(文本, size=SIZE_SMALL,
-                            weight=(WEIGHT_EMPHASIS if 选中 else WEIGHT_BODY),
-                            color=(ft.Colors.ON_PRIMARY_CONTAINER if 选中
-                                   else MORANDI_ON_SURFACE_VARIANT),
-                            font_family=FONT_STACK),
+            content=胶囊字,
             padding=ft.Padding.symmetric(horizontal=12, vertical=7),
             border_radius=16, ink=True, on_click=on_click,
             bgcolor=(ft.Colors.PRIMARY_CONTAINER if 选中
-                     else MORANDI_SURFACE_CONTAINER),
+                     else ft.Colors.SURFACE_CONTAINER),
         )
 
     def _切筛选(self, 状态: str, 类型: str = None):
@@ -197,6 +217,27 @@ class DeadBookPage:
         self._类型筛选 = (self._类型下拉.value or _筛选全部)
         self._上次签名 = None
         self.refresh()
+
+    def _有筛选(self) -> bool:
+        """是否处于"非全部"筛选状态 (决定空态用「筛选后为空」还是「首次为空」)"""
+        return (self._状态筛选 != _筛选全部
+                or self._类型筛选 != _筛选全部)
+
+    def _筛选说明(self) -> str:
+        """当前筛选条件的人话描述 (空态里告诉用户"为什么一条都没有")"""
+        bits = []
+        if self._状态筛选 != _筛选全部:
+            bits.append(f"状态={self._状态筛选}")
+        if self._类型筛选 != _筛选全部:
+            bits.append(f"类型={self._类型筛选}")
+        return ("当前筛选: " + " / ".join(bits)) if bits else ""
+
+    def _清除筛选(self, e=None):
+        """重置筛选回「全部」并重渲染 (供空态的「清除筛选」按钮调用)"""
+        try:
+            self._切筛选(_筛选全部, _筛选全部)
+        except Exception as _e:
+            _dbg("死书清单页", f'清除筛选失败: {type(_e).__name__}: {_e}')
 
     # ---------------------------------------------------------------- 渲染
     def refresh(self):
@@ -232,10 +273,20 @@ class DeadBookPage:
         self._列表.controls.clear()
         if not 记录:
             self._列表.visible = False
-            self._空态.visible = True
+            # Phase 3 UX: 底层有记录、只是被筛选条件滤空 → 统一「筛选后为空」空态
+            # + 一键清除筛选。旧行为: 直接给一片空白, 用户以为清单被清空/程序卡死。
+            if 全 and self._有筛选():
+                self._空态.visible = False
+                self._筛选空态.content = states.筛选后为空(
+                    清除筛选回调=self._清除筛选, 说明=self._筛选说明())
+                self._筛选空态.visible = True
+            else:
+                self._筛选空态.visible = False
+                self._空态.visible = True
         else:
             self._列表.visible = True
             self._空态.visible = False
+            self._筛选空态.visible = False
             for r in 记录:
                 self._列表.controls.append(self._行(r))
         try:
@@ -247,49 +298,58 @@ class DeadBookPage:
         """单条死书记录卡片"""
         键 = r.get('键') or ''
         状态 = r.get('状态') or '待确认'
-        颜色, 状态文案 = _状态展示.get(状态, (MORANDI_WARNING, 状态))
+        # Phase 3: _状态展示 存的是令牌键, 色值在此构建期求值并登记重刷
+        颜色键, 状态文案 = _状态展示.get(状态, ('status-warning', 状态))
+        颜色 = 取色(颜色键)
         可询问 = bool(r.get('可询问删除'))
         类型 = r.get('类型') or '未知'
 
         # 类型标签: 只有"书已删除"才是可询问删除的类型(可询问删除=True),
         # 其余提示用户"不必删除" —— 避免用户按标签字面误判
-        类型色 = MORANDI_ERROR if 可询问 else MORANDI_STOPPED
+        类型键 = 'status-error' if 可询问 else 'status-pending'
         动作 = self._行内动作(键, 状态, 网址=r.get('网址') or '',
                             书名=r.get('书名') or '', 可询问=可询问)
+        # Phase 3: 三处 colored 文字走令牌 + 登记重刷 (字符串常量切主题不变色)
+        类型标签 = ft.Text(类型, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
+                         color=取色(类型键), font_family=FONT_STACK)
+        登记重刷(类型标签, lambda c: setattr(c, 'color', 取色(类型键)))
+        状态标签 = ft.Text(状态文案, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
+                         color=颜色, font_family=FONT_STACK)
+        登记重刷(状态标签, lambda c: setattr(c, 'color', 取色(颜色键)))
+        副信息 = ft.Text(f"{r.get('域名') or ''}　×{r.get('次数') or 1}"
+                       f"　{r.get('最近时间') or ''}",
+                       size=SIZE_TINY, weight=WEIGHT_BODY,
+                       color=取色('text-secondary'), font_family=FONT_STACK,
+                       max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+        登记重刷(副信息, lambda c: setattr(c, 'color', 取色('text-secondary')))
+        原因文本 = ft.Text(r.get('原因') or '', size=SIZE_TINY, weight=WEIGHT_BODY,
+                        color=取色('text-secondary'), font_family=FONT_STACK,
+                        max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
+        登记重刷(原因文本, lambda c: setattr(c, 'color', 取色('text-secondary')))
         return ft.Container(
             content=ft.Row([
                 ft.Column([
                     ft.Row([
                         ft.Text(r.get('书名') or r.get('网址') or '(未知书名)',
                                 size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
-                                color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
+                                color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
                                 max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                         ft.Container(
-                            content=ft.Text(类型, size=SIZE_TINY,
-                                            weight=WEIGHT_EMPHASIS,
-                                            color=类型色, font_family=FONT_STACK),
+                            content=类型标签,
                             padding=ft.Padding.symmetric(horizontal=7, vertical=2),
-                            border_radius=9, bgcolor=MORANDI_SURFACE_CONTAINER),
+                            border_radius=9, bgcolor=ft.Colors.SURFACE_CONTAINER),
                         ft.Container(
-                            content=ft.Text(状态文案, size=SIZE_TINY,
-                                            weight=WEIGHT_EMPHASIS,
-                                            color=颜色, font_family=FONT_STACK),
+                            content=状态标签,
                             padding=ft.Padding.symmetric(horizontal=7, vertical=2),
-                            border_radius=9, bgcolor=MORANDI_SURFACE_CONTAINER),
+                            border_radius=9, bgcolor=ft.Colors.SURFACE_CONTAINER),
                     ], spacing=8, tight=True),
-                    ft.Text(f"{r.get('域名') or ''}　×{r.get('次数') or 1}"
-                            f"　{r.get('最近时间') or ''}",
-                            size=SIZE_TINY, weight=WEIGHT_BODY,
-                            color=MORANDI_ON_SURFACE_VARIANT, font_family=FONT_STACK,
-                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(r.get('原因') or '', size=SIZE_TINY, weight=WEIGHT_BODY,
-                            color=MORANDI_ON_SURFACE_VARIANT, font_family=FONT_STACK,
-                            max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                    副信息,
+                    原因文本,
                 ], spacing=3, expand=True, tight=True),
                 动作,
             ], spacing=10, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.Padding.symmetric(horizontal=12, vertical=9),
-            border_radius=8, bgcolor=MORANDI_SURFACE_CONTAINER)
+            border_radius=8, bgcolor=ft.Colors.SURFACE_CONTAINER)
 
     def _行内动作(self, 键: str, 状态: str, *, 网址: str, 书名: str, 可询问: bool):
         """行内动作按钮组。
@@ -324,8 +384,11 @@ class DeadBookPage:
                                       on_click=lambda e, k=键, u=网址, n=书名, c=可询问:
                                       self._确认删除(k, u, n, c)))
         if not 按钮:
-            return ft.Text("已处理", size=SIZE_TINY, weight=WEIGHT_BODY,
-                           color=MORANDI_STOPPED, font_family=FONT_STACK)
+            # Phase 3: 中性灰走令牌 + 登记重刷
+            已处理 = ft.Text("已处理", size=SIZE_TINY, weight=WEIGHT_BODY,
+                           color=取色('status-pending'), font_family=FONT_STACK)
+            return 登记重刷(已处理,
+                            lambda c: setattr(c, 'color', 取色('status-pending')))
         return ft.Row(按钮, spacing=4, tight=True)
 
     # ---------------------------------------------------------------- 动作
@@ -451,10 +514,14 @@ class DeadBookPage:
             提示 += "删除后若站点恢复将需要重新添加。"
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("确认删除记录", color=MORANDI_ON_SURFACE,
+            # EXE 文字必须显式 color (v2.4.19 G-H1 教训: 缺色渲染成不可见)。
+            # Phase 3: 旧写法 color=MORANDI_ON_SURFACE 只是 ft.Colors.ON_SURFACE
+            # 的别名(Flet 按 theme_mode 自适应), 直写 ft.Colors.ON_SURFACE 值不变,
+            # 同时去掉了页面本地的字符串绑定。
+            title=ft.Text("确认删除记录", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Text(提示, size=SIZE_SMALL, font_family=FONT_STACK,
-                            color=MORANDI_ON_SURFACE),
+                            color=ft.Colors.ON_SURFACE),
             actions=[
                 ft.TextButton("取消", on_click=lambda _: close_dialog(self.page, dialog)),
                 ft.TextButton("确认删除",
@@ -499,6 +566,6 @@ class DeadBookPage:
                 return
             self.page.show_dialog(ft.SnackBar(ft.Text(
                 msg, size=SIZE_SMALL, font_family=FONT_STACK,
-                color=MORANDI_ON_SURFACE)))
+                color=ft.Colors.ON_SURFACE)))
         except Exception as _e:
             _dbg("死书清单页", f'提示失败: {type(_e).__name__}: {_e}')

@@ -237,15 +237,20 @@ class Test弹窗分流契约(unittest.TestCase):
             self.assertIn(文案, self.块, f'弹窗缺少按钮: {文案}')
 
     def test_弹窗文字显式颜色(self):
-        """EXE 契约: 弹窗文字不显式 color 会渲染成不可见 (v2.4.19)。"""
+        """EXE 契约: 弹窗文字不显式 color 会渲染成不可见 (v2.4.19)。
+
+        2026-10-04 (Phase 3): 正文改用 `ft.Colors.ON_SURFACE`（M3 别名, 按 theme_mode
+        自动适配），不再绑 `ui_fluent` 的 MORANDI 字符串常量 —— 断言随之改为
+        "必须显式给颜色"，不锁具体常量名（否则注释里提一句旧名就能骗过测试）。
+        """
         弹窗块 = self.块.split('ft.AlertDialog')[1][:1200] if 'ft.AlertDialog' in self.块 else ''
-        self.assertIn('MORANDI_ON_SURFACE', 弹窗块,
-                      'AlertDialog 文字未显式指定颜色 → EXE 中不可见')
+        self.assertTrue(('ft.Colors.ON_SURFACE' in 弹窗块) or ('取色(' in 弹窗块),
+                        'AlertDialog 文字未显式指定颜色 → EXE 中不可见')
         # 切 ft.SnackBar 而非裸 "SnackBar": 后者首次出现在 "ft.SnackBar" 的
         # 中间, split 后拿到的是 "Bar(ft..." 残片, 断言会假红
         snack块 = self.块.split('ft.SnackBar')[1][:800] if 'ft.SnackBar' in self.块 else ''
-        self.assertIn('MORANDI_ON_SURFACE', snack块,
-                      'SnackBar 文字未显式指定颜色 → EXE 中不可见')
+        self.assertTrue(('ft.Colors.ON_SURFACE' in snack块) or ('取色(' in snack块),
+                        'SnackBar 文字未显式指定颜色 → EXE 中不可见')
 
     def test_提示内容含不动产物承诺(self):
         self.assertRegex(self.块, r'不会删除|不会被删除',

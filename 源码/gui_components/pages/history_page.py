@@ -10,12 +10,14 @@ import flet as ft
 import time
 
 from . import history_data
+from .. import states
 from ..ui_theme import make_card, tonal_btn, page_header
 from ..ui_fluent import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, WEIGHT_TITLE,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY,
-                          MORANDI_PRIMARY, MORANDI_SECONDARY, MORANDI_SUCCESS,
-                          MORANDI_ERROR, MORANDI_WARNING, MORANDI_ACCENT)
+                          WEIGHT_SUBTITLE, WEIGHT_BODY)
+# Phase 3 (2026-10-04): 页面颜色一律走令牌 + 登记重刷 —— 直接 import MORANDI_*
+# 绑到的是**构建期字符串**, 切夜间主题这些控件纹丝不动; 见 文档/审查报告汇总.md 的 Phase 3 结论。
+from ..ui_tokens import 取色, 登记重刷
 try:
     import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
 except Exception:
@@ -31,13 +33,31 @@ def _dbg(source: str, message: str):
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
 
-# 结果类型 → 展示色
-_RESULT_COLORS = {
-    '新增': MORANDI_SUCCESS,
-    '更新': MORANDI_PRIMARY,
-    '未变化': MORANDI_ACCENT,
-    '失败': MORANDI_ERROR,
+# 结果类型 → 令牌键 (Phase 3: 旧写法在这里存的是构建期求值的色字符串, 切主题不会重刷;
+# 令牌键在**构建控件时**才 取色(), 并逐控件 登记重刷。)
+_结果令牌表 = {
+    '新增': 'status-success',
+    '更新': 'btn-primary-bg',
+    '未变化': 'accent-fg',
+    '失败': 'status-error',
 }
+
+# 时间范围下拉 值 → 人话 (空态说明里用)
+_天数说明表 = {1: '最近 24 小时', 7: '最近 7 天', 30: '最近 30 天'}
+
+
+def _结果令牌(结果, 默认=None):
+    """结果类型 → 令牌键 (未命中返回 默认)"""
+    return _结果令牌表.get(结果, 默认)
+
+
+def _登记文本色(控件: ft.Text, 令牌: str) -> ft.Text:
+    """把 ft.Text 前景色绑到令牌并登记重刷 (Phase 3)。
+
+    只写 取色() 不登记 = 切主题依然不掉色, 等于半迁移白干。
+    """
+    return 登记重刷(控件, lambda c: setattr(c, 'color', 取色(令牌)))
+
 
 # 明细表最大行数 (超出提示截断)
 _MAX_ROWS = 500
@@ -56,6 +76,7 @@ class HistoryPage:
         # UI 引用
         self._domain_dd = None
         self._days_dd = None
+        self._book_filter = None     # build() 创建; 清除筛选时需复位
         self._result_chips_row = None
         self._stat_row = None
         self._table_view = None
@@ -203,11 +224,14 @@ class HistoryPage:
     def _make_chip(self, result: "str | None", label: str) -> ft.Control:
         """单个结果过滤 chip"""
         active = (self._filter_result == result)
-        color = _RESULT_COLORS.get(result, MORANDI_PRIMARY)
-        return ft.Container(
-            content=ft.Text(label, size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
-                            color=("#FFFFFF" if active else color),
-                            font_family=FONT_STACK),
+        # Phase 3: 令牌色构建期求值, 未登记重刷则切夜间主题 chip 颜色不变
+        令牌 = _结果令牌(result, 'btn-primary-bg')
+        color = 取色(令牌)
+        文字 = ft.Text(label, size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
+                       color=("#FFFFFF" if active else color),
+                       font_family=FONT_STACK)
+        chip = ft.Container(
+            content=文字,
             padding=ft.Padding.symmetric(horizontal=10, vertical=4),
             bgcolor=(color if active else None),
             border=None if active else ft.Border.all(1, color),
@@ -215,6 +239,18 @@ class HistoryPage:
             ink=True,
             on_click=lambda e, r=result: self._on_result_chip(r),
         )
+
+        def _重刷(_控件, _选中=active, _令牌=令牌):
+            """选中=同色填充白字, 未选中=同色描边彩字 —— 一个回调里一起改, 只登记一次
+
+            子控件从 _控件 身上取, 回调不额外持有它 (避免弱引用登记表把旧控件留活)。
+            """
+            新色 = 取色(_令牌)
+            _控件.content.color = "#FFFFFF" if _选中 else 新色
+            _控件.bgcolor = 新色 if _选中 else None
+            _控件.border = None if _选中 else ft.Border.all(1, 新色)
+
+        return 登记重刷(chip, _重刷)
 
     def _on_result_chip(self, result):
         self._filter_result = None if self._filter_result == result else result
@@ -226,6 +262,48 @@ class HistoryPage:
                                else self._domain_dd.value)
         self._filter_days = int(self._days_dd.value or "0")
         self.refresh()
+
+    def _有筛选条件(self) -> bool:
+        """当前是否有任何生效的筛选/搜索 (决定空态是"暂无记录"还是"筛选后为空")"""
+        if self._filter_domain or self._filter_days or self._filter_result:
+            return True
+        try:
+            return bool((self._book_filter.value or '').strip())
+        except Exception:
+            return False
+
+    def _筛选说明(self) -> str:
+        """当前筛选条件的人话描述 (空态里告诉用户"为什么一行都没有")"""
+        bits = []
+        if self._filter_domain:
+            bits.append(f"站点={self._filter_domain}")
+        if self._filter_days:
+            bits.append("时间范围=" + _天数说明表.get(
+                self._filter_days, f"最近 {self._filter_days} 天"))
+        if self._filter_result:
+            bits.append(f"结果={self._filter_result}")
+        try:
+            关键词 = (self._book_filter.value or '').strip()
+        except Exception:
+            关键词 = ''
+        if 关键词:
+            bits.append(f"书名关键词“{关键词}”")
+        return ("当前筛选: " + " / ".join(bits)) if bits else ""
+
+    def _清除筛选(self, e=None):
+        """清空筛选条件并重渲染 (供空态的「清除筛选」按钮调用)"""
+        try:
+            self._filter_domain = None
+            self._filter_days = 0
+            self._filter_result = None
+            for 控件, 值 in ((self._domain_dd, "__all__"), (self._days_dd, "0"),
+                            (self._book_filter, "")):
+                if 控件 is not None:
+                    控件.value = 值
+            self._rebuild_result_chips()
+            self.refresh()      # refresh() 末尾已带 page.update() 兜底刷出
+        except Exception as _e:
+            _dbg("历史页", f'清除筛选失败: {type(_e).__name__}: {_e}')
 
     def _apply_mode_btn_styles(self):
         """按当前视图高亮对应切换按钮"""
@@ -297,18 +375,21 @@ class HistoryPage:
         self._stat_row.controls.clear()
         total = stats.get('总请求数', 0)
         items = [
-            (str(total), "总请求", MORANDI_PRIMARY),
-            (str(stats.get('新增', 0)), "新增", MORANDI_SUCCESS),
-            (str(stats.get('更新', 0)), "更新", MORANDI_PRIMARY),
-            (str(stats.get('未变化', 0)), "未变化", MORANDI_ACCENT),
+            (str(total), "总请求", 'btn-primary-bg'),
+            (str(stats.get('新增', 0)), "新增", 'status-success'),
+            (str(stats.get('更新', 0)), "更新", 'btn-primary-bg'),
+            (str(stats.get('未变化', 0)), "未变化", 'accent-fg'),
             (str(stats.get('失败', 0)), "失败",
-             MORANDI_ERROR if stats.get('失败', 0) else MORANDI_WARNING),
+             'status-error' if stats.get('失败', 0) else 'status-warning'),
         ]
-        for value, label, color in items:
+        for value, label, 令牌 in items:
+            # Phase 3: 数值文字走令牌并登记重刷 (只 取色 不登记 = 切主题不掉色)
+            值文本 = ft.Text(value, size=SIZE_TITLE, weight=WEIGHT_TITLE,
+                            color=取色(令牌), font_family=FONT_STACK)
+            _登记文本色(值文本, 令牌)
             self._stat_row.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Text(value, size=SIZE_TITLE, weight=WEIGHT_TITLE,
-                            color=color, font_family=FONT_STACK),
+                    值文本,
                     ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
                             color=ft.Colors.ON_SURFACE_VARIANT,
                             font_family=FONT_STACK),
@@ -350,48 +431,58 @@ class HistoryPage:
             ["书名", "网站", "URL", "最后抓取", "状态码", "耗时", "字节", "结果", "错误原因"],
             [16, 11, 22, 11, 6, 6, 7, 7, 14]))
         if not rows:
-            self._append_empty("暂无历史记录 (启动抓取后自动记录)")
+            # Phase 3 UX: 筛选后为空不再只显示"暂无历史记录"(会被误解成数据丢了),
+            # 改统一空态 + 一键清除筛选; 无任何筛选条件时保持原"首次为空"文案。
+            if self._有筛选条件():
+                self._table_view.controls.append(states.筛选后为空(
+                    清除筛选回调=self._清除筛选, 说明=self._筛选说明()))
+            else:
+                self._append_empty("暂无历史记录 (启动抓取后自动记录)")
             return
         if len(rows) >= _MAX_ROWS:
             self._table_view.controls.append(ft.Text(
                 f"(仅显示最近 {_MAX_ROWS} 条)", size=SIZE_TINY, italic=True,
                 color=ft.Colors.ON_SURFACE_VARIANT, font_family=FONT_STACK))
         for r in rows:
-            color = _RESULT_COLORS.get(r.get('结果', ''), None)
-            self._table_view.controls.append(self._url_row(r, color))
+            令牌 = _结果令牌(r.get('结果', ''))
+            self._table_view.controls.append(self._url_row(r, 令牌))
 
-    def _url_row(self, r: dict, color) -> ft.Control:
+    def _url_row(self, r: dict, 结果令牌=None) -> ft.Control:
         """URL 明细行 (含 书名/网站名 前两列)"""
         def _cell(content, flex, text_style=None):
             return ft.Container(content=content, expand=flex,
                                  alignment=ft.Alignment(-1, 0))
-        def _t(v, color=None, bold=False):
-            return ft.Text(v, size=SIZE_TINY, weight=(WEIGHT_SUBTITLE if bold
+        def _t(v, color=None, bold=False, 令牌=None):
+            控件 = ft.Text(v, size=SIZE_TINY, weight=(WEIGHT_SUBTITLE if bold
                                                       else WEIGHT_BODY),
-                           color=color, font_family=FONT_STACK,
+                           color=(取色(令牌) if 令牌 else color),
+                           font_family=FONT_STACK,
                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                            selectable=True)
+            # Phase 3: 走令牌的才登记重刷; ft.Colors.* 由 Flet 按 theme_mode 自行适配
+            return _登记文本色(控件, 令牌) if 令牌 else 控件
         err = r.get('错误原因', '')
         书名 = r.get('小说名', '') or ''
         网站 = r.get('网站名', '') or ''
         return ft.Container(
             content=ft.Row([
                 _cell(_t(书名 if 书名 else "—",
-                         MORANDI_SECONDARY if 书名 else
-                         ft.Colors.ON_SURFACE_VARIANT, bold=bool(书名)), 16),
+                         color=None if 书名 else ft.Colors.ON_SURFACE_VARIANT,
+                         令牌='status-success' if 书名 else None,
+                         bold=bool(书名)), 16),
                 _cell(_t(网站 if 网站 else "—",
-                         MORANDI_ACCENT if 网站 else
-                         ft.Colors.ON_SURFACE_VARIANT), 11),
+                         color=None if 网站 else ft.Colors.ON_SURFACE_VARIANT,
+                         令牌='accent-fg' if 网站 else None), 11),
                 _cell(_t(r.get('url', '')), 22),
                 _cell(_t(r.get('最后抓取', '')[:16]), 11),
                 _cell(_t(str(r.get('状态码', '')),
-                         MORANDI_ERROR if r.get('状态码', 0) and
-                         int(r.get('状态码', 200)) >= 400 else None), 6),
+                         令牌=('status-error' if r.get('状态码', 0) and
+                              int(r.get('状态码', 200)) >= 400 else None)), 6),
                 _cell(_t(f"{r.get('耗时秒', 0):.1f}s" if r.get('耗时秒') else "—"), 6),
                 _cell(_t(self._fmt_size(r.get('字节大小', 0))), 7),
-                _cell(_t(r.get('结果', ''), color), 7),
+                _cell(_t(r.get('结果', ''), 令牌=结果令牌), 7),
                 _cell(_t(err[:40] if err else "—",
-                         MORANDI_ERROR if err else None), 14),
+                         令牌='status-error' if err else None), 14),
             ], spacing=6),
             padding=ft.Padding.symmetric(horizontal=8, vertical=3),
             border_radius=6,
@@ -424,22 +515,25 @@ class HistoryPage:
             return
         for s in sites:
             st = s.get('统计', {})
-            color = MORANDI_ERROR if st.get('失败', 0) > 10 else None
-            def _t(v, c=None):
-                return ft.Text(str(v), size=SIZE_TINY, weight=WEIGHT_BODY,
-                               color=c, font_family=FONT_STACK, max_lines=1)
+            失败令牌 = 'status-error' if st.get('失败', 0) > 10 else None
+            def _t(v, c=None, 令牌=None):
+                控件 = ft.Text(str(v), size=SIZE_TINY, weight=WEIGHT_BODY,
+                               color=(取色(令牌) if 令牌 else c),
+                               font_family=FONT_STACK, max_lines=1)
+                # Phase 3: 走令牌的登记重刷 (构建期取色, 切主题不会自动重算)
+                return _登记文本色(控件, 令牌) if 令牌 else 控件
             def _cell(content, flex):
                 return ft.Container(content=content, expand=flex,
                                     alignment=ft.Alignment(-1, 0))
             self._table_view.controls.append(ft.Container(
                 content=ft.Row([
-                    _cell(_t(s.get('域名', ''), MORANDI_SECONDARY), 24),
+                    _cell(_t(s.get('域名', ''), 令牌='status-success'), 24),
                     _cell(_t(s.get('URL数', 0)), 8),
                     _cell(_t(s.get('总请求数', 0)), 9),
                     _cell(_t(st.get('新增', 0)), 8),
                     _cell(_t(st.get('更新', 0)), 8),
                     _cell(_t(st.get('未变化', 0)), 8),
-                    _cell(_t(st.get('失败', 0), color), 8),
+                    _cell(_t(st.get('失败', 0), 令牌=失败令牌), 8),
                     _cell(_t((s.get('首次抓取', '') or '')[:10]), 13),
                     _cell(_t((s.get('最近抓取', '') or '')[:16]), 14),
                 ], spacing=6),
