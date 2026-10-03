@@ -3098,14 +3098,14 @@ class NovelSpider:
             #   (表现为任务"从任务表消失" + 远控无异常退出)。全量降为 debug,
             #   console 只留头尾各 5 条样本, 排错需要时开 debug 级即可复现。
             _log.info(f"[章节排序] 排序前顺序 (共 {len(chapters)} 章, 展示头尾各5条):")
-            for i, chap in _排序样本下标(len(chapters)):
-                _log.info(f"  {i+1}. {chap['title'][:40]}")
+            for _i in _排序样本下标(len(chapters)):
+                _log.info(f"  {_i+1}. {chapters[_i]['title'][:40]}")
 
             chapters.sort(key=chapter_sort_key)
 
             _log.info(f"[章节排序] 排序后顺序 (共 {len(chapters)} 章, 展示头尾各5条):")
-            for i, chap in _排序样本下标(len(chapters)):
-                _log.info(f"  {i+1}. {chap['title'][:40]}")
+            for _i in _排序样本下标(len(chapters)):
+                _log.info(f"  {_i+1}. {chapters[_i]['title'][:40]}")
             for i, chap in enumerate(chapters):
                 _log.debug(f"  {i+1}. {chap['title'][:40]}")
         else:
@@ -3114,8 +3114,8 @@ class NovelSpider:
         _log.info(f"\n共找到 {len(chapters)} 个章节（已去重并排序）")
         _任务事件.发布('章节总数', 总数=len(chapters))        # U19 结构化事件
         # 打印章节列表 (同 2026-10-03 的降级理由: 逐章 info 会撑爆 stdout 管道)
-        for i, chap in _排序样本下标(len(chapters)):
-            _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
+        for _i in _排序样本下标(len(chapters)):
+            _log.info(f"  {_i+1}. {chapters[_i]['title']} -> {chapters[_i]['url']}")
         for i, chap in enumerate(chapters):
             _log.debug(f"  {i+1}. {chap['title']} -> {chap['url']}")
 
