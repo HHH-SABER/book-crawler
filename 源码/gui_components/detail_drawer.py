@@ -16,9 +16,11 @@ from .task_manager import TaskManager
 from .ui_theme import (status_chip, status_color, tonal_btn,
                        LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY,
-                          MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
-                          MORANDI_WARNING, MORANDI_ACCENT)
+                          WEIGHT_SUBTITLE, WEIGHT_BODY)
+# Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
+# **构建期求值**的字符串对象, 切夜间主题后本地引用不会被更新 (见
+# phase3_迁移规范.md / log_tab.py 样例)。取色() 只在构建期取值 → 配 登记重刷()。
+from .ui_tokens import 取色, 登记重刷
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
@@ -38,8 +40,19 @@ def _dbg(source: str, message: str):
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
 
-# 面板宽度 (常驻)
+def _令牌色(控件, 键: str):
+    """给控件上令牌色并登记主题重刷 (Phase 3), 返回该控件。
+
+    为什么必须两件事一起做: 取色() 是**构建期**求值, 只写取色不登记 = 切主题
+    依然不变色 (半迁移等于白干); 登记后由 ui_tokens.设置主题 统一回调重设属性。
+    """
+    控件.color = 取色(键)
+    return 登记重刷(控件, lambda c, k=键: setattr(c, 'color', 取色(k)))
+
+
+# 面板宽度 (常驻): 常规 320px; 窄窗口(≤1200px) 收到 260px (2026-10-04 UX 改进)
 _WIDTH_OPEN = 320
+_WIDTH_NARROW = 260
 
 
 class DetailDrawer:
@@ -49,6 +62,7 @@ class DetailDrawer:
         self.task_manager = task_manager
         self.page = None
         self._view = "log"        # log (默认) / detail / preview
+        self._窄档 = False        # 窄窗口(≤1200px)档: 宽度 320 → 260
         self._log_sig = None      # 日志视图渲染签名 (task_id, len(logs))
         self._files = []
         self._selected_file = None
@@ -97,10 +111,12 @@ class DetailDrawer:
                                   overflow=ft.TextOverflow.ELLIPSIS)
         refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self._scan_files())
+        # Phase 3: 令牌色 + 登记重刷 (旧写法绑的字符串常量切夜间不变色)
+        抓取结果图标 = _令牌色(
+            ft.Icon(ft.Icons.FOLDER_OPEN_OUTLINED, size=16), 'status-success')
         self._preview_view = ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.FOLDER_OPEN_OUTLINED, size=16,
-                        color=MORANDI_SECONDARY),
+                抓取结果图标,
                 ft.Text("抓取结果", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
                         font_family=FONT_STACK),
                 ft.Container(expand=True),
@@ -137,7 +153,8 @@ class DetailDrawer:
         self._preview_view.visible = False
         self.container = ft.Container(
             content=self._drawer_body,
-            width=_WIDTH_OPEN,
+            # 宽度跟随窄档 (设置窄档 可反复切换, 见文件末尾)
+            width=(_WIDTH_NARROW if self._窄档 else _WIDTH_OPEN),
             padding=ft.Padding.symmetric(horizontal=10, vertical=10),
             bgcolor=ft.Colors.SURFACE,
             border=ft.Border(left=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
@@ -246,24 +263,35 @@ class DetailDrawer:
         self._log_sig = sig
 
     @staticmethod
+    def _日志行色(msg: str):
+        """日志行文字色 → (颜色, 令牌键或 None)。
+
+        Phase 3: 令牌键非空 = 该色随主题变, 调用方**必须**登记重刷, 否则
+        切夜间后这行字还是日间色 (旧写法 import 的字符串常量就栽在这里)。
+        语义前缀色/终端级别色是恒深色 (日=夜), 令牌键返回 None 不必登记。
+        """
+        if '[错误]' in msg or '失败' in msg:
+            return 取色('status-error'), 'status-error'
+        if '成功' in msg or '完成' in msg:
+            return 取色('status-success'), 'status-success'
+        for prefix, color in DetailDrawer._SEMANTIC_COLORS:
+            if prefix in msg:
+                return color, None
+        return log_line_color(msg), None
+
+    @staticmethod
     def _log_line(log):
         """单条日志控件 (级别色 + 设计稿语义前缀色)"""
         msg = log['msg']
-        text_color = log_line_color(msg)
-        if '[错误]' in msg or '失败' in msg:
-            text_color = MORANDI_ERROR
-        elif '成功' in msg or '完成' in msg:
-            text_color = MORANDI_SUCCESS
-        else:
-            for prefix, color in DetailDrawer._SEMANTIC_COLORS:
-                if prefix in msg:
-                    text_color = color
-                    break
-        return ft.Text(f"[{log['time']}] {msg}",
+        色, 令牌键 = DetailDrawer._日志行色(msg)
+        控件 = ft.Text(f"[{log['time']}] {msg}",
                        size=SIZE_TINY,
                        font_family=LOG_TERMINAL_FONT,
-                       color=text_color,
+                       color=色,
                        selectable=True)
+        if 令牌键:
+            登记重刷(控件, lambda c, k=令牌键: setattr(c, 'color', 取色(k)))
+        return 控件
 
     def update_views(self):
         """子树级刷新收口 (H6: 仅更新面板内当前可见视图, 替代整页 update)"""
@@ -307,6 +335,10 @@ class DetailDrawer:
             color=status_color(task.status),
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
         )
+        # Phase 3: status_color() 同属构建期取色 (ui_theme 侧未登记重刷),
+        # 不补登记大进度环切夜间后仍停在日间色。
+        登记重刷(ring, lambda c, s=task.status:
+                 setattr(c, 'color', status_color(s)))
 
         self._detail_view.controls.clear()
         self._detail_view.controls.append(ft.Row([
@@ -323,16 +355,21 @@ class DetailDrawer:
         ], spacing=10))
 
         # 指标卡 (2×2)
-        def _metric_cell(label, value, color=None):
+        def _metric_cell(label, value, color=None, 色键: str = None):
+            """指标格 (Phase 3: 色键非空 = 令牌色 + 登记重刷, 否则用 M3 别名)"""
+            值控件 = ft.Text(value, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                            color=(取色(色键) if 色键
+                                   else (color or ft.Colors.ON_SURFACE)),
+                            font_family=FONT_STACK, max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS)
+            if 色键:
+                登记重刷(值控件, lambda c, k=色键: setattr(c, 'color', 取色(k)))
             return ft.Container(
                 content=ft.Column([
                     ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
                             color=ft.Colors.ON_SURFACE_VARIANT,
                             font_family=FONT_STACK),
-                    ft.Text(value, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                            color=color or ft.Colors.ON_SURFACE,
-                            font_family=FONT_STACK, max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS),
+                    值控件,
                 ], spacing=1),
                 padding=ft.Padding.symmetric(horizontal=10, vertical=6),
                 bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
@@ -340,18 +377,18 @@ class DetailDrawer:
             )
         self._detail_view.controls.append(ft.Row([
             _metric_cell("引擎", mt.engine or "requests",
-                         MORANDI_SUCCESS if mt.engine else None),
+                         色键='status-success' if mt.engine else None),
             _metric_cell("反爬", mt.anti_spider_type or "无",
-                         MORANDI_WARNING if mt.anti_spider_type else None),
+                         色键='status-warning' if mt.anti_spider_type else None),
         ], spacing=6))
         qs = mt.quality_score
         self._detail_view.controls.append(ft.Row([
             _metric_cell("质检",
                          f"{qs:.0f}分" if qs >= 0 else "—",
-                         MORANDI_SUCCESS if mt.quality_passed
-                         else MORANDI_ERROR if qs >= 0 else None),
+                         色键=(('status-success' if mt.quality_passed
+                               else 'status-error') if qs >= 0 else None)),
             _metric_cell("增量跳过", f"{mt.incremental_skipped} 章",
-                         MORANDI_ACCENT if mt.incremental_skipped else None),
+                         色键='accent-fg' if mt.incremental_skipped else None),
         ], spacing=6))
 
         # 降级链 (有才显示)
@@ -363,9 +400,10 @@ class DetailDrawer:
 
         # 输出文件 + 操作 (打开文件夹 / 导出 EPUB 单篇导出)
         if task.output_file:
+            文件图标 = _令牌色(
+                ft.Icon(ft.Icons.DESCRIPTION_OUTLINED, size=14), 'status-success')
             file_row = ft.Row([
-                ft.Icon(ft.Icons.DESCRIPTION_OUTLINED, size=14,
-                        color=MORANDI_SECONDARY),
+                文件图标,
                 ft.Text(os.path.basename(task.output_file),
                         size=SIZE_TINY, font_family=FONT_STACK,
                         color=ft.Colors.ON_SURFACE_VARIANT, expand=True,
@@ -387,9 +425,11 @@ class DetailDrawer:
             ], spacing=4)
             self._detail_view.controls.append(file_row)
         if task.error:
-            self._detail_view.controls.append(ft.Text(
+            # Phase 3: 令牌色 + 登记重刷 (旧写法绑的字符串常量切夜间不变色)
+            错误文本 = _令牌色(ft.Text(
                 f"错误: {task.error[:150]}", size=SIZE_TINY,
-                font_family=FONT_STACK, color=MORANDI_ERROR))
+                font_family=FONT_STACK), 'status-error')
+            self._detail_view.controls.append(错误文本)
 
     def _open_folder(self, filepath: str):
         """打开文件所在目录"""
@@ -489,3 +529,24 @@ class DetailDrawer:
         self._file_info.value = (f"{os.path.basename(fp)} | {size_kb:.1f}KB "
                                  f"| 约{chapter_count}章")
         self._update()
+
+    # --------------------------------------------------------- 窄窗口档
+    def 设置窄档(self, 窄: bool):
+        """窄窗口(≤1200px)模式: 抽屉宽度 320 → 260, 把省下的宽度让给任务表。
+
+        (2026-10-04 UX 改进: 960px 窗宽下任务表横向溢出 538px, 抽屉收窄
+        与 task_table.设置窄档 配合使用。)
+        幂等 + 可在 page.on_resize 里反复调用: 只改 container.width, 不重建
+        控件树; 构造后 (未 build) 调用也安全; 异常一律留痕吞掉, 不向调用方抛。
+        """
+        try:
+            self._窄档 = bool(窄)
+            if self.container is not None:
+                self.container.width = (_WIDTH_NARROW if self._窄档
+                                        else _WIDTH_OPEN)
+                try:
+                    self.container.update()
+                except Exception:
+                    pass  # 刻意静默: 尚未挂到 page 上时 update 会抛 (构造后自测场景)
+        except Exception as _e:
+            _dbg("详情面板", f'窄档切换失败: {type(_e).__name__}: {_e}')

@@ -14,9 +14,13 @@ from .task_manager import TaskManager
 from .ui_theme import make_card, status_chip, status_color
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE,
-                         WEIGHT_BODY, MORANDI_SUCCESS, MORANDI_ERROR,
-                         MORANDI_WARNING, MORANDI_ON_SURFACE,
+                         WEIGHT_BODY,
                          open_dialog, close_dialog)
+# Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
+# **构建期求值**的字符串对象, 切夜间主题后 ui_fluent 的 globals().update
+# 改不动页面里的本地引用, 控件颜色纹丝不动 (见 phase3_迁移规范.md)。
+# 取色() 只在构建期取值, 故每处非 M3 槽位的颜色都配 登记重刷()。
+from .ui_tokens import 取色, 登记重刷
 from .row_detail import build_row_detail, _fmt_elapsed
 
 try:
@@ -45,6 +49,22 @@ _COLUMNS = [
 _TITLE_COL = 0        # 标题列下标 (现亦为固定宽)
 _OPS_COL = 7          # 操作列下标
 
+# 窄档 (≤1200px 窗口) 隐藏的次级列: 引擎 / 反爬 / 耗时 / 质检。
+# 实测: 960px 窗宽 (侧栏 + 320px 抽屉挤占) 下任务表横向溢出 538px;
+# 隐藏这 4 列后只留 任务/进度/状态/操作, 表格宽度随之收窄 (见 _表宽)。
+_次级列 = (3, 4, 5, 6)
+
+
+def _表宽(窄: bool) -> int:
+    """按当前可见列算表格内容宽度。
+
+    窄档隐藏次级列后必须同步收窄这个固定宽度, 否则外层 Column 仍按全宽
+    占位, 横向溢出照旧 (2026-10-04 UX 改进)。间距/内边距口径与 build() 一致。
+    """
+    可见宽 = [w for i, (_l, w, _c) in enumerate(_COLUMNS)
+              if not (窄 and i in _次级列)]
+    return sum(可见宽) + 6 * (len(可见宽) - 1) + 16
+
 
 def _log(source: str, message: str):
     if app_log is not None:
@@ -67,6 +87,16 @@ def _dbg(source: str, message: str):
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
 
+def _状态色文本(控件: ft.Text, 键: str) -> ft.Text:
+    """给文本控件上令牌状态色, 并登记主题重刷 (Phase 3)。
+
+    为什么不能直接 `color=MORANDI_*`: 那是模块级字符串常量, 构建期就定死;
+    切夜间主题后页面里的本地引用不会被更新 → 该控件永远停在日间色。
+    """
+    控件.color = 取色(键)
+    return 登记重刷(控件, lambda c, k=键: setattr(c, 'color', 取色(k)))
+
+
 
 class TaskTable:
     """全宽任务表格组件"""
@@ -77,6 +107,11 @@ class TaskTable:
         self._expanded_id = ""      # 当前展开详情的任务 ID
         self._sig = None            # 行渲染签名 (无变化跳过重建)
         self._list_view = None
+        # 窄档 (2026-10-04 UX 改进): ≤1200px 窗口隐藏次级列, 可反复切换
+        self._窄档 = False
+        self._表格体 = None         # 固定宽度的表格 Column (窄档要改它的 width)
+        self._头部单元 = []         # 表头各列 Container (按 _COLUMNS 下标)
+        self._行单元 = {i: [] for i in range(len(_COLUMNS))}   # 各列当前行单元
         # 操作回调 (可选, 由外部注入)
         self.on_delete_task = None   # callback(task_id)
         self.on_redownload = None   # callback(task_id)
@@ -111,8 +146,10 @@ class TaskTable:
         # 窄窗口 (侧栏+抽屉挤占) 时表格整体左右滚动, 操作按钮不再被裁;
         # vertical_alignment=STRETCH 把卡片高度传给内层 Column → ListView 有界可滚
         # 横滚主轴不约束宽度；ListView 必须取得有限横轴宽度才可布局。
-        表宽 = sum(c[1] for c in _COLUMNS) + 6 * (len(_COLUMNS) - 1) + 16
+        # 表宽按当前窄档的可见列计算 (窄档隐藏次级列时会同步收窄)
+        表宽 = _表宽(self._窄档)
         表格体 = ft.Column([header, self._list_view], spacing=4, width=表宽)
+        self._表格体 = 表格体
         # 2026-10-03 八项需求#6: 横滚改 ALWAYS 常显水平滚动条
         横滚 = ft.Row([表格体], spacing=0, scroll=ft.ScrollMode.ALWAYS,
                       vertical_alignment=ft.CrossAxisAlignment.STRETCH)
@@ -139,9 +176,47 @@ class TaskTable:
                 width=width,
                 alignment=ft.Alignment(0, 0) if center else ft.Alignment(-1, 0),
             )
-        return ft.Row(
-            [_h(label, width, center) for label, width, center in _COLUMNS],
-            spacing=6)
+        单元列表 = [_h(label, width, center) for label, width, center in _COLUMNS]
+        # 记住表头单元: 窄档切换时直接改 visible/width, 不必重建表头
+        self._头部单元 = 单元列表
+        for 列号, 单元 in enumerate(单元列表):
+            self._应用列可见(单元, 列号)
+        return ft.Row(单元列表, spacing=6)
+
+    # ------------------------------------------------------- 窄档 (≤1200px)
+    def _应用列可见(self, 单元, 列号: int):
+        """按当前窄档状态设置单个列单元的可见性/宽度 (幂等, 只改属性)。
+
+        双保险: 既置 visible=False, 也把宽度归零 —— 无论客户端是否把
+        "不可见"控件算进布局, 次级列都不再占宽 (表格靠外层 Row 横滚兜底)。
+        """
+        次级 = self._窄档 and 列号 in _次级列
+        单元.visible = not 次级
+        单元.width = 0 if 次级 else _COLUMNS[列号][1]
+
+    def 设置窄档(self, 窄: bool):
+        """窄窗口(≤1200px)模式: 隐藏次级列(引擎/反爬/耗时/质检),
+        只留 任务 / 进度 / 状态 / 操作; 表格内容宽度同步收窄。
+
+        幂等 + 可反复调用 (page.on_resize 每次尺寸变化都会调): 只改既有控件的
+        属性并做子树级 update(), 不重建行、不改数据; 任何异常就地留痕吞掉,
+        绝不向调用方抛出 (接口契约: 构造后调用 / 未 build 时调用都安全)。
+        """
+        try:
+            self._窄档 = bool(窄)
+            for 列号, 单元 in enumerate(self._头部单元):
+                self._应用列可见(单元, 列号)
+            for 列号, 单元s in self._行单元.items():
+                for 单元 in 单元s:
+                    self._应用列可见(单元, 列号)
+            if self._表格体 is not None:
+                self._表格体.width = _表宽(self._窄档)
+                try:
+                    self._表格体.update()
+                except Exception:
+                    pass  # 刻意静默: 尚未挂到 page 上时 update 会抛 (构造后自测场景)
+        except Exception as _e:
+            _dbg("任务表", f'窄档切换失败: {type(_e).__name__}: {_e}')
 
     # ------------------------------------------------------------- 刷新 (主线程)
     def _refresh(self):
@@ -176,6 +251,9 @@ class TaskTable:
             pass  # 刻意静默: 高频路径(_refresh(), 逐行/每秒级), 补日志会刷屏
 
         self._list_view.controls.clear()
+        # 行要重建 → 先丢弃旧行单元引用 (窄档切换只需管当前活着的控件)
+        for _列单元 in self._行单元.values():
+            _列单元.clear()
         if not tasks:
             self._list_view.controls.append(
                 ft.Container(
@@ -242,6 +320,10 @@ class TaskTable:
                    else None),
             color=status_color(task.status),
         )
+        # Phase 3: status_color() 也是构建期取色 (ui_theme 侧未登记重刷),
+        # 不补登记的话进度环在切夜间后仍是日间灰 (与本次迁移同类缺陷)。
+        登记重刷(ring, lambda c, s=task.status:
+                 setattr(c, 'color', status_color(s)))
         progress_cell = _cell(ft.Row([ring, ft.Text(pct_text, size=SIZE_TINY,
                                                    font_family=FONT_STACK,
                                                    color=ft.Colors.ON_SURFACE_VARIANT)],
@@ -252,21 +334,28 @@ class TaskTable:
 
         # 引擎单元格
         engine = task.metrics.engine or "—"
-        engine_cell = _cell(ft.Text(engine, size=SIZE_TINY, weight=WEIGHT_BODY,
-                                    font_family=FONT_STACK,
-                                    color=(MORANDI_SUCCESS if task.metrics.engine
-                                           else ft.Colors.ON_SURFACE_VARIANT),
-                                    max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS), width=_w(3))
+        引擎文本 = ft.Text(engine, size=SIZE_TINY, weight=WEIGHT_BODY,
+                          font_family=FONT_STACK,
+                          color=(None if task.metrics.engine
+                                 else ft.Colors.ON_SURFACE_VARIANT),
+                          max_lines=1,
+                          overflow=ft.TextOverflow.ELLIPSIS)
+        if task.metrics.engine:
+            # Phase 3: 令牌色 + 登记重刷 (旧写法 import 的字符串常量切夜间不变色)
+            _状态色文本(引擎文本, 'status-success')
+        engine_cell = _cell(引擎文本, width=_w(3))
 
         # 反爬单元格 (命中显示标签色, 未命中灰)
         anti = task.metrics.anti_spider_type
-        anti_cell = _cell(ft.Text(anti or "—", size=SIZE_TINY, weight=WEIGHT_BODY,
-                                  font_family=FONT_STACK,
-                                  color=(MORANDI_WARNING if anti
-                                         else ft.Colors.ON_SURFACE_VARIANT),
-                                  max_lines=1,
-                                  overflow=ft.TextOverflow.ELLIPSIS), width=_w(4))
+        反爬文本 = ft.Text(anti or "—", size=SIZE_TINY, weight=WEIGHT_BODY,
+                         font_family=FONT_STACK,
+                         color=(None if anti else ft.Colors.ON_SURFACE_VARIANT),
+                         max_lines=1,
+                         overflow=ft.TextOverflow.ELLIPSIS)
+        if anti:
+            # Phase 3: 令牌色 + 登记重刷
+            _状态色文本(反爬文本, 'status-warning')
+        anti_cell = _cell(反爬文本, width=_w(4))
 
         # 耗时单元格
         elapsed_cell = _cell(ft.Text(_fmt_elapsed(task), size=SIZE_TINY,
@@ -277,11 +366,17 @@ class TaskTable:
         qs = task.metrics.quality_score
         if qs >= 0:
             q_text = f"{qs:.0f}分"
-            q_color = MORANDI_SUCCESS if task.metrics.quality_passed else MORANDI_ERROR
+            q_键 = ('status-success' if task.metrics.quality_passed
+                   else 'status-error')
         else:
-            q_text, q_color = "—", ft.Colors.ON_SURFACE_VARIANT
-        quality_cell = _cell(ft.Text(q_text, size=SIZE_TINY, weight=WEIGHT_BODY,
-                                     font_family=FONT_STACK, color=q_color), width=_w(6))
+            q_text, q_键 = "—", ""
+        质检文本 = ft.Text(q_text, size=SIZE_TINY, weight=WEIGHT_BODY,
+                         font_family=FONT_STACK,
+                         color=(None if q_键 else ft.Colors.ON_SURFACE_VARIANT))
+        if q_键:
+            # Phase 3: 令牌色 + 登记重刷 (通过/未通过两色都由回调按主题重取)
+            _状态色文本(质检文本, q_键)
+        quality_cell = _cell(质检文本, width=_w(6))
 
         # 操作单元格: 展开 / 预览 / 重下 / 删除
         expand_btn = ft.IconButton(
@@ -369,12 +464,17 @@ class TaskTable:
                                 alignment=ft.MainAxisAlignment.CENTER),
                          width=_w(7), center=True)
 
+        # 窄档(≤1200px): 次级列不参与布局; 同时记下单元引用, 供 设置窄档 后续切换
+        单元列表 = [title_cell, progress_cell, status_cell, engine_cell,
+                    anti_cell, elapsed_cell, quality_cell, ops_cell]
+        for 列号, 单元 in enumerate(单元列表):
+            self._应用列可见(单元, 列号)
+            self._行单元[列号].append(单元)
+
         # 主行
-        main_row = ft.Row([
-            title_cell, progress_cell, status_cell, engine_cell,
-            anti_cell, elapsed_cell, quality_cell, ops_cell,
-        ], spacing=6, wrap=False, alignment=ft.MainAxisAlignment.START,
-        vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        main_row = ft.Row(单元列表, spacing=6, wrap=False,
+                          alignment=ft.MainAxisAlignment.START,
+                          vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
         # 行容器 (选中态高亮)
         body_controls = [main_row]
@@ -486,9 +586,11 @@ class TaskTable:
             return
         # G-H1 教训 (v2.4.19): EXE 中 dialog 文字缺显式 color 会渲染成不可见。
         # 这是删数据确认框, 文字不可见会放大误删风险 → 逐个显式指定。
+        # Phase 3: ON_SURFACE 直接用 M3 语义别名 (由 Flutter 按 theme_mode 解析),
+        # 本就自动适配深浅, 不需要令牌 + 登记重刷。
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("删除这本书的记录", color=MORANDI_ON_SURFACE,
+            title=ft.Text("删除这本书的记录", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Text(
                 f"书名: {标题}\n类型: {类型}\n\n"
@@ -499,7 +601,7 @@ class TaskTable:
                 f"已下载的文件不会被删除。\n"
                 f"判定原因: {原因}",
                 size=SIZE_SMALL, font_family=FONT_STACK,
-                color=MORANDI_ON_SURFACE),
+                color=ft.Colors.ON_SURFACE),
             actions=[
                 ft.TextButton("取消",
                               on_click=lambda _: close_dialog(self.page, dialog)),
@@ -589,11 +691,11 @@ class TaskTable:
             # G-H1 (GUI 专项审查): 打包 EXE 中 dialog 文字缺显式 color 会渲染成
             # 不可见 (v2.4.19 教训, 关闭弹窗已修, 此处同类漏网) —— 这是
             # "是否同时删除本地文件"的确认框, 文字不可见会放大误删风险
-            title=ft.Text("删除任务", color=MORANDI_ON_SURFACE,
+            title=ft.Text("删除任务", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Text(f"任务输出文件:\n{fname}\n\n是否同时删除本地文件?",
                             size=SIZE_SMALL, font_family=FONT_STACK,
-                            color=MORANDI_ON_SURFACE),
+                            color=ft.Colors.ON_SURFACE),
             actions=[
                 ft.TextButton("取消",
                               on_click=lambda _: close_dialog(self.page, dialog)),
@@ -627,7 +729,7 @@ class TaskTable:
         try:
             # 显式 color: EXE 中 SnackBar 文字缺色会渲染成不可见 (G-H1 教训)
             open_dialog(self.page, ft.SnackBar(
-                ft.Text(msg, font_family=FONT_STACK, color=MORANDI_ON_SURFACE)))
+                ft.Text(msg, font_family=FONT_STACK, color=ft.Colors.ON_SURFACE)))
         except Exception as _e:
             _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
@@ -653,12 +755,12 @@ class TaskTable:
             return
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("清空历史", color=MORANDI_ON_SURFACE,
+            title=ft.Text("清空历史", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Text(f"确定清空 {len(终态)} 条已结束任务的记录?\n"
                             "不会删除输出文件 (.txt/.epub)。",
                             size=SIZE_SMALL, font_family=FONT_STACK,
-                            color=MORANDI_ON_SURFACE),
+                            color=ft.Colors.ON_SURFACE),
             actions=[
                 ft.TextButton("取消",
                               on_click=lambda _: close_dialog(self.page, dialog)),
