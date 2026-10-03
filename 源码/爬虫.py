@@ -1478,7 +1478,8 @@ class NovelSpider:
             'DNT': '1',
             'Sec-GPC': '1',
             'Referer': url,
-            'Host': url.split('/')[2],
+            # 不要在此硬编码 'Host'：requests 会按 URL 自动生成（含跳转后的新主机），
+            # 手写它会打断 www/主机级跳转 → 无限 301 → Exceeded 30 redirects（踩坑总表 K29）。
             # 不要在此硬编码 Cookie 头：requests 传入 headers 中的 Cookie 会覆盖 session.cookies，
             # 导致反爬提取的 cookie(如 zhiruo.org 的 ge_js_validator_20)无法随请求发出，校验永远过不去。
             # 让 session.cookies 自动管理即可。
@@ -4715,7 +4716,8 @@ class NovelSpider:
             'Sec-GPC': '1',
             # 针对hatxt.cc网站添加的额外头信息
             'Referer': chapter_url,
-            'Host': chapter_url.split('/')[2],
+            # 不要在此硬编码 'Host'（同 inspect_page，踩坑总表 K29）：
+            # 手写它会打断主机级跳转 → Exceeded 30 redirects → 章节正文拿不到内容。
             'Pragma': 'no-cache',
             'TE': 'trailers'
         }
@@ -5406,7 +5408,8 @@ class NovelSpider:
             'DNT': '1',
             'Sec-GPC': '1',
             'Referer': catalog_url,
-            'Host': catalog_url.split('/')[2],
+            # 不要在此硬编码 'Host'（同 inspect_page，踩坑总表 K29）：
+            # 手写它会打断主机级跳转 → 书名提取拿到空页面。
             'Pragma': 'no-cache',
             'TE': 'trailers'
         }
