@@ -16,6 +16,58 @@
 > bug 修复。已知待办：EXE 偶发崩溃 WinError 10022（登记待查）、
 > 2 个损坏 checkpoint（待用户裁决）。
 
+## \[2.4.58] - 2026-10-04
+
+### 修复
+
+- **站点管理页「加密变更」行图标不显示**：代码用了 `ft.Icons.ENCRYPTION_OUTLINED`，
+  而 **Flet 无此图标名**（真名 `ENHANCED_ENCRYPTION_OUTLINED`）。Flet 图标名写错
+  **不报错**，只会渲染成空白 —— 属同族"字符串猜写"隐患，已修正并做了全库校验。
+
+## \[2.4.57] - 2026-10-04
+
+### 修复
+
+- **【P0 真根因】抓取工作台一片空白**：`ui_theme._底色覆盖()` 给**每个按钮**都设了
+  `ButtonStyle.overlay_color = {'hover': …, 'focus': …}` —— 但该属性的类型是
+  `dict[ControlState, 颜色]`，**键必须是 `ft.ControlState` 成员**（枚举值是
+  `hovered` / `focused` / `pressed`）。字符串 `'hover'` / `'focus'`（少了 `ed`）
+  **不是合法状态名** → 客户端解析该 `ButtonStyle` 失败 →
+  **按钮整体渲染失败**（Flutter release 模式表现为**纯灰块**）→
+  连带整张卡片的内容消失。现象正是"工作台里输入条与任务列表两张卡全灭、
+  而不含按钮的页头/侧栏/状态栏照常"，且**日志无任何异常**（Python 侧不报错）。
+  现改用 `ft.ControlState.HOVERED/PRESSED/FOCUSED` 作键；不透明度也不再走
+  `ft.Colors.with_opacity` 产出的 `"色,透明度"` 逗号串，改为显式 8 位 hex
+  （`#0B000000` / `#1A000000`），只用官方文档明确支持的两种写法之一。
+  影响版本：**v2.4.46–v2.4.56**。当时 `ui_theme` 里"Flet 原生支持
+  hover/pressed/focus 键"的注释是**未经核实的假设**，bug 正由此而来。
+
+### 测试
+
+- 新增 `测试/test_按钮状态映射.py`（2 用例）：①真构建 5 个工厂按钮，
+  断言 `overlay_color` 映射的每个键都是 `ft.ControlState`；②源码里不得再出现
+  `'hover':` / `'focus':` 这类小写状态字符串键。
+- 顺带修正 `ui_theme.py` 中错误的交互四态注释，以及
+  `ft.Icons.ENCRYPTION_OUTLINED`（Flet 无此名，真名 `ENHANCED_ENCRYPTION_OUTLINED`）。
+
+## \[2.4.56] - 2026-10-04
+
+### 修复
+
+> ⚠️ **归因更正（2026-10-04 04:2x）**：本条把空白归因于 CSS 写法的 `rgba()` 色值。
+> 事后证明那**不是**根因（转成 hex 后 2.4.56 实测仍然空白），真根因见 `[2.4.57]`
+> （`overlay_color` 状态键非法）。把 `rgba()` 换成 hex **本身仍是正确的清理**
+> （官方只支持 hex/命名色），故保留本条，但不再作为该事故的解释。
+
+- 把设计稿 CSS 变量值里的 `rgba(...)`（18 处）统一转成 Flet 8 位 hex
+  （`#AARRGGBB`，alpha = round(a×255)），视觉完全等价：
+  `rgba(0,0,0,0.08)` → `#14000000`、`rgba(255,255,255,0.09)` → `#17FFFFFF`。
+
+### 测试
+
+- 新增 `测试/test_颜色格式合法.py`（3 用例）：①扫源码（去注释/文档串）禁止出现
+  CSS 写法颜色字面量；②令牌表每个色值必须是合法 Flet 色；③阴影色同理。
+
 ## \[2.4.55] - 2026-10-04
 
 ### 修复

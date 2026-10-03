@@ -78,9 +78,9 @@ _日间 = {
     'text-quaternary':     '#767676',
     'text-sidebar-active': '#9C4A0C',
     # 边框
-    'border-subtle':       'rgba(0,0,0,0.08)',
-    'border-default':      'rgba(0,0,0,0.14)',
-    'border-strong':       'rgba(0,0,0,0.22)',
+    'border-subtle':       '#14000000',
+    'border-default':      '#24000000',
+    'border-strong':       '#38000000',
     # 品牌层
     'brand':               '#D9781A',
     'brand-hover':         '#C16816',
@@ -97,7 +97,7 @@ _日间 = {
     'btn-secondary-bg':    '#FFFFFF',
     'btn-secondary-hover': '#F5F5F5',
     'btn-secondary-fg':    '#3A3A3A',
-    'btn-secondary-border': 'rgba(0,0,0,0.16)',
+    'btn-secondary-border': '#29000000',
     # 停止 (蓝紫, 不是红!)
     'accent-stop':         '#5C5CD9',
     'accent-stop-hover':   '#4F4FC4',
@@ -160,9 +160,9 @@ _夜间色 = {
     'text-quaternary':     '#9A9A9A',
     'text-sidebar-active': '#E8A96A',
     # 边框
-    'border-subtle':       'rgba(255,255,255,0.09)',
-    'border-default':      'rgba(255,255,255,0.15)',
-    'border-strong':       'rgba(255,255,255,0.24)',
+    'border-subtle':       '#17FFFFFF',
+    'border-default':      '#26FFFFFF',
+    'border-strong':       '#3DFFFFFF',
     # 品牌层
     'brand':               '#E08A3C',
     'brand-hover':         '#EAA261',
@@ -179,7 +179,7 @@ _夜间色 = {
     'btn-secondary-bg':    '#2B2B2B',
     'btn-secondary-hover': '#383838',
     'btn-secondary-fg':    '#E4E4E4',
-    'btn-secondary-border': 'rgba(255,255,255,0.18)',
+    'btn-secondary-border': '#2EFFFFFF',
     # 停止
     'accent-stop':         '#7B7BE0',
     'accent-stop-hover':   '#9494EC',
@@ -448,10 +448,10 @@ RADIUS_PILL = 999    # 胶囊 (徽章/筛选芯片)
 
 # ---- 阴影: 克制版 (设计稿 4 档, 低透明度) ----
 _阴影表 = {
-    'sm': (2,  0, 0, 1, 'rgba(0,0,0,0.04)'),
-    'md': (12, 0, 4, 0, 'rgba(0,0,0,0.08)'),
-    'lg': (32, 0, 12, 0, 'rgba(0,0,0,0.12)'),
-    'xl': (48, 0, 24, 0, 'rgba(0,0,0,0.16)'),
+    'sm': (2,  0, 0, 1, '#0A000000'),
+    'md': (12, 0, 4, 0, '#14000000'),
+    'lg': (32, 0, 12, 0, '#1F000000'),
+    'xl': (48, 0, 24, 0, '#29000000'),
 }
 
 

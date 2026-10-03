@@ -16,8 +16,11 @@ Flet 不是 CSS, 没有"变量就地替换"。所以:
          ui_tokens.登记重刷(), 否则切主题会掉色。
 
 交互四态实现口径 (设计稿要求每态都有, 不许只做 hover):
-  hover    ButtonStyle.overlay_color['hover']    (Flet 原生, 免手绘)
-  active   overlay_color['pressed']
+  hover    ButtonStyle.overlay_color[ControlState.HOVERED]   (Flet 原生, 免手绘)
+  active   overlay_color[ControlState.PRESSED]
+           ⚠️ 键必须是 ft.ControlState 成员(值是 'hovered'/'pressed'/'focused');
+              写成字符串 'hover'/'focus' 会让客户端解析失败 → 按钮渲染成灰块
+              (2026-10-04 P0 事故, 详见 _底色覆盖 的 docstring)
   focus    on_focus 加 FOCUS_RING_WIDTH 边框, on_blur 撤掉
            ⚠️ ft.Container 没有 on_focus/on_blur (已内省确认), 自绘
               控件 (侧栏项/表格行) 做不出键盘焦点环 —— 这是硬限制
@@ -324,21 +327,28 @@ def status_color(status: str):
 #   表格用 36x32  圆角6              (.icon-btn)
 
 def _底色覆盖(键: str, 按下键: str = None):
-    """构造 overlay_color 四态表: hover/pressed 叠一层同色加深。
+    """构造 overlay_color 三态表: hover / pressed / focused 各叠一层黑。
 
-    Flet 原生支持 overlay 的 hover/pressed/focus 键, 比手绘省事得多。
-    按下态用"同色 + 少量黑"近似加深 (设计稿的 hover 色是独立令牌,
-    但 overlay 层只能算叠加, 无法直接指定纯色 —— 已知近似)。
+    ⚠️ 2026-10-04 **P0 修复**(抓取工作台一片空白的根因):
+    `ButtonStyle.overlay_color` 的类型是 `dict[ControlState, 颜色]` ——
+    **键必须是 `ft.ControlState` 成员**, 其枚举值是 `'hovered'/'focused'/'pressed'`。
+    旧代码写的是字符串 `'hover'` / `'focus'`(少了 `ed`), 不是合法状态名 →
+    客户端解析该 ButtonStyle 失败 → **按钮整体渲染失败**(Flutter release 下为灰块)
+    → 连带整张卡片内容消失。当时注释里"Flet 原生支持 hover/pressed/focus 键"
+    是**未经核实的假设**, 正是它把 bug 带进了 Phase 1+2。
+    另: 不透明度不再用 `ft.Colors.with_opacity` 产出的 `"色,透明度"` 逗号串,
+    改为显式 8 位 hex(官方文档明确支持的两种写法之一)。
+
+    按下态用"黑色叠加"近似加深 (设计稿的 hover 色是独立令牌, 但 overlay 层
+    只能算叠加, 无法直接指定纯色 —— 已知近似)。
     """
-    def _半透明(色, a):
-        try:
-            return ft.Colors.with_opacity(a, 色)
-        except Exception:
-            return a
+    def _半透明(a: float) -> str:
+        """黑色 + 不透明度 → Flet 8 位 hex '#AARRGGBB' (alpha = round(a*255))"""
+        return '#%02X000000' % max(0, min(255, round(a * 255)))
     return {
-        'hover': _半透明('#000000', 0.045),
-        'pressed': _半透明('#000000', 0.10),
-        'focus': _半透明('#000000', 0.045),
+        ft.ControlState.HOVERED: _半透明(0.045),
+        ft.ControlState.PRESSED: _半透明(0.10),
+        ft.ControlState.FOCUSED: _半透明(0.045),
     }
 
 
