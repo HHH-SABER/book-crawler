@@ -80,6 +80,7 @@ class RemotePage:
                     or time.monotonic() - self._开关起点 > _开关超时兜底秒):
                 self._开关进行中 = False
                 self._btn.disabled = False
+                self._开关转圈.visible = False      # 切换已尘埃落定 → 收起 spinner
             self._btn.bgcolor = (ft.Colors.PRIMARY_CONTAINER if 启用
                                  else ft.Colors.SURFACE_CONTAINER)
             # 进行中保留"启用中…"文案, 不被本轮运行状态覆盖
@@ -107,19 +108,23 @@ class RemotePage:
             self._点击时运行 = bool(self._启用状态)
             _dbg("远控页", f'取实时运行态失败: {type(_e).__name__}: {_e}')
         self._btn_lab.value = "启用中…"
+        self._开关转圈.visible = True
         self._btn.disabled = True
         if self.page is not None:
             self._btn.update()
             self._btn_lab.update()
+            self._开关转圈.update()
 
     def _复位开关进行态(self):
         """退出进行态: 恢复可点 + 文案回到当前运行状态 (调度失败时立即调用)"""
         self._开关进行中 = False
         self._btn.disabled = False
+        self._开关转圈.visible = False
         self._btn_lab.value = "远控已启用" if self._启用状态 else "远控已停用"
         if self.page is not None:
             self._btn.update()
             self._btn_lab.update()
+            self._开关转圈.update()
 
     def _点击开关(self, e=None):
         """本页开关点击入口: 进入进行态后交给注入的 切换远控 (与顶栏同一实现)。
@@ -147,8 +152,16 @@ class RemotePage:
             c, 'color', 取色('status-success') if self._启用状态
             else 取色('status-pending')))
         self._btn_lab = txt("远控已启用", size=SIZE_BODY, weight=WEIGHT_SUBTITLE)
+        # 2026-10-04 (Phase 3 收尾): 进行态加**真 spinner** —— 审计原文要的是转圈,
+        # 上一版只有"启用中…"文案。远控启停要等线程绑端口(约 0.5s), 无转圈时
+        # 界面看起来没反应, 用户会连点。
+        self._开关转圈 = ft.ProgressRing(width=12, height=12, stroke_width=2,
+                                       color=取色('accent-fg'), visible=False)
+        # 取色() 只在构建期求值 → 必须登记重刷, 否则切夜间主题转圈仍是日间色
+        # (这条是被 test_主题重刷.py 的行为护栏当场抓出来的)
+        登记重刷(self._开关转圈, lambda c: setattr(c, 'color', 取色('accent-fg')))
         self._btn = ft.Container(
-            content=ft.Row([self._btn_dot, self._btn_lab,
+            content=ft.Row([self._btn_dot, self._开关转圈, self._btn_lab,
                             ft.Icon(ft.Icons.POWER_SETTINGS_NEW, size=16)],
                            spacing=8, tight=True,
                            vertical_alignment=ft.CrossAxisAlignment.CENTER),

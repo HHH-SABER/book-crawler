@@ -200,5 +200,38 @@ class Test主题重刷(unittest.TestCase):
         self._验收控件树(根, 'row_detail')
 
 
+class Test状态色可区分(unittest.TestCase):
+    """Phase 3 收尾 (2026-10-04): **必须一眼分出的状态, 语义色不得相同**。
+
+    审计发现 `dead_pending`(书已删除 —— 需要用户裁决) 与 `interrupted`(已中断 ——
+    只是进程退出导致没跑完, 无需处理) **完全同色** → 任务表里分不出"哪一行要我去点"。
+    现 `interrupted` 归中性灰族, `dead_pending` 独占琥珀警告色。
+    """
+
+    def _任务状态色(self, 任务状态: str):
+        """走真实链路: 任务状态 → 徽章语义 → 状态色 (日间)"""
+        语义键 = ui_tokens.徽章语义.get(任务状态, 'pending')
+        return ui_tokens.状态色(语义键, False)
+
+    def test_死书待确认与已中断必须可区分(self):
+        self.assertNotEqual(self._任务状态色('dead_pending'),
+                            self._任务状态色('interrupted'),
+                            '两个语义相反的状态同色 → 用户分不出哪行需要处理')
+
+    def test_死书待确认与失败必须可区分(self):
+        self.assertNotEqual(self._任务状态色('dead_pending'),
+                            self._任务状态色('failed'))
+
+    def test_已中断与失败必须可区分(self):
+        self.assertNotEqual(self._任务状态色('interrupted'),
+                            self._任务状态色('failed'))
+
+    def test_已中断不再占用警告色(self):
+        """回归锁: 不许再改回与 running（抓取中）/ dead_pending（书已删除）同色"""
+        self.assertNotEqual(self._任务状态色('interrupted'),
+                            ui_tokens.状态色('warning', False),
+                            '已中断又变回警告色 → 会与 抓取中/书已删除 撞色')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
