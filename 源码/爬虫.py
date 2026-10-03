@@ -583,7 +583,14 @@ def _resolve_novel_paths(catalog_url):
                     else:
                         # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
                         # 字母数字书ID + index_分页目录)
-                        alt_match = re.search(r'/([a-z0-9]{2,12})/index(?:_\d+)?\.html?', catalog_url)
+                        # 2026-10-03 扩: 允许大写书ID与 indexlist.html 文件名
+                        # (hulaisb /mmHJ/indexlist.html → /mmHJ/, 章节链接
+                        #  /mmHJ/{N}.html; 旧正则「小写」与「index/index_N」两道
+                        #  限制都匹配不上 → novel_path 空 → 通用提取全过滤,
+                        #  即使分页重取到真页面也判 0 章节)
+                        alt_match = re.search(
+                            r'/([A-Za-z0-9]{2,12})/index(?:list)?(?:_\d+)?\.html?',
+                            catalog_url)
                         if alt_match:
                             novel_path = f"/{alt_match.group(1)}/"
                             _log.info(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
@@ -1214,7 +1221,26 @@ class NovelSpider:
                     except Exception as e:
                         _log.info(f"[反爬检测] WAF JS 挑战处理异常: {e}")
 
-            # 3. 未命中任何反爬层 → 拿到真实页面, 退出循环
+            # 3. 裸 401/403 质询 (hulaisb 类 WAF 的"补发 _wa_ cookie"变体):
+            #    401 + meta-refresh 小页面, 无 @wafjs/验证码/JS-cookie 任何特征 →
+            #    检测器与上面两关全部不命中, 旧实现把质询页当正文返回 → 适配器
+            #    找不到容器 return None、通用提取 0 章节, 表现为"目录无章节"死书
+            #    (2026-10-03 hulaisb task_8 实证)。
+            #    小说站 401/403 不可能是正文; body <4KB 才视为质询 (真实正文页
+            #    远大于此), 重发后下一轮会拿到 @wafjs 质询体 (走第 2 关解决) 或
+            #    带 _wa_ 直接放行。UA 用 _fixed_ua (令牌 cookie 绑定 UA, 与第 2 关
+            #    重试的 hdrs2 语义一致)。
+            if response.status_code in (401, 403) and len(response.text) < 4096:
+                _log.info(f"[反爬检测] 状态 {response.status_code} 但 body 无已知反爬特征 "
+                          f"({len(response.text)} 字节), 视为裸质询页, 1 秒后重发")
+                time.sleep(1)
+                _hdrs_bare = dict(headers or {})
+                if getattr(self, '_fixed_ua', None):
+                    _hdrs_bare['User-Agent'] = self._fixed_ua
+                response = self.session.get(url, headers=_hdrs_bare, timeout=timeout)
+                continue
+
+            # 4. 未命中任何反爬层 → 拿到真实页面, 退出循环
             break
         for retry in range(4):
             raw = response.content
@@ -1502,6 +1528,18 @@ class NovelSpider:
             for _attempt in range(1, _conn_retries + 1):
                 try:
                     response = self._get_with_js_challenge(url, headers)
+                    # K36: 5xx 错误页与网络异常同等对待 —— shuhaige 源站间歇 502,
+                    # 错误页被当目录解析 → 书名 "502 Bad Gateway" → 0 章节死书
+                    # (2026-10-03 task_10 实测)。重试耗尽 response=None → 空 soup
+                    # → _目录页为空=True → 死书判定"站点不可达" (不误判目录无章节)。
+                    if response is not None and getattr(response, 'status_code', 200) >= 500:
+                        _log.info(f"[服务器错误] 状态 {response.status_code} "
+                                  f"({_attempt}/{_conn_retries}), 视为瞬时故障退避重试")
+                        response = None
+                        if _attempt >= _conn_retries:
+                            break
+                        time.sleep(1.0)
+                        continue
                     break
                 except Exception as e:
                     _log.info(f"请求失败({_attempt}/{_conn_retries}): {e}")
@@ -4693,7 +4731,10 @@ class NovelSpider:
         # 处理分页
         page_index = 0
         # ===== 优先使用 sites_config 中的分页配置 =====
-        if site_pattern and 'content_pagination' in site_pattern:
+        # K35: isinstance 守卫 —— 适配器可声明 content_pagination: None (单页直出,
+        # hulaisb 2026-10-03 实测)。旧守卫 'content_pagination' in 只查键存在,
+        # None.get() 抛 TypeError 被 _fetch_with_qc 吞成 "抓取异常" → 全章瞬时空正文。
+        if site_pattern and isinstance(site_pattern.get('content_pagination'), dict):
             site_max_pages = site_pattern['content_pagination'].get('max_pages', 30)
         elif 'ahxsw.com' in chapter_url:
             site_max_pages = 30
@@ -4731,6 +4772,10 @@ class NovelSpider:
                         break
                 elif site_pattern and 'content_pagination' in site_pattern:
                     # ===== 优先使用 sites_config 生成分页 URL =====
+                    # K35: None = 适配器声明"单页直出", 第 1 页抓完即停, 不构造 _1.html
+                    if not isinstance(site_pattern['content_pagination'], dict):
+                        _log.info("[分页] 站点配置声明单页直出 (content_pagination=None), 停止")
+                        break
                     current_url = build_paged_url(chapter_url, page_index, site_pattern['content_pagination'])
                     if current_url is None:
                         _log.info("[分页] 已达到最大页数限制，停止")

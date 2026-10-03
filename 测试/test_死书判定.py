@@ -88,5 +88,47 @@ class Test判定死书(unittest.TestCase):
             self.assertIsNotNone(r)
 
 
+class Test错误页标题K36(unittest.TestCase):
+    """K36 (2026-10-03): 5xx 错误页标题被当书名时判 站点不可达。
+
+    shuhaige 源站间歇 502, 目录页 <title> 是 "502 Bad Gateway" →
+    书名提取拿到错误页标题 → 旧判定书名"正常" → 误判 目录无章节
+    (误导用户查选择器)。修后归 站点不可达, 提示稍后重新检测。
+    """
+
+    def test_502标题判站点不可达(self):
+        r = D.判定死书(页面为空=False, 书名='502 Bad Gateway', 章节数=0)
+        self.assertEqual(r['类型'], D.类型_站点不可达)
+        self.assertFalse(r['可询问删除'])
+        self.assertIn('错误页', r['原因'])
+
+    def test_各错误页短语都识别(self):
+        for 书名 in ('502 Bad Gateway', '503 Service Unavailable',
+                     '504 Gateway Time-out', 'Internal Server Error',
+                     'Service Temporarily Unavailable'):
+            self.assertTrue(D.是错误页标题(书名), f'书名={书名!r}')
+
+    def test_正常书名不误伤(self):
+        for 书名 in ('平凡的世界', '502号房客', '第503章 风暴', '我的504室友'):
+            self.assertFalse(D.是错误页标题(书名), f'书名={书名!r}')
+
+    def test_空书名不判错误页(self):
+        self.assertFalse(D.是错误页标题(''))
+        self.assertFalse(D.是错误页标题(None))
+
+    def test_错误页优先级在退化之前_互斥性(self):
+        """错误页标题不在退化集合中, 两分支互斥; 退化书名不受影响"""
+        for v in D.书名退化集合:
+            if not v:
+                continue
+            self.assertFalse(D.是错误页标题(v), f'退化值 {v!r} 不应同时命中错误页特征')
+            r = D.判定死书(页面为空=False, 书名=v, 章节数=0)
+            self.assertEqual(r['类型'], D.类型_书已删除)
+
+    def test_返回键完整_错误页分支(self):
+        r = D.判定死书(页面为空=False, 书名='502 Bad Gateway', 章节数=0)
+        self.assertEqual(set(r), {'类型', '原因', '可询问删除'})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
