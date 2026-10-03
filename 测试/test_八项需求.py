@@ -21,6 +21,16 @@ def _读(相对: str) -> str:
     return (_SRC / 相对).read_text(encoding='utf-8')
 
 
+def _去整行注释(文本: str) -> str:
+    """去掉**整行**注释后返回, 供静态契约断言使用。
+
+    否则"注释里提到某函数名/某写法"会让断言误报 (2026-10-04 实际踩到:
+    失败分支的说明注释里写了 `_写首次flag`, 被当成"失败分支调用了它")。
+    只去整行注释 —— 行尾 `#` 不能碰: 代码里有颜色字面量 `'#AD5710'` 之类。
+    """
+    return '\n'.join(l for l in 文本.splitlines() if not l.strip().startswith('#'))
+
+
 def _控件树含(根, 目标) -> bool:
     """递归遍历 Flet 控件树, 判断 `目标` 是否真的被挂载 (content / controls)。
 
@@ -435,17 +445,45 @@ class Test静态契约(unittest.TestCase):
         self.assertIn('_建桌面快捷方式', 文本)
         self.assertIn('page.run_task(_首次引导)', 文本)
 
-    def test_滚动条四处ALWAYS(self):
-        cases = [
-            ('gui_components/pages/dead_book_page.py', 'self._列表 = ft.Column('),
-            ('gui_components/pages/site_manage_page.py', 'return ft.Column([header, banner'),
-            ('gui_components/task_table.py', '横滚 = ft.Row('),
-            ('gui_components/detail_drawer.py', 'self._detail_view = ft.Column('),
-        ]
-        for rel, anchor in cases:
-            文本 = _读(rel)
-            段 = 文本.split(anchor)[1][:800]
-            self.assertIn('ft.ScrollMode.ALWAYS', 段, f'{rel} 的滚动条未改 ALWAYS')
+    def test_滚动条常显覆盖全部主内容区(self):
+        """#6 (2026-10-04 加固): 覆盖**全部 12 处**常显, 而不是只锁 4 个锚点。
+
+        旧用例对 4 个锚点做"锚点后 800 字符内含 ALWAYS"的字符串检查 —— 其余 6 处
+        (history_page / remote_page / log_tab / site_manage_page 的两处 / task_table 纵滚)
+        无论回退成 AUTO 还是被删掉都不会被发现。
+        现改为: ①逐文件统计 ALWAYS 数量下限 (新增不算回归, 变少即红);
+        ②这 7 个文件内**禁止** AUTO/HIDDEN 残留 (主内容区必须常显)。
+        """
+        预期下限 = {
+            'gui_components/detail_drawer.py': 3,
+            'gui_components/log_tab.py': 1,
+            'gui_components/task_table.py': 2,
+            'gui_components/pages/dead_book_page.py': 1,
+            'gui_components/pages/history_page.py': 1,
+            'gui_components/pages/remote_page.py': 1,
+            'gui_components/pages/site_manage_page.py': 3,
+        }
+        for 相对, 至少 in 预期下限.items():
+            文本 = _读(相对)
+            实际 = 文本.count('ScrollMode.ALWAYS')
+            self.assertGreaterEqual(
+                实际, 至少, f'{相对} 常显滚动条数量 {实际} < 预期 {至少} (有位置回退了)')
+            for 禁 in ('ScrollMode.AUTO', 'ScrollMode.HIDDEN'):
+                self.assertNotIn(禁, 文本, f'{相对} 出现 {禁} —— 主内容区不得回退')
+
+    def test_首次引导失败不烧flag且flag原子写(self):
+        """#5 (2026-10-04 修复): 一次瞬时失败不得让引导永久消失; 标记文件必须原子写"""
+        文本 = _去整行注释(_读('gui_app.py'))   # 注释里提到函数名不算调用
+        写段 = 文本.split('def _写首次flag', 1)[1][:700]
+        self.assertIn('os.replace', 写段, 'flag 写入必须是原子写 (tmp + os.replace)')
+        创段 = 文本.split('async def _创建', 1)[1].split('def _跳过', 1)[0]
+        self.assertIn('_写首次flag(', 创段, '创建成功后应写 flag')
+        # 失败分支 = except 之后到 `return` 之前; 其中不得出现写 flag
+        失败段 = 创段.split('except Exception as e:', 1)[1].split('return', 1)[0]
+        self.assertNotIn('_写首次flag', 失败段,
+                         '失败分支不得写 flag —— 旧实现写在 finally, 一次瞬时失败就永久放弃引导')
+        跳段 = 文本.split('def _跳过', 1)[1][:400]
+        self.assertIn('_写首次flag(', 跳段, '用户明确拒绝也应写 flag (只问一次)')
 
     def test_组装发布脚本已改为默认清空私有适配(self):
         """静态锁: 私有适配目录必须挂在显式开关后面 (行为验证见 test_组装发布隐私.py)
