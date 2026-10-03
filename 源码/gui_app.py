@@ -580,14 +580,19 @@ def main(page: ft.Page):
 
     # ---- 首次启动引导 (八项需求 #5): 询问创建桌面快捷方式 ----
     # flag 落 状态根/数据/首次启动.flag —— 问过一次就不再打扰;
-    # 用户无论选创建还是拒绝都写 flag (拒绝 ≠ 下次再问)。
-    def _写首次flag():
+    # 用户**明确表态**(创建成功 / 选择暂不) 才写 flag。
+    # ⚠ 2026-10-04 (#5 修复): 失败时**不写** —— 旧实现写在 finally 里, 一次瞬时失败
+    # (PowerShell 被杀 / 超时 / 非 0 退出) 就让引导永久不再出现, 而程序内没有手动入口。
+    def _写首次flag(结果: str = '已询问创建桌面快捷方式'):
+        """原子写首次启动标记 (tmp + os.replace, 对齐项目状态文件规约)"""
         try:
             import time as _tm
             p = os.path.join(get_state_root(), "数据", "首次启动.flag")
             os.makedirs(os.path.dirname(p), exist_ok=True)
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(f"已询问创建桌面快捷方式: {_tm.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            tmp = f"{p}.tmp.{os.getpid()}"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(f"{结果}: {_tm.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            os.replace(tmp, p)
         except Exception as e:
             app_log.debug("引导", f"首次启动 flag 写入失败: {type(e).__name__}: {e}")
 
@@ -624,7 +629,11 @@ def main(page: ft.Page):
              "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
             capture_output=True, timeout=20)
         if r.returncode != 0:
-            raise RuntimeError(f"PowerShell 退出码 {r.returncode}")
+            # 2026-10-04 (#5 修复): 把 PS 的 stderr 带进异常 —— 旧实现只报退出码,
+            # 用户与日志都拿不到"为什么失败"。
+            err = (r.stderr or b'').decode('utf-8', errors='replace').strip()
+            raise RuntimeError(f"PowerShell 退出码 {r.returncode}"
+                               + (f": {err[:200]}" if err else ""))
 
     async def _首次引导():
         try:
@@ -646,24 +655,26 @@ def main(page: ft.Page):
             async def _创建(_e=None):
                 try:
                     await asyncio.to_thread(_建桌面快捷方式)
-                    page.show_dialog(ft.SnackBar(ft.Text(
-                        "桌面快捷方式已创建", color=MORANDI_ON_SURFACE,
-                        font_family=FONT_STACK, size=SIZE_SMALL)))
-                    app_log.info("引导", "桌面快捷方式创建成功")
                 except Exception as e:
-                    app_log.info("引导",
-                                 f"快捷方式创建失败: {type(e).__name__}: {e}")
+                    # 2026-10-04 (#5 修复): 失败**不写 flag** → 下次启动会再问一次
+                    # (旧实现把 _写首次flag 放在 finally, 一次瞬时失败即永久放弃引导)。
+                    app_log.info("引导", f"快捷方式创建失败: {type(e).__name__}: {e}")
                     page.show_dialog(ft.SnackBar(ft.Text(
-                        f"快捷方式创建失败: {type(e).__name__}",
+                        f"快捷方式创建失败 (下次启动会再询问): {e}"[:200],
                         color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
                         size=SIZE_SMALL)))
-                finally:
-                    _写首次flag()
                     _关窗()
+                    return
+                page.show_dialog(ft.SnackBar(ft.Text(
+                    "桌面快捷方式已创建", color=MORANDI_ON_SURFACE,
+                    font_family=FONT_STACK, size=SIZE_SMALL)))
+                app_log.info("引导", "桌面快捷方式创建成功")
+                _写首次flag('已创建桌面快捷方式')
+                _关窗()
 
             def _跳过(_e=None):
                 app_log.info("引导", "用户选择暂不创建快捷方式")
-                _写首次flag()
+                _写首次flag('用户选择暂不创建')
                 _关窗()
 
             dlg = ft.AlertDialog(
