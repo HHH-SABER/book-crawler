@@ -23,9 +23,12 @@ from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn, page_header
 from ..ui_fluent import (open_dialog, close_dialog,
                           FONT_STACK, SIZE_SUBTITLE, SIZE_LABEL,
                           SIZE_SMALL, SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY,
-                          MORANDI_SECONDARY, MORANDI_SUCCESS, MORANDI_ERROR,
-                          MORANDI_WARNING, MORANDI_ACCENT, MORANDI_ON_SURFACE)
+                          WEIGHT_SUBTITLE, WEIGHT_BODY)
+# Phase 3 (2026-10-04) 页面令牌化: 颜色一律走 取色(令牌键) **并登记重刷**。
+# 为什么不能再用 `from ..ui_fluent import MORANDI_*`: 那是构建期求值一次的
+# 模块级**字符串**, 切主题时 ui_fluent.刷新兼容常量() 只改自己的命名空间,
+# 页面里的本地引用纹丝不动 → 夜间主题下这些控件颜色不掉色 (审查报告 Phase 3)。
+from ..ui_tokens import 取色, 登记重刷
 from . import history_data
 
 try:
@@ -63,6 +66,38 @@ def _dbg(source: str, message: str):
         except Exception:
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
+
+# ------------------------------------------------- Phase 3: 令牌取色小工具
+# 取色() 只在**构建期**求值, 所以每个用了令牌色的控件都必须 登记重刷,
+# 否则切主题时属性不会重算 —— 等于没迁移 (见 迁移规范 第二节)。
+def _色文本(文案: str, 令牌键, **kw) -> ft.Text:
+    """令牌取色文本 (令牌键 None = 不指定颜色), 并登记主题重刷。"""
+    控件 = ft.Text(文案, color=取色(令牌键) if 令牌键 else None, **kw)
+    if 令牌键:
+        登记重刷(控件, lambda c: setattr(c, 'color', 取色(令牌键)))
+    return 控件
+
+
+def _色图标(图标, 令牌键: str, **kw) -> ft.Icon:
+    """令牌取色图标, 并登记主题重刷。"""
+    控件 = ft.Icon(图标, color=取色(令牌键), **kw)
+    return 登记重刷(控件, lambda c: setattr(c, 'color', 取色(令牌键)))
+
+
+def _登记色(控件, 令牌键: str, 属性: str = 'color'):
+    """给已构建的控件登记某个颜色属性的重刷 (回调只改属性, 不调 update)。"""
+    return 登记重刷(控件, lambda c: setattr(c, 属性, 取色(令牌键)))
+
+
+def _登记按钮底(按钮, 令牌键: str):
+    """登记 ButtonStyle.bgcolor 的重刷 (按钮底色不是 color 属性, 需整体换样式)。"""
+    def _换(控件):
+        旧样式 = 控件.style
+        控件.style = ft.ButtonStyle(padding=旧样式.padding,
+                                    shape=旧样式.shape,
+                                    bgcolor=取色(令牌键),
+                                    color=旧样式.color)
+    return 登记重刷(按钮, _换)
 
 
 def _is_jsonable(v) -> bool:
@@ -186,6 +221,10 @@ class SiteManagePage:
         # 探测结果缓存 {域名: probe dict}
         self._probe_results = {}
         self._probing = set()
+        # Phase 3 UX 改进: 「全部测试」批量进度 (仅 UI 反馈, 不改探测逻辑)
+        #   _probe_batch = {'total','done','ok','fail'} 运行中; 结束置 None
+        self._probe_batch = None
+        self._probe_all_btn = None
         # P2-4: 近24h 风控事件聚合缓存 (懒加载, _refresh 时失效)
         self._risk_summary_cache = None
         # UI 引用
@@ -268,6 +307,7 @@ class SiteManagePage:
         probe_all_btn = tonal_btn("全部测试", icon=ft.Icons.NETWORK_CHECK,
                                   on_click=self._on_probe_all_click,
                                   tooltip="探测全部站点连接状态")
+        self._probe_all_btn = probe_all_btn   # Phase 3 UX: 批量进度改它的文案/禁用态
         import_btn = tonal_btn("导入", icon=ft.Icons.UPLOAD_FILE,
                                on_click=self._on_import_click,
                                tooltip="从 JSON 文件导入站点配置")
@@ -368,8 +408,9 @@ class SiteManagePage:
         if not lines:
             return ft.Container()
         return ft.Container(
-            content=ft.Column([ft.Text("⚠ " + ln, size=12, color=MORANDI_ERROR,
-                                       font_family=FONT_STACK) for ln in lines[:5]],
+            content=ft.Column([_色文本("⚠ " + ln, 'status-error', size=12,
+                                       font_family=FONT_STACK)
+                               for ln in lines[:5]],
                               spacing=3),
             bgcolor=ft.Colors.ERROR_CONTAINER, border_radius=8, padding=8, margin=0,
         )
@@ -415,8 +456,7 @@ class SiteManagePage:
         self._edit_card = make_card(
             ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.EDIT_OUTLINED, size=16,
-                            color=MORANDI_ACCENT),
+                    _色图标(ft.Icons.EDIT_OUTLINED, 'accent-fg', size=16),
                     ft.Text("站点编辑", size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
                             font_family=FONT_STACK),
                 ], spacing=6),
@@ -452,8 +492,7 @@ class SiteManagePage:
         self._adapter_card = make_card(
             ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.EXTENSION_OUTLINED, size=18,
-                            color=MORANDI_ACCENT),
+                    _色图标(ft.Icons.EXTENSION_OUTLINED, 'accent-fg', size=18),
                     ft.Text("站点适配插件 (免重新打包)", size=SIZE_SUBTITLE,
                             weight=WEIGHT_TITLE, font_family=FONT_STACK),
                 ], spacing=6),
@@ -536,17 +575,19 @@ class SiteManagePage:
                     color=ft.Colors.ON_ERROR_CONTAINER))
             self._adapter_view.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.TERMINAL if ok else ft.Icons.ERROR_OUTLINE,
-                            size=14,
-                            color=MORANDI_SUCCESS if ok else MORANDI_ERROR),
-                    ft.Text(st['file'], size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                            color=(MORANDI_SECONDARY if ok else MORANDI_ERROR),
+                    _色图标(ft.Icons.TERMINAL if ok else ft.Icons.ERROR_OUTLINE,
+                            'status-success' if ok else 'status-error',
+                            size=14),
+                    # 旧 MORANDI_SECONDARY 实为成功绿 (ui_fluent 历史名) → status-success
+                    _色文本(st['file'],
+                            'status-success' if ok else 'status-error',
+                            size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
                             font_family=FONT_STACK, max_lines=1,
                             overflow=ft.TextOverflow.ELLIPSIS),
                     ft.Text(st['domain'] or (st['error'] or '—'),
                             size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
                             font_family=FONT_STACK),
-                    ft.Text(cap_text, size=SIZE_TINY, color=MORANDI_ACCENT,
+                    _色文本(cap_text, 'accent-fg', size=SIZE_TINY,
                             font_family=FONT_STACK),
                     ft.Container(expand=True),
                     del_btn,
@@ -568,7 +609,7 @@ class SiteManagePage:
         card = make_card(
             ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.AUTO_FIX_HIGH, size=18, color=MORANDI_ACCENT),
+                    _色图标(ft.Icons.AUTO_FIX_HIGH, 'accent-fg', size=18),
                     ft.Text("选择器自愈建议 (站点改版自动发现)", size=SIZE_SUBTITLE,
                             weight=WEIGHT_TITLE, font_family=FONT_STACK),
                 ], spacing=6),
@@ -624,11 +665,12 @@ class SiteManagePage:
                 fns = '、'.join(sug.get('新增加密函数') or [])
                 self._heal_view.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ENCRYPTION_OUTLINED, size=14, color=MORANDI_WARNING),
-                        ft.Text(domain, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                                color=MORANDI_SECONDARY, font_family=FONT_STACK),
-                        ft.Text(f"未识别的加密调用: {fns}", size=SIZE_TINY,
-                                color=MORANDI_WARNING, font_family=FONT_STACK,
+                        _色图标(ft.Icons.ENCRYPTION_OUTLINED, 'status-warning',
+                                size=14),
+                        _色文本(domain, 'status-success', size=SIZE_SMALL,
+                                weight=WEIGHT_SUBTITLE, font_family=FONT_STACK),
+                        _色文本(f"未识别的加密调用: {fns}", 'status-warning',
+                                size=SIZE_TINY, font_family=FONT_STACK,
                                 expand=True, max_lines=1,
                                 overflow=ft.TextOverflow.ELLIPSIS),
                         ft.IconButton(
@@ -651,7 +693,9 @@ class SiteManagePage:
                 on_click=lambda e, dm=domain: self._on_heal_adopt(dm),
                 style=ft.ButtonStyle(
                     padding=2, shape=ft.RoundedRectangleBorder(radius=6),
-                    bgcolor=MORANDI_SUCCESS, color=ft.Colors.WHITE))
+                    bgcolor=取色('status-success'), color=ft.Colors.WHITE))
+            # Phase 3: 底色是构建期取色, 需登记重刷 (否则切夜间仍是日间绿)
+            _登记按钮底(adopt_btn, 'status-success')
             reject_btn = ft.IconButton(
                 icon=ft.Icons.CLOSE, icon_size=16,
                 tooltip=f"忽略 {domain} 的建议 (不并入配置)",
@@ -662,20 +706,21 @@ class SiteManagePage:
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                     color=ft.Colors.ON_SURFACE))
             conf = float(sug.get('置信度', 0) or 0)
-            conf_color = MORANDI_SUCCESS if conf >= 0.85 else (
-                MORANDI_WARNING if conf >= 0.7 else MORANDI_ERROR)
+            # Phase 3: 传令牌键而非色值 —— 文本构建时取色并登记重刷
+            conf_键 = ('status-success' if conf >= 0.85 else
+                       'status-warning' if conf >= 0.7 else 'status-error')
             self._heal_view.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Text(domain, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                            color=MORANDI_SECONDARY, font_family=FONT_STACK,
+                    _色文本(domain, 'status-success', size=SIZE_SMALL,
+                            weight=WEIGHT_SUBTITLE, font_family=FONT_STACK,
                             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
                     ft.Text(f"{sug.get('建议选择器', '—')} (中文{sug.get('容器中文数', '?')}"
                             f"/{sug.get('段落数', '?')}段)", size=SIZE_TINY,
                             color=ft.Colors.ON_SURFACE_VARIANT,
                             font_family=FONT_STACK,
                             max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(f"{conf:.2f}", size=SIZE_TINY, weight=WEIGHT_BODY,
-                            color=conf_color, font_family=FONT_STACK),
+                    _色文本(f"{conf:.2f}", conf_键, size=SIZE_TINY,
+                            weight=WEIGHT_BODY, font_family=FONT_STACK),
                     ft.Container(expand=True),
                     adopt_btn, reject_btn,
                 ], spacing=6),
@@ -742,12 +787,14 @@ class SiteManagePage:
         domain_field = ft.TextField(label="域名 (如 example.com)", dense=True, width=280,
                                     text_style=ft.TextStyle(size=SIZE_BODY,
                                                             font_family=FONT_STACK,
-                                                            color=MORANDI_ON_SURFACE))
+                                                            color=ft.Colors.ON_SURFACE))
         dialog = ft.AlertDialog(
             modal=True,
             # G-H1 (GUI 专项审查): 打包 EXE 中 dialog 文字缺显式 color 会渲染成
             # 不可见 (v2.4.19 教训, 关闭弹窗已修, 此处同类漏网)
-            title=ft.Text("新建适配器模板", color=MORANDI_ON_SURFACE,
+            # Phase 3: 旧 MORANDI_ON_SURFACE 本就是 ft.Colors.ON_SURFACE 别名
+            # (Flet 按 theme_mode 自动适配), 换成原名即可, 无需登记重刷。
+            title=ft.Text("新建适配器模板", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Column([domain_field], spacing=6, tight=True, width=320),
             actions=[
@@ -914,6 +961,8 @@ class SiteManagePage:
         pattern = cfg.get('pattern', '—')
 
         # 状态列: 健康度 · 反爬 · 探测结果 (合并为一个单元)
+        # Phase 3: parts 第二项改为**令牌键** (旧写法存 MORANDI_* 色值字符串,
+        # 构建期绑死 → 切主题不掉色), 颜色在下面建 Text 时取并登记重刷
         parts = []
         # 站点级速度配置标记 (P2): 仅设置了延时/线程时显示
         _speed_tags = []
@@ -922,38 +971,39 @@ class SiteManagePage:
         if cfg.get('threads') is not None:
             _speed_tags.append(f"{cfg.get('threads')}线程")
         if _speed_tags:
-            parts.append(("/".join(_speed_tags), MORANDI_SECONDARY))
+            parts.append(("/".join(_speed_tags), 'status-success'))
         health = self._health_of(cfg)
         if health:
             # 健康度为 "NN%" 字符串, 需转数值比较 (字符串比较会使 100% < 80%)
             hval = int(health.rstrip('%')) if health.rstrip('%').isdigit() else 0
-            hcolor = (MORANDI_SUCCESS if hval >= 80
-                      else MORANDI_WARNING if hval >= 50
-                      else MORANDI_ERROR)
-            parts.append((health, hcolor))
+            h_key = ('status-success' if hval >= 80
+                     else 'status-warning' if hval >= 50
+                     else 'status-error')
+            parts.append((health, h_key))
         prior = history_data.site_prior(domain)
         anti_seen = prior.get('反爬统计', {}) if isinstance(prior, dict) else {}
         # P2-4: 近 24h 风控事件优先展示 (rate_limit/blocked 用错误色)
         risk = self._domain_risk(domain)
         if risk["total"]:
             top = max(risk["types"], key=risk["types"].get)
-            rcolor = MORANDI_ERROR if top in ("rate_limit", "blocked") else MORANDI_WARNING
+            rcolor = ('status-error' if top in ("rate_limit", "blocked")
+                      else 'status-warning')
             parts.append((f"风控24h:{top}×{risk['types'][top]}", rcolor))
         elif anti_seen:
             top_anti = max(anti_seen, key=anti_seen.get)
-            parts.append((f"反爬:{top_anti}", MORANDI_WARNING))
+            parts.append((f"反爬:{top_anti}", 'status-warning'))
         probe = self._probe_results.get(domain)
         if probe:
             if probe.get('ok'):
                 parts.append((f"探测 {probe['status_code']}/{probe['elapsed']}s",
-                              MORANDI_SUCCESS))
+                              'status-success'))
             else:
                 parts.append((f"探测失败 {probe.get('status_code') or 'X'}",
-                              MORANDI_ERROR))
+                              'status-error'))
         if not parts:
             parts.append(("无记录", None))
         status_row = ft.Row([
-            ft.Text(t, size=SIZE_TINY, weight=WEIGHT_BODY, color=c,
+            _色文本(t, c, size=SIZE_TINY, weight=WEIGHT_BODY,
                     font_family=FONT_STACK)
             for t, c in parts[:2]
         ], spacing=6)
@@ -961,9 +1011,10 @@ class SiteManagePage:
         # 启用开关
         switch = ft.Switch(
             value=enabled,
-            active_color=MORANDI_SUCCESS,
+            active_color=取色('status-success'),
             on_change=lambda e, i=idx: self._on_toggle_enabled(i, e),
         )
+        _登记色(switch, 'status-success', 'active_color')
 
         # 操作: 测试 / 编辑 / 删除
         probe_btn = ft.IconButton(
@@ -993,13 +1044,19 @@ class SiteManagePage:
             return ft.Container(content=content, expand=flex,
                                 alignment=ft.Alignment(-1, 0))
 
+        # 域名文字: 未启用走 ft.Colors 别名 (自动适配, 无需重刷);
+        # 启用态是令牌色 → 必须登记重刷, 否则切夜间不掉色
+        域名文本 = ft.Text(domain, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                          color=(ft.Colors.ON_SURFACE_VARIANT if not enabled
+                                 else 取色('status-success')),
+                          font_family=FONT_STACK, max_lines=1,
+                          overflow=ft.TextOverflow.ELLIPSIS)
+        if enabled:
+            _登记色(域名文本, 'status-success')
+
         return ft.Container(
             content=ft.Row([
-                _cell(ft.Text(domain, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                              color=(ft.Colors.ON_SURFACE_VARIANT if not enabled
-                                     else MORANDI_SECONDARY),
-                              font_family=FONT_STACK, max_lines=1,
-                              overflow=ft.TextOverflow.ELLIPSIS), 26),
+                _cell(域名文本, 26),
                 _cell(ft.Text(pattern, size=SIZE_TINY, font_family=FONT_STACK,
                               color=ft.Colors.ON_SURFACE_VARIANT,
                               max_lines=1), 14),
@@ -1047,8 +1104,13 @@ class SiteManagePage:
         except Exception as _e:
             _dbg("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
-    def _on_probe_site(self, idx: int):
-        """测试连接 (后台线程探测)"""
+    def _on_probe_site(self, idx: int, 批次: dict = None):
+        """测试连接 (后台线程探测)
+
+        批次 非 None 时该站点计入「全部测试」进度 (Phase 3 UX 改进:
+        只增加进度反馈, 探测逻辑与单站点行为完全不变)。传批次字典而非
+        布尔, 是为了用对象身份确认"这一枪属于当前这一批", 防止跨批串号。
+        """
         if not (0 <= idx < len(self.configs)):
             return
         domain = self.configs[idx].get('domain', '')
@@ -1084,15 +1146,72 @@ class SiteManagePage:
             def _ui():
                 self._info_text.value = msg
                 self._refresh_table()
+                if 批次 is not None:
+                    # 进度累加 (在主线程跑: _dispatch → page.run_task)
+                    self._批量一步(批次, bool(result.get('ok')))
             self._dispatch(_ui)
 
         threading.Thread(target=_worker, daemon=True,
                           name=f"probe-{domain}").start()
 
+    def _批量进度刷新(self, 结束: bool = False):
+        """「全部测试」进度反馈: 运行中改按钮文案 + 禁用, 结束后还原。
+
+        Phase 3 UX 改进 (2026-10-04): 批量探测此前点完毫无动静, 用户
+        无法判断是在跑还是卡死 —— 现在运行中按钮显示「已测 x/y」,
+        结束由 _批量一步 给出一次性成功/失败汇总。
+        """
+        批 = self._probe_batch
+        按钮 = self._probe_all_btn
+        if 按钮 is None:
+            return
+        if 批 is None or 结束:
+            按钮.text = "全部测试"
+            按钮.disabled = False
+        else:
+            按钮.text = f"已测 {批['done']}/{批['total']}"
+            按钮.disabled = True
+
+    def _批量一步(self, 批: dict, ok: bool):
+        """某个站点探测结束 → 累加进度; 全部结束一次性汇总 (成功/失败)。
+
+        批 必须是**当前在跑的那一批** (对象身份比对): 批次被取代后
+        迟到的回调不再计数, 否则汇总会提前触发 / 数字串批。
+        """
+        if self._probe_batch is not 批:
+            return
+        批['done'] += 1
+        批['ok' if ok else 'fail'] += 1
+        if 批['done'] >= 批['total']:
+            self._probe_batch = None
+            self._批量进度刷新(结束=True)
+            self._info_text.value = (f"全部测试完成: {批['total']} 个站点, "
+                                     f"成功 {批['ok']} 个, 失败 {批['fail']} 个")
+        else:
+            self._批量进度刷新()
+
     def _on_probe_all_click(self, e):
-        """全部测试 (逐站点后台探测)"""
-        for i in range(len(self.configs)):
-            self._on_probe_site(i)
+        """全部测试 (逐站点后台探测) —— 带进度汇总 (Phase 3 UX 改进)
+
+        只增加反馈与状态: 探测入口仍是 _on_probe_site, 测试逻辑零改动。
+        """
+        if self._probe_batch is not None:
+            return   # 已有一批在跑 (按钮已禁用, 这里是二次保险)
+        目标 = [i for i, c in enumerate(self.configs)
+                if (c.get('domain') or '')
+                and c.get('domain') not in self._probing]
+        if not 目标:
+            self._info_text.value = ("已有探测进行中" if self._probing
+                                     else "没有可测试的站点")
+            self._page_update()
+            return
+        # 进度状态仅用于 UI 反馈 (在完成回调里累加, 不做任何探测决策)
+        批 = {'total': len(目标), 'done': 0, 'ok': 0, 'fail': 0}
+        self._probe_batch = 批
+        self._批量进度刷新()
+        for i in 目标:
+            self._on_probe_site(i, 批次=批)
+        self._page_update()
 
     def _on_edit_site(self, idx: int):
         """编辑站点: 填充底部编辑卡并展开"""

@@ -12,8 +12,9 @@
 
 ## 锁定的契约
 
-1. 同 URL **已有在跑/排队任务** (status∈{pending,running,queued} 或线程存活)
+1. 同 URL **已有在跑/排队任务** (status∈{pending,running} 或线程存活)
    → `create_task` 幂等复用返回该 id, **绝不新建第二行**。
+   (2026-10-04 Phase 3: 去掉幽灵状态 `queued` —— 全工程从未给 task.status 赋过该值。)
 2. 同 URL **只有终态旧记录** (completed/failed/stopped/interrupted 且线程已死)
    → 新建本轮任务, 并把旧残影展示项清除 (delete_task, 不删输出文件)。
 3. 不同 URL 互不影响, 各自的残影/新建独立处理。
@@ -93,7 +94,10 @@ class Test同URL任务判重(unittest.TestCase):
         self.assertNotIn('task_6', self.mgr.tasks, 'completed 残影应清除')
         self.assertNotIn('task_7', self.mgr.tasks, 'failed 残影应清除')
         self.assertIn(new, self.mgr.tasks)
-        self.assertEqual(self.mgr.tasks[new].status, 'running')
+        # 2026-10-04 (Phase 3) 语义修正: 新建任务初始态是 `pending`「等待中」,
+        # 因为线程启动后可能先在同域闸门排队; 拿到闸门才转 running。
+        # 旧断言写 'running' —— 那时 pending 是个永远不会被赋值的死状态。
+        self.assertEqual(self.mgr.tasks[new].status, 'pending')
         同URL = [x for x in self.mgr.tasks.values() if x.url == self.url]
         self.assertEqual(len(同URL), 1, '清理后同 URL 应恰好 1 条新任务')
 
@@ -117,6 +121,50 @@ class Test同URL任务判重(unittest.TestCase):
         new = self.mgr.create_task(self.url)
         self.assertNotIn('task_9', self.mgr.tasks)
         self.assertNotEqual(new, 'task_9')
+
+
+class Test排队状态语义(unittest.TestCase):
+    """2026-10-04 (Phase 3): `pending` 从死状态变成真实排队态。
+
+    旧实现: create_task 直接写 `running`, 而同域闸门排队期间也保持 `running` ——
+    于是 `pending`（状态徽章「等待中」）在整条链路上**从未被赋值过**; 界面把
+    "在排队"谎报成"抓取中"。另外 `_同URL判重` 判活时引用了一个从未存在的
+    `queued`, 属幽灵状态。
+    """
+
+    def setUp(self):
+        self._根 = _隔离状态根(self)
+
+    def test_排队提示把状态置为pending(self):
+        from task_manager import TaskInfo, _排队提示
+        t = TaskInfo(task_id='t1', url='https://example.com/b', title='书',
+                     status='running')
+        _排队提示(t)
+        self.assertEqual(t.status, 'pending', '排队期间应显示「等待中」而非「抓取中」')
+
+    def test_幽灵状态queued不再算活跃(self):
+        """queued 从未被赋值: 只有 queued 且线程已死的任务不得判为活跃"""
+        t = TaskInfo(task_id='ghost', url='https://example.com/b', title='书',
+                     status='queued')
+        mgr = TaskManager(page=None)
+        mgr.tasks['ghost'] = t
+        复用, _残影 = mgr._同URL判重('https://example.com/b')
+        self.assertIsNone(复用, 'queued 是幽灵状态, 不得当作活跃任务')
+
+    def test_重启后pending恢复为interrupted(self):
+        """否则残留的 pending 会被判活 → 同 URL 再提交被静默复用成僵尸任务"""
+        import json
+        目录 = Path(_path_utils.get_state_root()) / '数据'
+        目录.mkdir(parents=True, exist_ok=True)
+        (目录 / '任务历史.json').write_text(json.dumps(
+            [{'task_id': 'task_1', 'url': 'https://example.com/b', 'title': '书',
+              'mode': 'full', 'status': 'pending', 'metrics': {}}],
+            ensure_ascii=False), encoding='utf-8')
+        mgr = TaskManager(page=None)
+        恢复 = mgr.tasks.get('task_1')
+        self.assertIsNotNone(恢复, '历史应被恢复')
+        self.assertEqual(恢复.status, 'interrupted',
+                         'restart 后 pending 必须转 interrupted (线程已死)')
 
 
 if __name__ == '__main__':

@@ -623,7 +623,14 @@ def _获取域闸门(闸门, stop_flag=None, 占用提示=None) -> bool:
 
 
 def _排队提示(task) -> None:
-    """同域排队时的可见提示 (任务日志 + 应用日志)"""
+    """同域排队时的可见提示 (任务日志 + 应用日志)。
+
+    2026-10-04 (Phase 3): 同时把状态置为 **pending「等待中」**。
+    旧实现在闸门排队期间任务一直是 `running` → 界面把"在排队"谎报成"抓取中",
+    而 `pending` 这个状态在整条链路上从未被赋值过 (死状态), 状态徽章也就永远
+    显示不出"等待中"这一档。
+    """
+    task.status = 'pending'
     task.logs.append({'time': time.strftime('%H:%M:%S'),
                       'msg': '[排队] 同站已有任务在运行, 等待轮转 (同域串行防封)'})
     if app_log is not None:
@@ -778,7 +785,10 @@ class TaskManager:
                 t._恢复项 = True
                 t.metrics = TaskMetrics(**{k: v for k, v in m.items()
                                            if k in _指标字段})
-                if t.status == 'running':
+                if t.status in ('running', 'pending'):
+                    # 2026-10-04 (Phase 3): `pending`(同域排队中) 也必须转 interrupted ——
+                    # 重启后线程必然已死; 若把 pending 原样留着, 它会被 `_同URL判重`
+                    # 当成"活跃", 同一 URL 再次提交就被静默复用成僵尸任务。
                     t.status = 'interrupted'
                     t.error = t.error or '程序退出时中断 (可重新下载续传)'
                     t.metrics.end_time = 0.0
@@ -825,14 +835,17 @@ class TaskManager:
     def _同URL判重(self, url: str):
         """锁内快照同 URL 现存任务, 返回 (可复用id或None, 待清理残影id列表).
 
-        活跃判定: status∈{pending,running,queued} 或线程仍存活。
+        活跃判定: status∈{pending,running} 或线程仍存活。
+        (2026-10-04 Phase 3: 去掉幽灵状态 `queued` —— 全工程从未给 task.status
+         赋过该值, 它只是让人以为"还有第三种活跃态"。)
+
         本方法只读快照; 实际清理 (delete_task 自带锁) 必须由调用方在锁外执行,
         防止非重入锁自死锁。
         """
         with self._lock:
             同URL = [t for t in self.tasks.values() if t.url == url]
             for t in 同URL:
-                活着 = (t.status in ("pending", "running", "queued")
+                活着 = (t.status in ("pending", "running")
                         or bool(t.thread is not None and t.thread.is_alive()))
                 if 活着 and not t.stop_flag.is_set():
                     return t.task_id, []
@@ -869,7 +882,10 @@ class TaskManager:
             task_id=task_id,
             url=url,
             mode=mode,
-            status="running",
+            # 2026-10-04 (Phase 3): 新建即 `pending「等待中」` —— 线程启动后
+            # 可能在同域闸门排队 (`_排队提示` 保持 pending), 真正开抓时才转 running。
+            # 旧实现建好就写 running, 于是 pending 永远是死状态, 徽章也显示不出等待中。
+            status="pending",
             chapter_range=chapter_range,
             threads=threads,
             delay=delay,
@@ -1067,12 +1083,15 @@ class TaskManager:
                              + (" 增量=开" if incremental else ""))
             # 同域闸门: 同一站点最多 1 个任务在抓 (对齐 run_batch 限流)。
             # 同站并发事故 (2026-09-12): GUI 批量 11 URL 同站并发 → WAF 拦截;
-            # 排队期间任务保持 running, 日志可见, 可被停止打断。
+            # 排队期间任务状态为 pending「等待中」(2026-10-04 Phase 3 修正:
+            # 旧实现排队期间谎报 running), 日志可见, 可被停止打断。
             同域闸门 = _取域闸门(url)
             已获闸 = _获取域闸门(同域闸门, task.stop_flag,
                                 占用提示=lambda: _排队提示(task))
             if not 已获闸:
                 return  # 排队等待中被停止 (stop_task 已置终态)
+            # 拿到闸门 = 真正开抓, 由「等待中」转「抓取中」
+            task.status = 'running'
             try:
                 run_crawl(
                     catalog_url=url,

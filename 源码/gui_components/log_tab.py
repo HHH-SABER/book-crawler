@@ -25,8 +25,11 @@ from .ui_theme import (make_card, tonal_btn,
 
 # 统一字体规范
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                         SIZE_BODY, WEIGHT_BODY,
-                         MORANDI_ERROR, open_dialog)
+                         SIZE_BODY, WEIGHT_BODY, open_dialog)
+# Phase 3 (2026-10-04): 页面颜色一律走令牌, 且登记重刷 —— 直接 import MORANDI_*
+# 绑到的是**字符串对象**, 切主题不会变; 见 文档/审查报告汇总.md 的 Phase 3 结论。
+from .ui_tokens import 取色, 登记重刷
+from . import states
 try:
     import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
 except Exception:
@@ -43,6 +46,17 @@ def _dbg(source: str, message: str):
 
 
 _MAX_DISPLAY_LINES = 3000   # 大文件只显示尾部 N 行
+
+
+def 错误文本(文案: str) -> ft.Text:
+    """错误提示文本 —— 走令牌取色 **并登记重刷**(Phase 3, 2026-10-04)。
+
+    旧写法 `ft.Text(..., color=MORANDI_ERROR)` 绑的是构建期求值的字符串,
+    切夜间主题后这句错误提示仍是日间色 (审查报告 Phase 3 结论)。
+    """
+    控件 = ft.Text(文案, size=SIZE_BODY, color=取色('status-error'),
+                  font_family=FONT_STACK)
+    return 登记重刷(控件, lambda c: setattr(c, 'color', 取色('status-error')))
 
 
 def get_log_dir() -> str:
@@ -244,9 +258,7 @@ class LogTab:
         self._all_lines = []
         self.log_list.controls.clear()
         if not os.path.isfile(path):
-            self.log_list.controls.append(
-                ft.Text(f"文件不存在: {filename}", size=SIZE_BODY,
-                        color=MORANDI_ERROR, font_family=FONT_STACK))
+            self.log_list.controls.append(错误文本(f"文件不存在: {filename}"))
             return
         try:
             # 尾部读取: seek 到 (文件大小 - 2MB) 处, 丢弃首个可能截断的半行
@@ -261,9 +273,7 @@ class LogTab:
                 text = text.split('\n', 1)[1]
             lines = text.splitlines()
         except OSError as ex:
-            self.log_list.controls.append(
-                ft.Text(f"读取失败: {ex}", size=SIZE_BODY,
-                        color=MORANDI_ERROR, font_family=FONT_STACK))
+            self.log_list.controls.append(错误文本(f"读取失败: {ex}"))
             return
 
         if len(lines) > _MAX_DISPLAY_LINES:
@@ -346,8 +356,41 @@ class LogTab:
                 ft.Text(line, size=SIZE_TINY,
                         font_family=LOG_TERMINAL_FONT,
                         color=log_line_color(line), selectable=True))
+        if not lines:
+            # Phase 3 (2026-10-04): 筛选后为空不再是一片空白 —— 统一空态 + 一键清除筛选。
+            # 旧行为: controls 直接为空 → 日志区纯黑空白页, 用户以为程序卡死。
+            if self._all_lines:
+                self.log_list.controls.append(states.筛选后为空(
+                    清除筛选回调=self._清除筛选, 说明=self._筛选说明()))
+            else:
+                self.log_list.controls.append(states.首次为空())
         if self.status_text is not None:
             self.status_text.value = f"显示 {len(lines)} / {len(self._all_lines)} 行"
+
+    def _筛选说明(self) -> str:
+        """当前筛选条件的人话描述 (空态里告诉用户"为什么一行都没有")"""
+        bits = []
+        if self.source_dd is not None and (self.source_dd.value or '__all__') != '__all__':
+            bits.append(f"来源={self.source_dd.value}")
+        if self._level != 'all':
+            bits.append(f"级别={self._level.upper()}")
+        if self._keyword:
+            bits.append(f"关键词“{self._keyword}”")
+        return ("当前筛选: " + " / ".join(bits)) if bits else ""
+
+    def _清除筛选(self, e=None):
+        """清空筛选条件并重渲染 (供空态的「清除筛选」按钮调用)"""
+        try:
+            self._level = 'all'
+            self._keyword = ''
+            for 控件, 值 in ((self.source_dd, '__all__'), (self.level_dd, 'all'),
+                            (self.keyword_field, '')):
+                if 控件 is not None:
+                    控件.value = 值
+            self._render_lines()
+            self.log_list.update()
+        except Exception as _e:
+            _dbg("运行日志", f'清除筛选失败: {type(_e).__name__}: {_e}')
 
     # ------------------------------------------------------------ 动作按钮
     def _on_copy(self, e=None):

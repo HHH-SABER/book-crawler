@@ -150,9 +150,11 @@ def main(page: ft.Page):
     from gui_components.ui_fluent import (
         make_morandi_theme, make_morandi_dark_theme,
         FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
-        MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_RUNNING, MORANDI_WARNING,
-        MORANDI_ON_SURFACE,          # 死书弹窗文字 (EXE 缺色即不可见, G-H1 教训)
     )
+    # 2026-10-04 (Phase 3): 状态色改走 ui_tokens 令牌 + 登记重刷 ——
+    # 绑 ui_fluent 的 MORANDI_* 字符串常量时, 切主题这些控件不会换色。
+    from gui_components.ui_tokens import 取色, 登记重刷
+
     page.theme = make_morandi_theme()
     page.dark_theme = make_morandi_dark_theme()
 
@@ -219,14 +221,14 @@ def main(page: ft.Page):
         正文 = f"《{标题}》\n类型: {类型}\n{原因}"
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("这本书可能已被删除", color=MORANDI_ON_SURFACE,
+            title=ft.Text("这本书可能已被删除", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Text(
                 f"{正文}\n\n"
                 f"是否删除这本书的记录?\n"
                 f"（任务/书架/网站清单三处, 已下载的文件不会删除）",
                 size=SIZE_SMALL, font_family=FONT_STACK,
-                color=MORANDI_ON_SURFACE),
+                color=ft.Colors.ON_SURFACE),
             actions=[
                 ft.TextButton("稍后处理",
                               on_click=lambda _: _关死书弹窗(dialog)),
@@ -240,7 +242,7 @@ def main(page: ft.Page):
             page.show_dialog(dialog)
         except Exception as e:
             app_log.debug("死书", f"弹窗打开失败, 降级为提示: {type(e).__name__}: {e}")
-            page.show_dialog(ft.SnackBar(ft.Text(正文, color=MORANDI_ON_SURFACE,
+            page.show_dialog(ft.SnackBar(ft.Text(正文, color=ft.Colors.ON_SURFACE,
                                                 font_family=FONT_STACK,
                                                 size=SIZE_SMALL)))
         app_log.info("死书", f"询问删除: {类型} {t.url}")
@@ -269,7 +271,7 @@ def main(page: ft.Page):
         地址框 = ft.TextField(
             hint="粘贴新的小说目录页网址 (http:// 或 https://)",
             text_style=ft.TextStyle(size=SIZE_SMALL, font_family=FONT_STACK,
-                                    color=MORANDI_ON_SURFACE),
+                                    color=ft.Colors.ON_SURFACE),
             dense=True,
         )
 
@@ -278,7 +280,7 @@ def main(page: ft.Page):
             if not 新址.lower().startswith(("http://", "https://")):
                 page.show_dialog(ft.SnackBar(ft.Text(
                     "请先粘贴有效的新目录页网址 (以 http:// 或 https:// 开头)",
-                    color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
+                    color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
                     size=SIZE_SMALL)))
                 return
             try:
@@ -291,14 +293,14 @@ def main(page: ft.Page):
 
         dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("网站与书籍都已失效", color=MORANDI_ON_SURFACE,
+            title=ft.Text("网站与书籍都已失效", color=ft.Colors.ON_SURFACE,
                           font_family=FONT_STACK),
             content=ft.Column([
                 ft.Text(f"《{标题}》\n类型: {类型}\n{原因}\n\n"
                         f"该书的网站已无法访问。换一个网址可继续抓取同名书籍;\n"
                         f"不补充则删除这本书的记录 (已下载的文件不会删除)。",
                         size=SIZE_SMALL, font_family=FONT_STACK,
-                        color=MORANDI_ON_SURFACE),
+                        color=ft.Colors.ON_SURFACE),
                 地址框,
             ], tight=True, spacing=10),
             actions=[
@@ -333,13 +335,13 @@ def main(page: ft.Page):
                 return
             if n.get('状态') == 'success':
                 行 = f"抓取完成: 《{n.get('书名', '')}》"
-                色 = MORANDI_SUCCESS
+                色 = 取色('status-success')
             else:
                 行 = f"抓取失败: 《{n.get('书名', '')}》"
                 原因 = (n.get('原因') or '').strip()
                 if 原因:
                     行 += f"\n{原因}"
-                色 = MORANDI_ERROR
+                色 = 取色('status-error')
             # EXE 显式 color 契约 (G-H1): 终态字用主题色, 正文兜底 ON_SURFACE
             page.show_dialog(ft.SnackBar(
                 ft.Text(行, color=色, font_family=FONT_STACK,
@@ -403,6 +405,50 @@ def main(page: ft.Page):
 
     # 任务表格行点击 → 选中 (右侧面板日志/详情自动跟随); 预览按钮 → 切到文件预览
     task_table.on_open_preview = lambda tid: drawer.open("preview", tid)
+
+    # ---- 窄窗口适配 (Phase 3, 2026-10-04): 960px 下任务表横向溢出 538px ----
+    # 单档阈值 1200px —— 刻意不做 720/480 多档: 页面按 1200px 以上设计, 再细分
+    # 收益低而分支组合爆炸 (审查结论)。120ms 防抖: 拖动窗口时 on_resize 高频触发,
+    # 每次重排所有列会明显卡顿。
+    _窄档 = [None]
+
+    def _计算窄档():
+        try:
+            宽 = int(getattr(page, 'width', 0) or 0)
+            if 宽 <= 0:
+                return
+            窄 = 宽 <= 1200
+            if _窄档[0] == 窄:
+                return
+            _窄档[0] = 窄
+            for _目标 in (task_table, drawer):
+                _设 = getattr(_目标, '设置窄档', None)   # 接口由 task_table/drawer 提供
+                if callable(_设):
+                    try:
+                        _设(窄)
+                    except Exception as _e2:
+                        app_log.debug("GUI", f'窄档切换失败({type(_目标).__name__}): '
+                                             f'{type(_e2).__name__}: {_e2}')
+            app_log.info("系统", f"窗口 {宽}px → {'窄档(隐藏次级列)' if 窄 else '宽档'}")
+        except Exception as _e:
+            app_log.debug("GUI", f'窄档计算失败: {type(_e).__name__}: {_e}')
+
+    _尺寸防抖 = [None]
+
+    def _on_page_resize(e=None):
+        """窗口尺寸变化 → 120ms 防抖后重算窄档 (Phase 3)"""
+        try:
+            import threading
+            if _尺寸防抖[0] is not None:
+                _尺寸防抖[0].cancel()
+            _尺寸防抖[0] = threading.Timer(0.12, _计算窄档)
+            _尺寸防抖[0].daemon = True
+            _尺寸防抖[0].start()
+        except Exception as _e:
+            app_log.debug("GUI", f'窗口尺寸事件处理失败: {type(_e).__name__}: {_e}')
+
+    page.on_resize = _on_page_resize
+    _on_page_resize()      # 首帧 page.width 可能尚未就绪 → 交给 120ms 后的首次计算
 
     crawl_workbench = ft.Row([
         ft.Column([
@@ -487,7 +533,7 @@ def main(page: ft.Page):
     output_dir = get_default_output_dir()
 
     # 底部状态条: 实时任务摘要 (唯一状态显示处; 侧边栏不再重复渲染)
-    status_dot = ft.Icon(ft.Icons.CIRCLE, color=MORANDI_SUCCESS, size=8)
+    status_dot = ft.Icon(ft.Icons.CIRCLE, color=取色('status-success'), size=8)
     status_text = ft.Text("就绪", size=SIZE_SMALL, weight=WEIGHT_BODY,
                           font_family=FONT_STACK)
     status_bar = ft.Container(
@@ -554,17 +600,17 @@ def main(page: ft.Page):
                 dead = sum(1 for t in tasks if t.status == "dead_pending")
                 total = len(tasks)
                 if running > 0:
-                    dot_color, label = MORANDI_RUNNING, f"抓取中 {running} 项 · 共 {total}"
+                    dot_color, label = 取色('status-warning'), f"抓取中 {running} 项 · 共 {total}"
                     if done:
                         label += f" · 已完成 {done}"
                 elif dead:
-                    dot_color, label = MORANDI_WARNING, f"书已删除 {dead} 项 · 待确认"
+                    dot_color, label = 取色('status-warning'), f"书已删除 {dead} 项 · 待确认"
                 elif failed:
-                    dot_color, label = MORANDI_ERROR, f"就绪 · 失败 {failed} 项"
+                    dot_color, label = 取色('status-error'), f"就绪 · 失败 {failed} 项"
                 elif done:
-                    dot_color, label = MORANDI_SUCCESS, f"就绪 · 已完成 {done} 项"
+                    dot_color, label = 取色('status-success'), f"就绪 · 已完成 {done} 项"
                 else:
-                    dot_color, label = MORANDI_SUCCESS, "就绪"
+                    dot_color, label = 取色('status-success'), "就绪"
                 if label != last:
                     last = label
                     status_dot.color = dot_color
@@ -661,12 +707,12 @@ def main(page: ft.Page):
                     app_log.info("引导", f"快捷方式创建失败: {type(e).__name__}: {e}")
                     page.show_dialog(ft.SnackBar(ft.Text(
                         f"快捷方式创建失败 (下次启动会再询问): {e}"[:200],
-                        color=MORANDI_ON_SURFACE, font_family=FONT_STACK,
+                        color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
                         size=SIZE_SMALL)))
                     _关窗()
                     return
                 page.show_dialog(ft.SnackBar(ft.Text(
-                    "桌面快捷方式已创建", color=MORANDI_ON_SURFACE,
+                    "桌面快捷方式已创建", color=ft.Colors.ON_SURFACE,
                     font_family=FONT_STACK, size=SIZE_SMALL)))
                 app_log.info("引导", "桌面快捷方式创建成功")
                 _写首次flag('已创建桌面快捷方式')
@@ -679,13 +725,13 @@ def main(page: ft.Page):
 
             dlg = ft.AlertDialog(
                 modal=True,
-                title=ft.Text("欢迎使用小说爬虫", color=MORANDI_ON_SURFACE,
+                title=ft.Text("欢迎使用小说爬虫", color=ft.Colors.ON_SURFACE,
                               font_family=FONT_STACK),
                 content=ft.Text(
                     "是否在桌面创建一个快捷方式, 方便下次打开?\n"
                     "(也可以稍后从程序目录直接运行)",
                     size=SIZE_SMALL, font_family=FONT_STACK,
-                    color=MORANDI_ON_SURFACE),
+                    color=ft.Colors.ON_SURFACE),
                 actions=[
                     ft.TextButton("暂不创建", on_click=_跳过),
                     ft.TextButton("创建快捷方式", on_click=_创建),
@@ -926,8 +972,8 @@ def main(page: ft.Page):
         """
         from gui_components.ui_fluent import (
             txt, SIZE_SUBTITLE, WEIGHT_SUBTITLE,
-            MORANDI_ON_SURFACE, MORANDI_ON_SURFACE_VARIANT,
         )
+        # 令牌色由 main() 作用域的 取色/登记重刷 提供 (Phase 3)
 
         记住 = ft.Checkbox(value=False)
         # 埋点: 冒烟脚本(测试/冒烟_关闭关键路径.py)以日志行为断言依据,
@@ -964,7 +1010,7 @@ def main(page: ft.Page):
             _弹层关闭()
 
         rows = [txt("要最小化到系统托盘（远控保持运行），还是直接退出？",
-                    color=MORANDI_ON_SURFACE)]
+                    color=ft.Colors.ON_SURFACE)]
         # 运行中任务警示: 直接退出会中断抓取 (进度已存盘, 可断点续传)
         try:
             运行数 = sum(1 for _t in task_manager.tasks.values()
@@ -983,22 +1029,22 @@ def main(page: ft.Page):
         rows.append(ft.Row(
             [记住,
              ft.GestureDetector(
-                 content=txt("记住我的选择，以后不再询问", color=MORANDI_ON_SURFACE),
+                 content=txt("记住我的选择，以后不再询问", color=ft.Colors.ON_SURFACE),
                  on_tap=_切换记住)],
             spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER))
 
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Row(
-                [ft.Icon(ft.Icons.LOGOUT, size=20, color=MORANDI_ON_SURFACE_VARIANT),
+                [ft.Icon(ft.Icons.LOGOUT, size=20, color=取色('text-secondary')),
                  txt("关闭窗口", size=SIZE_SUBTITLE, weight=WEIGHT_SUBTITLE,
-                     color=MORANDI_ON_SURFACE)],
+                     color=ft.Colors.ON_SURFACE)],
                 spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             content=ft.Container(
                 content=ft.Column(rows, tight=True, spacing=12), width=430),
             actions=[
                 ft.TextButton("直接退出", on_click=_选退出,
-                              style=ft.ButtonStyle(color=MORANDI_ERROR)),
+                              style=ft.ButtonStyle(color=取色('status-error'))),
                 ft.TextButton("取消", on_click=_取消),
                 ft.FilledButton("最小化到托盘", on_click=_选托盘, autofocus=True),
             ],

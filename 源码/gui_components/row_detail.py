@@ -8,8 +8,11 @@ import time
 
 from .task_manager import TaskInfo
 from .ui_fluent import (FONT_STACK, SIZE_TINY,
-                         WEIGHT_SUBTITLE, WEIGHT_BODY,
-                         MORANDI_SUCCESS, MORANDI_ERROR, MORANDI_WARNING)
+                         WEIGHT_SUBTITLE, WEIGHT_BODY)
+# Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
+# **构建期求值**的字符串对象, 切夜间主题后本地引用不会被更新 (见
+# phase3_迁移规范.md / log_tab.py 样例)。取色() 只在构建期取值 → 配 登记重刷()。
+from .ui_tokens import 取色, 登记重刷
 
 
 def _fmt_elapsed(task: TaskInfo) -> str:
@@ -36,16 +39,23 @@ def _fmt_elapsed(task: TaskInfo) -> str:
     return f"{h}h{m:02d}m"
 
 
-def _kv(label: str, value: str, color=None) -> ft.Control:
-    """键值对展示单元"""
+def _kv(label: str, value: str, color=None, 色键: str = None) -> ft.Control:
+    """键值对展示单元。
+
+    Phase 3: 色键 非空 = 走令牌色并登记主题重刷 (取色是构建期求值, 不登记
+    切夜间就掉不了色); 色键为 None 时沿用调用方给的直接色值 / M3 别名。
+    """
+    值控件 = ft.Text(value, size=SIZE_TINY, weight=WEIGHT_BODY,
+                    color=(取色(色键) if 色键 else (color or ft.Colors.ON_SURFACE)),
+                    font_family=FONT_STACK, selectable=True,
+                    expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
+    if 色键:
+        登记重刷(值控件, lambda c, k=色键: setattr(c, 'color', 取色(k)))
     return ft.Row([
         ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
                 color=ft.Colors.ON_SURFACE_VARIANT,
                 font_family=FONT_STACK, width=64),
-        ft.Text(value, size=SIZE_TINY, weight=WEIGHT_BODY,
-                color=color or ft.Colors.ON_SURFACE,
-                font_family=FONT_STACK, selectable=True,
-                expand=True, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+        值控件,
     ], spacing=6)
 
 
@@ -80,29 +90,30 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
     else:
         chain = engine_now
     engine_body = ft.Column([
+        # Phase 3: 令牌键替代 MORANDI_* 字符串常量 (后者切夜间不变色)
         _kv("当前引擎", engine_now,
-            color=MORANDI_SUCCESS if mt.engine else None),
+            色键='status-success' if mt.engine else None),
         _kv("降级链", chain),
     ], spacing=2)
 
     # 反爬区
     anti = mt.anti_spider_type or "未检测到"
-    anti_color = MORANDI_WARNING if mt.anti_spider_type else None
+    anti_色键 = 'status-warning' if mt.anti_spider_type else None
     anti_body = ft.Column([
-        _kv("命中类型", anti, color=anti_color),
+        _kv("命中类型", anti, 色键=anti_色键),
         _kv("增量跳过", f"{mt.incremental_skipped} 章"
                         + (" (未启用)" if not mt.incremental_skipped else "")),
     ], spacing=2)
 
     # 质检区
     if mt.quality_score >= 0:
-        q_color = MORANDI_SUCCESS if mt.quality_passed else MORANDI_ERROR
+        q_色键 = 'status-success' if mt.quality_passed else 'status-error'
         q_text = f"{mt.quality_score:.0f} 分 ({'通过' if mt.quality_passed else '未通过'})"
     else:
-        q_color = None
+        q_色键 = None
         q_text = "尚未质检"
     quality_body = ft.Column([
-        _kv("最近质检", q_text, color=q_color),
+        _kv("最近质检", q_text, 色键=q_色键),
         # 清洗摘要 (2026-09-29 可观测性): 最近一章的删除计数, 无数据不显示
         *([
             _kv("清洗", _清洗摘要文本(mt.clean_summary))
@@ -116,7 +127,8 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
         _section("质检", ft.Icons.FACT_CHECK_OUTLINED, quality_body),
     ]
     if task.error:
-        err_body = _kv("错误", task.error[:120], color=MORANDI_ERROR)
+        # Phase 3: 令牌色 + 登记重刷 (旧写法绑的字符串常量切夜间不变色)
+        err_body = _kv("错误", task.error[:120], 色键='status-error')
         sections.append(_section("错误", ft.Icons.ERROR_OUTLINE, err_body))
 
     return ft.Container(

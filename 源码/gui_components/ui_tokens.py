@@ -267,6 +267,7 @@ import threading as _threading
 _状态锁 = _threading.RLock()
 _当前夜间 = False         # 当前是否夜间; 初值 False (gui_app 启动即 LIGHT)
 _重刷表 = []              # [(weakref(ctrl), 回调), ...] 主题切换时统一回调
+_重刷表压缩阈值 = 512      # 超过即压缩已死弱引用 (2026-10-04, 防全量重建致表单调增长)
 
 
 def 主题状态() -> bool:
@@ -323,10 +324,17 @@ def 登记重刷(ctrl, 回调):
     import weakref
     with _状态锁:
         try:
-            _重刷表.append((weakref.ref(ctrl), 回调))
+            引用 = weakref.ref(ctrl)
         except TypeError:
             # 不支持弱引用的对象直接跳过 (不为此中断构建)
             return ctrl
+        # 2026-10-04 (Phase 3 加固): 顺手压缩已死引用。
+        # 页面 refresh() 常是"全量重建"(500 行表格一次构建就登记 1600+ 条, 搜索框
+        # 每键又重建一次) —— 旧实现只在切主题时清理, 登记表会在长会话里单调增长、
+        # 切主题遍历越来越慢。超过阈值做一次 O(n) 压缩, 摊销后每次仍是 O(1)。
+        if len(_重刷表) >= _重刷表压缩阈值:
+            _重刷表[:] = [(r, cb) for (r, cb) in _重刷表 if r() is not None]
+        _重刷表.append((引用, 回调))
     return ctrl
 
 
