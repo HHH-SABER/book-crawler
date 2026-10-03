@@ -998,6 +998,24 @@ class TaskManager:
             # 如果状态还是running且没有标记completed，标记为completed
             if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")
+                # 阶段5 (重新检测): 抓成功 ⇒ 该网址不再是死书, 移除死书清单记录。
+                # 清理**必须挂在数据层**, 不能靠死书清单页刷新时顺带处理 ——
+                # 重检后用户多半直接切到任务表看进度, 不在本页;
+                # 若清理挂 UI, 记录会一直躺在清单里, 用户以为"重新检测没用"。
+                # 放在 网站清单记录 之前: 它是纯 bookkeeping, 失败不该影响抓取结果。
+                try:
+                    from 死书处理 import 标记已恢复
+                    恢复 = 标记已恢复(url)
+                    if 恢复.get('移除'):
+                        task.dead = None      # 重检成功 ⇒ 同步清任务上的死书标记
+                        if app_log is not None:
+                            app_log.info(f"任务{task.task_id}",
+                                         f"抓取成功, 已移除死书记录: {url}")
+                except Exception as _e_恢复:
+                    if app_log is not None:
+                        app_log.debug(f"任务{task.task_id}",
+                                      f"死书记录清理失败 (不影响抓取结果): "
+                                      f"{type(_e_恢复).__name__}")
                 # v2.4.28: 抓取成功 → 自动记录 网站清单 (网址+站名+书名, 去重)。
                 # 任务可能因站点异常只抓到部分章节 (failed>0 也算已尽力跑完),
                 # 书名由 '标题' 事件回填; 未拿到书名时仍记录网址+网站名占位

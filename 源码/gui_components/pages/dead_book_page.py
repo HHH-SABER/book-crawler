@@ -11,11 +11,15 @@
   本页 = **事后**总账 (稍后处理的书在这里找得到, 不会丢)
 
 三条设计约束 (勿推翻):
-  ① **本页只管死书清单, 不做重新检测** —— 那是阶段5 的事 (需重跑抓取判定,
-     代价高, 不能在页面刷新里做)。
-  ② 动作**复用阶段3 的语义**: 删 = 三处编排(任务/书架/网站清单), 恒不删产物;
+ ① **重新检测是用户手动触发的动作, 绝不进页面 2s 轮询** —— 每本都要真发
+     请求 (重跑整条抓取判定链路), 轮询会在用户不知情时反复烧流量、且可能
+     对同一站点并发轰击。行内按钮 + 页头批量按钮是唯一入口 (阶段5)。
+ ② 动作**复用阶段3 的语义**: 删 = 三处编排(任务/书架/网站清单), 恒不删产物;
      忽略 = 置 已忽略; 不在这里重造删除逻辑。
-  ③ 列表是**读快照**, 所有 IO 走 死书处理 模块, 本页不直接碰 JSON。
+ ③ 列表是**读快照**, 所有 IO 走 死书处理 模块, 本页不直接碰 JSON。
+ ④ **恢复判定不归本页管**: 抓成功后由 task_manager 在 completed 分支调
+     `死书处理.标记已恢复` 清理记录 (数据层, 与 UI 无关)。本页只负责"发起",
+     发起后记录保持原状态不动 —— 是"清掉"还是"次数+1"由抓取结果决定。
 
 刷新策略: 切页时 refresh() + 可见时 2s 轮询 (同 remote_page, 数据源在磁盘,
 其他会话/远控也可能改清单)。空清单给明确空态, 不给空白页。
@@ -54,6 +58,9 @@ _状态展示 = {
     '已删除': (MORANDI_SUCCESS, '已删除'),
 }
 _筛选全部 = '全部'
+# 批量重检单次上限: 每本都要真发一轮请求, 无上限会在用户点一下的瞬间
+# 对同一站点并发轰击几十次 (被封 + 堵死同域闸门)。超限如实报数, 让用户分批。
+_批量上限 = 10
 
 
 class DeadBookPage:
@@ -113,6 +120,8 @@ class DeadBookPage:
             "被判定为书已删除/不可读的书。删除会同时移除任务、书架与网站清单记录; "
             "已下载的文件不会被删除。",
             actions=[
+                ft.TextButton("重检当前筛选", icon=ft.Icons.RESTART_ALT,
+                              on_click=lambda e: self._批量重检()),
                 ft.TextButton("刷新", icon=ft.Icons.REFRESH,
                               on_click=lambda e: self._切筛选(
                                   self._状态筛选, self._类型筛选)),
@@ -286,10 +295,20 @@ class DeadBookPage:
 
         语义与阶段3 一致, 不重造删除逻辑:
           已删除 → 无动作(已结项, 只展示)
-          待确认 → 忽略 / 删除记录 / (站回待确认 由忽略反做)
-          已忽略 → 恢复待确认(反悔) / 删除记录
+          待确认 → 重新检测 / 忽略 / 删除记录
+          已忽略 → 重新检测 / 恢复待确认(反悔) / 删除记录
+
+        重新检测(阶段5) 对两态都开放: 用户点"忽略"常常是"站点可能只是挂了,
+        过两天再看看", 不该逼他先恢复待确认才能重试。
         """
         按钮 = []
+        if 状态 != '已删除':
+            # 重新检测: 重跑抓取判定。发起后记录状态**不变**,
+            # 抓成功 → 死书处理.标记已恢复 清记录; 仍死 → 记录死书 累加次数。
+            按钮.append(ft.TextButton("重新检测",
+                                      icon=ft.Icons.RESTART_ALT,
+                                      on_click=lambda e, k=键, u=网址, n=书名:
+                                      self._重新检测(k, u, n)))
         if 状态 == '已忽略':
             按钮.append(ft.TextButton("恢复待确认",
                                       icon=ft.Icons.UNDO,
@@ -309,6 +328,98 @@ class DeadBookPage:
         return ft.Row(按钮, spacing=4, tight=True)
 
     # ---------------------------------------------------------------- 动作
+    def _重新检测(self, 键: str, 网址: str, 书名: str = ''):
+        """重新检测: 重跑抓取判定, 确认这本书是否已恢复 (阶段5 核心动作)。
+
+        复用任务表的既有能力, 不新造抓取逻辑:
+          有对应任务行 → `restart_task` 原任务内重启 (它会清 task.dead,
+                        且保持"一个 URL 恒一行"的界面约定)
+          无对应任务行 (如已删记录/重启过) → `create_task` 新建
+
+        ⚠️ 与任务表「重新下载」的区别: 那是在**已成功/部分成功**的书上重抓全本,
+        诉求是内容; 这里是在**从未抓到章节**的死书上重试, 诉求是"判定是否恢复"。
+        底层都落到同一套抓取链路, 故复用而非复制。
+
+        不 reset 记录状态: 抓成功 → 数据层 `标记已恢复` 清记录;
+        仍死 → `记录死书` 累加次数(已忽略的保持已忽略, 不再打扰)。
+        """
+        if self.task_manager is None:
+            self._提示("⚠️ 未接入任务管理器, 无法发起检测 (请在任务表重新下载)")
+            return
+        if not 网址:
+            self._提示("⚠️ 该记录没有网址, 无法检测")
+            return
+        try:
+            旧 = self.task_manager.find_task_by_url(网址)
+        except Exception as _e:
+            _dbg("死书清单页", f'查找任务失败: {type(_e).__name__}: {_e}')
+            旧 = None
+        try:
+            if 旧 is not None:
+                旧状态 = getattr(旧, 'status', '')
+                if 旧状态 == 'running' or (getattr(旧, 'thread', None) is not None
+                                           and 旧.thread.is_alive()):
+                    self._提示("⚠️ 该书任务正在运行中, 无需重复检测")
+                    return
+                if self.task_manager.restart_task(旧.task_id):
+                    方式 = '原任务重启'
+                else:
+                    self._提示("⚠️ 该书任务正在收尾, 请稍后再检测")
+                    return
+            else:
+                # 新建: resume=False (死书从没抓到章节, 续传无意义且可能
+                # 撞上残留的半成品文件); 沿用任务表的默认模式 full。
+                新id = self.task_manager.create_task(网址, mode='full', resume=False)
+                方式 = f'新建任务 {新id}'
+        except Exception as _e:
+            _dbg("死书清单页", f'重新检测发起失败: {type(_e).__name__}: {_e}')
+            self._提示(f"❌ 发起检测失败: {type(_e).__name__}: {_e}")
+            return
+        self._上次签名 = None
+        self.refresh()
+        self._提示(f"已开始重新检测 ({方式}): {书名 or 网址}\n"
+                   f"抓成功会自动移出清单; 仍失败则次数 +1。进度见抓取工作台。")
+
+    def _批量重检(self):
+        """对当前筛选下的 待确认/已忽略 记录批量发起重新检测。
+
+        ⚠️ **刻意设上限** (`_批量上限`): 每一本都要真发一轮请求, 无上限地
+        "全选就检" 会在用户点一下的瞬间对同一站点并发轰击几十次 —— 既可能
+        被站点封, 也会把同域闸门堵死。超限则如实报数并让用户分批。
+        """
+        if self.task_manager is None:
+            self._提示("⚠️ 未接入任务管理器, 无法发起检测")
+            return
+        待检 = [r for r in self._筛选后()
+                if (r.get('状态') or '待确认') in ('待确认', '已忽略')]
+        if not 待检:
+            self._提示("当前筛选下没有可检测的记录")
+            return
+        超限 = len(待检) > _批量上限
+        目标 = 待检[:_批量上限]
+        成功 = 0
+        for r in 目标:
+            网址 = (r.get('网址') or '').strip()
+            if not 网址:
+                continue
+            try:
+                旧 = self.task_manager.find_task_by_url(网址)
+                if 旧 is not None:
+                    if getattr(旧, 'status', '') == 'running':
+                        continue
+                    if not self.task_manager.restart_task(旧.task_id):
+                        continue
+                else:
+                    self.task_manager.create_task(网址, mode='full', resume=False)
+                成功 += 1
+            except Exception as _e:
+                _dbg("死书清单页", f'批量重检单项失败: {type(_e).__name__}: {_e}')
+        self._上次签名 = None
+        self.refresh()
+        尾 = f"\n另有 {len(待检) - _批量上限} 条未发起 (单次上限 {_批量上限} 本), 请分批。" if 超限 else ""
+        self._提示(f"已发起 {成功}/{len(目标)} 本重新检测。\n"
+                   f"抓成功会自动移出清单, 仍失败则次数 +1。进度见抓取工作台。{尾}")
+
     def _设状态(self, 键: str, 状态: str):
         """改清单状态 (死书处理 是唯一数据源)"""
         try:
