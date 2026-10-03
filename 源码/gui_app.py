@@ -730,6 +730,14 @@ def main(page: ft.Page):
                 # 2026-10-03 #7: 绑定 0.0.0.0 时展示可用局域网地址 (0.0.0.0 不是可访问 URL)
                 msg = (f"远控已启用: {_远控切.展示地址()}"
                        if ok else "远控启用失败 (端口 8760 可能被占用)")
+                # 2026-10-04 #7: 地址"看着能用但其实连不上"时, 把原因一并说出来
+                if ok:
+                    try:
+                        _提示 = _远控切.地址提示()
+                    except Exception:
+                        _提示 = ""
+                    if _提示:
+                        msg = f"{msg} — {_提示}"
                 app_log.info("远控", msg)
                 page.show_dialog(ft.SnackBar(ft.Text(msg)))
         except Exception as _e_sw:
@@ -752,7 +760,9 @@ def main(page: ft.Page):
             # 2026-10-03 #7: 展示地址经 展示地址() 解析 (0.0.0.0 → 首个局域网 IP)
             return {"运行": _s.运行中(),
                     "地址": _s.展示地址(),
-                    "token": cfg.get("token", "")}
+                    "token": cfg.get("token", ""),
+                    # 2026-10-04 #7: 地址可用性提示 (绑定回环 / 未探测到局域网地址)
+                    "提示": _s.地址提示()}
         except Exception:
             return {"运行": False, "地址": "", "token": ""}
 
