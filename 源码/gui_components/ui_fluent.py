@@ -1,15 +1,34 @@
 # -*- coding: utf-8 -*-
-"""ui_fluent — Windows 11 Fluent 设计令牌体系：色板 + 字体 + 字号 + 字重
+"""ui_fluent — 暖色设计系统: 字体 + 字号字重 + 主题生成 (M3 ColorScheme 桥)
 
-设计规范来源: 界面设计预览/index.html (Windows 11 Fluent Design Tokens):
-  - 日间: #F3F3F3 底 + 纯白卡片 + #0067C0 强调蓝 + 4/8px 小圆角
-  - 夜间: #202020 底 + #2B2B2B 卡片 + #4CC2FF 提亮蓝
+设计规范来源: 界面设计预览/index.html (暖色三层令牌体系)
+  - 日间: #F5F5F5 底 + 纯白卡片 + #D9781A 品牌橙 + #AD5710 主按钮
+  - 夜间: #202020 底 + #2B2B2B 卡片 + #171717 侧栏 (比卡片更暗)
   - 字体: Segoe UI / 微软雅黑
 
-历史兼容: MORANDI_* 常量名为历代主题遗留, 全部保留 (值已映射到 Fluent 色板);
-组件应逐步改用 ui_theme 的语义封装, 避免直接引用色值常量。
+======================================================================
+职责边界 (与 ui_tokens 的分工 — 下一轮页面改造必读)
+======================================================================
+  ui_tokens  基础色板字典 + 取色() + 主题状态 + 尺寸圆角阴影等令牌
+             —— 装不进 M3 槽位的颜色 (accent-fg / 各 status /
+             focus-ring / 终端 / 远控 / GitHub) 全部走它
+  ui_fluent  本文件。把令牌**映射进 M3 ColorScheme**, 让 Flet 原生
+             控件 (FilledButton / Checkbox / Dialog …) 自动拿到暖色,
+             并保留 FONT_STACK / txt() / open_dialog() 等公共 API
+
+历史兼容: MORANDI_* 常量名为历代主题遗留, 全部保留 —— 但**值的语义
+变了**: 以前是 ft.Colors.* M3 别名 (自动适配), 现在绝大多数改成
+ui_tokens.取色() 的字面量 (跟随全局主题状态重算)。这是刻意的:
+设计稿的 6 组状态色/焦点环/终端色在 M3 里没有对应槽位。
+仍保留 M3 别名的那些 (MORANDI_ON_SURFACE 等) 依旧自动适配深浅。
 """
+import dataclasses
+
+import dataclasses
+
 import flet as ft
+from . import ui_tokens
+from .ui_tokens import 取色, 状态色, 登记重刷, 设置主题, is_dark, 主题状态
 try:
     import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
 except Exception:
@@ -26,26 +45,32 @@ def _dbg(source: str, message: str):
 
 
 # ====================================================================
-# 一、统一字体规范 (Fluent: Segoe UI 优先, 中文回退微软雅黑)
+# 一、统一字体规范 (Segoe UI 优先, 中文回退微软雅黑)
 # ====================================================================
 
 FONT_STACK = '"Segoe UI", "Microsoft YaHei", "微软雅黑", system-ui, "Noto Sans SC", sans-serif'
-# 终端/日志等宽字体 (Fluent: Cascadia Code 优先)
+# 终端/日志等宽字体 (Cascadia Code 优先)
 FONT_TERMINAL = '"Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace'
 
-# ---- 字号层级 (匹配 --fs-*) ----
-SIZE_TITLE = 20        # 页面大标题 (--fs-h1)
-SIZE_SUBTITLE = 17     # 卡片标题 / 对话框标题 (--fs-h2)
-SIZE_LABEL = 15        # 输入框 / 列表主标题 (--fs-h3)
-SIZE_BODY = 14         # 正文 (--fs-body)
-SIZE_SMALL = 13        # 辅助文字 (--fs-small)
-SIZE_TINY = 12         # 时间戳 / 状态微字 (--fs-caption)
+# ---- 字号层级 ----
+# 取值来自 ui_tokens (设计稿 --fs-* 单一真值源)。
+# 注意: 这里刻意比设计稿少一档 —— SIZE_TITLE 沿用历史值 20 (页面大标题),
+# 设计稿另有一个 22 的 --fs-title (弹窗/欢迎页大标题), 已作为
+# ui_tokens.FS_TITLE=22 暴露, 需要时显式取用, 不改 SIZE_TITLE 以免
+# 现有页面版式整体位移。
+SIZE_TITLE = ui_tokens.FS_H1        # 20  页面大标题 (--fs-h1)
+SIZE_SUBTITLE = ui_tokens.FS_H2     # 17  卡片标题 / 对话框标题 (--fs-h2)
+SIZE_LABEL = ui_tokens.FS_H3        # 15  输入框 / 列表主标题 (--fs-h3)
+SIZE_BODY = ui_tokens.FS_BODY       # 14  正文 (--fs-body)
+SIZE_SMALL = ui_tokens.FS_SMALL     # 13  辅助文字 (--fs-small)
+SIZE_TINY = ui_tokens.FS_CAPTION    # 12  时间戳 / 状态微字 (--fs-caption)
+SIZE_MICRO = ui_tokens.FS_MICRO     # 11  徽章微字 (--fs-micro, 新增)
 
-# ---- 字重规范 ----
-WEIGHT_TITLE = ft.FontWeight.BOLD
-WEIGHT_SUBTITLE = ft.FontWeight.W_600
-WEIGHT_BODY = ft.FontWeight.NORMAL
-WEIGHT_EMPHASIS = ft.FontWeight.W_500
+# ---- 字重规范 (设计稿只有 4 档) ----
+WEIGHT_TITLE = ft.FontWeight.BOLD        # 700
+WEIGHT_SUBTITLE = ft.FontWeight.W_600    # 600
+WEIGHT_BODY = ft.FontWeight.NORMAL       # 400
+WEIGHT_EMPHASIS = ft.FontWeight.W_500    # 500
 
 
 def txt(value, size=SIZE_BODY, weight=WEIGHT_BODY, color=None,
@@ -64,70 +89,179 @@ def txt(value, size=SIZE_BODY, weight=WEIGHT_BODY, color=None,
     return ft.Text(**text_kwargs)
 
 
+def 主题色(键: str, 夜间: bool = None) -> str:
+    """取暖色令牌 (ui_tokens.取色 的再导出, 页面侧单一入口)。"""
+    return 取色(键, 夜间)
+
+
 # ====================================================================
-# 二、Fluent 色板 (语义色别名, 全部映射 M3 槽位自动适配深浅主题)
+# 二、暖色板 (语义色别名)
 # ====================================================================
+# 【重要】设计稿的这些色 M3 无对应槽位, 必须走 ui_tokens 跟随主题重算。
+#   页面直接 import 本模块的 MORANDI_* 即可, 无需改 import 语句。
+#   仍为 M3 别名的项 (标了"自动适配") 保持原样, 切主题零成本。
 
-MORANDI_PRIMARY = ft.Colors.PRIMARY
-MORANDI_SECONDARY = ft.Colors.SECONDARY
-MORANDI_TERTIARY = ft.Colors.TERTIARY
-MORANDI_ACCENT = ft.Colors.PRIMARY
-MORANDI_SUCCESS = ft.Colors.SECONDARY
-MORANDI_ERROR = ft.Colors.ERROR
-MORANDI_WARNING = ft.Colors.TERTIARY
-MORANDI_INFO = ft.Colors.PRIMARY
-MORANDI_RUNNING = ft.Colors.PRIMARY
-MORANDI_STOPPED = ft.Colors.ON_SURFACE_VARIANT
-MORANDI_PENDING = ft.Colors.ON_SURFACE_VARIANT
+# ---- 品牌 / 强调 ----
+MORANDI_PRIMARY = 取色('btn-primary-bg')       # 主按钮底 日#AD5710/夜#E08A3C
+MORANDI_ACCENT = 取色('accent-fg')             # 可读强调字 日#A6510E/夜#EAA261
+MORANDI_ON_PRIMARY = 取色('btn-primary-fg')    # 主按钮字 (日白/夜近黑, 自动反色)
 
-# ---- 侧边栏专用色 (匹配 --bg-sidebar: 日间 #F1F1F1 / 夜间 #171717) ----
-MORANDI_SIDEBAR_BG = ft.Colors.SURFACE_CONTAINER_LOW
-MORANDI_SIDEBAR_HOVER = ft.Colors.SURFACE_CONTAINER_HIGH
-MORANDI_SIDEBAR_ACTIVE = ft.Colors.PRIMARY_CONTAINER
+# ---- 状态色 (设计稿 6 组; 进行中 = 警告色) ----
+MORANDI_SUCCESS = 取色('status-success')       # 成功 日#1E6B3C/夜#7FD472
+MORANDI_ERROR = 取色('status-error')           # 错误 日#8E3428/夜#F0A99C
+MORANDI_WARNING = 取色('status-warning')       # 警告 日#8A4310/夜#E8A96A
+MORANDI_INFO = 取色('status-info')             # 信息 日#3F3FB0/夜#A5A5F0
+MORANDI_RUNNING = 取色('status-warning')       # 进行中 = 警告色 (设计稿明文)
+MORANDI_STOPPED = 取色('status-pending')       # 已停止/已忽略 中性灰
+MORANDI_PENDING = 取色('status-pending')       # 等待中 中性灰
 
-# ---- 表面/文字/边框 (主题感知别名) ----
-MORANDI_BACKGROUND = ft.Colors.SURFACE
-MORANDI_SURFACE = ft.Colors.SURFACE
-MORANDI_SURFACE_CONTAINER = ft.Colors.SURFACE_CONTAINER
+# ---- 停止 (设计稿是蓝紫 #5C5CD9, **不是红**) ----
+MORANDI_STOP = 取色('accent-stop')
+MORANDI_STOP_LIGHT = 取色('accent-stop-light')
+
+# ---- 焦点环 / 远控 / GitHub (M3 无槽位, 只能走令牌) ----
+MORANDI_FOCUS_RING = 取色('focus-ring')
+MORANDI_REMOTE_BG = 取色('remote-bg')
+MORANDI_REMOTE_TEXT = 取色('remote-text')
+MORANDI_GH_LINK = 取色('gh-link')
+MORANDI_GH_HOVER = 取色('gh-hover')
+MORANDI_GH_HOVER_BG = 取色('gh-hover-bg')
+MORANDI_GH_HINT = 取色('gh-hint')
+
+# ---- 侧边栏专用色 (设计稿 --bg-sidebar-*) ----
+MORANDI_SIDEBAR_BG = 取色('bg-sidebar')            # 日#F1F1F1 / 夜#171717
+MORANDI_SIDEBAR_HOVER = 取色('bg-sidebar-hover')   # 日#E7E7E7 / 夜#2B2B2B
+MORANDI_SIDEBAR_ACTIVE = 取色('bg-sidebar-active')  # 日#FAF1E7 / 夜#382614
+MORANDI_SIDEBAR_ACTIVE_FG = 取色('text-sidebar-active')  # 日#9C4A0C / 夜#E8A96A
+
+# ---- 表面/文字/边框 ----
+# 文字与边框改走令牌 (设计稿的 rgba 边框 M3 outline_variant 能表达, 但为
+# 与"边框三档"语义一致, 这里统一用令牌; 表面仍用 M3 别名自动适配)
+# 注: ft.Colors 没有 BACKGROUND / SURFACE_VARIANT 别名 (本机 0.86.5 内省
+#     确认, 只有 SURFACE + 5 个 CONTAINER 槽位), 故这两个历史名映射到
+#     最接近的 SURFACE 槽位 —— 与改造前行为一致, 不断引用。
+MORANDI_BACKGROUND = ft.Colors.SURFACE_CONTAINER           # ≈ --bg-primary 槽位
+MORANDI_SURFACE = ft.Colors.SURFACE                        # = --bg-secondary (卡片)
+MORANDI_SURFACE_CONTAINER = ft.Colors.SURFACE_CONTAINER    # ≈ --bg-tertiary
 MORANDI_SURFACE_CONTAINER_HIGH = ft.Colors.SURFACE_CONTAINER_HIGH
 MORANDI_SURFACE_CONTAINER_HIGHEST = ft.Colors.SURFACE_CONTAINER_HIGHEST
-MORANDI_ON_PRIMARY = ft.Colors.ON_PRIMARY
-MORANDI_ON_SECONDARY = ft.Colors.ON_SECONDARY
-MORANDI_ON_SURFACE = ft.Colors.ON_SURFACE
-MORANDI_ON_SURFACE_VARIANT = ft.Colors.ON_SURFACE_VARIANT
-MORANDI_OUTLINE = ft.Colors.OUTLINE
-MORANDI_OUTLINE_VARIANT = ft.Colors.OUTLINE_VARIANT
+MORANDI_ON_SURFACE = ft.Colors.ON_SURFACE                  # 自动适配
+MORANDI_ON_SURFACE_VARIANT = 取色('text-secondary')       # 日#5C5C5C/夜#C8C8C8
+MORANDI_OUTLINE = 取色('border-strong')                    # 日 rgba(0,0,0,.22)
+MORANDI_OUTLINE_VARIANT = 取色('border-subtle')            # 日 rgba(0,0,0,.08)
+MORANDI_ON_SECONDARY = ft.Colors.ON_SECONDARY              # 自动适配
+MORANDI_SECONDARY = 取色('status-success')                 # 历史名, 实为成功绿
 
-# ---- 扩展色 (旧引用兼容) ----
-MORANDI_MAUVE = ft.Colors.PRIMARY
-MORANDI_GOLD = ft.Colors.TERTIARY
-MORANDI_TEAL = ft.Colors.PRIMARY
-MORANDI_CLAY = ft.Colors.TERTIARY
-MORANDI_LILAC = ft.Colors.ON_SURFACE_VARIANT
+# ---- 扩展色 (旧引用兼容, 全部指向暖色语义) ----
+MORANDI_MAUVE = MORANDI_ACCENT       # 紫调 → 可读强调
+MORANDI_GOLD = MORANDI_WARNING        # 金调 → 警告
+MORANDI_TEAL = 取色('teal')           # 青调 → 青
+MORANDI_CLAY = MORANDI_ERROR          # 陶土 → 错误
+MORANDI_LILAC = MORANDI_INFO          # 淡紫 → 信息
 
-# ---- 终端背景 (日志条深底, 跨主题保持) ----
-MORANDI_TERMINAL_BG = '#1F1F1F'
+# ---- 终端 (恒深, 日夜完全相同) ----
+MORANDI_TERMINAL_BG = 取色('terminal-bg')        # #171717
+MORANDI_TERMINAL_TEXT = 取色('terminal-text')    # #C8C8C8
+MORANDI_TERMINAL_DIM = 取色('terminal-dim')      # #9A9A9A
 
-# ---- 日志级别色 (深底上可读, Fluent 语义) ----
-LOG_COLOR_INFO = '#F3F3F3'
-LOG_COLOR_ERROR = '#FF99A4'          # 浅红 (深底可读)
-LOG_COLOR_WARN = '#FCE100'           # Fluent 黄
-LOG_COLOR_DEBUG = '#9D9D9D'
+# ---- 日志级别色 (恒深终端底上的着色, 设计稿终端色) ----
+LOG_COLOR_INFO = 取色('terminal-text')            # #C8C8C8
+LOG_COLOR_ERROR = 取色('terminal-red')            # #F09A8C (深底可读的浅红)
+LOG_COLOR_WARN = 取色('terminal-yellow')          # #E8C57A
+LOG_COLOR_DEBUG = 取色('terminal-dim')            # #9A9A9A
+LOG_COLOR_SUCCESS = 取色('terminal-green')         # #5BD675
+LOG_COLOR_ACCENT = 取色('terminal-cyan')          # #6FDCCC
 
 
 # ====================================================================
-# 三、主题生成 (Material3 ColorScheme — Windows 11 Fluent)
+# 三、主题生成 (M3 ColorScheme ← 暖色令牌)
 # ====================================================================
+
+# ---- 兼容常量热刷新 -------------------------------------------------
+# 上面的 MORANDI_* / LOG_COLOR_* 在**模块导入时**求值一次。若不刷新,
+# 切到夜间后它们仍是日间字面量 -> 页面 (detail_drawer/task_table 等
+# 直接 import 这些名字) 会掉色。所以主题切换时按当前主题重算一遍,
+# 用 globals().update 就地替换 —— import 到本地的引用是同一个 str
+# 对象被换掉, 但**已经取值赋给控件字段的那些不会自动变**, 这部分靠
+# 各组件自己登记重刷 (见 ui_tokens.登记重刷)。
+def 刷新兼容常量():
+    """按当前主题状态重算所有随主题变化的模块级常量 (主题切换时调用)"""
+    g = globals()
+    g.update({
+        'MORANDI_PRIMARY': 取色('btn-primary-bg'),
+        'MORANDI_ACCENT': 取色('accent-fg'),
+        'MORANDI_ON_PRIMARY': 取色('btn-primary-fg'),
+        'MORANDI_SUCCESS': 取色('status-success'),
+        'MORANDI_ERROR': 取色('status-error'),
+        'MORANDI_WARNING': 取色('status-warning'),
+        'MORANDI_INFO': 取色('status-info'),
+        'MORANDI_RUNNING': 取色('status-warning'),
+        'MORANDI_STOPPED': 取色('status-pending'),
+        'MORANDI_PENDING': 取色('status-pending'),
+        'MORANDI_STOP': 取色('accent-stop'),
+        'MORANDI_STOP_LIGHT': 取色('accent-stop-light'),
+        'MORANDI_FOCUS_RING': 取色('focus-ring'),
+        'MORANDI_REMOTE_BG': 取色('remote-bg'),
+        'MORANDI_REMOTE_TEXT': 取色('remote-text'),
+        'MORANDI_GH_LINK': 取色('gh-link'),
+        'MORANDI_GH_HOVER': 取色('gh-hover'),
+        'MORANDI_GH_HOVER_BG': 取色('gh-hover-bg'),
+        'MORANDI_GH_HINT': 取色('gh-hint'),
+        'MORANDI_SIDEBAR_BG': 取色('bg-sidebar'),
+        'MORANDI_SIDEBAR_HOVER': 取色('bg-sidebar-hover'),
+        'MORANDI_SIDEBAR_ACTIVE': 取色('bg-sidebar-active'),
+        'MORANDI_SIDEBAR_ACTIVE_FG': 取色('text-sidebar-active'),
+        'MORANDI_ON_SURFACE_VARIANT': 取色('text-secondary'),
+        'MORANDI_OUTLINE': 取色('border-strong'),
+        'MORANDI_OUTLINE_VARIANT': 取色('border-subtle'),
+        'MORANDI_SECONDARY': 取色('status-success'),
+        'MORANDI_MAUVE': 取色('accent-fg'),
+        'MORANDI_GOLD': 取色('status-warning'),
+        'MORANDI_TEAL': 取色('teal'),
+        'MORANDI_CLAY': 取色('status-error'),
+        'MORANDI_LILAC': 取色('status-info'),
+        'MORANDI_TERMINAL_BG': 取色('terminal-bg'),
+        'MORANDI_TERMINAL_TEXT': 取色('terminal-text'),
+        'MORANDI_TERMINAL_DIM': 取色('terminal-dim'),
+        'LOG_COLOR_INFO': 取色('terminal-text'),
+        'LOG_COLOR_ERROR': 取色('terminal-red'),
+        'LOG_COLOR_WARN': 取色('terminal-yellow'),
+        'LOG_COLOR_DEBUG': 取色('terminal-dim'),
+        'LOG_COLOR_SUCCESS': 取色('terminal-green'),
+        'LOG_COLOR_ACCENT': 取色('terminal-cyan'),
+    })
+
 
 def _build_theme(cs_kwargs: dict) -> ft.Theme:
-    """由 ColorScheme 属性字典生成 Flet Theme (Fluent 控件圆角 4px)"""
+    """由 ColorScheme 属性字典生成 Flet Theme (控件圆角 6px = --radius-md)
+
+    ⚠️ P0 修复 (2026-10-04): 旧实现是裸 `for k, v in cs_kwargs.items(): setattr(cs, k, v)`,
+       而 Flet 0.86.5 的 ColorScheme 只有 46 个真实字段, **不存在** background /
+       on_background / surface_variant。旧代码把 design 的 --bg-primary /
+       --bg-tertiary 传进这三个不存在的键, 被 setattr **静默丢弃且不报错**,
+       导致「页面底色与卡片底色分两档」这个设计从未真正生效 (页面底一直靠
+       渲染层默认 surface 撑着)。现改为白名单校验 + 显式告警, 杜绝同类静默丢失。
+    """
     cs = ft.ColorScheme()
+    # Flet 真实字段白名单 (反射取一次即缓存, 避免每次建主题都遍历 dataclass)
+    真实字段 = {f.name for f in dataclasses.fields(ft.ColorScheme)}
+    被丢弃 = []
     for k, v in cs_kwargs.items():
+        if k not in 真实字段:
+            被丢弃.append(k)
+            continue
         setattr(cs, k, v)
+    if 被丢弃:
+        # 只在 DEBUG 记留痕, 不阻断建主题 —— 历史键名传错不该让 GUI 起不来
+        _dbg("主题", f'ColorScheme 不存在以下键, 已忽略: {被丢弃} '
+                     f'(Flet 0.86.5 无此槽位; 页面底色请用主内容容器 bgcolor 显式赋值)')
+    cs.surface_tint = '#00000000'   # 见下方「关闭 M3 染色」说明
 
     _body_ts = ft.TextStyle(size=SIZE_BODY, weight=WEIGHT_BODY, font_family=FONT_STACK)
-    # Fluent 控件圆角: 按钮/输入 4px (--radius-md)
-    _btn_shape = ft.RoundedRectangleBorder(radius=4)
+    # 控件圆角: 按钮/输入 6px (设计稿 --radius-md)
+    # 用 MD 而非 SM 的理由: .btn-sm 只有 28px 高, 4px 圆角在 28px 控件上
+    # 视觉占比偏厚、显得"环"; 设计稿定稿值即 MD=6。
+    _btn_shape = ft.RoundedRectangleBorder(radius=ui_tokens.RADIUS_MD)
 
     nav_rail_style = ft.NavigationRailTheme(
         indicator_color=cs_kwargs.get('primary_container', MORANDI_PRIMARY),
@@ -142,20 +276,23 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
     text_btn_theme = ft.TextButtonTheme(style=ft.ButtonStyle(
         text_style=_body_ts, shape=_btn_shape))
 
+    # 按钮内边距按设计稿规格表: 主/次 0 16
     filled_btn_theme = ft.FilledButtonTheme(style=ft.ButtonStyle(
         text_style=_body_ts, shape=_btn_shape,
-        padding=ft.Padding.symmetric(horizontal=16, vertical=10)))
+        padding=ft.Padding.symmetric(horizontal=ui_tokens.BTN_PAD_X, vertical=0)))
 
     outline_btn_theme = ft.OutlinedButtonTheme(style=ft.ButtonStyle(
         text_style=_body_ts, shape=_btn_shape,
-        padding=ft.Padding.symmetric(horizontal=16, vertical=10)))
+        side=ft.BorderSide(1, cs_kwargs.get('outline_variant', MORANDI_OUTLINE_VARIANT)),
+        padding=ft.Padding.symmetric(horizontal=ui_tokens.BTN_PAD_X, vertical=0)))
 
+    # .btn-icon 34x34 —— 方形图标按钮与文字按钮同用 --radius-md
     icon_btn_theme = ft.IconButtonTheme(style=ft.ButtonStyle(
-        shape=ft.RoundedRectangleBorder(radius=4)))
+        shape=ft.RoundedRectangleBorder(radius=ui_tokens.RADIUS_MD)))
 
     dialog_theme = ft.DialogTheme(
         bgcolor=cs_kwargs.get('surface', MORANDI_SURFACE),
-        shape=ft.RoundedRectangleBorder(radius=8),
+        shape=ft.RoundedRectangleBorder(radius=ui_tokens.RADIUS_LG),   # 卡片同 8px
         elevation=8,
         title_text_style=ft.TextStyle(
             size=SIZE_SUBTITLE, weight=WEIGHT_SUBTITLE, font_family=FONT_STACK,
@@ -185,79 +322,128 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
 
 
 def make_morandi_theme() -> ft.Theme:
-    """日间主题: Windows 11 Fluent — #F3F3F3 底 + 纯白卡片 + #0067C0 强调蓝
+    """日间主题: 暖色 —— #F5F5F5 底 + 纯白卡片 + #AD5710 主按钮 + #D9781A 品牌
 
-    函数名历史兼容 (原莫兰迪主题入口), 现返回 Fluent 日间主题。
+    函数名历史兼容 (原莫兰迪主题入口), 现返回暖色日间主题。
+    槽位映射说明见文件头; 装不进槽位的令牌在 ui_tokens 里取。
     """
     return _build_theme({
-        # Fluent accent-blue
-        'primary': '#0067C0',
-        'on_primary': '#FFFFFF',
-        'primary_container': '#E7F1FA',                  # accent-blue-light
-        'on_primary_container': '#00549B',
-        # accent-green
-        'secondary': '#0F7B0F',
+        # ---- 品牌层 (primary = 主按钮底色, 保证 FilledButton 免样式即合规) ----
+        'primary': '#AD5710',                    # --btn-primary-bg
+        'on_primary': '#FFFFFF',                 # --btn-primary-fg
+        'primary_container': '#FAF1E7',          # --brand-subtle
+        'on_primary_container': '#8A4310',       # --on-brand-subtle
+        'primary_fixed': '#D9781A',              # --brand
+        'primary_fixed_dim': '#A6510E',          # --accent-fg
+        'on_primary_fixed': '#FFFFFF',
+        'on_primary_fixed_variant': '#8A4310',
+        'inverse_primary': '#D9781A',            # 反色主题下的品牌色
+        # ---- 成功 (secondary 槽位复用为绿) ----
+        'secondary': '#1E6B3C',                  # --status-success
         'on_secondary': '#FFFFFF',
-        'secondary_container': '#DFF6DD',
-        'on_secondary_container': '#0B5A0B',
-        # accent-orange
-        'tertiary': '#9D5D00',
+        'secondary_container': '#DFF6E5',        # --status-success-bg
+        'on_secondary_container': '#1E6B3C',
+        'secondary_fixed': '#1E6B3C',
+        'secondary_fixed_dim': '#237A47',
+        'on_secondary_fixed': '#FFFFFF',
+        'on_secondary_fixed_variant': '#1E6B3C',
+        # ---- 警告 (tertiary 槽位) ----
+        'tertiary': '#8A4310',                   # --status-warning
         'on_tertiary': '#FFFFFF',
-        'tertiary_container': '#FFF4CE',
-        'on_tertiary_container': '#6D4703',
-        # accent-red
-        'error': '#C42B1C',
-        'error_container': '#FDE7E9',
+        'tertiary_container': '#FAF1E7',         # --status-warning-bg
+        'on_tertiary_container': '#8A4310',
+        'tertiary_fixed': '#8A4310',
+        'tertiary_fixed_dim': '#A6510E',
+        'on_tertiary_fixed': '#FFFFFF',
+        'on_tertiary_fixed_variant': '#8A4310',
+        # ---- 错误 ----
+        'error': '#8E3428',                      # --status-error
+        'error_container': '#FBE9E7',            # --status-error-bg
         'on_error': '#FFFFFF',
-        'on_error_container': '#8F1A0E',
-        # Fluent 中性面
-        'background': '#F3F3F3',
-        'on_background': '#1B1B1B',
-        'surface': '#FFFFFF',
-        'on_surface': '#1B1B1B',
-        'surface_variant': '#F5F5F5',
-        'on_surface_variant': '#5C5C5C',
-        'outline': '#8A8A8A',
-        'outline_variant': 'rgba(0,0,0,0.08)',
-        'surface_container_low': '#F1F1F1',              # 侧边栏
-        'surface_container': '#F5F5F5',
-        'surface_container_high': '#E7E7E7',             # hover
-        'surface_container_highest': '#DEDEDE',          # active
+        'on_error_container': '#8E3428',
+        # ---- 中性面 ----
+        # ⚠️ Flet 0.86.5 的 ColorScheme **没有** background / on_background /
+        #    surface_variant 这三个槽位。旧稿把它们写在这里, 会被 setattr
+        #    静默丢弃 —— 即「页面底 #F5F5F5 与卡片底 #FFFFFF 分两档」从未生效。
+        #    现在: 卡片面走 surface / surface_container_low, 页面底色由主内容
+        #    容器显式赋 bgcolor (见 gui_app main_row), 这里只保留真实槽位。
+        'surface': '#FFFFFF',                    # --bg-secondary (卡片纯白)
+        'on_surface': '#1B1B1B',                 # --text-primary
+        'on_surface_variant': '#5C5C5C',         # --text-secondary
+        'outline': '#6E6E6E',                    # --text-tertiary
+        'outline_variant': 'rgba(0,0,0,0.08)',   # --border-subtle
+        'surface_container_lowest': '#FFFFFF',
+        'surface_container_low': '#F1F1F1',      # --bg-sidebar (侧栏)
+        'surface_container': '#F5F5F5',          # --bg-tertiary
+        'surface_container_high': '#E7E7E7',     # --bg-sidebar-hover
+        'surface_container_highest': '#FAFAF9',  # --bg-row-hover
+        'surface_dim': '#E7E7E7',
+        'surface_bright': '#FFFFFF',
+        # surface_tint 故意不设品牌橙: M3 着色器会拿它给 Surface/SurfaceContainer
+        # 系列叠 tonal overlay, 设橙会让所有卡片染上暖橙, 与设计稿的纯净白底冲突。
+        # _build_theme 末尾统一置 '#00000000' 关闭染色。
+        'inverse_surface': '#2B2B2B',
+        'on_inverse_surface': '#FFFFFF',
+        'shadow': 'rgba(0,0,0,0.16)',
+        'scrim': 'rgba(0,0,0,0.32)',
     })
 
 
 def make_morandi_dark_theme() -> ft.Theme:
-    """夜间主题: Windows 11 Fluent Dark — #202020 底 + #2B2B2B 卡片 + 提亮蓝"""
+    """夜间主题: 暖色 —— #202020 底 + #2B2B2B 卡片 + #171717 侧栏 + 反色主按钮
+
+    主按钮反色: 亮橙底 #E08A3C 配近黑字 #1B1B1B (6.46:1, 过 AA)。
+    """
     return _build_theme({
-        'primary': '#4CC2FF',                            # Fluent dark accent
-        'on_primary': '#003A5C',
-        'primary_container': '#1D3A4F',
-        'on_primary_container': '#9CD8F7',
-        'secondary': '#6CCB5F',
-        'on_secondary': '#0B2E08',
-        'secondary_container': '#1E3A1A',
-        'on_secondary_container': '#A5E4A0',
-        'tertiary': '#FCE100',
-        'on_tertiary': '#2E2A00',
-        'tertiary_container': '#3B3700',
-        'on_tertiary_container': '#F5EE8C',
-        'error': '#FF99A4',
-        'error_container': '#5C1A22',
-        'on_error': '#FFFFFF',
-        'on_error_container': '#FFB3BC',
-        # Fluent Dark 中性面
-        'background': '#202020',
-        'on_background': '#FFFFFF',
-        'surface': '#2B2B2B',                            # 卡片
+        'primary': '#E08A3C',                    # --btn-primary-bg
+        'on_primary': '#1B1B1B',                 # 反色! 近黑字
+        'primary_container': '#382614',          # --brand-subtle
+        'on_primary_container': '#E8A96A',       # --on-brand-subtle
+        'primary_fixed': '#E08A3C',
+        'primary_fixed_dim': '#EAA261',          # --accent-fg
+        'on_primary_fixed': '#1B1B1B',
+        'on_primary_fixed_variant': '#E8A96A',
+        'inverse_primary': '#AD5710',
+        # ---- 成功 ----
+        'secondary': '#7FD472',                  # --status-success
+        'on_secondary': '#1B1B1B',
+        'secondary_container': '#1B3D22',        # --status-success-bg
+        'on_secondary_container': '#7FD472',
+        'secondary_fixed': '#7FD472',
+        'secondary_fixed_dim': '#7FD472',
+        'on_secondary_fixed': '#1B1B1B',
+        'on_secondary_fixed_variant': '#7FD472',
+        # ---- 警告 ----
+        'tertiary': '#E8A96A',                   # --status-warning
+        'on_tertiary': '#1B1B1B',
+        'tertiary_container': '#382614',
+        'on_tertiary_container': '#E8A96A',
+        'tertiary_fixed': '#E8A96A',
+        'tertiary_fixed_dim': '#EAA261',
+        'on_tertiary_fixed': '#1B1B1B',
+        'on_tertiary_fixed_variant': '#E8A96A',
+        # ---- 错误 ----
+        'error': '#F0A99C',                      # --status-error
+        'error_container': '#432723',            # --status-error-bg
+        'on_error': '#1B1B1B',
+        'on_error_container': '#F0A99C',
+        # ---- 中性面 ----
+        'surface': '#2B2B2B',                    # --bg-secondary (卡片)
         'on_surface': '#FFFFFF',
-        'surface_variant': '#323232',
-        'on_surface_variant': '#CACACA',
-        'outline': '#9D9D9D',
-        'outline_variant': 'rgba(255,255,255,0.08)',
-        'surface_container_low': '#171717',              # 侧边栏
-        'surface_container': '#1F1F1F',
-        'surface_container_high': '#2D2D2D',
-        'surface_container_highest': '#383838',
+        'on_surface_variant': '#C8C8C8',         # --text-secondary
+        'outline': '#A6A6A6',                    # --text-tertiary
+        'outline_variant': 'rgba(255,255,255,0.09)',  # --border-subtle
+        'surface_container_lowest': '#171717',
+        'surface_container_low': '#171717',      # --bg-sidebar (纯黑, 比卡片更暗)
+        'surface_container': '#383838',          # --bg-tertiary (旧值 #202020 偏暗, 会与页面底撞色)
+        'surface_container_high': '#2B2B2B',     # --bg-sidebar-hover
+        'surface_container_highest': '#383838',  # --bg-row-hover
+        'surface_dim': '#171717',
+        'surface_bright': '#383838',
+        'inverse_surface': '#F5F5F5',
+        'on_inverse_surface': '#1B1B1B',
+        'shadow': 'rgba(0,0,0,0.48)',
+        'scrim': 'rgba(0,0,0,0.56)',
     })
 
 
@@ -278,6 +464,21 @@ def get_terminal_font() -> str:
 def get_terminal_bg() -> str:
     """获取终端背景色"""
     return MORANDI_TERMINAL_BG
+
+
+def 同步主题(是否夜间: bool):
+    """主题切换后同步令牌层状态并重刷已登记控件。
+
+    调用链: gui_app.toggle_theme() -> IconRail.toggle_theme_icon()
+            -> 本函数 -> ui_tokens.设置主题()
+    必须在 page.theme_mode 赋值之后、page.update() 之前调用。
+
+    两件事都要做:
+      1. 刷新模块级 MORANDI_*/LOG_COLOR_* (让"下一次" import/取值正确)
+      2. 触发已登记控件的换色回调 (让"已经构建"的控件也换色)
+    """
+    设置主题(是否夜间)
+    刷新兼容常量()
 
 
 def make_morandi_card(content, **kwargs) -> ft.Container:
