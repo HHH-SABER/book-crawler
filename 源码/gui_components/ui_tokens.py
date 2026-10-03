@@ -231,6 +231,12 @@ _夜间色 = {
 # ====================================================================
 
 # 状态键 -> (前景键, 浅容器键)。'running' 进行中 = 警告色 (设计稿明文规定)
+# 2026-10-04 (Phase 3 收尾): `interrupted` 由 status-warning 改到**中性灰**。
+# 旧映射下 `interrupted`(已中断) 与 `dead_pending`(书已删除) **完全同色** ——
+# 但两者语义相反: 前者只是"进程退出导致没跑完"(无需处理), 后者是"书没了, 需要你裁决"
+# (需处理)。同色会让用户在任务表里分不出"哪一行要我去点"。
+# 归入灰族后: 等待中/已停止/已中断 = 灰 (同属"未在进行, 也非失败", 靠文案区分, 语义自洽);
+# `dead_pending` 独占琥珀警告色, 与 失败(红) 也天然区分。
 状态语义 = {
     'success':    ('status-success',    'status-success-bg'),
     'warning':    ('status-warning',    'status-warning-bg'),
@@ -239,7 +245,7 @@ _夜间色 = {
     'info':       ('status-info',       'status-info-bg'),
     'running':    ('status-warning',    'status-warning-bg'),   # 进行中 = 警告色
     'stopped':    ('status-pending',    'status-pending-bg'),   # 已停止按中性灰
-    'interrupted': ('status-warning',   'status-warning-bg'),
+    'interrupted': ('status-pending',   'status-pending-bg'),   # 已中断: 非失败, 中性灰
 }
 
 # 徽章/胶囊的语义 -> 状态键

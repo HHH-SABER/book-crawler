@@ -419,6 +419,21 @@ class Test远控地址提示(unittest.TestCase):
         p.refresh()
         self.assertFalse(p._hint.visible)
 
+    def test_远控开关进行态显示真spinner(self):
+        """#7 边界 (Phase 3 收尾): 进行态要是**真转圈**, 不能只有「启用中…」文案"""
+        from gui_components.pages.remote_page import RemotePage
+        p = RemotePage()
+        p.build()
+        self.assertTrue(hasattr(p, '_开关转圈'), '缺 spinner 控件')
+        self.assertFalse(p._开关转圈.visible, '默认不该显示转圈')
+        p._进入开关进行态()
+        self.assertTrue(p._开关转圈.visible, '进入进行态应显示转圈')
+        self.assertTrue(p._btn.disabled, '进行态必须禁用按钮 (防连点)')
+        self.assertEqual(p._btn_lab.value, '启用中…')
+        p._复位开关进行态()
+        self.assertFalse(p._开关转圈.visible, '退出进行态应收起转圈')
+        self.assertFalse(p._btn.disabled)
+
 
 class Test静态契约(unittest.TestCase):
     """锁字符串防倒退: K37 async / 通知排空挂点 / 首次引导 / 滚动条 / 组装发布"""
