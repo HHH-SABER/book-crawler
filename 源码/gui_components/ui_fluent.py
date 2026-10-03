@@ -371,7 +371,7 @@ def make_morandi_theme() -> ft.Theme:
         'on_surface': '#1B1B1B',                 # --text-primary
         'on_surface_variant': '#5C5C5C',         # --text-secondary
         'outline': '#6E6E6E',                    # --text-tertiary
-        'outline_variant': 'rgba(0,0,0,0.08)',   # --border-subtle
+        'outline_variant': '#14000000',   # --border-subtle
         'surface_container_lowest': '#FFFFFF',
         'surface_container_low': '#F1F1F1',      # --bg-sidebar (侧栏)
         'surface_container': '#F5F5F5',          # --bg-tertiary
@@ -384,8 +384,8 @@ def make_morandi_theme() -> ft.Theme:
         # _build_theme 末尾统一置 '#00000000' 关闭染色。
         'inverse_surface': '#2B2B2B',
         'on_inverse_surface': '#FFFFFF',
-        'shadow': 'rgba(0,0,0,0.16)',
-        'scrim': 'rgba(0,0,0,0.32)',
+        'shadow': '#29000000',
+        'scrim': '#52000000',
     })
 
 
@@ -432,7 +432,7 @@ def make_morandi_dark_theme() -> ft.Theme:
         'on_surface': '#FFFFFF',
         'on_surface_variant': '#C8C8C8',         # --text-secondary
         'outline': '#A6A6A6',                    # --text-tertiary
-        'outline_variant': 'rgba(255,255,255,0.09)',  # --border-subtle
+        'outline_variant': '#17FFFFFF',  # --border-subtle
         'surface_container_lowest': '#171717',
         'surface_container_low': '#171717',      # --bg-sidebar (纯黑, 比卡片更暗)
         'surface_container': '#383838',          # --bg-tertiary (旧值 #202020 偏暗, 会与页面底撞色)
@@ -442,8 +442,8 @@ def make_morandi_dark_theme() -> ft.Theme:
         'surface_bright': '#383838',
         'inverse_surface': '#F5F5F5',
         'on_inverse_surface': '#1B1B1B',
-        'shadow': 'rgba(0,0,0,0.48)',
-        'scrim': 'rgba(0,0,0,0.56)',
+        'shadow': '#7A000000',
+        'scrim': '#8F000000',
     })
 
 
