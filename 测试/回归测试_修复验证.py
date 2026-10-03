@@ -301,11 +301,20 @@ def test_speed_adaptive():
     m.record_chapter(False)
     ok("手动模式不受信号影响", m.initial_params() == (2, 0.7))
 
-    tan = sa.build_controller("https://m.siten.example.com/abc/ml.html", total_chapters=500)
-    # 站点脱钩: tier_cap 外置本地 (公开形态空表无压档) → 本断言仅在本地形态跑
+    # 站点脱钩: tier_cap 外置本地 (站点表.json 不入库) ⇒ 公开形态压档表为空,
+    # 此时无压档可验, 退而验证"空表不报错、控制器照常构建"。
+    # 有表时**必须用表里真实存在的域名**构造 URL —— 早先这里硬编码
+    # m.siten.example.com, 而真实表里只有真域名, 查不到 cap 恒为 None,
+    # 断言 `level == 0` 必然失败 (脱钩改造时漏改, 门禁步骤②长期红着)。
     if sa.SITE_TIER_CAPS:
-        ok("siten 站点上限压到标准", tan.tier.level == 0, tan.tier.name)
+        _cap_domain, _cap = next(iter(sa.SITE_TIER_CAPS.items()))
+        _tan = sa.build_controller(f"https://{_cap_domain}/abc/ml.html",
+                                  total_chapters=500)
+        ok(f"压档表条目生效 ({_cap_domain}->{_cap})",
+           _tan.tier.level == _cap, _tan.tier.name)
     else:
+        tan = sa.build_controller("https://m.siten.example.com/abc/ml.html",
+                                  total_chapters=500)
         ok("公开形态无站点约束表 (跳过压档断言)", tan.tier is not None)
 
     # 并发闸门: 降到标准档后同时进入抓取段的 worker 数 = 1
