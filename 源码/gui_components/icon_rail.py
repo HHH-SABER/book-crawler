@@ -6,6 +6,7 @@
   │  主功能                  │  ← 分区标题
   │  ⬇  抓取工作台           │  ← 选中态: 浅蓝底 + 蓝字
   │  📊  爬取历史            │
+  │  📦  死书清单            │
   │  🌐  站点管理            │
   │  📝  运行日志            │
   │  (弹性留白)              │
@@ -45,9 +46,14 @@ def _dbg(source: str, message: str):
 NAV_PAGES = [
     ('crawl',   ft.Icons.DOWNLOADING_OUTLINED,   '抓取工作台', 0),
     ('history', ft.Icons.HISTORY,                '爬取历史',   1),
-    ('sites',   ft.Icons.LANGUAGE,               '站点管理',   2),
-    ('log',     ft.Icons.SPEED,                  '运行日志',   3),
-    ('remote',  ft.Icons.SETTINGS_REMOTE,        '远控',       4),
+    # 死书清单 (死书机制 阶段4): 插在 history 与 sites 之间。
+    # ⚠️ 顺序是**契约** —— gui_app.pages_map 依赖 dict 插入序 == 本列表序,
+    #    content_stack 按 [pages_map[k] for k,_,_,_ in NAV_PAGES] 建 Stack,
+    #    且首屏可见性按索引 0 判定。**两处不同序 = 首屏显示错页**。
+    ('deadbook', ft.Icons.INVENTORY_2_OUTLINED,  '死书清单',   2),
+    ('sites',   ft.Icons.LANGUAGE,               '站点管理',   3),
+    ('log',     ft.Icons.SPEED,                  '运行日志',   4),
+    ('remote',  ft.Icons.SETTINGS_REMOTE,        '远控',       5),
 ]
 
 
