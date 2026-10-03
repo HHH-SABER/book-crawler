@@ -121,6 +121,78 @@ class Test网站失效判定(unittest.TestCase):
         self.assertFalse(是网站失效异常(''))
         self.assertFalse(是网站失效异常(None))
 
+    # ---- 2026-10-04 修复补充: 标志必须在**判定侧**算出并结构化带走 ----
+    # 此前只测了纯函数, 没有任何用例验证"标志真的会置位、并被下游读到",
+    # 于是该需求自上线起从未生效却一路绿灯 (见 文档/审查报告汇总.md 2026-10-04 条目)。
+
+    def test_判定死书_域名死时置标志(self):
+        from 死书处理 import 判定死书
+        死 = 判定死书(页面为空=True, 书名='某书', 章节数=0,
+                      网络异常文本="ConnectionError: HTTPSConnectionPool(host='x'): "
+                                   '[Errno 11001] getaddrinfo failed')
+        self.assertTrue(死['网站失效'])
+        self.assertEqual(死['类型'], '站点不可达')
+
+    def test_判定死书_临时5xx不置标志(self):
+        from 死书处理 import 判定死书
+        死 = 判定死书(页面为空=True, 书名='某书', 章节数=0,
+                      网络异常文本='HTTP 502 服务器错误')
+        self.assertFalse(死['网站失效'])
+
+    def test_判定死书_非页面为空分支一律不置标志(self):
+        from 死书处理 import 判定死书
+        for kw in (dict(页面为空=False, 书名='占位值', 章节数=0),
+                   dict(页面为空=False, 书名='502 Bad Gateway', 章节数=0),
+                   dict(页面为空=False, 书名='正常书名', 章节数=0)):
+            死 = 判定死书(网络异常文本='[Errno 11001] getaddrinfo failed', **kw)
+            self.assertIsNotNone(死)
+            self.assertFalse(死['网站失效'], f'{kw} 不应置位')
+
+    def test_死书错误结构化携带标志(self):
+        from 死书处理 import 死书错误
+        e = 死书错误('站点不可达', '目录页三次重试均未取到内容 (页面为空), 站点不可达或网络受限',
+                    'https://x.example.com/b', True)
+        self.assertTrue(e.网站失效)
+        self.assertFalse(
+            死书错误('站点不可达', '原因', 'https://x.example.com/b').网站失效)
+
+
+class Test双失效链路集成(unittest.TestCase):
+    """#3 修复的**端到端**用例: 判定 → 死书错误 → _记死书 → 落盘 + 入待弹队列。
+
+    这正是此前缺失的那一类测试 —— 只测纯函数与源码字符串存在性, 无法发现
+    "标志在真实链路上永远不会被置位", 死代码因此长期潜伏。
+    """
+
+    def setUp(self):
+        from gui_components.task_manager import TaskManager, TaskInfo
+        self.mgr = TaskManager(page=None)
+        self._TaskInfo = TaskInfo
+
+    def _喂一次(self, url, 网络异常文本):
+        from 死书处理 import 判定死书, 死书错误
+        t = self._TaskInfo(task_id='td1', url=url, title='测试书')
+        死 = 判定死书(页面为空=True, 书名='测试书', 章节数=0,
+                      网络异常文本=网络异常文本)
+        self.mgr._记死书(t, 死书错误(死['类型'], 死['原因'], url, 死['网站失效']))
+        return t
+
+    def test_域名死_标志贯通到task并落盘且入队(self):
+        url = 'https://dead1.example.com/book'
+        t = self._喂一次(url, "ConnectionError: [Errno 11001] getaddrinfo failed")
+        self.assertTrue(t.dead['网站失效'], 'task.dead 应带标志 (GUI 据此分流补址弹窗)')
+        self.assertEqual(t.status, 'dead_pending')
+        self.assertEqual(self.mgr.取一条待弹死书(), t.task_id)
+        from 死书处理 import 载入
+        记录 = next(r for r in 载入() if r.get('网址') == url)
+        self.assertTrue(记录['网站失效'], '标志应随记录落盘 (清单页/重启后仍可见)')
+
+    def test_临时故障_标志为假不误弹(self):
+        url = 'https://flaky2.example.com/book'
+        t = self._喂一次(url, 'HTTP 502 服务器错误')
+        self.assertFalse(t.dead.get('网站失效'))
+        self.assertFalse(t.dead['网站失效'])
+
 
 class Test远控局域网直连(unittest.TestCase):
     """#7: 默认 0.0.0.0 + 旧默认 127.0.0.1 迁移 + 展示地址解析"""

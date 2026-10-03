@@ -80,7 +80,7 @@ class Test判定死书(unittest.TestCase):
         """三个返回分支的键集合必须一致 (UI 读键不会 KeyError)"""
         for 页面为空, 书名 in ((True, 'x'), (False, 'novel'), (False, 'x')):
             r = D.判定死书(页面为空=页面为空, 书名=书名, 章节数=0)
-            self.assertEqual(set(r), {'类型', '原因', '可询问删除'})
+            self.assertEqual(set(r), {'类型', '原因', '可询问删除', '网站失效'})
 
     def test_章节数为零或负都判死书(self):
         for n in (0, -1):
@@ -127,7 +127,7 @@ class Test错误页标题K36(unittest.TestCase):
 
     def test_返回键完整_错误页分支(self):
         r = D.判定死书(页面为空=False, 书名='502 Bad Gateway', 章节数=0)
-        self.assertEqual(set(r), {'类型', '原因', '可询问删除'})
+        self.assertEqual(set(r), {'类型', '原因', '可询问删除', '网站失效'})
 
 
 if __name__ == '__main__':

@@ -828,6 +828,11 @@ class NovelSpider:
         self._resp_cache_lock = threading.Lock()
         self._inspect_cache = {}
         self.last_dead = None      # 死书判定结果 dict {类型,原因,可询问删除}; run_crawl 读取 (2026-10-02)
+        # 最近一次目录页获取失败的原因文本 (2026-10-04, 八项需求 #3 修复):
+        # 重试耗尽返回空页面时, "域名解析失败"与"临时 5xx/抖动"只有这里分得清 ——
+        # 交给 判定死书 判 网站失效, 供 GUI 分流"补址"弹窗。旧实现缺这条信息,
+        # 下游只能对死书错误的固定文案做特征嗅探 → 恒 False → 该需求从未生效。
+        self.last_request_error = ''
         self._inspect_cache_lock = threading.Lock()
         # ===== 反爬机制自动检测 + 内容语义质检 =====
         # _get_with_js_challenge 每次请求先过检测器: 限频退避/UA轮换自动处理,
@@ -1526,6 +1531,7 @@ class NovelSpider:
             # 网络异常(如 zhiruo.org 目录页的 ConnectionResetError)时自动重试, 避免直接进入Selenium兜底
             _conn_retries = 3
             response = None
+            self.last_request_error = ''   # 每次进入请求路径先清零, 防上一次的失败原因串味
             for _attempt in range(1, _conn_retries + 1):
                 try:
                     response = self._get_with_js_challenge(url, headers)
@@ -1536,6 +1542,9 @@ class NovelSpider:
                     if response is not None and getattr(response, 'status_code', 200) >= 500:
                         _log.info(f"[服务器错误] 状态 {response.status_code} "
                                   f"({_attempt}/{_conn_retries}), 视为瞬时故障退避重试")
+                        # 记下失败原因: 5xx 属"临时故障", 不含 DNS 特征 →
+                        # 判定死书时 网站失效=False, 不会误弹"补址"窗 (K36 语义保持)
+                        self.last_request_error = f'HTTP {response.status_code} 服务器错误'
                         response = None
                         if _attempt >= _conn_retries:
                             break
@@ -1544,6 +1553,9 @@ class NovelSpider:
                     break
                 except Exception as e:
                     _log.info(f"请求失败({_attempt}/{_conn_retries}): {e}")
+                    # 2026-10-04 (八项需求 #3 修复): 这里是把"域名解析失败"这一信号
+                    # 带到下游的唯一机会 —— 判定死书 据此置 网站失效, GUI 才可能弹补址窗
+                    self.last_request_error = f'{type(e).__name__}: {e}'
                     if _attempt >= _conn_retries:
                         break
                     time.sleep(1.0)   # v2.4.28: 3→1s. 失败路径只求快速判定, 不拖延 (超长书提速)
@@ -6390,7 +6402,8 @@ class NovelSpider:
             try:
                 from 死书处理 import 判定死书
                 self.last_dead = 判定死书(页面为空=getattr(self, '_目录页为空', False),
-                                          书名=novel_title, 章节数=total)
+                                          书名=novel_title, 章节数=total,
+                                          网络异常文本=getattr(self, 'last_request_error', ''))
                 _log.info(f"⚠️ 未提取到任何章节，抓取终止 (死书判定: "
                           f"{self.last_dead['类型']} — {self.last_dead['原因']})")
             except Exception as _de:
@@ -7182,7 +7195,8 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             _死 = getattr(src_spider, 'last_dead', None)
             from 死书处理 import 死书错误
             if isinstance(_死, dict) and _死.get('类型'):
-                last_error = 死书错误(_死['类型'], _死['原因'], src)
+                last_error = 死书错误(_死['类型'], _死['原因'], src,
+                                      _死.get('网站失效', False))
             elif not isinstance(last_error, 死书错误):
                 last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
             continue

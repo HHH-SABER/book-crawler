@@ -954,18 +954,15 @@ class TaskManager:
         if not isinstance(exc, 死书错误):
             return
         try:
-            记录, 首次 = 记录死书(task.url, task.title, exc.类型, exc.原因, task.task_id)
-            # 八项需求 #3: "书籍与网站同时失效"信号 —— 异常文本命中域名失效特征
-            # (DNS 无解析, DoH 回退也失败) 时在 dead 记录上补标记, GUI 弹窗据此
-            # 分流为"告知书名 + 询问补充新网址"。K36 类临时 502 不命中, 不误弹。
-            try:
-                from 死书处理 import 是网站失效异常
-                if exc.类型 == '站点不可达' and 是网站失效异常(str(exc)):
-                    记录['网站失效'] = True
-                    task.dead = 记录
-            except Exception as _e_flag:
-                if app_log:
-                    app_log.debug('任务管理', f'裸 except 吞异常: {type(_e_flag).__name__}: {_e_flag}')
+            # 八项需求 #3 (2026-10-04 修复): "书籍与网站同时失效"信号改为**结构化携带**。
+            # 死书错误.网站失效 由 判定死书 在判定侧算出 (DNS 层失效特征), 随异常到此处。
+            # 旧实现对 str(exc) 做 是网站失效异常() 嗅探 —— 而 str(exc) 恒为判定死书的
+            # 4 条固定文案(不含任何特征串), 该条件**恒 False**, 记录['网站失效'] 永不置位,
+            # gui_app._弹双失效 成了死代码 (2026-10-04 审查发现, 见 文档/审查报告汇总.md)。
+            # 这里不再嗅探, 只读标志, 并交给 记录死书 落盘 (清单页/重启后仍可见)。
+            网站失效 = bool(getattr(exc, '网站失效', False))
+            记录, 首次 = 记录死书(task.url, task.title, exc.类型, exc.原因, task.task_id,
+                                  网站失效=网站失效)
             task.dead = 记录
             task.status = 'dead_pending'      # end_time 由随后的 _set_terminal 冻结
             if 首次:
