@@ -862,5 +862,57 @@ class TestYunshuzhaiSamples(unittest.TestCase):
         self.assertEqual(title, '我的美母教师')
 
 
+class TestSortSampleIndex(unittest.TestCase):
+    """_排序样本下标 (2026-10-03, 修 K30 日志洪水时引入)。
+
+    这组测试的由来: 降级日志时把调用处写成 `for i, chap in _排序样本下标(...)`
+    而该函数返回 int 下标 → 运行时 "cannot unpack non-iterable int object",
+    **584 单测 + 41 手写回归全绿却没抓到** (EXE 实测跑真站才暴露)。
+    故此处既测函数本身, 也用源码级断言钉死"调用处不得解包"。
+    """
+
+    def setUp(self):
+        import 爬虫
+        self.爬虫 = 爬虫
+
+    def test_zero_and_small_are_full(self):
+        f = self.爬虫._排序样本下标
+        self.assertEqual(f(0), [])
+        self.assertEqual(f(1), [0])
+        self.assertEqual(f(3), [0, 1, 2])
+        # <= 样本数*2 时全量返回 (10 <= 5*2)
+        self.assertEqual(f(10), list(range(10)))
+
+    def test_large_returns_head_and_tail(self):
+        f = self.爬虫._排序样本下标
+        idx = f(2019)
+        self.assertEqual(idx, [0, 1, 2, 3, 4, 2014, 2015, 2016, 2017, 2018])
+        # 头尾不重叠、无重复、升序
+        self.assertEqual(len(idx), len(set(idx)))
+        self.assertEqual(idx, sorted(idx))
+
+    def test_result_usable_as_plain_int_index(self):
+        """返回值必须能直接当下标用 —— 这正是原先解包报错的根因。"""
+        chapters = [{'title': f'第{i}章', 'url': f'/c/{i}'} for i in range(2019)]
+        for i in self.爬虫._排序样本下标(len(chapters)):
+            self.assertIsInstance(i, int)
+            _ = chapters[i]['title']      # 不应抛 TypeError/ValueError
+            _ = chapters[i]['url']
+
+    def test_call_sites_must_not_unpack(self):
+        """源码级护栏: 调用处不得把返回值解包成多个变量。
+
+        判据用正则 `for A, B in ..._排序样本下标(` —— 不能用 `split('in ')`:
+        `for` 自身含 "in "，会把切点落在 for 上而让判据恒为假
+        (第一版就这么写坏的: 注入错误写法 69 个测试仍全绿)。
+        """
+        import inspect
+        import re
+        src = inspect.getsource(self.爬虫)
+        bad = [ln.strip() for ln in src.splitlines()
+               if re.search(r'for\s+\w+\s*,\s*\w+\s+in\s+_排序样本下标\(', ln)]
+        self.assertEqual(bad, [], f'调用处出现了解包写法: {bad}')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
