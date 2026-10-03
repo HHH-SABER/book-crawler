@@ -665,7 +665,9 @@ class SiteManagePage:
                 fns = '、'.join(sug.get('新增加密函数') or [])
                 self._heal_view.controls.append(ft.Container(
                     content=ft.Row([
-                        _色图标(ft.Icons.ENCRYPTION_OUTLINED, 'status-warning',
+                        # 2026-10-04 修正: Flet 无 ENCRYPTION_OUTLINED, 真名是
+                        # ENHANCED_ENCRYPTION_OUTLINED (写错的图标名会静默渲染成空白)
+                        _色图标(ft.Icons.ENHANCED_ENCRYPTION_OUTLINED, 'status-warning',
                                 size=14),
                         _色文本(domain, 'status-success', size=SIZE_SMALL,
                                 weight=WEIGHT_SUBTITLE, font_family=FONT_STACK),
