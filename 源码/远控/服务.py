@@ -202,7 +202,7 @@ def 后台启动(host: str = None, port: int = None):
         return None
     if 运行中():
         return None
-    _host = host or cfg.get("绑定", "127.0.0.1")
+    _host = host or cfg.get("绑定", "0.0.0.0")
     _port = int(port or cfg.get("端口", 8760))
     try:
         config = uvicorn.Config(app, host=_host, port=_port,
@@ -215,6 +215,11 @@ def 后台启动(host: str = None, port: int = None):
         return None
     _server_thread = _t.Thread(target=_server.run, name="远控服务", daemon=True)
     _server_thread.start()
+    # 启动留痕: 主入口 + 多网卡时的全部局域网入口 (2026-10-03 八项需求#7)
+    _ips = 局域网地址们()
+    _其它 = ", ".join(f"http://{ip}:{_port}/" for ip in _ips[1:])
+    _日志留痕(f"远控服务已启动: {展示地址()}"
+              + (f"; 局域网其他入口: {_其它}" if _其它 else ""))
     return _server_thread
 
 
@@ -241,6 +246,49 @@ def 运行中() -> bool:
     """内嵌远控是否在运行 (顶栏开关据此展示真实状态)"""
     return _server is not None and _server_thread is not None \
         and _server_thread.is_alive()
+
+
+# ---------------------------------------------------------------- 地址展示
+def 局域网地址们() -> list:
+    """枚举本机局域网 IPv4 地址 (零依赖, 纯标准库)。
+
+    两级探测:
+    1) UDP connect 技巧 (不实际发包): 连 8.8.8.8 取本机出口 IP — 最可靠的
+       "主网卡"地址, 在线时必命中;
+    2) 主机名 getaddrinfo 枚举: 离线兜底 + 补齐其余网卡 (多网卡场景)。
+    均排除 127.* 回环。失败静默返回已收集部分 (可能为空)。
+    """
+    import socket as _s
+    out: list = []
+    try:
+        with _s.socket(_s.AF_INET, _s.SOCK_DGRAM) as sk:
+            sk.connect(("8.8.8.8", 80))
+            ip = sk.getsockname()[0]
+        if ip and not ip.startswith("127.") and ip not in out:
+            out.append(ip)
+    except OSError:
+        pass  # 离线/无默认路由: 走主机名枚举兜底
+    try:
+        for info in _s.getaddrinfo(_s.gethostname(), None, _s.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith("127.") and ip not in out:
+                out.append(ip)
+    except OSError:
+        pass  # 极端环境 (gethostname 失败): 返回已收集结果即可
+    return out
+
+
+def 展示地址() -> str:
+    """面板对外展示地址: 绑定 0.0.0.0/:: 时取首个局域网 IP 拼可用 URL,
+    其余绑定值 (用户手改 127.0.0.1 等) 原样展示。"""
+    cfg = 取配置()
+    bind = str(cfg.get("绑定", "127.0.0.1"))
+    port = int(cfg.get("端口", 8760))
+    if bind in ("0.0.0.0", "::"):
+        ips = 局域网地址们()
+        ip = ips[0] if ips else "127.0.0.1"
+        return f"http://{ip}:{port}/"
+    return f"http://{bind}:{port}/"
 
 
 def _日志留痕(msg: str) -> None:

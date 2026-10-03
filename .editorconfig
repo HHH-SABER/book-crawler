@@ -1,0 +1,27 @@
+# EditorConfig — 统一跨编辑器编码与缩进 (2026-10-03 八项需求#1 工程化补齐)
+# 本项目强制 UTF-8 (中文模块名/文案), 换行符统一 LF; Windows 批处理例外必须 CRLF。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.{html,css,js}]
+indent_size = 2
+
+[*.md]
+# Markdown 行尾双空格有语义 (硬换行), 不裁
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

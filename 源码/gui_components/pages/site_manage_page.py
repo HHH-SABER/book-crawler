@@ -311,11 +311,11 @@ class SiteManagePage:
         self._refresh_table()
         banner = self._build_alarm_banner()
         # 页面级滚动 (2026-09-29): 各卡片固有高度总和超过窗口高度时,
-        # 之前无滚动出口 → 表格被挤扁、自愈卡被裁底; scroll=AUTO 整页可滚
+        # 之前无滚动出口 → 表格被挤扁、自愈卡被裁底; 2026-10-03 改 ALWAYS 常显滚动条
         return ft.Column([header, banner, toolbar, adapter_card, table_card,
                           heal_card, self._edit_card],
                          expand=True, spacing=10,
-                         scroll=ft.ScrollMode.AUTO,
+                         scroll=ft.ScrollMode.ALWAYS,
                          horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _build_alarm_banner(self):

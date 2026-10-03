@@ -23,7 +23,9 @@ _CONFIG_NAME = "远控配置.json"
 _DEFAULTS = {
     "启用": True,          # 桌面客户端启动时内嵌远控 (常驻: 客户端开着即服务在)
     "端口": 8760,
-    "绑定": "127.0.0.1",   # 默认仅本机; 手机访问见 文档/远控使用教程.md
+    # 0.0.0.0: 监听全部网卡, 局域网手机/电脑直连零安装 (2026-10-03 八项需求#7);
+    # 安全仍由 token 把守 (所有 API 需 ?k=<token>), 首建时自动生成
+    "绑定": "0.0.0.0",
     "token": "",           # 首建时自动生成 (32 位十六进制)
     # 外链前缀: 推送/分享链接的基地址 (如 https://主机名.tailxxxx.ts.net),
     # 留空则推送不含链接
@@ -59,6 +61,7 @@ def _加载或创建() -> dict:
     path = _配置路径()
     cfg = copy.deepcopy(_DEFAULTS)
     disk = None
+    需回写 = False
     if os.path.isfile(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -66,6 +69,11 @@ def _加载或创建() -> dict:
             if isinstance(_d, dict):
                 disk = _d
                 cfg = _合并默认(_d)   # 深合并: 磁盘半配置也不缺键
+                # 旧默认迁移: "127.0.0.1" 是 2.4.44 前的出厂值 (无 UI 可改),
+                # 2.4.45 起默认 0.0.0.0 局域网直连; 用户手改为其他值则尊重不动
+                if cfg.get("绑定") == "127.0.0.1":
+                    cfg["绑定"] = _DEFAULTS["绑定"]
+                    需回写 = True
         except (OSError, ValueError):
             pass  # 配置损坏 → 用默认重建 (token 会更换, 属预期)
     if not isinstance(cfg.get("token"), str) or not cfg.get("token"):
@@ -73,7 +81,7 @@ def _加载或创建() -> dict:
         _原子写(path, cfg)
         return cfg
     # 老配置缺新字段 (首次引入的 推送/外链前缀) → 落盘补齐, 便于用户直接编辑
-    if disk is None or "推送" not in disk or "外链前缀" not in disk:
+    if 需回写 or disk is None or "推送" not in disk or "外链前缀" not in disk:
         _原子写(path, cfg)
     return cfg
 
