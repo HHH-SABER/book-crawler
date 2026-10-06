@@ -1045,6 +1045,22 @@ def main(page: ft.Page):
         ),
     )
 
+    # ---- 截图/自检钩子 (2026-10-06, 仅环境变量触发: 正常使用完全不受影响) ----
+    #   用途: "设计稿 vs 程序"逐页对照 (6 页 × 日夜); 解析见 解析启动钩子()。
+    #   放在 page.add 之后: 必须先有内容再切页, 否则 Stack 可见性判定拿不到索引。
+    try:
+        _钩子 = 解析启动钩子(list(pages_map), os.environ)
+        if _钩子['警告']:
+            app_log.info("系统", f"[测试钩子] {_钩子['警告']}")
+        if _钩子['夜间']:
+            toggle_theme()
+            app_log.info("系统", "[测试钩子] 启动主题 = 夜间")
+        if _钩子['页']:
+            _switch_page(_钩子['页'])
+            app_log.info("系统", f"[测试钩子] 启动页 = {_钩子['页']}")
+    except Exception as _e_钩子:
+        app_log.debug("系统", f'启动钩子失败(不影响使用): {type(_e_钩子).__name__}: {_e_钩子}')
+
     # 退出时: 先停掉全部运行中任务 (置位 stop_event, 爬虫循环会保存检查点并
     # 优雅退出, 避免 "cannot schedule new futures after interpreter shutdown"),
     # 再关闭日志句柄
@@ -1063,6 +1079,31 @@ def main(page: ft.Page):
         page.on_disconnect = _on_disconnect
     except Exception as _exc:
         app_log.debug("GUI", f'裸 except 吞异常: {type(_exc).__name__}: {_exc}')
+
+
+def 解析启动钩子(页集, 环境: dict) -> dict:
+    """解析截图/自检钩子环境变量（**纯函数**，便于离线测试）。
+
+    - `NC_START_PAGE=<crawl|history|deadbook|sites|log|remote>`：启动直接切到该页；
+    - `NC_THEME=dark`：启动即夜间主题。
+
+    为什么需要这两个钩子：做"设计稿 vs 程序"逐页对照时要截 6 页 × 日夜共 12 张图，
+    而**鼠标坐标点击在 DPI 缩放下不可靠**（实测点「死书清单」落到了「远控」页）——
+    有了钩子就能纯环境变量驱动，不点鼠标。
+
+    Returns:
+        {'页': str|None（None=不动）, '夜间': bool, '警告': str（空=无）}
+    """
+    页 = (环境.get('NC_START_PAGE') or '').strip()
+    夜间 = (环境.get('NC_THEME') or '').strip().lower() in ('dark', 'night')
+    警告 = ''
+    目标页 = None
+    if 页:
+        if 页 in 页集:
+            目标页 = 页
+        else:
+            警告 = f'NC_START_PAGE 无效, 忽略: {页} (可选: {", ".join(页集)})'
+    return {'页': 目标页, '夜间': 夜间, '警告': 警告}
 
 
 if __name__ == "__main__":
