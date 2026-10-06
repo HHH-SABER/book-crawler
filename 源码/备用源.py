@@ -43,10 +43,18 @@ _锁 = threading.RLock()
 
 
 def 配置路径() -> str:
-    """配置文件的真实落点（环境变量优先，便于测试隔离）。"""
+    """配置文件的真实落点（按优先级：显式覆盖 > 测试沙箱 > 程序基目录）。"""
     覆盖 = os.environ.get(环境覆盖变量, '').strip()
     if 覆盖:
         return 覆盖
+    # ⚠️ 测试沙箱安全网（2026-10-06 加）：`captcha_config.json` 走的是 **BASE_DIR**
+    # （项目根 / EXE 旁），而 `测试/_沙箱.py` 只重定向了 `LOCALAPPDATA`（状态根）——
+    # 于是任何"忘了显式隔离"的测试都会把备用源写进**用户真实配置**。
+    # 当天实测真发生过（首轮 gate 把 a.example.com 写进了项目根）。
+    # 只要检测到测试沙箱，就跟着进沙箱，从机制上杜绝这类污染。
+    沙箱 = os.environ.get('_QWEN_TEST_SANDBOX_ROOT', '').strip()
+    if 沙箱:
+        return os.path.join(沙箱, _配置文件)
     try:
         from _path_utils import resolve_data_file
         return resolve_data_file(_配置文件, copy_default_from_resource_if_missing=True)

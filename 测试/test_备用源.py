@@ -26,6 +26,9 @@ class Test备用源(unittest.TestCase):
         根 = Path(tempfile.mkdtemp(prefix='备用源_'))
         self.配置 = 根 / 'captcha_config.json'
         os.environ[备用源.环境覆盖变量] = str(self.配置)
+        # 隔离自检: 配置落点必须真的是临时文件 —— 否则测试会写用户的真实配置
+        # (2026-10-06 真的发生过一次: 首轮测试尚未加隔离, 把 a.example.com 写进了项目根)
+        self.assertEqual(备用源.配置路径(), str(self.配置))
         self.addCleanup(lambda: os.environ.pop(备用源.环境覆盖变量, None))
         self.addCleanup(lambda: __import__('shutil').rmtree(根, ignore_errors=True))
 
@@ -129,6 +132,20 @@ class Test备用源(unittest.TestCase):
         self.assertFalse(self.配置.exists())
         self.assertEqual(备用源.取备用源(self.书), [])
         self.assertEqual(备用源.全部(), {})
+
+    def test_测试沙箱内绝不落到真实配置(self):
+        """系统性安全网: 未显式隔离时, 落点也必须跟着测试沙箱走。
+
+        2026-10-06 实测事故: `captcha_config.json` 走 BASE_DIR(项目根),
+        而 `测试/_沙箱.py` 只重定向了 LOCALAPPDATA(状态根) → 首轮 gate 把
+        `a.example.com` 写进了**用户真实配置**。此断言防它复发。
+        """
+        os.environ.pop(备用源.环境覆盖变量, None)      # 刻意**不**显式隔离
+        沙箱 = os.environ.get('_QWEN_TEST_SANDBOX_ROOT', '')
+        self.assertTrue(沙箱, '前提: 测试沙箱环境变量应已由 测试/_沙箱.py 设好')
+        路径 = 备用源.配置路径()
+        self.assertTrue(os.path.abspath(路径).startswith(os.path.abspath(沙箱)),
+                        f'未隔离时配置落点必须进沙箱, 实际: {路径}')
 
 
 if __name__ == '__main__':
