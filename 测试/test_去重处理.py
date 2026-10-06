@@ -228,6 +228,31 @@ class Test清单(unittest.TestCase):
             D.写出清单(组)          # 再扫一次不应把 已忽略 拉回 待确认
             self.assertEqual(D.载入()[0]['状态'], D.状态_已忽略)
 
+    def _组(self, 键, 可清理=(), 待确认=()):
+        return [{'键': 键,
+                 '代表': {'路径': f'X:/代表-{键}.txt', '名': f'代表-{键}.txt',
+                         '字数': 100, '字节': 1},
+                 '可自动清理': [{'路径': f'X:/{n}', '名': n, '字数': 9, '字节': 1,
+                             '判定': D.判定_同一本, '理由': '', '指标': {}} for n in 可清理],
+                 '待确认': [{'路径': f'X:/{n}', '名': n, '字数': 9, '字节': 1,
+                          '判定': D.判定_灰区, '理由': '', '指标': {}} for n in 待确认]}]
+
+    def test_已清理的组又冒出新重复要退回待确认(self):
+        D.写出清单(self._组('k_re'))
+        D.设状态('k_re', D.状态_已清理)
+        D.写出清单(self._组('k_re'))                 # 已无待办 → 保持 已清理
+        self.assertEqual(D.载入()[0]['状态'], D.状态_已清理)
+        D.写出清单(self._组('k_re', 可清理=['又一份.txt']))   # 冒出新的
+        self.assertEqual(D.载入()[0]['状态'], D.状态_待确认,
+                         '新出现的重复必须重新提醒, 不能被"已清理"静默吃掉')
+
+    def test_已忽略的组保持忽略(self):
+        D.写出清单(self._组('k_ig'))
+        D.设状态('k_ig', D.状态_已忽略)
+        D.写出清单(self._组('k_ig', 待确认=['新项.txt']))
+        self.assertEqual(D.载入()[0]['状态'], D.状态_已忽略,
+                         '用户明确忽略过的组不该反复打扰')
+
     def test_非法状态被拒(self):
         self.assertFalse(D.设状态('不存在', '乱状态'))
 
@@ -316,6 +341,56 @@ class Test清理编排(_底座):
             r = D.执行清理('k_rep', '删除')
             self.assertEqual(r['清理'], [])
             self.assertTrue(os.path.isfile(代表), '代表项不该被删')
+
+    def _造灰区组(self):
+        """造一个「只有待确认项」的组 (模拟 Jaccard 落在灰区的两组文件)。"""
+        代表 = _写文本(os.path.join(self.目录, '全本.txt'), 'x' * 50)
+        灰 = _写文本(os.path.join(self.目录, '疑似.txt'), 'y' * 40)
+        D.保存([{'键': 'k_grey', '状态': D.状态_待确认,
+                 '代表': {'路径': 代表, '名': '全本.txt', '字数': 1000, '字节': 50},
+                 '可自动清理': [],
+                 '待确认': [{'路径': 灰, '名': '疑似.txt', '字数': 900, '字节': 40,
+                           '判定': D.判定_灰区, '理由': 'r', '指标': {}}],
+                 '最近时间': ''}])
+        return 代表, 灰
+
+    def test_灰区项未点名批准时不得被动(self):
+        代表, 灰 = self._造灰区组()
+        r = D.执行清理('k_grey', '隔离')
+        self.assertEqual(r['清理'], [])
+        self.assertTrue(r['失败'])
+        self.assertTrue(os.path.isfile(灰), '未批准的灰区项必须原地不动')
+        self.assertTrue(os.path.isfile(代表))
+
+    def test_灰区项点名批准后按隔离模式清理(self):
+        代表, 灰 = self._造灰区组()
+        r = D.执行清理('k_grey', '隔离', 额外确认项=['疑似.txt'])
+        self.assertEqual(r['清理'], ['疑似.txt'])
+        self.assertEqual(r['失败'], [])
+        self.assertFalse(os.path.exists(灰))
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.目录, D.隔离目录名, '疑似.txt')), '应移入隔离区')
+        self.assertTrue(os.path.isfile(代表), '代表项不得被动')
+
+    def test_点名未列在待确认里的项不生效(self):
+        代表, 灰 = self._造灰区组()
+        r = D.执行清理('k_grey', '隔离', 额外确认项=['别的书.txt'])
+        self.assertEqual(r['清理'], [])
+        self.assertTrue(os.path.isfile(灰), '点名不存在的项不该误伤别的文件')
+
+    def test_点名代表项仍被硬保护拒绝(self):
+        """即便用户点名, 代表项 (保留项) 也不得被删。"""
+        代表 = _写文本(os.path.join(self.目录, '全本.txt'), 'x' * 50)
+        D.保存([{'键': 'k_rep2', '状态': D.状态_待确认,
+                 '代表': {'路径': 代表, '名': '全本.txt', '字数': 1000, '字节': 50},
+                 '可自动清理': [],
+                 '待确认': [{'路径': 代表, '名': '全本.txt', '字数': 1000, '字节': 50,
+                           '判定': D.判定_灰区, '理由': 'r', '指标': {}}],
+                 '最近时间': ''}])
+        r = D.执行清理('k_rep2', '删除', 额外确认项=['全本.txt'])
+        self.assertEqual(r['清理'], [])
+        self.assertTrue(r['失败'])
+        self.assertTrue(os.path.isfile(代表), '代表项不该被删, 即使被点名')
 
     def test_未知键返回失败(self):
         r = D.执行清理('不存在的键', '隔离')
