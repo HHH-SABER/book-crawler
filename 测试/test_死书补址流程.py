@@ -28,7 +28,10 @@ class _隔离配置:
 
     def setUp(self):
         根 = Path(tempfile.mkdtemp(prefix='补址流程_'))
-        os.environ[备用源.环境覆盖变量] = str(根 / 'captcha_config.json')
+        路径 = 根 / 'captcha_config.json'
+        os.environ[备用源.环境覆盖变量] = str(路径)
+        # 隔离自检: 落点必须是临时文件 (见 test_备用源.py 同名断言)
+        self.assertEqual(备用源.配置路径(), str(路径))
         self.addCleanup(lambda: os.environ.pop(备用源.环境覆盖变量, None))
         self.addCleanup(lambda: __import__('shutil').rmtree(根, ignore_errors=True))
 
