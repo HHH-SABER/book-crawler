@@ -307,6 +307,18 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
     divider_theme = ft.DividerTheme(
         color=cs_kwargs.get('outline_variant', MORANDI_OUTLINE_VARIANT))
 
+    # 提示条主题 (2026-10-06): 兜底 —— 若有人手写裸 ft.SnackBar 而没给色,
+    # 至少保证"深底浅字/浅底深字"成对, 不会出现黑底黑字。
+    # 正常路径请用 ui_fluent.提示条(), 它还会登记主题重刷。
+    # ⚠️ 字段名是 flet 的 `snackbar_theme`(无下划线), 写成 snack_bar_theme 会在
+    #    建主题时 TypeError 直接崩 (2026-10-06 被 test_提示条可读性 当场抓住)。
+    snackbar_theme = ft.SnackBarTheme(
+        bgcolor=cs_kwargs.get('inverse_surface', '#2B2B2B'),
+        content_text_style=ft.TextStyle(
+            size=SIZE_SMALL, weight=WEIGHT_BODY, font_family=FONT_STACK,
+            color=cs_kwargs.get('on_inverse_surface', '#FFFFFF')),
+    )
+
     return ft.Theme(
         color_scheme=cs,
         use_material3=True,
@@ -318,6 +330,7 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
         icon_button_theme=icon_btn_theme,
         dialog_theme=dialog_theme,
         divider_theme=divider_theme,
+        snackbar_theme=snackbar_theme,
     )
 
 
@@ -485,6 +498,45 @@ def make_morandi_card(content, **kwargs) -> ft.Container:
     """卡片 (复用 ui_theme.make_card)"""
     from .ui_theme import make_card as _make_card
     return _make_card(content, **kwargs)
+
+
+def 提示条(文案: str, 时长: int = 4000, 图标=None) -> ft.SnackBar:
+    """**统一** SnackBar 构造器 (2026-10-06 修复"黑底黑字看不见")。
+
+    为什么必须由这里统一给色、而不能让调用方自己写:
+    - Flutter 默认 SnackBar 底取自 `colorScheme.inverseSurface`(**深色**)、
+      字取自 `onInverseSurface`(浅色) —— 本来可读;
+    - 但本项目为修 v2.4.19「EXE 里弹窗文字不可见」, 多处把文字**显式**设成
+      `ON_SURFACE`(深色)。显式色会覆盖主题默认色 → **深字压深底, 完全看不见**
+      (用户 2026-10-06 报告: 死书清单页点「重新检测」后提示条不可读)。
+    - 所以这里**同时**给 `bgcolor` 与文字色, 两者取自**同一对**令牌
+      (`toast-bg` / `toast-fg`), 既满足"显式给色"的 EXE 契约, 又保证前后景配对;
+      并登记重刷, 切主题后仍然成对换色。
+
+    新增提示请一律用它, 不要再手写 `ft.SnackBar(ft.Text(..., color=ON_SURFACE))`。
+    """
+    前景 = 取色('toast-fg')
+    正文 = txt(文案, size=SIZE_SMALL, weight=WEIGHT_BODY, color=前景,
+              font_family=FONT_STACK)
+    内容 = 正文
+    if 图标 is not None:
+        内容 = ft.Row([ft.Icon(图标, size=16, color=前景), 正文],
+                      spacing=8, tight=True,
+                      vertical_alignment=ft.CrossAxisAlignment.CENTER)
+    条 = ft.SnackBar(content=内容, bgcolor=取色('toast-bg'), duration=时长)
+
+    def _换色(c):
+        # 只改属性, 不调 update() (项目硬约定: 由 page.update 兜底刷出)
+        c.bgcolor = 取色('toast-bg')
+        _前景 = 取色('toast-fg')
+        正文.color = _前景
+        if 图标 is not None and isinstance(c.content, ft.Row):
+            for 子 in c.content.controls:
+                if isinstance(子, ft.Icon):
+                    子.color = _前景
+
+    登记重刷(条, _换色)
+    return 条
 
 
 def open_dialog(page, ctrl):

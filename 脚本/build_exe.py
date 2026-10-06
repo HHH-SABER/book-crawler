@@ -203,6 +203,14 @@ _DIST_USER_FILES = ('站点配置.json', 'captcha_config.json', '网站清单.tx
 def 保护dist用户数据(dist: str) -> str:
     """把 dist 内用户运行时数据移入临时 stash 目录。
 
+    ⚠️ 2026-10-06 修复: stash 必须与 dist **同盘**。旧实现用
+    `tempfile.mkdtemp()`(落在 C: 盘), 而工作区在别的盘 → `shutil.move` 跨盘只能
+    "复制 + 删除源"; 用户在**运行程序**时 `dist/抓取结果/xxx.txt` 会被周期性读取、
+    产生瞬时锁 → 删除失败 → **整个打包中止**(2026-10-06 连续两次实测)。
+    现改为: ① stash 放工作区 `.runtime/`(同盘) → 通常一次原子改名即可;
+    ② 改名仍失败时退化为**只复制、不删除源** —— 源文件随后由 dist 清理删除,
+    构建结束由 stash 还原, 数据不丢; 锁不再是打包的阻断点。
+
     Returns:
         stash 目录路径; 无可保护内容时返回 ''。
     """
@@ -212,14 +220,34 @@ def 保护dist用户数据(dist: str) -> str:
              if os.path.isfile(os.path.join(dist, name))]
     if not 条目:
         return ''
-    stash = tempfile.mkdtemp(prefix='build_dist_stash_')
-    for name in 条目:
+    暂存根 = os.path.join(os.path.dirname(os.path.abspath(dist)), '.runtime')
+    if not os.path.isdir(暂存根):
         try:
-            shutil.move(os.path.join(dist, name), os.path.join(stash, name))
+            os.makedirs(暂存根, exist_ok=True)
+        except OSError as _e:
+            暂存根 = None      # 极端只读环境 → 退回系统临时目录 (至少不比旧行为差)
+            log(f"[WARN] 无法创建同盘暂存目录, 退回系统临时目录: {type(_e).__name__}")
+    stash = tempfile.mkdtemp(prefix='dist_stash_', dir=暂存根)
+    for name in 条目:
+        源 = os.path.join(dist, name)
+        目标 = os.path.join(stash, name)
+        try:
+            shutil.move(源, 目标)
             log(f"[PRESERVE] 已暂存用户数据: {name}")
+            continue
         except Exception as e:
+            首次错误 = e
+        # 兜底: 只复制不删除源 (锁通常只挡删除/改名, 不挡读取)
+        try:
+            if os.path.isdir(源):
+                shutil.copytree(源, 目标, dirs_exist_ok=True)
+            else:
+                shutil.copy2(源, 目标)
+            log(f"[PRESERVE] 已暂存(复制)用户数据: {name} —— 直接移动失败, 已退化复制: "
+                f"{type(首次错误).__name__}: {首次错误}")
+        except Exception as e2:
             恢复dist用户数据(dist, stash)
-            raise RuntimeError(f"暂存 {name} 失败，已中止 dist 清理；剩余原件保留在 {stash}: {e}") from e
+            raise RuntimeError(f"暂存 {name} 失败，已中止 dist 清理；剩余原件保留在 {stash}: {e2}") from e2
     return stash
 
 
@@ -394,6 +422,20 @@ def main():
     # 环境变量 WBC_SKIP_CLEAN=1 时跳过目录删除 (dist 被进程占用/沙箱拦截时用;
     # PyInstaller --noconfirm 会覆盖 dist 内同名 EXE)
     dist = os.path.join(ROOT, "dist")
+    # --- 预检 (2026-10-06): 目标 EXE 是否被"正在运行的程序"占用 ---
+    # 旧行为: PyInstaller 跑到最后一步 os.remove(dist/xxx.exe) 才抛裸
+    #   PermissionError: [WinError 5] 拒绝访问, 前面的解包/分析全白跑 (约 70s),
+    #   且报错完全看不出"是程序还开着"。这里提前用"能否以写方式打开"判定并给人话提示。
+    目标exe = os.path.join(dist, "小说爬虫.exe")
+    if os.path.isfile(目标exe):
+        try:
+            with open(目标exe, "r+b"):
+                pass
+        except OSError as _e:
+            log("[FAIL] 小说爬虫.exe 正被占用 —— 多半是**程序还在运行**。"
+                "请先完全关闭它再打包 (Windows 不允许覆盖运行中的 EXE): "
+                f"{type(_e).__name__}: {_e}")
+            return 3
     _dist_stash = ''   # 用户运行时数据 stash (见 保护dist用户数据/恢复dist用户数据)
     if os.path.isdir(dist) and not os.environ.get("WBC_SKIP_CLEAN"):
         _dist_stash = 保护dist用户数据(dist)
