@@ -70,6 +70,8 @@ _日间 = {
     'bg-sidebar':          '#F1F1F1',
     'bg-sidebar-hover':    '#E7E7E7',
     'bg-sidebar-active':   '#FAF1E7',
+    # 设计稿侧栏「访问 GitHub」卡片链接色 (--github-link; 色板表 2026-10-03)
+    'github-link':         '#8A4310',
     'bg-row-hover':        '#FAFAF9',
     # 提示条 (SnackBar) —— 必须**成对**使用: Flutter 默认提示条是深底浅字,
     # 而项目为修 EXE 文字不可见曾把文字显式设成深色 → 深压深看不见
@@ -157,6 +159,7 @@ _夜间色 = {
     'bg-sidebar':          '#171717',      # 纯黑, 比卡片更暗
     'bg-sidebar-hover':    '#2B2B2B',
     'bg-sidebar-active':   '#382614',
+    'github-link':         '#E8964A',
     'bg-row-hover':        '#303030',
     # 提示条 (SnackBar): 夜间反过来 —— 浅底深字, 同样保证对比
     'toast-bg':            '#F5F5F5',

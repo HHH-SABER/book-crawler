@@ -194,7 +194,7 @@ def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) 
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
-        height=48,
+        height=52,   # 设计稿 titlebar = 52px (原 48)
         padding=ft.Padding.symmetric(horizontal=16, vertical=0),
         bgcolor=ft.Colors.SURFACE,
         border=ft.Border.only(
@@ -208,6 +208,9 @@ def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) 
     登记重刷(app_title, lambda c: setattr(c, 'color', 取色('text-primary')))
     return bar
 
+
+# 项目仓库 (设计稿侧栏"访问 GitHub"卡片; 本项目自己的开源地址, 非站点信息)
+_仓库地址 = "https://github.com/HHH-SABER/book-crawler"
 
 # ====================================================================
 # 四、IconRail 类 (220px 宽侧边栏 — 精确还原预览)
@@ -230,9 +233,11 @@ class IconRail:
         self._is_dark = False
         self._nav_buttons = {}
         self._control = None
+        self.page = None            # 由 gui_app 注入 (GitHub 卡要打开浏览器)
+        self._状态点 = None          # 侧栏底部状态块 (设置状态摘要 驱动)
+        self._状态文本 = None
         self.page = None
-        # 状态摘要显示已移至窗口底部全局状态条 (gui_app status_bar),
-        # 侧边栏不再重复渲染状态指示器
+        # 状态摘要同时在窗口底部状态条与侧栏底部块显示 (同一数据源)
 
     def set_active(self, key: str):
         self._active_key = key
@@ -340,6 +345,80 @@ class IconRail:
         except Exception as _e:
             _dbg("导航栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
+    # ---- 侧栏底部 (设计稿: 状态块 + 访问 GitHub 卡片) ----
+    # 设计稿 `.sidebar-status` 与 GitHub 卡都在侧栏底部; 此前程序只有窗口底部
+    # 全局状态条(gui_app status_bar), 侧栏刻意留空。
+    # 数据源**同一份**: gui_app 的状态循环把同一个 label/颜色同时喂给两处, 不新造统计。
+    def _底部块(self) -> ft.Control:
+        半径 = getattr(ui_tokens, 'RADIUS_MD', ui_tokens.RADIUS_SM)
+        self._状态点 = ft.Icon(ft.Icons.CIRCLE, size=8, color=取色('status-success'))
+        self._状态文本 = txt('就绪', size=ui_tokens.FS_MICRO,
+                            weight=WEIGHT_BODY, color=取色('text-secondary'))
+        状态块 = ft.Container(
+            content=ft.Row([self._状态点, self._状态文本], spacing=6,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            border_radius=半径,
+            bgcolor=取色('bg-tertiary'),
+        )
+        登记重刷(状态块, lambda c: setattr(c, 'bgcolor', 取色('bg-tertiary')))
+        登记重刷(self._状态文本, lambda c: setattr(c, 'color', 取色('text-secondary')))
+
+        标题行 = ft.Row([
+            ft.Icon(ft.Icons.STAR_OUTLINE, size=13, color=取色('github-link')),
+            txt('访问 GitHub', size=ui_tokens.FS_MICRO, weight=WEIGHT_SUBTITLE,
+                color=取色('github-link')),
+        ], spacing=6, tight=True)
+        提示行 = txt('如果觉得软件好用请不要吝啬你的 Star',
+                    size=ui_tokens.FS_MICRO, weight=WEIGHT_BODY,
+                    color=取色('text-tertiary'))
+        github卡 = ft.Container(
+            content=ft.Column([标题行, 提示行], spacing=3, tight=True),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
+            border_radius=半径,
+            on_click=self._打开仓库,
+            tooltip=_仓库地址,
+            ink=True,
+        )
+        登记重刷(标题行.controls[0], lambda c: setattr(c, 'color', 取色('github-link')))
+        登记重刷(标题行.controls[1], lambda c: setattr(c, 'color', 取色('github-link')))
+        登记重刷(提示行, lambda c: setattr(c, 'color', 取色('text-tertiary')))
+        return ft.Column([状态块, github卡], spacing=6, tight=True)
+
+    def _打开仓库(self, _e=None):
+        """点 GitHub 卡 → 系统浏览器打开项目仓库 (页面未就绪时静默降级)。"""
+        if self.page is None:
+            return
+        try:
+            self.page.launch_url(_仓库地址)
+        except Exception as _e2:
+            _dbg('导航栏', f'打开仓库失败: {type(_e2).__name__}: {_e2}')
+
+    def 设置状态摘要(self, 文案: str, 颜色: str):
+        """侧栏底部状态块 (与窗口底部状态条**同一数据源**)。
+
+        幂等: 只改属性; 由 刷新状态摘要() 统一 update —— 与底部状态条同一节奏
+        (高频路径, 每帧 update 会刷屏)。
+        """
+        try:
+            if self._状态文本 is not None:
+                self._状态文本.value = 文案
+            if self._状态点 is not None:
+                self._状态点.color = 颜色
+        except Exception as _e:
+            _dbg('导航栏', f'设置状态摘要失败: {type(_e).__name__}: {_e}')
+
+    def 刷新状态摘要(self):
+        """把 设置状态摘要 记下的值刷到界面 (控件可能尚未入树, 失败即忽略)。"""
+        for c in (self._状态点, self._状态文本):
+            if c is None:
+                continue
+            try:
+                c.update()
+            except Exception as _e:
+                _dbg('导航栏', f'状态摘要刷新失败: {type(_e).__name__}: {_e}')
+                break
+
     def build(self) -> ft.Control:
         """构建 220px 宽侧边栏"""
         # 分区标题 (--fs-micro 11px + 600)
@@ -350,8 +429,8 @@ class IconRail:
         # 导航按钮列表
         nav_btns = [self._make_nav_btn(k, ic, lb) for k, ic, lb, _ in NAV_PAGES]
 
-        # 组合: 分区标题 + 导航按钮 + 弹性留白
-        # (状态摘要显示已移至窗口底部全局状态条, 侧边栏不再重复)
+        # 组合: 分区标题 + 导航按钮 + 弹性留白 + 底部块(状态块/GitHub 卡)
+        # 注: 窗口底部全局状态条仍在; 侧栏这块是设计稿要求, 两者同源不重复统计
         body = ft.Column(
             [
                 ft.Container(
@@ -360,6 +439,7 @@ class IconRail:
                 ),
                 *nav_btns,
                 ft.Container(expand=True),
+                self._底部块(),   # 设计稿: 侧栏底部 = 状态块 + GitHub 卡
             ],
             spacing=2,
             expand=True,

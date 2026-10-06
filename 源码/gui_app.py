@@ -2,10 +2,16 @@
 """小说爬虫 GUI 主程序 (苹果风格界面)
 
 基于 Flet 框架。布局:
-  顶栏 (52px): macOS 交通灯 + 居中应用标题 + 右侧主题切换
-  + 侧边栏 (220px): 图标+文字导航 + 底部状态指示器
-  + 主内容区 (抓取工作台: 输入条 + 任务表格 + 可折叠日志条 + 右侧上下文抽屉)
+  === 设计稿目标 (界面设计预览/index.html, 2.5 界面重设计) ===
+  顶栏 (52px): 应用图标 + 应用名 + 远控胶囊 + 主题胶囊 + 窗口按钮
+  + 侧边栏 (220px): 图标+文字导航 + 底部状态块 + 访问 GitHub 卡
+  + 主内容区 (抓取工作台: 输入条 + 任务表格 + **底部常驻日志条** + 右侧常驻详情栏)
   + 底部状态栏 (实时任务汇总)
+  === 当前实现状态 (2026-10-06, Phase 4 落实中) ===
+  ✅ 顶栏 52px / 侧栏底部状态块 + GitHub 卡 / 底部状态栏 / 右侧抽屉
+  ⚠️ 待办: 底部常驻日志条 (现为右侧抽屉内的"实时日志"视图) —— 批 2;
+          自定义标题栏与窗口按钮、右栏常驻化、控件密度 —— 批 2/批 3
+  (旧注释直接写"可折叠日志条", 与实现不符、易误导 —— 已按现状改写)
 支持日间/夜间双主题切换。
 """
 import flet as ft
@@ -329,6 +335,7 @@ def main(page: ft.Page):
     # ---- 图标导航栏 ----
     rail = IconRail(on_nav=lambda key: _switch_page(key),
                     on_theme_toggle=toggle_theme)
+    rail.page = page          # 侧栏底部 GitHub 卡需要 page 才能打开浏览器
 
     # ---- 抓取工作台: 输入条 + 任务表格 | 右侧常驻面板 (实时日志/详情/预览) ----
     input_bar = InputBar(task_manager)
@@ -562,6 +569,9 @@ def main(page: ft.Page):
                     status_text.value = label
                     status_dot.update()
                     status_text.update()
+                    # 设计稿: 侧栏底部也有同源状态块 (同一 label/颜色, 不另算)
+                    rail.设置状态摘要(label, dot_color)
+                    rail.刷新状态摘要()
             except Exception:
                 pass  # 刻意静默: 高频路径(_status_loop(), 逐行/每秒级), 补日志会刷屏
             await asyncio.sleep(1)
@@ -1016,7 +1026,9 @@ def main(page: ft.Page):
     page.window.prevent_close = True
     page.window.on_event = _处理关闭
 
-    top_bar = build_top_bar(page, _应用名, _theme_toggle_btn[0],
+    # 页内标题不带版本号 (设计稿 titlebar 只写应用名); 窗口标题仍用 _应用名
+    # 带版本, 便于支持与排查 —— 原先两处都带版本, 视觉上重复。
+    top_bar = build_top_bar(page, "小说爬虫", _theme_toggle_btn[0],
                             extra_controls=[_远控按钮])
 
     # ---- 整体布局 (三段式: 顶栏 + 侧边导航 + 主内容) ----
