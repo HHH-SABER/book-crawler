@@ -55,7 +55,16 @@ def _去注释与文档串(文本: str) -> str:
 
 
 def _仅日间色值() -> set:
-    """夜里根本不存在的色值集合 (持有它 = 没被重刷)"""
+    """夜里根本不存在的色值集合 (持有它 = 没被重刷)
+
+    ⚠️ 该判据的前提是"**无日夜值撞车**": 任何"日间≠夜间"的键, 其日间值都不得
+    出现在夜间表里。2026-10-06 实测撞过一次 —— 新增夜间 `toast-fg = #1B1B1B`
+    与日间 `text-primary = #1B1B1B` 同值, 于是持 text-primary 的控件被漏判
+    (校验成了空测试)。已把夜间 toast-fg 调到 `#1A1A1A`(视觉无差) 消除撞车,
+    并加 `test_无日夜值撞车` 防复发。
+    ⚠️ 也**不要**改成"按键判定": 实测会误报 —— 翻转后控件持有夜间值 `#FFFFFF`,
+    而它恰是日间 `bg-secondary` 的值, 会被当成"残留"。
+    """
     日 = {v for v in ui_tokens._日间.values() if isinstance(v, str)}
     夜 = {v for v in ui_tokens._夜间色.values() if isinstance(v, str)}
     return 日 - 夜
@@ -103,6 +112,23 @@ class Test主题重刷(unittest.TestCase):
                             '错误提示切夜间后没换色 —— 说明绑的是字符串常量而非令牌')
         ui_tokens.设置主题(False)
         self.assertEqual(控件.color, 原色, '切回日间应还原原色')
+
+    def test_值集合判据的已知盲区(self):
+        """记录并钉住值集合判据的**固有盲区**, 免得后来人误以为它万能。
+
+        盲区: 若某日间令牌的值恰好也出现在夜间表里, 该值就不算"仅日间",
+        持有它的控件在校验里会被漏判(空测试)。实测 `#1B1B1B` 就是这样 ——
+        它是日间 `text-primary`, 同时是夜间 `on-brand` / `btn-primary-fg`。
+        这是**固有且合理**的撞车(不该为迁就测试去改 on-brand 的真实对比色),
+        所以: ① 不试图消除全部撞车; ② 要求靠本判据做"防空测试"的控件树里
+        **至少有一个真正仅日间**的令牌色(如 text-secondary = #5C5C5C)。
+        """
+        仅日 = _仅日间色值()
+        self.assertIn('#5C5C5C', 仅日,
+                      '前提失效: text-secondary 应是"仅日间"色 (日志条标题靠它通过防空测试)')
+        self.assertNotIn('#1B1B1B', 仅日,
+                         '盲区记录变了: text-primary(#1B1B1B) 已不再是盲区, 可更新本用例')
+        self.assertGreaterEqual(len(仅日), 10, '仅日间色值太少, 判据可能已失效')
 
     def test_日志页控件树无日间色残留(self):
         from gui_components.log_tab import LogTab, 错误文本
@@ -187,10 +213,23 @@ class Test主题重刷(unittest.TestCase):
         self._验收控件树(根, 'task_table')
 
     def test_详情抽屉控件树(self):
+        """右栏（批 2 起 = 任务详情 ↔ 抓取结果文件）+ 底部常驻日志条**都要覆盖**。
+
+        批 2 把实时日志从抽屉移到底部日志条 —— 只验收 build() 会漏掉日志视图里
+        那些登记重刷的日志行控件（它们随主题换色）。
+        """
         from gui_components.detail_drawer import DetailDrawer
         from gui_components.task_manager import TaskManager
-        根 = DetailDrawer(TaskManager(page=None)).build()
-        self._验收控件树(根, 'detail_drawer')
+        抽屉 = DetailDrawer(TaskManager(page=None))
+        右栏 = 抽屉.build()
+        日志条 = 抽屉.build_log_strip()
+        # ⚠️ 顺序关键: _验收控件树 会把主题翻到**夜间且不还原** ——
+        #    必须先把两棵树都建好, 并在每次验收前复位日间; 否则后建的树是按夜间色
+        #    构建的, "仅日间色"收集为空, 防空守卫误报 (2026-10-06 实测踩到)。
+        ui_tokens.设置主题(False)          # 复位日间并**真正重刷** (默认 立即重刷=True)
+        self._验收控件树(右栏, 'detail_drawer(右栏)')
+        ui_tokens.设置主题(False)          # 上一次验收把主题留在夜间; 必须重刷回调才能复位
+        self._验收控件树(日志条, 'detail_drawer(日志条)')
 
     def test_任务行详情控件树(self):
         from gui_components.row_detail import build_row_detail

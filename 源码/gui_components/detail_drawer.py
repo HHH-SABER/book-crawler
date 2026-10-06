@@ -1,5 +1,13 @@
 # -*- coding: utf-8 -*-
-"""右侧常驻面板：实时日志 (默认) / 任务详情 / 文件预览 三视图切换
+"""右侧常驻栏 + 底部常驻日志条 (设计稿 界面设计预览/index.html)
+
+2026-10-06 (Phase 4 批 2) 由"单抽屉三视图切换"改为**两处常驻**:
+  - 右侧常驻栏: 任务详情 (默认) ↔ 抓取结果文件预览
+  - 底部常驻日志条 (.log-strip): 实时日志, 深色终端风 + ▲/▼ 折叠
+理由: 设计稿把「任务详情/输出文件」放右栏常驻、把「实时日志」放底部常驻;
+此前两者共用一个"点行才开"的抽屉, 与设计稿的呈现形态不符。
+
+历史沿革: 实时日志 (默认) / 任务详情 / 文件预览 三视图切换
 
 - 宽度固定 320px, 始终展开
 - 实时日志视图 (默认): 跟随选中任务的实时日志, 深色终端风 + 语义着色
@@ -61,7 +69,9 @@ class DetailDrawer:
     def __init__(self, task_manager: TaskManager):
         self.task_manager = task_manager
         self.page = None
-        self._view = "log"        # log (默认) / detail / preview
+        self._view = "detail"     # 右栏视图: detail (默认) / preview
+        self._日志条展开 = True      # 底部日志条折叠态 (设计稿 ▲)
+        self._视图已建 = False       # 幂等: 两个构建入口共用一套视图控件
         self._窄档 = False        # 窄窗口(≤1200px)档: 宽度 320 → 260
         self._log_sig = None      # 日志视图渲染签名 (task_id, len(logs))
         self._files = []
@@ -78,9 +88,15 @@ class DetailDrawer:
         self._file_info = None
 
     # ------------------------------------------------------------------ UI
-    def build(self) -> ft.Control:
-        """构建右侧面板 (默认实时日志视图)"""
-        # ---- 实时日志视图 (默认) ----
+    # 底部日志条展开高度 (设计稿 .log-strip 在 940 画布上约 220px;
+    # 本机实际逻辑视口 725 → 取 180, 保证日志条 + 任务表都能看见)
+    _日志条高 = 180
+
+    def _构建视图(self):
+        """构建三块视图控件 (**幂等**: build() 与 build_log_strip() 都会调用)。"""
+        if getattr(self, '_视图已建', False):
+            return
+        # ---- 实时日志 (现居底部常驻日志条) ----
         # scroll=ALWAYS: 常显滚动条 (2026-09-29 二轮反馈"实时日志也加滚动条")
         self._log_list = ft.ListView(expand=True, spacing=1, auto_scroll=True,
                                      scroll=ft.ScrollMode.ALWAYS)
@@ -92,12 +108,12 @@ class DetailDrawer:
             padding=8,
         )
 
-        # ---- 任务详情视图 (scroll+tight: 指标卡多时页面内滚, 不再被抽屉底裁掉;
-        #       2026-10-03 改 ALWAYS 常显滚动条) ----
+        # ---- 任务详情 (现居右侧常驻栏) ----
+        # scroll+tight: 指标卡多时栏内滚, 不再被裁掉 (2026-10-03 改 ALWAYS 常显滚动条)
         self._detail_view = ft.Column(spacing=8, scroll=ft.ScrollMode.ALWAYS,
                                       tight=True)
 
-        # ---- 文件预览视图 ----
+        # ---- 文件预览 (右栏切换视图) ----
         self._file_list = ft.ListView(expand=True, spacing=2, auto_scroll=True,
                                       scroll=ft.ScrollMode.ALWAYS)
         self._file_content = ft.TextField(
@@ -126,33 +142,38 @@ class DetailDrawer:
             self._file_info,
             ft.Container(content=self._file_content, expand=True),
         ], spacing=6)
+        self._视图已建 = True
 
-        # 标题行: 视图名动态 + 右上角切换按钮 (详情/预览视图时 = 返回日志)
-        self._title_text = ft.Text("实时日志", size=SIZE_SMALL,
+    def build(self) -> ft.Control:
+        """构建**右侧常驻栏**: 任务详情 (默认) ↔ 抓取结果文件预览。
+
+        设计稿: 右栏常驻「任务详情」(进度环 + 指标卡 + 降级链 + 输出文件卡);
+        实时日志改由 build_log_strip() 放在**底部常驻**。
+        """
+        self._构建视图()
+        self._title_text = ft.Text("任务详情", size=SIZE_SMALL,
                                    weight=WEIGHT_SUBTITLE, font_family=FONT_STACK)
         self._toggle_btn = ft.IconButton(
-            icon=ft.Icons.INFO_OUTLINED, icon_size=16,
-            tooltip="查看任务详情",
+            icon=ft.Icons.FOLDER_OPEN_OUTLINED, icon_size=16,
+            tooltip="查看抓取结果文件",
             on_click=lambda e: self._on_toggle_click(),
             style=ft.ButtonStyle(
                 padding=4, shape=ft.RoundedRectangleBorder(radius=4)),
         )
-
-        self._drawer_body = ft.Column([
-            ft.Row([
-                self._title_text,
-                ft.Container(expand=True),
-                self._toggle_btn,
-            ], spacing=4),
-            ft.Divider(height=1),
-            self._log_view,
-            self._detail_view,
-            self._preview_view,
-        ], spacing=6, expand=True)
-        self._detail_view.visible = False
+        self._view = "detail"
+        self._detail_view.visible = True
         self._preview_view.visible = False
         self.container = ft.Container(
-            content=self._drawer_body,
+            content=ft.Column([
+                ft.Row([
+                    self._title_text,
+                    ft.Container(expand=True),
+                    self._toggle_btn,
+                ], spacing=4),
+                ft.Divider(height=1),
+                self._detail_view,
+                self._preview_view,
+            ], spacing=6, expand=True),
             # 宽度跟随窄档 (设置窄档 可反复切换, 见文件末尾)
             width=(_WIDTH_NARROW if self._窄档 else _WIDTH_OPEN),
             padding=ft.Padding.symmetric(horizontal=10, vertical=10),
@@ -163,46 +184,106 @@ class DetailDrawer:
         )
         try:
             self.refresh()      # 详情视图立即填充
-            self.refresh_log()  # 日志视图立即填充
         except Exception as _e:
             _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         return self.container
 
+    def build_log_strip(self) -> ft.Control:
+        """构建**底部常驻日志条** (设计稿 `.log-strip`): 深色终端风 + ▲/▼ 折叠。"""
+        self._构建视图()
+        # 标题走令牌色 + 登记重刷 (Phase 3 约定: 构建期取色必须登记, 否则切主题不换色;
+        # 也让"日志条"这棵树里有令牌色控件, 主题重刷验收不是空测试)
+        # 用 text-secondary 而非 text-primary: 后者日间值 #1B1B1B 与夜间
+        # on-brand/btn-primary-fg 同值, 是主题重刷"值集合判据"的固有盲区
+        # (见 测试/test_主题重刷.py::test_值集合判据的已知盲区) ——
+        # 用真正仅日间的令牌色, 才能让日志条这棵树的主题校验不是空测试。
+        self._日志条标题 = ft.Text("实时日志", size=SIZE_SMALL,
+                                  weight=WEIGHT_SUBTITLE,
+                                  color=取色('text-secondary'),
+                                  font_family=FONT_STACK)
+        登记重刷(self._日志条标题, lambda c: setattr(c, 'color', 取色('text-secondary')))
+        self._日志条体 = ft.Container(content=self._log_view, height=self._日志条高)
+        self._日志条箭头 = ft.IconButton(
+            icon=ft.Icons.KEYBOARD_ARROW_DOWN, icon_size=18,
+            tooltip="收起日志",
+            on_click=lambda e: self.切换日志条(),
+            style=ft.ButtonStyle(
+                padding=4, shape=ft.RoundedRectangleBorder(radius=4)),
+        )
+        self._日志条 = ft.Container(
+            content=ft.Column([
+                ft.Row([self._日志条标题, ft.Container(expand=True),
+                        self._日志条箭头], spacing=4),
+                self._日志条体,
+            ], spacing=2, tight=True),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            bgcolor=ft.Colors.SURFACE,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=8,
+        )
+        self._日志条展开 = True
+        try:
+            self.refresh_log()   # 日志立即填充
+        except Exception as _e:
+            _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        return self._日志条
+
+    def 切换日志条(self):
+        """折叠/展开底部日志条 (设计稿日志条右上角 ▲ 的语义)。"""
+        self._日志条展开 = not getattr(self, '_日志条展开', True)
+        self._应用日志条展开()
+        self._update()
+
+    def _应用日志条展开(self):
+        """把 _日志条展开 落到控件属性上 (只改属性, 不 update)。"""
+        try:
+            self._日志条体.visible = getattr(self, '_日志条展开', True)
+            self._日志条箭头.icon = (ft.Icons.KEYBOARD_ARROW_DOWN
+                                    if self._日志条展开
+                                    else ft.Icons.KEYBOARD_ARROW_UP)
+            self._日志条箭头.tooltip = ("收起日志" if self._日志条展开 else "展开日志")
+        except Exception as _e:
+            _dbg("详情面板", f'日志条折叠失败: {type(_e).__name__}: {_e}')
+
     # ------------------------------------------------------------- 视图路由
-    def open(self, view: str = "log", task_id: str = ""):
-        """切换面板视图 (主线程)
+    def open(self, view: str = "detail", task_id: str = ""):
+        """切换右栏视图 / 选中任务 (主线程)。
 
         Args:
-            view: "log" (实时日志, 默认) / "detail" (任务详情) / "preview" (文件预览)
+            view: "detail" (任务详情, 默认) / "preview" (抓取结果文件) /
+                  "log" —— **历史 API 兼容**: 日志条已常驻底部, 此值只表示
+                  "选中该任务并确保日志条展开", 不再切换可见性。
             task_id: 可选, 指定任务 (默认用当前选中任务)
         """
         if task_id:
             self.task_manager.select_task(task_id)
-        self._view = view if view in ("log", "detail", "preview") else "log"
-        self._log_view.visible = (self._view == "log")
+        if view == "log":
+            self._日志条展开 = True
+            self._应用日志条展开()
+            self.refresh_log()
+            self._update()
+            return
+        self._view = view if view in ("detail", "preview") else "detail"
         self._detail_view.visible = (self._view == "detail")
         self._preview_view.visible = (self._view == "preview")
-        # 标题 + 右上角按钮随视图切换 (非日志视图时按钮变为"返回日志")
-        self._title_text.value = {
-            "log": "实时日志", "detail": "任务详情", "preview": "文件预览",
-        }[self._view]
-        self._toggle_btn.icon = (ft.Icons.CLOSE if self._view != "log"
-                                 else ft.Icons.INFO_OUTLINED)
-        self._toggle_btn.tooltip = ("返回实时日志" if self._view != "log"
-                                    else "查看任务详情")
+        self._title_text.value = {"detail": "任务详情", "preview": "文件预览"}[self._view]
+        self._toggle_btn.icon = (ft.Icons.CLOSE if self._view == "preview"
+                                 else ft.Icons.FOLDER_OPEN_OUTLINED)
+        self._toggle_btn.tooltip = ("返回任务详情" if self._view == "preview"
+                                    else "查看抓取结果文件")
         if self._view == "preview":
             self._scan_files()
-        elif self._view == "detail":
+        else:
             self.refresh()
         self._update()
 
     def close(self):
-        """返回实时日志视图 (历史 API 兼容: 面板常驻不再收起)"""
-        self.open("log")
+        """返回右栏详情视图 (历史 API 兼容: 日志已常驻底部条, 无"收起抽屉"语义)"""
+        self.open("detail")
 
     def _on_toggle_click(self):
-        """右上角按钮: 日志视图 → 查看任务详情; 其他视图 → 返回日志"""
-        self.open("log" if self._view != "log" else "detail")
+        """右栏按钮: 任务详情 ↔ 抓取结果文件 (日志已常驻底部条, 不参与切换)"""
+        self.open("preview" if self._view == "detail" else "detail")
 
     def _update(self):
         try:
@@ -229,19 +310,22 @@ class DetailDrawer:
         永远无法选中复制 + 每秒全量 patch。改为签名比对 + 增量追加
         (task.logs 只追加; 换任务/截断/堆积超限时回退全量重建)。
         """
-        if self._log_list is None or not self._log_view.visible:
+        # 日志条常驻: 折叠时不渲染 (省开销); 旧实现判的是抽屉视图可见性
+        if self._log_list is None or not getattr(self, '_日志条展开', True):
             return
         tid = self.task_manager.selected_task_id
         if not tid:
-            if self._title_text.value != "实时日志":
-                self._title_text.value = "实时日志"
+            if getattr(self, '_日志条标题', None) is not None \
+                    and self._日志条标题.value != "实时日志":
+                self._日志条标题.value = "实时日志"
             self._log_sig = None
             self._log_list.controls.clear()
             return
         task = self.task_manager.get_task(tid)
         if not task:
             return
-        self._title_text.value = f"实时日志 · {task.title[:24]}"
+        if getattr(self, '_日志条标题', None) is not None:
+            self._日志条标题.value = f"实时日志 · {task.title[:24]}"
 
         from .task_manager import snapshot_task_logs
         previous = getattr(self, '_log_sig', None)
@@ -296,9 +380,10 @@ class DetailDrawer:
     def update_views(self):
         """子树级刷新收口 (H6: 仅更新面板内当前可见视图, 替代整页 update)"""
         try:
-            if self._log_view.visible:
+            # 批 2: 日志条与右栏**都常驻**, 不再是二选一
+            if getattr(self, '_日志条展开', True):
                 self._log_list.update()
-            elif self._view == "detail":
+            if self._view == "detail":
                 self._detail_view.update()
             elif self._view == "preview":
                 self._file_list.update()
