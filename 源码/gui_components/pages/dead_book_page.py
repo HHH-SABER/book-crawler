@@ -308,7 +308,7 @@ class DeadBookPage:
         # 其余提示用户"不必删除" —— 避免用户按标签字面误判
         类型键 = 'status-error' if 可询问 else 'status-pending'
         动作 = self._行内动作(键, 状态, 网址=r.get('网址') or '',
-                            书名=r.get('书名') or '', 可询问=可询问)
+                            书名=r.get('书名') or '', 可询问=可询问, 记录=r)
         # Phase 3: 三处 colored 文字走令牌 + 登记重刷 (字符串常量切主题不变色)
         类型标签 = ft.Text(类型, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
                          color=取色(类型键), font_family=FONT_STACK)
@@ -351,13 +351,19 @@ class DeadBookPage:
             padding=ft.Padding.symmetric(horizontal=12, vertical=9),
             border_radius=8, bgcolor=ft.Colors.SURFACE_CONTAINER)
 
-    def _行内动作(self, 键: str, 状态: str, *, 网址: str, 书名: str, 可询问: bool):
+    def _行内动作(self, 键: str, 状态: str, *, 网址: str, 书名: str,
+                  可询问: bool, 记录: dict = None):
         """行内动作按钮组。
 
         语义与阶段3 一致, 不重造删除逻辑:
           已删除 → 无动作(已结项, 只展示)
-          待确认 → 重新检测 / 忽略 / 删除记录
-          已忽略 → 重新检测 / 恢复待确认(反悔) / 删除记录
+          待确认 → 补新网址 / 重新检测 / 忽略 / 删除记录
+          已忽略 → 补新网址 / 重新检测 / 恢复待确认(反悔) / 删除记录
+
+        补新网址 (2026-10-06): 把新站点的目录页登记为这本书的**备用源**
+        (主源失败自动切换, 见 爬虫.py:7119), 并立即重抓。
+        与工作台死书弹窗**共用唯一实现** gui_components/补址弹窗.py ——
+        否则两处文案/流程必然漂移 (本项目已有前科)。
 
         重新检测(阶段5) 对两态都开放: 用户点"忽略"常常是"站点可能只是挂了,
         过两天再看看", 不该逼他先恢复待确认才能重试。
@@ -370,6 +376,11 @@ class DeadBookPage:
                                       icon=ft.Icons.RESTART_ALT,
                                       on_click=lambda e, k=键, u=网址, n=书名:
                                       self._重新检测(k, u, n)))
+            按钮.append(ft.TextButton("补新网址",
+                                      icon=ft.Icons.ADD_LINK,
+                                      tooltip="给这本书登记一个新网站的目录页 (作为备用源)",
+                                      on_click=lambda e, k=键, u=网址, n=书名, rec=记录:
+                                      self._补新网址(k, u, n, rec or {})))
         if 状态 == '已忽略':
             按钮.append(ft.TextButton("恢复待确认",
                                       icon=ft.Icons.UNDO,
@@ -392,6 +403,37 @@ class DeadBookPage:
         return ft.Row(按钮, spacing=4, tight=True)
 
     # ---------------------------------------------------------------- 动作
+    def _补新网址(self, 键: str, 网址: str, 书名: str, 记录: dict):
+        """补新网址 = 给这本书登记备用源 + 立刻重抓。
+
+        与工作台死书弹窗共用 `gui_components/补址弹窗.py`（两步: 补备用源 → 追问删除）,
+        本页只注入"重抓/删除/忽略"三个动作 —— 交互与文案不在此处复制。
+        """
+        if self.page is None or not 网址:
+            self._提示("⚠️ 该记录没有网址, 无法补新网址")
+            return
+        try:
+            import 死书处理
+            from gui_components import 补址弹窗
+        except Exception as _e:
+            _dbg("死书清单页", f'补址弹窗导入失败: {type(_e).__name__}: {_e}')
+            self._提示(f"❌ 无法打开补址弹窗: {type(_e).__name__}")
+            return
+        场景 = (补址弹窗.场景_网站失效 if (记录 or {}).get('网站失效')
+                else 补址弹窗.场景_其他)
+        动作 = 补址弹窗.补址动作(
+            添加并重抓=lambda _新址: self._重新检测(键, 网址, 书名),
+            删除记录=lambda: self._执行删除(键, 网址, 书名),
+            忽略记录=lambda: self._设状态(键, 死书处理.状态_已忽略),
+        )
+        try:
+            补址弹窗.打开补址弹窗(self.page, 目录URL=网址, 标题=书名 or 网址,
+                               场景=场景, 类型=(记录 or {}).get('类型') or '',
+                               原因=(记录 or {}).get('原因') or '', 动作=动作)
+        except Exception as _e:
+            _dbg("死书清单页", f'补址弹窗打开失败: {type(_e).__name__}: {_e}')
+            self._提示(f"❌ 打开补址弹窗失败: {type(_e).__name__}")
+
     def _重新检测(self, 键: str, 网址: str, 书名: str = ''):
         """重新检测: 重跑抓取判定, 确认这本书是否已恢复 (阶段5 核心动作)。
 
