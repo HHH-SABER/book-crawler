@@ -28,7 +28,7 @@ except Exception:
 from .ui_theme import (make_card, filled_btn, tonal_btn, outline_btn,
                        text_btn, danger_btn)
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_BODY, SIZE_SMALL,
-                          WEIGHT_BODY, open_dialog)
+                          WEIGHT_BODY, open_dialog, 提示条)
 
 
 def _log(source: str, message: str):
@@ -244,7 +244,7 @@ class InputBar:
         """轻提示 (通过日志系统 + 控制台, 无 snackbar 依赖)"""
         _log("GUI", msg)
         try:
-            open_dialog(self.page, ft.SnackBar(ft.Text(msg, font_family=FONT_STACK)))
+            open_dialog(self.page, 提示条(msg))
         except Exception as _e:
             _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 

@@ -16,7 +16,7 @@ from .task_manager import TaskManager
 from .ui_theme import (status_chip, status_color, tonal_btn,
                        LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY)
+                          WEIGHT_SUBTITLE, WEIGHT_BODY, 提示条)
 # Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
 # **构建期求值**的字符串对象, 切夜间主题后本地引用不会被更新 (见
 # phase3_迁移规范.md / log_tab.py 样例)。取色() 只在构建期取值 → 配 登记重刷()。
@@ -461,8 +461,7 @@ class DetailDrawer:
         try:
             from .ui_fluent import open_dialog
             if self.page is not None:
-                open_dialog(self.page, ft.SnackBar(
-                    ft.Text(msg, font_family=FONT_STACK), duration=4000))
+                open_dialog(self.page, 提示条(msg, 时长=4000))
         except Exception as _e:
             _dbg("详情面板", f'裸 except 吞异常: {type(_e).__name__}: {_e} (toast={msg[:40]})')
 

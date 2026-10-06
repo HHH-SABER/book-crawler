@@ -26,7 +26,7 @@ def _dbg(source: str, message: str):
 
 from ..ui_fluent import (txt, FONT_STACK, SIZE_SMALL, SIZE_BODY, SIZE_TITLE,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
-                         make_morandi_card)
+                         make_morandi_card, 提示条)
 # Phase 3 (2026-10-04): 页面颜色一律走令牌, 且登记重刷 —— 直接 import 上面那类
 # MORANDI 常量绑到的是**构建期求值的字符串对象**, 切夜间主题不会重刷 (ui_fluent
 # 的 globals().update 改不到页面里的本地名); 详见 文档/审查报告汇总.md Phase 3 结论。
@@ -270,8 +270,7 @@ class RemotePage:
         try:
             from ..ui_fluent import open_dialog
             if self.page is not None:
-                open_dialog(self.page, ft.SnackBar(
-                    ft.Text(msg, font_family=FONT_STACK), duration=4000))
+                open_dialog(self.page, 提示条(msg, 时长=4000))
         except Exception:
             pass  # 刻意静默: toast 属锦上添花, 失败不影响教程打开主路径
 
