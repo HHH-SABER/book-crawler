@@ -41,7 +41,8 @@ def _dbg(source: str, message: str):
             pass  # 刻意静默: try 块本身在写日志会递归 (日志链路兜底)
 
 
-from ..ui_fluent import (txt, FONT_STACK, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
+from ..ui_fluent import (txt, FONT_STACK, FONT_TERMINAL,
+                          SIZE_MICRO, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
                          WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
                          open_dialog, close_dialog, 提示条)
 from ..ui_theme import page_header
@@ -316,17 +317,37 @@ class DeadBookPage:
         状态标签 = ft.Text(状态文案, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
                          color=颜色, font_family=FONT_STACK)
         登记重刷(状态标签, lambda c: setattr(c, 'color', 取色(颜色键)))
-        副信息 = ft.Text(f"{r.get('域名') or ''}　×{r.get('次数') or 1}"
-                       f"　{r.get('最近时间') or ''}",
-                       size=SIZE_TINY, weight=WEIGHT_BODY,
-                       color=取色('text-secondary'), font_family=FONT_STACK,
-                       max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+        # meta 行 (设计稿 .deadbook-meta: 等宽 URL · 判定于 <时间> · 尝试 N 次)
+        # 只放记录里**真实存在**的字段 —— 设计稿的 HTTP 码 / 已抓章节 记录里没有,
+        # 不编造 (已在 文档/修改记录.md 登记为数据缺口, 待后续补数据链路)
+        网址 = r.get('网址') or ''
+        _片段 = []
+        if 网址:
+            _片段.append(ft.Text(网址, size=SIZE_MICRO, weight=WEIGHT_BODY,
+                                color=取色('text-tertiary'), font_family=FONT_TERMINAL,
+                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                                selectable=True))
+        if r.get('最近时间'):
+            _片段.append(ft.Text(f"判定于 {r.get('最近时间')}", size=SIZE_MICRO,
+                                weight=WEIGHT_BODY, color=取色('text-tertiary'),
+                                font_family=FONT_STACK))
+        _片段.append(ft.Text(f"尝试 {r.get('次数') or 1} 次", size=SIZE_MICRO,
+                            weight=WEIGHT_BODY, color=取色('text-tertiary'),
+                            font_family=FONT_STACK))
+        副信息 = ft.Row(_片段, spacing=6, tight=True, wrap=True)
+        for _c in 副信息.controls:
+            登记重刷(_c, lambda c: setattr(c, 'color', 取色('text-tertiary')))
         登记重刷(副信息, lambda c: setattr(c, 'color', 取色('text-secondary')))
         原因文本 = ft.Text(r.get('原因') or '', size=SIZE_TINY, weight=WEIGHT_BODY,
                         color=取色('text-secondary'), font_family=FONT_STACK,
                         max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
         登记重刷(原因文本, lambda c: setattr(c, 'color', 取色('text-secondary')))
-        return ft.Container(
+        # 左侧 3px 状态色条 (设计稿 .deadbook-card)。设计稿此处统一用 error-line,
+        # 但本页三种状态各有语义 → 按状态取色 (同属设计稿色板, 值取自其 rgba 蓝本)
+        线色键 = {'待确认': 'status-warning-line',
+                 '已删除': 'status-error-line',
+                 '已忽略': 'status-pending-line'}.get(状态, 'status-warning-line')
+        _卡片 = ft.Container(
             content=ft.Row([
                 ft.Column([
                     ft.Row([
@@ -349,7 +370,11 @@ class DeadBookPage:
                 动作,
             ], spacing=10, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.Padding.symmetric(horizontal=12, vertical=9),
-            border_radius=8, bgcolor=ft.Colors.SURFACE_CONTAINER)
+            border_radius=8, bgcolor=ft.Colors.SURFACE_CONTAINER,
+            border=ft.Border.only(left=ft.BorderSide(3, 取色(线色键))))
+        登记重刷(_卡片, lambda c: setattr(
+            c, 'border', ft.Border.only(left=ft.BorderSide(3, 取色(线色键)))))
+        return _卡片
 
     def _行内动作(self, 键: str, 状态: str, *, 网址: str, 书名: str,
                   可询问: bool, 记录: dict = None):
