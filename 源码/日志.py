@@ -128,7 +128,7 @@ class AppLogger:
                                   + len(line.encode('utf-8')) + 1)
             except Exception:
                 pass  # 日志失败绝不影响主流程
-        # console 镜像: 原样输出消息 (无前缀), 供 CLI 进度与 GUI 日志条捕获 (B1)
+        # console 镜像: 原样输出消息 (无前缀), 供 CLI 进度与 GUI 任务日志(右侧抽屉/日志页)捕获 (B1)
         # 防递归护栏: GUI 任务线程把 sys.stdout 替换为日志重定向器 (TaskLogRedirector),
         # 此处 print 会再次进入 _write 造成互递归 (1 条日志被放大数百次落盘),
         # 用线程本地标志识别重入, 重入时直接丢弃。
@@ -210,7 +210,8 @@ def error_exc(source: str, message: str, exc: Exception = None):
 def enable_console(min_level: str = INFO):
     """开启 stdout 镜像: 日志(>=min_level)原样打到控制台 (B1)。
 
-    CLI 入口在 argparse 后调用; GUI 运行时 stdout 由日志条组件重定向,
+    CLI 入口在 argparse 后调用; GUI 运行时的 stdout 由任务日志重定向器
+    (gui_components/task_manager.py::TaskLogRedirector) 按线程分流,
     镜像消息会被一并捕获, 因此 print -> 日志 后 GUI 进度显示不受影响。
     """
     global _console_enabled, _console_min_level
