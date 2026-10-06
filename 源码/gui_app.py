@@ -402,13 +402,18 @@ def main(page: ft.Page):
     page.on_resize = _on_page_resize
     _on_page_resize()      # 首帧 page.width 可能尚未就绪 → 交给 120ms 后的首次计算
 
+    # 工作台 = 左列(页头 + 输入条 + 任务表 + **底部常驻日志条**) | 右侧常驻栏(详情/预览)
+    # 设计稿 (界面设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
+    _右侧常驻栏 = drawer.build()          # 必须在 build_log_strip 之前/之后都行: 视图构建幂等
+    _底部日志条 = drawer.build_log_strip()
     crawl_workbench = ft.Row([
         ft.Column([
             page_header('抓取工作台', '输入小说目录页URL，自动识别站点并开始抓取'),
             input_bar.build(),
             ft.Container(content=task_table.build(), expand=True),
+            _底部日志条,
         ], expand=True, spacing=8),
-        drawer.build(),
+        _右侧常驻栏,
     ], expand=True, spacing=8)
 
     # ---- 其他页面 ----
