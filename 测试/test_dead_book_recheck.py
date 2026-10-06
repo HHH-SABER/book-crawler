@@ -45,12 +45,29 @@ class Test恢复清理落点(unittest.TestCase):
         self.assertIn('def 标记已恢复', self.死书, '缺 标记已恢复 → 无处落恢复清理')
 
     def test_数据层调标记已恢复(self):
-        """completed 分支必须调它。漏了 = 记录永不清 = 功能看似无效。"""
-        块 = self.tm.split('if self._is_task_thread_owner(task) and task.status == "running"')[1][:2000]
-        self.assertIn('标记已恢复', 块,
-                      '抓成功分支未清死书记录 → 重检成功也不会移出清单')
-        self.assertIn('_set_terminal(task, "completed")', 块,
-                      '自检锚点丢失(completed 分支结构变了, 请同步更新本测试)')
+        """清理必须挂在**数据层**(task_manager), 不能只靠清单页刷新时才处理。
+
+        ⚠️ 2026-10-06 修订: 旧版本的断言窗口锚在
+        `if ... and task.status == "running"` 分支上 —— 那等于**把 bug 写成了契约**
+        （要求收尾必须待在 running 分支里）。而"完成"事件通路 `_应用完成终态()`
+        会在抓取过程中先把 status 置成 'completed' → 进不了该分支 → **收尾永不执行**
+        （实测：历史日志里从未出现 `已移除死书记录`；用户 2026-10-06 观察到
+        "书早已 completed 却仍留在死书清单里"）。
+        现改为锁**契约**而非**位置**：
+          ① 数据层确实调用了 `标记已恢复`；
+          ② 收尾由 `_该收尾成功`（**按最终状态**判定）门控。
+        行为与结构细节见 `测试/test_死书自动清理.py`。
+        """
+        self.assertIn('from 死书处理 import 标记已恢复', self.tm,
+                      '数据层未调用 标记已恢复 → 重检成功也不会移出清单')
+        self.assertIn('_该收尾成功(', self.tm,
+                      '收尾必须按最终状态门控 —— 旧实现锚在 running 分支上, 而"完成"'
+                      '事件会先把状态置成 completed, 收尾将永不执行')
+        块 = self.tm.split('def _该收尾成功', 1)[1]
+        self.assertIn('_is_task_thread_owner(task) and task.status == "completed"',
+                      self.tm,
+                      '自检锚点丢失(_该收尾成功必须按最终状态 completed 判定, '
+                      '请同步更新本测试)')
 
     def test_清理不因失败中断抓取(self):
         """清理是 bookkeeping, 异常不得冒泡把整轮抓取判失败。"""
