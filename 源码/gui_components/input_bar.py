@@ -28,7 +28,7 @@ except Exception:
 from .ui_theme import (make_card, filled_btn, tonal_btn, outline_btn,
                        text_btn, danger_btn)
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_BODY, SIZE_SMALL,
-                          WEIGHT_BODY, open_dialog, 提示条)
+                          SIZE_TINY, WEIGHT_BODY, open_dialog, 提示条)
 
 
 def _log(source: str, message: str):
@@ -142,11 +142,15 @@ class InputBar:
         self.resume_switch = ft.Switch(
             label="断点续传", value=True,
             label_position=ft.LabelPosition.LEFT,
+            label_text_style=ft.TextStyle(size=SIZE_TINY, font_family=FONT_STACK),
+            scale=0.9,   # 批 2 密度对齐: 设计稿 .switch = 40x20
         )
         self.epub_switch = ft.Switch(
             label="导出EPUB", value=False,
             label_position=ft.LabelPosition.LEFT,
             tooltip="抓取完成后同时生成 .epub 电子书 (可选)",
+            label_text_style=ft.TextStyle(size=SIZE_TINY, font_family=FONT_STACK),
+            scale=0.9,
         )
         # 2026-10-04 (八项需求 #2 修复): 终态**提示音开关** —— 夜间挂机不想被吵时关掉;
         # 关掉后通知 SnackBar 照常弹, 只是不响。偏好持久化到 状态根/数据/界面偏好.json。
@@ -161,9 +165,11 @@ class InputBar:
             label_position=ft.LabelPosition.LEFT,
             tooltip="任务成功/失败的提示音开关 (关掉后仍会弹通知)",
             on_change=self._on_提示音切换,
+            label_text_style=ft.TextStyle(size=SIZE_TINY, font_family=FONT_STACK),
+            scale=0.9,
         )
         self.output_dir_input = ft.TextField(
-            label="输出目录", width=170, dense=True,
+            label="输出目录", width=150, dense=True,
             text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
             value="抓取结果",
         )
@@ -213,7 +219,9 @@ class InputBar:
                         self.end_chapter, self.resume_switch, self.epub_switch,
                         self.提示音_switch,
                         self.output_dir_input, open_folder_btn],
-                       wrap=True, spacing=6),
+                       # 批 2 密度对齐: spacing 6→4, 使该行在 1265 逻辑宽下一行排完
+                       # (设计稿这行 CSS 允许 wrap, 但画布宽度下是一行)
+                       wrap=True, spacing=4),
                 self.batch_panel,
             ], spacing=6),
             padding=10,
