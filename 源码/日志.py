@@ -132,6 +132,17 @@ class AppLogger:
         # 防递归护栏: GUI 任务线程把 sys.stdout 替换为日志重定向器 (TaskLogRedirector),
         # 此处 print 会再次进入 _write 造成互递归 (1 条日志被放大数百次落盘),
         # 用线程本地标志识别重入, 重入时直接丢弃。
+        # 线程本地镜像回调优先: 注册后**不再写 stdout**。
+        # 为什么: GUI 任务线程的 sys.stdout 是 TaskLogRedirector, 它会把手里的行再
+        # 落盘一次 —— 而镜像已经落过盘了, 于是日志文件里每条记录出现两遍
+        # (2026-10-06 实测: 日志页每行重复, 设计稿是单行)。回调直连消费者即可根治。
+        回调 = getattr(_镜像回调, '回调', None)
+        if 回调 is not None:
+            try:
+                回调(level, source, message)
+            except Exception:
+                pass  # 刻意静默: 镜像回调失败仅丢任务日志, 落盘不受影响
+            return
         if _console_enabled and _LEVEL_ORDER.get(level, 20) >= _LEVEL_ORDER.get(_console_min_level, INFO):
             if getattr(self._mirror_local, 'in_mirror', False):
                 return
@@ -204,6 +215,26 @@ def warn(source: str, message: str): AppLogger().warn(source, message)
 def error(source: str, message: str): AppLogger().error(source, message)
 def error_exc(source: str, message: str, exc: Exception = None):
     AppLogger().error_exc(source, message, exc)
+
+
+# ---------------------------------------------------------------- 镜像回调
+# 线程本地: 每个任务线程注册自己的消费者 (TaskLogRedirector), 注册后该线程的
+# 日志记录直接交给它, 不再经 stdout 镜像 —— 由此消除"镜像 → 重定向器 → 二次落盘"。
+_镜像回调 = threading.local()
+
+
+def 注册镜像回调(回调):
+    """在当前线程注册/注销日志镜像回调 (传 None 注销)。
+
+    ⚠️ 线程结束时**必须**注销: 线程池复用同一线程时, 悬空回调会把日志交给
+    已结束任务的消费者 (与 `_THREAD_STDOUT.unregister()` 同一纪律)。
+    """
+    _镜像回调.回调 = 回调
+
+
+def 取镜像回调():
+    """当前线程的镜像回调 (无则 None) —— 供测试与诊断。"""
+    return getattr(_镜像回调, '回调', None)
 
 
 # ---------------------------------------------------------------- 控制台镜像
