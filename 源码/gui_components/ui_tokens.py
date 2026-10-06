@@ -71,6 +71,11 @@ _日间 = {
     'bg-sidebar-hover':    '#E7E7E7',
     'bg-sidebar-active':   '#FAF1E7',
     'bg-row-hover':        '#FAFAF9',
+    # 提示条 (SnackBar) —— 必须**成对**使用: Flutter 默认提示条是深底浅字,
+    # 而项目为修 EXE 文字不可见曾把文字显式设成深色 → 深压深看不见
+    # (2026-10-06 用户报告)。这两个键由 ui_fluent.提示条() 统一消费。
+    'toast-bg':            '#2B2B2B',
+    'toast-fg':            '#FFFFFF',
     # 文字
     'text-primary':        '#1B1B1B',
     'text-secondary':      '#5C5C5C',
@@ -153,6 +158,9 @@ _夜间色 = {
     'bg-sidebar-hover':    '#2B2B2B',
     'bg-sidebar-active':   '#382614',
     'bg-row-hover':        '#303030',
+    # 提示条 (SnackBar): 夜间反过来 —— 浅底深字, 同样保证对比
+    'toast-bg':            '#F5F5F5',
+    'toast-fg':            '#1B1B1B',
     # 文字
     'text-primary':        '#FFFFFF',
     'text-secondary':      '#C8C8C8',

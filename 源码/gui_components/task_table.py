@@ -15,7 +15,7 @@ from .ui_theme import make_card, status_chip, status_color
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE,
                          WEIGHT_BODY,
-                         open_dialog, close_dialog)
+                         open_dialog, close_dialog, 提示条)
 # Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
 # **构建期求值**的字符串对象, 切夜间主题后 ui_fluent 的 globals().update
 # 改不动页面里的本地引用, 控件颜色纹丝不动 (见 phase3_迁移规范.md)。
@@ -728,8 +728,7 @@ class TaskTable:
     def _notify(self, msg: str):
         try:
             # 显式 color: EXE 中 SnackBar 文字缺色会渲染成不可见 (G-H1 教训)
-            open_dialog(self.page, ft.SnackBar(
-                ft.Text(msg, font_family=FONT_STACK, color=ft.Colors.ON_SURFACE)))
+            open_dialog(self.page, 提示条(msg))
         except Exception as _e:
             _dbg("任务表", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 

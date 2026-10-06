@@ -43,7 +43,7 @@ def _dbg(source: str, message: str):
 
 from ..ui_fluent import (txt, FONT_STACK, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
                          WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
-                         open_dialog, close_dialog)
+                         open_dialog, close_dialog, 提示条)
 from ..ui_theme import page_header
 # Phase 3 (2026-10-04): 页面颜色一律走令牌 + 登记重刷。旧写法 `from ..ui_fluent
 # import MORANDI_*` 绑到的是**构建期求值的字符串**, 切主题时
@@ -564,8 +564,6 @@ class DeadBookPage:
         try:
             if self.page is None:
                 return
-            self.page.show_dialog(ft.SnackBar(ft.Text(
-                msg, size=SIZE_SMALL, font_family=FONT_STACK,
-                color=ft.Colors.ON_SURFACE)))
+            self.page.show_dialog(提示条(msg))
         except Exception as _e:
             _dbg("死书清单页", f'提示失败: {type(_e).__name__}: {_e}')

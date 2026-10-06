@@ -150,6 +150,7 @@ def main(page: ft.Page):
     from gui_components.ui_fluent import (
         make_morandi_theme, make_morandi_dark_theme,
         FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
+            提示条,
     )
     # 2026-10-04 (Phase 3): 状态色改走 ui_tokens 令牌 + 登记重刷 ——
     # 绑 ui_fluent 的 MORANDI_* 字符串常量时, 切主题这些控件不会换色。
@@ -242,9 +243,7 @@ def main(page: ft.Page):
             page.show_dialog(dialog)
         except Exception as e:
             app_log.debug("死书", f"弹窗打开失败, 降级为提示: {type(e).__name__}: {e}")
-            page.show_dialog(ft.SnackBar(ft.Text(正文, color=ft.Colors.ON_SURFACE,
-                                                font_family=FONT_STACK,
-                                                size=SIZE_SMALL)))
+            page.show_dialog(提示条(正文))
         app_log.info("死书", f"询问删除: {类型} {t.url}")
 
     def _关死书弹窗(dialog):
@@ -278,10 +277,7 @@ def main(page: ft.Page):
         def _重抓(_e=None):
             新址 = (地址框.value or '').strip()
             if not 新址.lower().startswith(("http://", "https://")):
-                page.show_dialog(ft.SnackBar(ft.Text(
-                    "请先粘贴有效的新目录页网址 (以 http:// 或 https:// 开头)",
-                    color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
-                    size=SIZE_SMALL)))
+                page.show_dialog(提示条("请先粘贴有效的新目录页网址 (以 http:// 或 https:// 开头)"))
                 return
             try:
                 task_manager.create_task(url=新址, mode="full")
@@ -335,17 +331,13 @@ def main(page: ft.Page):
                 return
             if n.get('状态') == 'success':
                 行 = f"抓取完成: 《{n.get('书名', '')}》"
-                色 = 取色('status-success')
             else:
                 行 = f"抓取失败: 《{n.get('书名', '')}》"
                 原因 = (n.get('原因') or '').strip()
                 if 原因:
                     行 += f"\n{原因}"
-                色 = 取色('status-error')
-            # EXE 显式 color 契约 (G-H1): 终态字用主题色, 正文兜底 ON_SURFACE
-            page.show_dialog(ft.SnackBar(
-                ft.Text(行, color=色, font_family=FONT_STACK,
-                        size=SIZE_SMALL), duration=6000))
+            # 2026-10-06: 改走 ui_fluent.提示条(显式 toast 底色+字色成对, 防黑底黑字)
+            page.show_dialog(提示条(行, 时长=6000))
         except Exception as e:
             app_log.debug("通知", f"终态通知展示失败: {type(e).__name__}: {e}")
 
@@ -705,15 +697,10 @@ def main(page: ft.Page):
                     # 2026-10-04 (#5 修复): 失败**不写 flag** → 下次启动会再问一次
                     # (旧实现把 _写首次flag 放在 finally, 一次瞬时失败即永久放弃引导)。
                     app_log.info("引导", f"快捷方式创建失败: {type(e).__name__}: {e}")
-                    page.show_dialog(ft.SnackBar(ft.Text(
-                        f"快捷方式创建失败 (下次启动会再询问): {e}"[:200],
-                        color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
-                        size=SIZE_SMALL)))
+                    page.show_dialog(提示条(f"快捷方式创建失败 (下次启动会再询问): {e}"[:200]))
                     _关窗()
                     return
-                page.show_dialog(ft.SnackBar(ft.Text(
-                    "桌面快捷方式已创建", color=ft.Colors.ON_SURFACE,
-                    font_family=FONT_STACK, size=SIZE_SMALL)))
+                page.show_dialog(提示条("桌面快捷方式已创建"))
                 app_log.info("引导", "桌面快捷方式创建成功")
                 _写首次flag('已创建桌面快捷方式')
                 _关窗()
@@ -776,7 +763,7 @@ def main(page: ft.Page):
                 await asyncio.to_thread(_远控切.停止后台)
                 _更新远控外观(False)
                 app_log.info("远控", "远控已停用 (手机端将无法访问)")
-                page.show_dialog(ft.SnackBar(ft.Text("远控已停用, 手机端将无法访问")))
+                page.show_dialog(提示条("远控已停用, 手机端将无法访问"))
             else:
                 _远控切.设置启用(True)
                 _远控切.后台启动()
@@ -796,7 +783,7 @@ def main(page: ft.Page):
                     if _提示:
                         msg = f"{msg} — {_提示}"
                 app_log.info("远控", msg)
-                page.show_dialog(ft.SnackBar(ft.Text(msg)))
+                page.show_dialog(提示条(msg))
         except Exception as _e_sw:
             app_log.info("远控", f"远控开关切换异常: {type(_e_sw).__name__}: {_e_sw}")
 
@@ -945,8 +932,7 @@ def main(page: ft.Page):
             except Exception as _e_tray:
                 app_log.info("托盘", f"托盘不可用, 取消隐藏以保持可操作: {_e_tray}")
                 try:
-                    page.show_dialog(ft.SnackBar(
-                        ft.Text("系统托盘不可用, 已取消关闭; 建议再点关闭并选直接退出")))
+                    page.show_dialog(提示条("系统托盘不可用, 已取消关闭; 建议再点关闭并选直接退出"))
                 except Exception as _e:
                     app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
                 return

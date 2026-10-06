@@ -149,10 +149,30 @@ class 接手回归(unittest.TestCase):
         with mock.patch.object(exp,'txt_to_epub',return_value=None):
             with self.assertRaises(服务.HTTPException):服务._确保epub({'路径':str(p),'标题':'书'})
 
-    def test_保护失败中止且不丢原文件(self):
+    def test_移动失败退化为复制_不中止且数据双保险(self):
+        """2026-10-06 契约变更: 移动失败(典型场景=程序正在运行、锁着 dist 里的文件)
+        改为**退化为复制**, 不再中止整个打包 —— 否则用户在跑程序时永远打不了包。
+        原文件仍在 dist, stash 里另有一份副本 (构建结束由 stash 还原), 数据不丢。
+        """
         import build_exe as build
-        dist=self.root/'dist';dist.mkdir();(dist/'站点配置.json').write_text('original',encoding='utf-8')
+        dist=self.root/'dist';dist.mkdir()
+        (dist/'站点配置.json').write_text('original',encoding='utf-8')
         with mock.patch.object(build.shutil,'move',side_effect=OSError('权限失败')),mock.patch.object(build,'log'):
+            stash=build.保护dist用户数据(str(dist))
+        self.assertTrue(stash,'应返回 stash 目录而不是抛异常')
+        self.assertEqual(Path(stash,'站点配置.json').read_text(encoding='utf-8'),'original',
+                         'stash 里必须有副本')
+        self.assertEqual((dist/'站点配置.json').read_text(encoding='utf-8'),'original',
+                         '移动失败时原文件不得被删')
+
+    def test_移动与复制都失败则中止且不丢原文件(self):
+        """保留旧保护语义: 连复制都做不到 (读都被拒) → 必须中止, 且原文件完好。"""
+        import build_exe as build
+        dist=self.root/'dist';dist.mkdir()
+        (dist/'站点配置.json').write_text('original',encoding='utf-8')
+        with mock.patch.object(build.shutil,'move',side_effect=OSError('权限失败')),\
+             mock.patch.object(build.shutil,'copy2',side_effect=OSError('读取也被拒')),\
+             mock.patch.object(build,'log'):
             with self.assertRaises(RuntimeError):build.保护dist用户数据(str(dist))
         self.assertEqual((dist/'站点配置.json').read_text(encoding='utf-8'),'original')
 

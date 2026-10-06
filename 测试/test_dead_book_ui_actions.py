@@ -242,15 +242,20 @@ class Test弹窗分流契约(unittest.TestCase):
         2026-10-04 (Phase 3): 正文改用 `ft.Colors.ON_SURFACE`（M3 别名, 按 theme_mode
         自动适配），不再绑 `ui_fluent` 的 MORANDI 字符串常量 —— 断言随之改为
         "必须显式给颜色"，不锁具体常量名（否则注释里提一句旧名就能骗过测试）。
+        2026-10-06: 底部提示条改由 `ui_fluent.提示条()` **统一**构造 ——
+        该构造器内部成对给 `toast-bg`/`toast-fg` 并登记主题重刷，
+        故这里断言"必须走提示条()"，颜色与对比度由 `test_提示条可读性.py` 把关
+        （历史上正是"只给字色不给底色"造成了黑底黑字）。
         """
         弹窗块 = self.块.split('ft.AlertDialog')[1][:1200] if 'ft.AlertDialog' in self.块 else ''
         self.assertTrue(('ft.Colors.ON_SURFACE' in 弹窗块) or ('取色(' in 弹窗块),
                         'AlertDialog 文字未显式指定颜色 → EXE 中不可见')
-        # 切 ft.SnackBar 而非裸 "SnackBar": 后者首次出现在 "ft.SnackBar" 的
-        # 中间, split 后拿到的是 "Bar(ft..." 残片, 断言会假红
-        snack块 = self.块.split('ft.SnackBar')[1][:800] if 'ft.SnackBar' in self.块 else ''
-        self.assertTrue(('ft.Colors.ON_SURFACE' in snack块) or ('取色(' in snack块),
-                        'SnackBar 文字未显式指定颜色 → EXE 中不可见')
+        # 提示条: 唯一合法构造点是 ui_fluent.提示条 (它保证底色+字色成对)
+        self.assertIn('提示条(', self.块,
+                      '底部提示必须用 ui_fluent.提示条() 构造 —— 手写 ft.SnackBar 只给字色'
+                      '会造成"黑底黑字"不可读 (2026-10-06 事故)')
+        self.assertNotIn('ft.SnackBar(', self.块,
+                         '本页不应再出现裸 ft.SnackBar 构造')
 
     def test_提示内容含不动产物承诺(self):
         self.assertRegex(self.块, r'不会删除|不会被删除',
