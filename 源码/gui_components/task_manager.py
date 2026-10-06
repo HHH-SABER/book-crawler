@@ -1000,6 +1000,54 @@ class TaskManager:
         with self._lock:
             return self._通知待弹.pop(0) if self._通知待弹 else None
 
+    def _该收尾成功(self, task: TaskInfo) -> bool:
+        """是否该做"成功收尾" —— **按最终状态判定**, 不看"谁先置的状态"。
+
+        2026-10-06 修复的真实 bug: 旧实现把收尾写在
+        `if ... and task.status == "running":` 分支内部, 但抓取过程中
+        `_应用完成终态()`(完成事件通路 :367 / 正则通路 :226) **早已**把 status
+        置成 'completed' → 进不了那个分支 → 收尾(清死书记录/记网站清单)永不执行。
+        实测: 历史日志里从未出现 `已移除死书记录`; 三条 10-03 的死书记录在
+        对应任务早已 completed 时仍留在清单里。
+        提成独立方法是为了让这个判断可被测试直接钉住 (见 test_死书自动清理.py)。
+        """
+        return self._is_task_thread_owner(task) and task.status == "completed"
+
+    def _收尾成功(self, task: TaskInfo, url: str) -> None:
+        """成功收尾 (数据层, 工作线程): 清死书记录 + 记网站清单。
+
+        两件都是纯 bookkeeping, 失败**不得**影响抓取结果 —— 故各自 try 包住,
+        只留痕不抛。调用点见 _run_task 末尾 (先过 _该收尾成功)。
+        """
+        # 阶段5 (重新检测): 抓成功 ⇒ 该网址不再是死书, 移除死书清单记录。
+        # 清理**必须挂在数据层**, 不能靠死书清单页刷新时顺带处理 ——
+        # 重检后用户多半直接切到任务表看进度, 不在本页;
+        # 若清理挂 UI, 记录会一直躺在清单里, 用户以为"重新检测没用"。
+        try:
+            from 死书处理 import 标记已恢复
+            恢复 = 标记已恢复(url)
+            if 恢复.get('移除'):
+                task.dead = None      # 抓成功 ⇒ 同步清任务上的死书标记
+                if app_log is not None:
+                    app_log.info(f"任务{task.task_id}",
+                                 f"抓取成功, 已移除死书记录: {url}")
+        except Exception as _e_恢复:
+            if app_log is not None:
+                app_log.debug(f"任务{task.task_id}",
+                              f"死书记录清理失败 (不影响抓取结果): "
+                              f"{type(_e_恢复).__name__}")
+        # v2.4.28: 抓取成功 → 自动记录 网站清单 (网址+站名+书名, 去重)。
+        # 任务可能因站点异常只抓到部分章节 (failed>0 也算已尽力跑完),
+        # 书名由 '标题' 事件回填; 未拿到书名时仍记录网址+网站名占位
+        try:
+            from 网站清单 import 记录 as _记清单, 域名网站名
+            _记清单(url, 域名网站名(url), (task.title or '').strip())
+        except Exception as _e_清单:
+            if app_log is not None:
+                app_log.debug(f"任务{task.task_id}",
+                              f"网站清单记录失败 (不影响抓取结果): "
+                              f"{type(_e_清单).__name__}")
+
     def _记死书(self, task: TaskInfo, exc: Exception) -> None:
         """死书失败落点 (工作线程, 只碰数据不碰控件)。
 
@@ -1114,35 +1162,16 @@ class TaskManager:
             # 如果状态还是running且没有标记completed，标记为completed
             if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")
-                # 阶段5 (重新检测): 抓成功 ⇒ 该网址不再是死书, 移除死书清单记录。
-                # 清理**必须挂在数据层**, 不能靠死书清单页刷新时顺带处理 ——
-                # 重检后用户多半直接切到任务表看进度, 不在本页;
-                # 若清理挂 UI, 记录会一直躺在清单里, 用户以为"重新检测没用"。
-                # 放在 网站清单记录 之前: 它是纯 bookkeeping, 失败不该影响抓取结果。
-                try:
-                    from 死书处理 import 标记已恢复
-                    恢复 = 标记已恢复(url)
-                    if 恢复.get('移除'):
-                        task.dead = None      # 重检成功 ⇒ 同步清任务上的死书标记
-                        if app_log is not None:
-                            app_log.info(f"任务{task.task_id}",
-                                         f"抓取成功, 已移除死书记录: {url}")
-                except Exception as _e_恢复:
-                    if app_log is not None:
-                        app_log.debug(f"任务{task.task_id}",
-                                      f"死书记录清理失败 (不影响抓取结果): "
-                                      f"{type(_e_恢复).__name__}")
-                # v2.4.28: 抓取成功 → 自动记录 网站清单 (网址+站名+书名, 去重)。
-                # 任务可能因站点异常只抓到部分章节 (failed>0 也算已尽力跑完),
-                # 书名由 '标题' 事件回填; 未拿到书名时仍记录网址+网站名占位
-                try:
-                    from 网站清单 import 记录 as _记清单, 域名网站名
-                    _记清单(url, 域名网站名(url), (task.title or '').strip())
-                except Exception as _e_清单:
-                    if app_log is not None:
-                        app_log.debug(f"任务{task.task_id}",
-                                      f"网站清单记录失败 (不影响抓取结果): "
-                                      f"{type(_e_清单).__name__}")
+            # ⚠️ 2026-10-06 修复(真 bug / 同类于"代码存在但不可达"):
+            # 下面这段"成功收尾"原先挂在上面那个 `status == "running"` 分支**内部**,
+            # 但抓取过程中的"完成"事件通路(_应用完成终态, 见本文件 :367)与正则通路(:226)
+            # **早就把 status 置成 'completed' 了** → 收尾永远不执行。
+            # 实测证据: ①历史日志里从未出现过 `已移除死书记录`;
+            #          ②三条 10-03 的死书清单记录, 在对应任务早已 completed 的情况下仍在清单里
+            #            (用户 2026-10-06 报告"这本书在死书清单上, 为什么还能爬/还在清单里")。
+            # 现按**最终状态**判定(_该收尾成功), 与"谁先置的状态"无关。
+            if self._该收尾成功(task):
+                self._收尾成功(task, url)
         except Exception as e:
             if self._is_task_thread_owner(task) and not task.stop_flag.is_set():
                 # 八项需求 #2 顺序修正: 先填 error / 判死书, 再置终态 ——
