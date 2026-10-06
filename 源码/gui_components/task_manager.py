@@ -196,45 +196,73 @@ class TaskLogRedirector:
         except Exception:
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
+    def 接收日志行(self, s: str, 落盘: bool):
+        """把一行日志收进任务日志 (并可选落盘)。
+
+        落盘=True: 来自**裸 print** 的行 —— 这些行不经统一日志系统, 不落盘就会
+        从日志文件里消失, 所以必须落。
+        落盘=False: 来自**日志镜像回调**的行 —— 文件里**已经有**这条记录了
+        (由 日志._write 落过), 再落就变成"每行两遍"。这也是本次修复的核心。
+        """
+        if not s:
+            return
+        if 落盘:
+            self._log_to_file(s)
+        self.task.logs.append({
+            'time': time.strftime('%H:%M:%S'),
+            'msg': s,
+        })
+        # U19: 统计正则兜底是否仍在起作用 (正则停用时这里恒不计数)
+        _前 = self._状态指纹() if self.启用正则兜底 else None
+        if self.启用正则兜底:
+            # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
+            self._parse_progress(s)
+            # 解析小说名称: "提取到小说名称: XXX"
+            # 性能: 每条日志行都会经过这里, 先用子串做廉价预判再跑正则
+            # (子串是正则能够匹配的必要条件, 语义完全等价)
+            if '提取到小说名称' in s:
+                m = re.search(r'提取到小说名称:\s*(.+)', s)
+                if m:
+                    self.task.title = m.group(1).strip()
+            # 解析完成: "抓取完成，共X章"
+            if '抓取完成' in s:
+                m = re.search(r'抓取完成.*共(\d+)章', s)
+                if m:
+                    self._应用完成终态()
+        # U19: 正则路径若确实改动了状态, 记一笔 (含改了哪些字段)
+        _后 = self._状态指纹() if self.启用正则兜底 else None
+        if _后 != _前:
+            self.正则兜底数 += 1
+            self.正则兜底字段.update(
+                n for n, a, b in zip(self._指纹字段, _前, _后) if a != b)
+        # 保留最近500条日志 (原地截断, 避免每行都重建列表)
+        if len(self.task.logs) > 500:
+            del self.task.logs[:-500]
+
+    def 镜像回调(self, level, source, message):
+        """日志镜像回调入口 (该线程已注册): 只进任务日志, **不再落盘**。"""
+        self.接收日志行(str(message).strip(), 落盘=False)
+
+    def _注册镜像(self):
+        try:
+            app_log.注册镜像回调(self.镜像回调)
+        except Exception as _e:
+            if app_log is not None:
+                app_log.debug('任务管理', f'注册日志镜像回调失败(退化为 stdout 镜像): '
+                                         f'{type(_e).__name__}: {_e}')
+
+    def _注销镜像(self):
+        try:
+            app_log.注册镜像回调(None)
+        except Exception as _e:
+            if app_log is not None:
+                app_log.debug('任务管理', f'注销日志镜像回调失败: {type(_e).__name__}: {_e}')
+
     def write(self, text):
+        """裸 print 入口 (sys.stdout 被替换): 逐行收进任务日志**并落盘**。"""
         if text.strip():
-            timestamp = time.strftime('%H:%M:%S')
             for line in text.strip().split('\n'):
-                s = line.strip()
-                if s:
-                    self._log_to_file(s)
-                    self.task.logs.append({
-                        'time': timestamp,
-                        'msg': s
-                    })
-                    # U19: 统计正则兜底是否仍在起作用 (正则停用时这里恒不计数)
-                    _前 = self._状态指纹() if self.启用正则兜底 else None
-                    if self.启用正则兜底:
-                        # 从日志中解析进度: "正在抓取第 X/Y 章" 或 "X/Y (Z%)"
-                        self._parse_progress(s)
-                        # 解析小说名称: "提取到小说名称: XXX"
-                        # 性能: 每条日志行都会经过这里, 先用子串做廉价预判再跑正则
-                        # (子串是正则能够匹配的必要条件, 语义完全等价)
-                        if '提取到小说名称' in s:
-                            m = re.search(r'提取到小说名称:\s*(.+)', s)
-                            if m:
-                                self.task.title = m.group(1).strip()
-                        # 解析完成: "抓取完成，共X章"
-                        if '抓取完成' in s:
-                            m = re.search(r'抓取完成.*共(\d+)章', s)
-                            if m:
-                                self._应用完成终态()
-                    # U19: 正则路径若确实改动了状态, 记一笔 (含改了哪些字段)
-                    _后 = self._状态指纹() if self.启用正则兜底 else None
-                    if _后 != _前:
-                        self.正则兜底数 += 1
-                        self.正则兜底字段.update(
-                            n for n, a, b in zip(self._指纹字段, _前, _后) if a != b)
-            # 保留最近500条日志
-            # (原地截断: 旧实现用 logs[-500:] 整体切片, 一旦超过 500 条,
-            #  每来一行日志都要重建一个 500 元素的新列表)
-            if len(self.task.logs) > 500:
-                del self.task.logs[:-500]
+                self.接收日志行(line.strip(), 落盘=True)
         # 同时输出到控制台（调试用）
         try:
             self.original.write(text)
@@ -1109,6 +1137,10 @@ class TaskManager:
         # 注册到线程感知 stdout 调度器 (不再直接替换全局 sys.stdout, 避免多任务互踩)
         重定向器 = TaskLogRedirector(task, sys.__stdout__)
         _THREAD_STDOUT.register(重定向器)
+        # 再注册**日志镜像回调** (2026-10-06 日志去重): 本线程的统一日志记录直接进
+        # 任务日志, 不再绕 stdout 镜像 —— 否则镜像会被上面的重定向器再落盘一次,
+        # 日志文件里每条出现两遍 (日志页看起来"每行重复")。
+        重定向器._注册镜像()
         # U19: 同时订阅结构化任务事件 —— 与日志正则并行的显式数据通道。
         # 事件优先 (有则直接赋值), 正则兜底 (覆盖尚未发出事件的路径);
         # 两者都按线程隔离, 故多任务并发不会串台。
@@ -1190,6 +1222,7 @@ class TaskManager:
                 app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
         finally:
             _THREAD_STDOUT.unregister()
+            重定向器._注销镜像()      # 线程复用必须注销, 否则回调悬空 (同 _THREAD_STDOUT)
             try:
                 import 任务事件
                 任务事件.退订(重定向器)      # U19: 退订, 防线程复用/重复注册
