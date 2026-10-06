@@ -36,6 +36,7 @@ from gui_components.pages.history_page import HistoryPage
 from gui_components.pages.site_manage_page import SiteManagePage
 from gui_components.pages.remote_page import RemotePage
 from gui_components.pages.dead_book_page import DeadBookPage
+from gui_components import 补址弹窗
 
 # 打包后路径约定（源码/EXE 双模式）
 from _path_utils import get_default_output_dir, get_state_root  # noqa: E402
@@ -186,20 +187,25 @@ def main(page: ft.Page):
     # ---- 全局任务管理器 ----
     task_manager = TaskManager(page)
 
-    # ---- 死书弹窗 (死书机制 阶段3) ----
-    # 分流契约: **由 死书处理.可询问删除类型 / 记录['可询问删除'] 决定, UI 不得自己判类型**。
-    #   True (书已删除) → modal AlertDialog 3 按钮 (删除记录/忽略此书/稍后处理)
-    #   False (站点不可达/目录无章节) → 不再单独弹 SnackBar —— 八项需求 #2 起
-    #     任务终态通知 (书名+失败原因+音效) 已覆盖提示职责, 此处只记日志
-    #   记录['网站失效']=True (书籍与网站同时失效, 八项需求 #3) → "补址"窗:
-    #     告知书名 + 询问补充新网址 (用新网址重抓 / 删除记录 / 稍后处理)
-    #   —— 判错类型会让用户误删仍可恢复的书 (误删代价远高于多问一句)。
+    # ---- 死书弹窗 (死书机制 阶段3; 2026-10-06 统一为两步补址流程) ----
+    # 分流契约 (2026-10-06 改版): **所有**死书都先问"要不要给这本书添加一个新网站",
+    # 没有则追问"是否删除"; 弹窗实现只有一处 = `gui_components/补址弹窗.py`。
+    #   · 记录['网站失效']=True (域名级死亡) → 场景_网站失效 文案
+    #   · 其余 (目录无章节/站点不可达, 多为疑似) → 场景_其他 文案, 追问里提示先「重新检测」
+    #   —— 分流只认**结构化字段**, UI 不得自行比较类型名:
+    #      判错类型会让用户误删仍可恢复的书 (误删代价远高于多问一句)。
+    #   —— 每个记录只在**首次**入队 (见 task_manager._记死书 的 首次 判定), 不会反复打扰。
     async def _提示死书(task_id: str):
-        """死书提示: 单一入口, modal/补址/静默分流在此 (便于测试与追溯)。
+        """死书提示: 单一入口 (便于测试与追溯)。
 
-        2026-10-03 修复: 旧实现是同步 def —— flet 0.86 page.run_task 要求
-        协程函数, 调度瞬间抛 TypeError 被排空循环吞成 debug 日志, 死书弹窗
-        自上线起从未真正弹出过 (K37)。"""
+        2026-10-06 改版(用户需求): "死书时询问是否要添加书籍新网站, 没有则询问是否删除"
+        → 统一走 `gui_components/补址弹窗.py` 的两步流程(补备用源 → 追问删除)。
+        旧实现的两个致命伤:
+          ① 只有"域名级死亡"(`网站失效`)才弹补址窗, 其余类型**静默** → 用户根本看不到入口;
+          ② 那扇补址窗用了 `ft.TextField(hint=…)` —— Flet 无 `hint` 参数(真名 `hint_text`),
+             构造即 TypeError, 且发生在 try 之外 → **弹窗从未真正显示过**(2026-10-06 测试发现)。
+        2026-10-03 另修: 必须是协程函数 (`page.run_task` 要求, 见 K37)。
+        """
         t = task_manager.get_task(task_id)
         if not t:
             return
@@ -209,109 +215,56 @@ def main(page: ft.Page):
         类型 = 死.get('类型') or '未知'
         原因 = 死.get('原因') or ''
         标题 = t.title or t.url
-        可询问 = bool(死.get('可询问删除'))
-        if 死.get('网站失效'):
-            _弹双失效(task_id, 标题, 类型, 原因)
-            return
-        if not 可询问:
-            # 不询问删除: 站点可能不通/选择器可能失效, 删了可惜 —— 只记日志,
-            # 用户提示由终态通知 (SnackBar+音效) 承担, 不再重复弹
-            app_log.info("死书", f"仅提示(不询问删除): {类型} {t.url}")
-            return
-        # EXE 文字必须显式 color (v2.4.19 G-H1 教训): 缺色会渲染成不可见
-        正文 = f"《{标题}》\n类型: {类型}\n{原因}"
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("这本书可能已被删除", color=ft.Colors.ON_SURFACE,
-                          font_family=FONT_STACK),
-            content=ft.Text(
-                f"{正文}\n\n"
-                f"是否删除这本书的记录?\n"
-                f"（任务/书架/网站清单三处, 已下载的文件不会删除）",
-                size=SIZE_SMALL, font_family=FONT_STACK,
-                color=ft.Colors.ON_SURFACE),
-            actions=[
-                ft.TextButton("稍后处理",
-                              on_click=lambda _: _关死书弹窗(dialog)),
-                ft.TextButton("忽略此书",
-                              on_click=lambda _: _忽略死书(dialog, task_id)),
-                ft.TextButton("删除记录",
-                              on_click=lambda _: _删死书(dialog, task_id)),
-            ],
+        # 分流只认**结构化字段**(网站失效), 不比较类型名 ——
+        # 判错类型会让用户误删仍可恢复的书。
+        场景 = (补址弹窗.场景_网站失效 if 死.get('网站失效')
+                else 补址弹窗.场景_其他)
+        动作 = 补址弹窗.补址动作(
+            添加并重抓=lambda _新址: _带备用源重抓(t.url, 标题),
+            删除记录=lambda: task_table._on_delete_dead(task_id),
+            忽略记录=lambda: task_table._on_ignore_dead(task_id),
         )
         try:
-            page.show_dialog(dialog)
+            补址弹窗.打开补址弹窗(page, 目录URL=t.url, 标题=标题, 场景=场景,
+                               类型=类型, 原因=原因, 动作=动作)
+            app_log.info("死书", f"询问补新网站/删除: {类型} {t.url}")
         except Exception as e:
             app_log.debug("死书", f"弹窗打开失败, 降级为提示: {type(e).__name__}: {e}")
-            page.show_dialog(提示条(正文))
-        app_log.info("死书", f"询问删除: {类型} {t.url}")
-
-    def _关死书弹窗(dialog):
-        """稍后处理: 只关窗, 死书清单保持 待确认 (清单页仍可后续处理)。"""
-        try:
-            dialog.open = False
-            page.update()
-        except Exception as e:
-            app_log.debug("死书", f"关窗失败: {type(e).__name__}: {e}")
-
-    def _忽略死书(dialog, task_id: str):
-        _关死书弹窗(dialog)
-        task_table._on_ignore_dead(task_id)   # 复用行内按钮的单一实现
-
-    def _删死书(dialog, task_id: str):
-        _关死书弹窗(dialog)
-        task_table._on_delete_dead(task_id)   # 跳过二次确认 (已在本窗确认过)
-
-    def _弹双失效(task_id: str, 标题: str, 类型: str, 原因: str):
-        """书籍与网站同时失效 (八项需求 #3): 告知书名 + 询问补充新网址。
-
-        用新网址重抓 → 旧死书记录清理 (任务/书架/清单三处, 已下载文件不删);
-        删除记录 → 同上但不重抓; 稍后处理 → 保留在死书清单, 不强迫当场抉择。"""
-        地址框 = ft.TextField(
-            hint="粘贴新的小说目录页网址 (http:// 或 https://)",
-            text_style=ft.TextStyle(size=SIZE_SMALL, font_family=FONT_STACK,
-                                    color=ft.Colors.ON_SURFACE),
-            dense=True,
-        )
-
-        def _重抓(_e=None):
-            新址 = (地址框.value or '').strip()
-            if not 新址.lower().startswith(("http://", "https://")):
-                page.show_dialog(提示条("请先粘贴有效的新目录页网址 (以 http:// 或 https:// 开头)"))
-                return
             try:
-                task_manager.create_task(url=新址, mode="full")
-                app_log.info("死书", f"双失效补址重抓: 《{标题}》 → {新址}")
-            except Exception as e:
-                app_log.info("死书",
-                             f"补址重抓任务创建失败: {type(e).__name__}: {e}")
-            _删死书(dialog, task_id)
+                page.show_dialog(提示条(f"《{标题}》抓取失败: {类型}\n{原因}"))
+            except Exception as _e2:
+                app_log.debug("死书", f"降级提示也失败: {type(_e2).__name__}: {_e2}")
 
-        dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("网站与书籍都已失效", color=ft.Colors.ON_SURFACE,
-                          font_family=FONT_STACK),
-            content=ft.Column([
-                ft.Text(f"《{标题}》\n类型: {类型}\n{原因}\n\n"
-                        f"该书的网站已无法访问。换一个网址可继续抓取同名书籍;\n"
-                        f"不补充则删除这本书的记录 (已下载的文件不会删除)。",
-                        size=SIZE_SMALL, font_family=FONT_STACK,
-                        color=ft.Colors.ON_SURFACE),
-                地址框,
-            ], tight=True, spacing=10),
-            actions=[
-                ft.TextButton("稍后处理",
-                              on_click=lambda _: _关死书弹窗(dialog)),
-                ft.TextButton("删除记录",
-                              on_click=lambda _: _删死书(dialog, task_id)),
-                ft.TextButton("用新网址重抓", on_click=_重抓),
-            ],
-        )
+    def _带备用源重抓(网址: str, 标题: str = ''):
+        """（登记备用源之后）重新发起抓取。
+
+        重抓的是**原**网址, 不是新网址: 备用源按原目录 URL 登记, 只有抓原网址时
+        多源回退才会消费它(`爬虫.py:7130` 精确匹配) —— 主源再失败即自动切到备用源
+        (`爬虫.py:7175`)。抓成功后收尾会自动清掉这条死书记录(2026-10-06 修复)。
+        """
         try:
-            page.show_dialog(dialog)
+            旧 = task_manager.find_task_by_url(网址)
         except Exception as e:
-            app_log.debug("死书", f"双失效弹窗打开失败: {type(e).__name__}: {e}")
-        app_log.info("死书", f"双失效询问补址: {类型} task_id={task_id}")
+            app_log.debug("死书", f"查找任务失败: {type(e).__name__}: {e}")
+            旧 = None
+        try:
+            if 旧 is not None:
+                在跑 = (getattr(旧, 'status', '') == 'running'
+                        or (getattr(旧, 'thread', None) is not None
+                            and 旧.thread.is_alive()))
+                if 在跑:
+                    page.show_dialog(提示条("该书任务正在运行中, 无需重复发起"))
+                    return
+                if not task_manager.restart_task(旧.task_id):
+                    page.show_dialog(提示条("该书任务正在收尾, 请稍后再试"))
+                    return
+            else:
+                # 沿用死书清单页的重检口径: resume=False (从未抓到章节, 续传无意义)
+                task_manager.create_task(网址, mode='full', resume=False)
+            app_log.info("死书", f"已用备用源重新发起: 《{标题}》 {网址}")
+        except Exception as e:
+            app_log.info("死书", f"重新发起失败: {type(e).__name__}: {e}")
+            page.show_dialog(提示条(f"⚠️ 重新发起抓取失败: {type(e).__name__}"))
 
     def _排空死书队列():
         """每 tick 至多弹一条, 避免批量失败时弹窗刷屏淹没界面。"""
