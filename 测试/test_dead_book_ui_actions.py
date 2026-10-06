@@ -204,62 +204,47 @@ class Test行内按钮(unittest.TestCase):
 
 
 class Test弹窗分流契约(unittest.TestCase):
-    """③ 分流由 可询问删除 决定 —— 源码级契约。
+    """③ 死书弹窗的分流契约 —— 源码级。
 
-    为什么必须如此: 判错类型会让用户误删**仍可恢复**的书。
-    站点不可达/目录无章节 书可能只是暂时抓不到, 误删代价远高于多问一句。
+    ⚠️ 2026-10-06 契约变更（用户需求）：**所有**死书都先问"要不要给这本书添加一个新网站"，
+    没有则追问"是否删除"。旧契约（"只有 可询问删除 的类型才弹删除确认，其余静默"）
+    已废止 —— 那个设计让用户在 `目录无章节` 时**看不到任何入口**，也就无从补址。
+    分流判据不变的关键点：**只认结构化字段，UI 不得自行比较类型名**
+    （判错类型会让用户误删仍可恢复的书）。
+    文案/按钮/两步流程细节由 `测试/test_死书补址流程.py` 把关，此处只锁"分流与复用"。
     """
 
     def setUp(self):
         self.文本 = _读源码('gui_app.py')
-        块 = self.文本.split('def _提示死书')[1][:3000]
-        self.块 = 块
+        self.块 = self.文本.split('def _提示死书')[1][:3000]
 
-    def test_分流依据是字段而非类型名(self):
-        self.assertIn('可询问删除', self.块,
-                      '_提示死书 未读 可询问删除 字段')
-        self.assertIn('if not 可询问', self.块,
-                      '未按 可询问删除 分流')
-        # UI 层不得自己拿类型名去判断该不该询问
-        for 禁 in ('类型 ==', '类型 in (', '类型 in ('):
+    def test_分流依据是结构化字段而非类型名(self):
+        self.assertIn("死.get('网站失效')", self.块,
+                      '_提示死书 未读 网站失效 结构化字段')
+        for 禁 in ('类型 ==', '类型 in ('):
             self.assertNotIn(禁, self.块,
-                             f'UI 层不得自行比较类型 ({禁}); 只认 可询问删除')
+                             f'UI 层不得自行比较类型名 ({禁}) —— 只认结构化字段')
 
-    def test_两类分流形态正确(self):
-        self.assertIn('SnackBar', self.块,
-                      '不可询问删除的类型应只给 SnackBar 提示, 不弹 modal')
-        self.assertIn('AlertDialog', self.块,
-                      '可询问删除的类型应弹 AlertDialog 询问')
-        self.assertIn('modal=True', self.块, '确认弹窗应为模态')
+    def test_弹窗构造委托给唯一实现(self):
+        self.assertIn('补址弹窗.打开补址弹窗', self.块,
+                      '必须复用 gui_components/补址弹窗.py（唯一实现），不得本处另造')
+        self.assertNotIn('ft.AlertDialog(', self.块,
+                         '本处不得再手搓弹窗 —— 两套实现必然漂移（本项目已有前科）')
 
-    def test_弹窗三按钮语义(self):
-        for 文案 in ('删除记录', '忽略此书', '稍后处理'):
-            self.assertIn(文案, self.块, f'弹窗缺少按钮: {文案}')
-
-    def test_弹窗文字显式颜色(self):
-        """EXE 契约: 弹窗文字不显式 color 会渲染成不可见 (v2.4.19)。
-
-        2026-10-04 (Phase 3): 正文改用 `ft.Colors.ON_SURFACE`（M3 别名, 按 theme_mode
-        自动适配），不再绑 `ui_fluent` 的 MORANDI 字符串常量 —— 断言随之改为
-        "必须显式给颜色"，不锁具体常量名（否则注释里提一句旧名就能骗过测试）。
-        2026-10-06: 底部提示条改由 `ui_fluent.提示条()` **统一**构造 ——
-        该构造器内部成对给 `toast-bg`/`toast-fg` 并登记主题重刷，
-        故这里断言"必须走提示条()"，颜色与对比度由 `test_提示条可读性.py` 把关
-        （历史上正是"只给字色不给底色"造成了黑底黑字）。
-        """
-        弹窗块 = self.块.split('ft.AlertDialog')[1][:1200] if 'ft.AlertDialog' in self.块 else ''
-        self.assertTrue(('ft.Colors.ON_SURFACE' in 弹窗块) or ('取色(' in 弹窗块),
-                        'AlertDialog 文字未显式指定颜色 → EXE 中不可见')
-        # 提示条: 唯一合法构造点是 ui_fluent.提示条 (它保证底色+字色成对)
-        self.assertIn('提示条(', self.块,
-                      '底部提示必须用 ui_fluent.提示条() 构造 —— 手写 ft.SnackBar 只给字色'
-                      '会造成"黑底黑字"不可读 (2026-10-06 事故)')
+    def test_弹窗打不开要有降级提示(self):
+        self.assertIn('提示条(', self.块, '弹窗异常时必须降级提示用户')
         self.assertNotIn('ft.SnackBar(', self.块,
-                         '本页不应再出现裸 ft.SnackBar 构造')
+                         '裸 SnackBar 会黑底黑字 (2026-10-06 事故)')
 
-    def test_提示内容含不动产物承诺(self):
-        self.assertRegex(self.块, r'不会删除|不会被删除',
-                         '弹窗必须告知用户已下载文件不会被删除')
+    def test_页头注释不再宣称旧契约(self):
+        """防"注释与实现相反"：旧注释称其余类型静默 —— 已废止，不得残留。"""
+        页头 = self.文本.split('def _提示死书')[0][-1200:]
+        self.assertNotIn('此处只记日志', 页头,
+                         '页头注释仍写着"其余类型静默只记日志"，与现实现相反')
+
+    # (原 test_提示内容含不动产物承诺 已迁移: 弹窗文案在唯一实现
+    #  gui_components/补址弹窗.py 里, 断言见 test_死书补址流程.py
+    #  ::test_追问文案承诺不删产物)
 
     def test_队列每tick至多一条(self):
         self.assertIn('取一条待弹死书', self.文本,
