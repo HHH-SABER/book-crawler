@@ -19,12 +19,14 @@ import flet as ft
 import os
 import sys
 import glob
+import threading
 
 from .task_manager import TaskManager
 from .ui_theme import (status_chip, status_color, tonal_btn,
                        LOG_TERMINAL_BG, LOG_TERMINAL_FONT, log_line_color)
 from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                          WEIGHT_SUBTITLE, WEIGHT_BODY, 提示条)
+                          WEIGHT_SUBTITLE, WEIGHT_BODY, 提示条,
+                          open_dialog, close_dialog)
 # Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
 # **构建期求值**的字符串对象, 切夜间主题后本地引用不会被更新 (见
 # phase3_迁移规范.md / log_tab.py 样例)。取色() 只在构建期取值 → 配 登记重刷()。
@@ -127,6 +129,12 @@ class DetailDrawer:
                                   overflow=ft.TextOverflow.ELLIPSIS)
         refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self._scan_files())
+        # 查重入口 (2026-10-07): 右栏只有 ~300px, 放不下第二个文字按钮 →
+        # 用图标按钮 + tooltip。扫描在工作线程, 结果走弹窗 (见 _检测重复)。
+        查重_btn = ft.IconButton(icon=ft.Icons.FIND_REPLACE_OUTLINED, icon_size=16,
+                                 tooltip="检测重复文件 (同一本书被抓了多份)",
+                                 on_click=lambda e: self._检测重复())
+        登记重刷(查重_btn, lambda c: setattr(c, 'icon_color', 取色('text-secondary')))
         # Phase 3: 令牌色 + 登记重刷 (旧写法绑的字符串常量切夜间不变色)
         抓取结果图标 = _令牌色(
             ft.Icon(ft.Icons.FOLDER_OPEN_OUTLINED, size=16), 'status-success')
@@ -137,6 +145,7 @@ class DetailDrawer:
                         font_family=FONT_STACK),
                 ft.Container(expand=True),
                 refresh_btn,
+                查重_btn,
             ], spacing=4),
             ft.Container(content=self._file_list, height=180),
             self._file_info,
@@ -615,6 +624,149 @@ class DetailDrawer:
         self._update()
 
     # --------------------------------------------------------- 窄窗口档
+    # ------------------------------------------------------ 查重 (去重, 2026-10-07)
+    def _dispatch(self, fn):
+        """提交 UI 更新到主线程 (flet 控件只能在主线程改)。"""
+        if self.page is None:
+            return
+        try:
+            async def _runner():
+                fn()
+                try:
+                    self.page.update()
+                except Exception as _e:
+                    _dbg("详情栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            self.page.run_task(_runner)
+        except Exception as _e:
+            _dbg("详情栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+
+    def _检测重复(self):
+        """扫描抓取结果目录里的重复书籍 → 结果弹窗。
+
+        扫描要读全部正文算句子指纹, 大目录可达数秒, 故放工作线程;
+        扫描结果同时写入去重清单 (状态根 数据/去重清单.json)。
+        """
+        if getattr(self, '_查重中', False):
+            self._toast("正在检测重复文件, 请稍候")
+            return
+        self._查重中 = True
+        self._toast("正在检测重复文件…")
+
+        def _worker():
+            组, 错误 = [], ''
+            try:
+                import 去重处理
+                组 = 去重处理.扫描重复()
+                去重处理.写出清单(组)
+            except Exception as e:  # noqa: BLE001 — 必须留痕
+                _dbg("详情栏", f'查重异常: {type(e).__name__}: {e}')
+                错误 = f'{type(e).__name__}: {e}'
+            self._查重中 = False
+            self._dispatch(lambda: self._显示查重结果(组, 错误))
+
+        threading.Thread(target=_worker, daemon=True, name='dedupe-scan').start()
+
+    def _显示查重结果(self, 组: list, 错误: str):
+        """查重结果弹窗: 每组列出保留项 + 可清理项 + 待确认项。
+
+        ⚠️ EXE 文字必须显式 color (v2.4.19 G-H1 教训: 缺色渲染成不可见)。
+        """
+        if self.page is None:
+            return
+        块 = []
+        if 错误:
+            块.append(ft.Text(f"检测失败: {错误}", size=SIZE_SMALL,
+                              color=ft.Colors.ERROR, font_family=FONT_STACK))
+        elif not 组:
+            块.append(ft.Text("未发现重复文件。", size=SIZE_SMALL,
+                              color=ft.Colors.ON_SURFACE, font_family=FONT_STACK))
+        else:
+            可清理 = sum(len(g['可自动清理']) for g in 组)
+            待确认 = sum(len(g['待确认']) for g in 组)
+            块.append(ft.Text(
+                f"发现 {len(组)} 组重复: 可自动清理 {可清理} 个, 待人工确认 {待确认} 个",
+                size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                color=ft.Colors.ON_SURFACE, font_family=FONT_STACK))
+            for g in 组[:20]:
+                行 = [ft.Text(f"保留: {g['代表']['名']}  ({g['代表']['字数']:,} 字)",
+                              size=SIZE_TINY, color=ft.Colors.ON_SURFACE,
+                              font_family=FONT_STACK, max_lines=1,
+                              overflow=ft.TextOverflow.ELLIPSIS)]
+                for x in g['可自动清理']:
+                    行.append(ft.Text(f"清理[{x['判定']}] {x['名']}",
+                                      size=SIZE_TINY, max_lines=1,
+                                      color=ft.Colors.ON_SURFACE_VARIANT,
+                                      font_family=FONT_STACK,
+                                      overflow=ft.TextOverflow.ELLIPSIS))
+                for x in g['待确认']:
+                    行.append(ft.Text(f"待确认 {x['名']} (差异较大, 未自动处理)",
+                                      size=SIZE_TINY, max_lines=1,
+                                      color=ft.Colors.ON_SURFACE_VARIANT,
+                                      font_family=FONT_STACK,
+                                      overflow=ft.TextOverflow.ELLIPSIS))
+                块.append(ft.Container(content=ft.Column(行, spacing=1, tight=True),
+                                       # flet 0.86 无 padding.symmetric →
+                                       # 用 ft.Padding(left, top, right, bottom)
+                                       padding=ft.Padding(0, 4, 0, 4)))
+            if len(组) > 20:
+                块.append(ft.Text(f"…另有 {len(组) - 20} 组未显示",
+                                  size=SIZE_TINY,
+                                  color=ft.Colors.ON_SURFACE_VARIANT,
+                                  font_family=FONT_STACK))
+
+        有可清理 = any(g['可自动清理'] for g in 组)
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("重复文件检测", color=ft.Colors.ON_SURFACE,
+                          font_family=FONT_STACK),
+            content=ft.Container(
+                content=ft.Column(块, spacing=2, tight=True,
+                                  scroll=ft.ScrollMode.ALWAYS),
+                width=520, height=360),
+            actions=[
+                ft.TextButton("关闭",
+                              on_click=lambda _: close_dialog(self.page, dialog)),
+                ft.TextButton("移入隔离区并清理", disabled=not 有可清理,
+                              on_click=lambda _: self._执行查重清理(组, dialog)),
+            ],
+        )
+        open_dialog(self.page, dialog)
+
+    def _执行查重清理(self, 组: list, dialog):
+        """把各组「可自动清理」项**移入隔离目录** (可反悔)。
+
+        绝不删组内保留项 —— 编排层 (去重处理.执行清理) 也有同样的硬保护。
+        """
+        try:
+            close_dialog(self.page, dialog)
+        except Exception as _e:
+            _dbg("详情栏", f'关窗失败: {type(_e).__name__}: {_e}')
+        self._toast("正在移入隔离区…")
+
+        def _worker():
+            清理数, 失败 = 0, []
+            try:
+                import 去重处理
+                for g in 组:
+                    if not g['可自动清理']:
+                        continue
+                    r = 去重处理.执行清理(g['键'], '隔离')
+                    清理数 += len(r['清理'])
+                    失败.extend(名 for 名, _ in r['失败'])
+            except Exception as e:  # noqa: BLE001 — 必须留痕
+                _dbg("详情栏", f'清理异常: {type(e).__name__}: {e}')
+                失败.append(f'{type(e).__name__}: {e}')
+
+            def _ui():
+                if 失败:
+                    self._toast(f"⚠️ 已隔离 {清理数} 个, {len(失败)} 个失败")
+                else:
+                    self._toast(f"✅ 已隔离 {清理数} 个重复文件 (可反悔)")
+                self._scan_files()
+            self._dispatch(_ui)
+
+        threading.Thread(target=_worker, daemon=True, name='dedupe-clean').start()
+
     def 设置窄档(self, 窄: bool):
         """窄窗口(≤1200px)模式: 抽屉宽度 320 → 260, 把省下的宽度让给任务表。
 
