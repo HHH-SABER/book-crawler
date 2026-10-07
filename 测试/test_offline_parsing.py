@@ -767,7 +767,7 @@ def _load_sitef_adapter():
     return mod
 
 
-class TestYunshuzhaiCatalogFromChapter(unittest.TestCase):
+class Test站点O_目录取自章节页(unittest.TestCase):
     """用户把章节页 URL 当任务 URL: 通用管线把章节页当目录页解析, 只剩
     "目录"链接 1 个"章节", 把详情页当正文抓 → 整单失败 (09-11 实测)。
     适配器用 catalog_from_chapter 声明章节页→目录页推导, run() 在解析前调用。"""
@@ -820,7 +820,7 @@ class TestYunshuzhaiCatalogFromChapter(unittest.TestCase):
             sites_config.ADAPTERS = saved
 
 
-class TestYunshuzhaiSamples(unittest.TestCase):
+class Test站点O_样本(unittest.TestCase):
     """真实页面快照契约: 目录解析 / 正文提取 / 书名 (09-10/09-11 两轮修复)。"""
 
     @classmethod
@@ -1095,11 +1095,11 @@ class TestBareWafChallengeRetry(unittest.TestCase):
 class TestContentPaginationNone(unittest.TestCase):
     """适配器声明 content_pagination: None (单页直出) 不得炸正文提取 (K35)。
 
-    hulaisb 适配器 SITE 写有 "content_pagination": None (单页直出意图)。
+    站点F 适配器 SITE 写有 "content_pagination": None (单页直出意图)。
     get_chapter_content 旧守卫 'content_pagination' in site_pattern 只查键存在,
     None.get('max_pages', 30) 抛 TypeError, 被 _fetch_with_qc 吞成
     "[质检] 抓取异常: 'NoneType' object has no attribute 'get'" →
-    全部章节 ~0.5s 瞬时空正文 (hulaisb task_9 2026-10-03 实测, 5 篇全灭)。
+    全部章节 ~0.5s 瞬时空正文 (站点F task_9 2026-10-03 实测, 5 篇全灭)。
     修后: None → 视为无 dict 分页配置, 且第 2 页直接停止、不构造 _1.html。
     URL 全部 example.com 脱钩。
     """
@@ -1116,7 +1116,7 @@ class TestContentPaginationNone(unittest.TestCase):
     def setUp(self):
         import unittest.mock as _mock
         from bs4 import BeautifulSoup
-        # 站点配置: hulaisb 形态 —— html_selector 模式 + content_pagination=None。
+        # 站点配置: 站点F 形态 —— html_selector 模式 + content_pagination=None。
         # pattern 用 generic 走通用检测, 避免 html_selector 提取器真实取页。
         site_pattern = {
             'domain': 'example.com',
@@ -1130,7 +1130,7 @@ class TestContentPaginationNone(unittest.TestCase):
         p2 = _mock.patch('sites_config.get_adapter', return_value=None)
         p2.start()
         self.addCleanup(p2.stop)
-        # 数据文件探测不命中 (hulaisb 真站走 .word, 离线无需覆盖)
+        # 数据文件探测不命中 (站点F 真站走 .word, 离线无需覆盖)
         p3 = _mock.patch('content_decoder.decode_chapter_data',
                          return_value=('', ''))
         p3.start()
@@ -1187,7 +1187,7 @@ class TestContentPaginationNone(unittest.TestCase):
 class TestServerErrorRetry(unittest.TestCase):
     """5xx 错误页必须重试而非当正文返回 (K36, 2026-10-03)。
 
-    shuhaige 源站间歇 502: 目录页 GET → 502 + "502 Bad Gateway" 错误页,
+    站点R 源站间歇 502: 目录页 GET → 502 + "502 Bad Gateway" 错误页,
     旧实现把错误页当正常响应解析 → 书名 "502 Bad Gateway" → 0 章节 →
     死书[目录无章节] (误导用户查选择器)。修后 inspect_page 对 5xx
     与网络异常同等重试 (3 次退避), 耗尽返回空 soup → 死书判定走
