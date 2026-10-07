@@ -92,7 +92,7 @@ class Test判定死书(unittest.TestCase):
 class Test错误页标题K36(unittest.TestCase):
     """K36 (2026-10-03): 5xx 错误页标题被当书名时判 站点不可达。
 
-    shuhaige 源站间歇 502, 目录页 <title> 是 "502 Bad Gateway" →
+    站点R 源站间歇 502, 目录页 <title> 是 "502 Bad Gateway" →
     书名提取拿到错误页标题 → 旧判定书名"正常" → 误判 目录无章节
     (误导用户查选择器)。修后归 站点不可达, 提示稍后重新检测。
     """
