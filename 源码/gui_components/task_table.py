@@ -22,6 +22,8 @@ from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
 # 取色() 只在构建期取值, 故每处非 M3 槽位的颜色都配 登记重刷()。
 from .ui_tokens import 取色, 登记重刷
 from .row_detail import build_row_detail, _fmt_elapsed
+from . import states
+from . import 布局档位
 
 try:
     import 日志 as app_log
@@ -49,10 +51,13 @@ _COLUMNS = [
 _TITLE_COL = 0        # 标题列下标 (现亦为固定宽)
 _OPS_COL = 7          # 操作列下标
 
-# 窄档 (≤1200px 窗口) 隐藏的次级列: 引擎 / 反爬 / 耗时 / 质检。
-# 实测: 960px 窗宽 (侧栏 + 320px 抽屉挤占) 下任务表横向溢出 538px;
-# 隐藏这 4 列后只留 任务/进度/状态/操作, 表格宽度随之收窄 (见 _表宽)。
+# ⚠️ 批 4 (2026-10-07) 已废弃"窄档隐藏次级列"策略 —— 用户拍板对齐设计稿:
+# 设计稿在**任何**断点都不隐藏任务表列 (固定 910px + 横向滚动, 见 index.html
+# .task-table-inner width:910px 与 .task-table-scroll overflow-x:auto)。
+# 旧策略是 ≤1200px 隐藏 引擎/反爬/耗时/质检 四列把表宽压到 606px 来消横滚,
+# 与设计稿口径相反。_次级列 保留常量只为记录历史, 代码中不再使用。
 _次级列 = (3, 4, 5, 6)
+_次级列_已废弃 = True
 
 
 def _表宽(窄: bool) -> int:
@@ -185,38 +190,50 @@ class TaskTable:
 
     # ------------------------------------------------------- 窄档 (≤1200px)
     def _应用列可见(self, 单元, 列号: int):
-        """按当前窄档状态设置单个列单元的可见性/宽度 (幂等, 只改属性)。
+        """设置单个列单元的可见性与宽度 (幂等, 只改属性)。
 
-        双保险: 既置 visible=False, 也把宽度归零 —— 无论客户端是否把
-        "不可见"控件算进布局, 次级列都不再占宽 (表格靠外层 Row 横滚兜底)。
+        批 4 (2026-10-07): **不再隐藏任何列** —— 设计稿任何断点都是
+        固定 910px + 横向滚动。本方法保留为"统一设置列宽"的单一出口
+        (旧实现在这里按 `_窄档` 把 引擎/反爬/耗时/质检 四列 visible=False
+        且 width=0; 那个策略已按用户 2026-10-07 的决定废弃)。
         """
-        次级 = self._窄档 and 列号 in _次级列
-        单元.visible = not 次级
-        单元.width = 0 if 次级 else _COLUMNS[列号][1]
+        单元.visible = True
+        单元.width = _COLUMNS[列号][1]
 
-    def 设置窄档(self, 窄: bool):
-        """窄窗口(≤1200px)模式: 隐藏次级列(引擎/反爬/耗时/质检),
-        只留 任务 / 进度 / 状态 / 操作; 表格内容宽度同步收窄。
+    def 设置档位(self, 档: str, 参数: dict = None):
+        """按布局档位调整任务表 (批 4)。
 
-        幂等 + 可反复调用 (page.on_resize 每次尺寸变化都会调): 只改既有控件的
-        属性并做子树级 update(), 不重建行、不改数据; 任何异常就地留痕吞掉,
-        绝不向调用方抛出 (接口契约: 构造后调用 / 未 build 时调用都安全)。
+        设计稿口径: 表宽**恒为 910px**, 任何档都不隐藏列 → 本方法只保证表宽
+        正确 (以及列可见性回到"全显示"), 宽度不够时交给外层横向滚动容器。
+
+        幂等 + 可反复调用 (page.on_resize 每次都调): 只改既有控件属性并做
+        子树级 update(), 不重建行、不改数据; 异常就地留痕, 绝不向调用方抛出
+        (接口契约: 构造后调用 / 未 build 时调用都安全)。
         """
         try:
-            self._窄档 = bool(窄)
+            self._档 = 档
+            self._窄档 = (档 == 布局档位.窄)     # 兼容字段, 仅用于自检/日志
+            参数 = 参数 or 布局档位.取参数(档)
             for 列号, 单元 in enumerate(self._头部单元):
                 self._应用列可见(单元, 列号)
             for 列号, 单元s in self._行单元.items():
                 for 单元 in 单元s:
                     self._应用列可见(单元, 列号)
             if self._表格体 is not None:
-                self._表格体.width = _表宽(self._窄档)
+                宽 = 参数.get('表格固定宽') or _表宽(False)
+                if self._表格体.width != 宽:
+                    self._表格体.width = 宽
                 try:
                     self._表格体.update()
                 except Exception:
                     pass  # 刻意静默: 尚未挂到 page 上时 update 会抛 (构造后自测场景)
         except Exception as _e:
-            _dbg("任务表", f'窄档切换失败: {type(_e).__name__}: {_e}')
+            _dbg("任务表", f'档位切换失败: {type(_e).__name__}: {_e}')
+
+    def 设置窄档(self, 窄: bool):
+        """兼容旧接口 (按设计稿口径: 窄档也不隐藏列, 只影响表宽参数)。"""
+        档 = 布局档位.窄 if 窄 else 布局档位.宽
+        self.设置档位(档, 布局档位.取参数(档))
 
     # ------------------------------------------------------------- 刷新 (主线程)
     def _refresh(self):
@@ -255,23 +272,11 @@ class TaskTable:
         for _列单元 in self._行单元.values():
             _列单元.clear()
         if not tasks:
-            self._list_view.controls.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.Icons.LIBRARY_BOOKS_OUTLINED, size=44,
-                                color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.5),
-                        ft.Text("暂无任务", size=SIZE_LABEL,
-                                color=ft.Colors.ON_SURFACE_VARIANT,
-                                weight=WEIGHT_TITLE, font_family=FONT_STACK),
-                        ft.Text("在上方输入网址后点击「开始」创建任务",
-                                size=SIZE_SMALL, weight=WEIGHT_BODY,
-                                color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.7,
-                                font_family=FONT_STACK),
-                    ], spacing=8,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=ft.Padding.symmetric(vertical=48),
-                )
-            )
+            # 批 4 (2026-10-07): 手写空态 → 统一组件 (文案保留, 它比通用文案更指引人)。
+            # 填满=False: _list_view 是 ListView, 无界高度里 expand 会被算成 0 高。
+            self._list_view.controls.append(states.首次为空(
+                图标=ft.Icons.LIBRARY_BOOKS_OUTLINED, 标题='暂无任务',
+                说明='在上方输入网址后点击「开始」创建任务', 填满=False))
             return
 
         for task in tasks:

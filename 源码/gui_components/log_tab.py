@@ -53,6 +53,9 @@ def 错误文本(文案: str) -> ft.Text:
 
     旧写法 `ft.Text(..., color=MORANDI_ERROR)` 绑的是构建期求值的字符串,
     切夜间主题后这句错误提示仍是日间色 (审查报告 Phase 3 结论)。
+
+    批 4 起, 日志区的"读失败"改走 `states.错误态`(带重试), 本函数退为
+    **行内**错误文案通道 —— 仍被 `_load_file` 的文件不存在/读取失败使用。
     """
     控件 = ft.Text(文案, size=SIZE_BODY, color=取色('status-error'),
                   font_family=FONT_STACK)
@@ -237,10 +240,12 @@ class LogTab:
             if not self.date_dropdown.value:
                 self._all_lines = []
                 self.log_list.controls.clear()
-                self.log_list.controls.append(
-                    ft.Text("暂无日志", size=SIZE_SMALL, weight=WEIGHT_BODY,
-                            color=ft.Colors.ON_SURFACE_VARIANT, italic=True,
-                            font_family=FONT_STACK))
+                # 批 4 (2026-10-07): 原先这里手写一行斜体小字, 与同文件
+                # 另一半 (_render_lines 已走 states) 风格不一致 → 统一走组件。
+                self.log_list.controls.append(states.首次为空(
+                    图标=ft.Icons.RECEIPT_LONG_OUTLINED,
+                    标题='暂无日志',
+                    说明='程序运行后会自动写入日志文件, 这里会按日期列出。'))
             else:
                 self._load_file(f"{self.date_dropdown.value}.log")
             if self.page is not None:
@@ -249,7 +254,17 @@ class LogTab:
                 except Exception as _e:
                     _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
         except Exception as _e:
-            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            # 批 4: 旧实现只 _dbg, 界面零反馈 (列表保持旧内容) → 用户以为日志"就这些"。
+            # 现在给出可重试的错误态 (读日志失败是**真错误**, 不是"空")。
+            _dbg("运行日志", f'加载日志列表失败: {type(_e).__name__}: {_e}')
+            try:
+                self._all_lines = []
+                self.log_list.controls.clear()
+                self.log_list.controls.append(states.错误态(
+                    '日志加载失败', f'{type(_e).__name__}: {_e}', self._reload,
+                    '重新加载'))
+            except Exception as _e2:
+                _dbg("运行日志", f'错误态渲染失败: {type(_e2).__name__}: {_e2}')
 
     def _load_file(self, filename: str):
         """读取单个日志文件 (M11: 只读尾部 2MB, 避免大文件冻结 UI; 超出部分
@@ -258,7 +273,12 @@ class LogTab:
         self._all_lines = []
         self.log_list.controls.clear()
         if not os.path.isfile(path):
-            self.log_list.controls.append(错误文本(f"文件不存在: {filename}"))
+            # 文件不存在 (日期下拉指向了一个已被轮转删除的文件): 重试无用,
+            # 故只给说明 + 回列表的动作, 不硬塞"重试"按钮。
+            self.log_list.controls.append(states.错误态(
+                '日志文件不存在',
+                f'{filename} 已被轮转或删除。点「重新加载」回到最新日志。',
+                self._reload, '重新加载'))
             return
         try:
             # 尾部读取: seek 到 (文件大小 - 2MB) 处, 丢弃首个可能截断的半行
@@ -273,7 +293,9 @@ class LogTab:
                 text = text.split('\n', 1)[1]
             lines = text.splitlines()
         except OSError as ex:
-            self.log_list.controls.append(错误文本(f"读取失败: {ex}"))
+            _dbg("运行日志", f'读取失败: {type(ex).__name__}: {ex}')
+            self.log_list.controls.append(states.错误态(
+                '日志读取失败', f'{type(ex).__name__}: {ex}', self._reload))
             return
 
         if len(lines) > _MAX_DISPLAY_LINES:
@@ -360,10 +382,15 @@ class LogTab:
             # Phase 3 (2026-10-04): 筛选后为空不再是一片空白 —— 统一空态 + 一键清除筛选。
             # 旧行为: controls 直接为空 → 日志区纯黑空白页, 用户以为程序卡死。
             if self._all_lines:
+                # 填满=False: log_list 是 ListView (主轴高度无界), 子控件
+                # expand=True 会被算成 0 高 —— Phase 3 这三处一直带着这个隐患。
                 self.log_list.controls.append(states.筛选后为空(
-                    清除筛选回调=self._清除筛选, 说明=self._筛选说明()))
+                    清除筛选回调=self._清除筛选, 说明=self._筛选说明(),
+                    填满=False))
             else:
-                self.log_list.controls.append(states.首次为空())
+                self.log_list.controls.append(states.首次为空(
+                    图标=ft.Icons.RECEIPT_LONG_OUTLINED, 标题='这一天没有日志',
+                    说明='换一个日期, 或清除筛选条件。', 填满=False))
         if self.status_text is not None:
             self.status_text.value = f"显示 {len(lines)} / {len(self._all_lines)} 行"
 
@@ -427,6 +454,19 @@ class LogTab:
     def _on_clear_view(self, e=None):
         """清空当前显示 (不影响日志文件)"""
         self.log_list.controls.clear()
+        # 批 4 (2026-10-07): 旧实现清完什么都不补 → 深色终端区一片纯黑空白,
+        # 用户以为程序坏了 (只靠一行状态文字根本不够)。补一个说明性空态 +
+        # 「重新加载」动作, 把"我清空了"与"日志丢了"分开。
+        try:
+            from .ui_theme import tonal_btn
+            self.log_list.controls.append(states.空态(
+                图标=ft.Icons.VISIBILITY_OFF_OUTLINED,
+                标题='已清空显示',
+                说明='只是清空了当前视图, 日志文件未被删除; 点「重新加载」即可恢复。',
+                操作按钮=tonal_btn('重新加载', icon=ft.Icons.REFRESH,
+                                  on_click=self._reload)))
+        except Exception as _e:
+            _dbg("运行日志", f'清空提示渲染失败: {type(_e).__name__}: {_e}')
         if self.status_text is not None:
             self.status_text.value = "已清空显示 (重新加载即可恢复)"
         try:
