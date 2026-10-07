@@ -198,5 +198,136 @@ class Test清单页逻辑(unittest.TestCase):
                       '当前类型在新集合消失时须回落, 否则下拉显示空值')
 
 
+class Test死书卡片meta行数据缺口(unittest.TestCase):
+    """批 3 数据缺口收口 (2026-10-07): meta 行 = 设计稿
+    `URL · 失败短语 · 判定于 <时间> · 已抓 N 章`。
+
+    第 2 槽在 8 张样卡里有三种词: `HTTP 404`(3 张) / `内容为空`(3 张) /
+    `连接超时`(2 张) —— 是**失败状态短语**, 不是"只有 HTTP 码"。
+
+    这里**真构建卡片控件树**再读文本 —— 只做源码字符串断言的话,
+    "字段取错/条件写反/拼错键名"这类错全都漏得过去 (K45/K46 同族教训)。
+    """
+
+    def setUp(self):
+        import flet as ft
+        from gui_components.pages.dead_book_page import DeadBookPage
+        self.ft = ft
+        self.page = DeadBookPage()
+
+    def _文本(self, r: dict) -> list:
+        """构建单条卡片并收集全部 ft.Text 的值"""
+        return self._收集(self.page._行(r))
+
+    def _收集(self, 控件) -> list:
+        out = []
+        if 控件 is None:
+            return out
+        if isinstance(控件, self.ft.Text) and isinstance(控件.value, str):
+            out.append(控件.value)
+        for attr in ('content', 'controls'):
+            sub = getattr(控件, attr, None)
+            if isinstance(sub, list):
+                for c in sub:
+                    out.extend(self._收集(c))
+            elif sub is not None:
+                out.extend(self._收集(sub))
+        return out
+
+    @staticmethod
+    def _记录(**kw):
+        基 = {'键': 'example.com/book/1', '网址': 'https://example.com/book/1',
+              '书名': '示例书', '类型': '目录无章节', '原因': '未解析出章节',
+              '可询问删除': False, '状态': '待确认',
+              '最近时间': '2026-10-07 12:00:00', '次数': 1}
+        基.update(kw)
+        return 基
+
+    def test_完整记录显示设计稿四个片段(self):
+        文本 = self._文本(self._记录(HTTP状态码=404, 已抓章节=412))
+        self.assertIn('https://example.com/book/1', 文本)
+        self.assertIn('HTTP 404', 文本, '缺 HTTP 码片段 (数据缺口未接上)')
+        self.assertIn('判定于 2026-10-07 12:00:00', 文本)
+        self.assertIn('已抓 412 章', 文本, '缺已抓章节片段 (数据缺口未接上)')
+
+    def test_分隔点数量等于片段数减一(self):
+        """设计稿用 .dot-sep 分隔; 多一个/少一个都是排版事故"""
+        文本 = self._文本(self._记录(HTTP状态码=404, 已抓章节=412))
+        self.assertEqual(文本.count('·'), 3, f'4 个片段应有 3 个分隔点, 实得 {文本}')
+
+    def test_拿不到内容时说连接超时(self):
+        """页面为空 (三次重试没拿到) 且无状态码 → 设计稿用词「连接超时」"""
+        文本 = self._文本(self._记录(HTTP状态码=0, 已抓章节=0, 页面为空=True))
+        self.assertIn('连接超时', 文本, f'实得 {文本}')
+
+    def test_页面拿到但无章节说内容为空(self):
+        """页面拿到了 (只是解析不出章节) → 设计稿用词「内容为空」"""
+        文本 = self._文本(self._记录(HTTP状态码=0, 已抓章节=47, 页面为空=False))
+        self.assertIn('内容为空', 文本, f'实得 {文本}')
+
+    def test_有状态码就报码哪怕页面为空(self):
+        """5xx 错误页: 页面算"拿到了", 且带得回状态码 → 报 HTTP 码"""
+        文本 = self._文本(self._记录(HTTP状态码=502, 页面为空=False))
+        self.assertIn('HTTP 502', 文本, f'实得 {文本}')
+        self.assertNotIn('内容为空', 文本)
+
+    def test_已抓零章仍显示(self):
+        """"一章都没抓到"是用户判断"删了会不会丢东西"的关键事实, 必须显式"""
+        self.assertIn('已抓 0 章', self._文本(self._记录(HTTP状态码=200, 已抓章节=0)))
+
+    def test_第二槽永不空缺(self):
+        """设计稿每张卡都有失败短语 → 无论新老记录都必须给出一个词"""
+        for kw in ({'HTTP状态码': 404}, {'页面为空': True}, {}, {'页面为空': False}):
+            文本 = self._文本(self._记录(**kw))
+            self.assertTrue(
+                [t for t in 文本 if t.startswith('HTTP ') or t in ('连接超时', '内容为空')],
+                f'第 2 槽空缺: {kw} → {文本}')
+
+    def test_老记录缺已抓键则跳过该槽(self):
+        """无值 ≠ 0: 补字段之前的老记录没有 已抓章节 键 → 跳过, 不冒充 0"""
+        文本 = self._文本(self._记录(HTTP状态码=404))     # 不带 已抓章节
+        self.assertFalse([t for t in 文本 if t.startswith('已抓')], f'实得 {文本}')
+
+    def test_尝试次数仅在多次时显示(self):
+        """有意偏差: 设计稿无"尝试 N 次"; 首次失败属噪声故不显, 反复判死才是排障信息"""
+        首次 = self._文本(self._记录(HTTP状态码=404, 已抓章节=1, 次数=1))
+        self.assertFalse([t for t in 首次 if t.startswith('尝试')], f'实得 {首次}')
+        多次 = self._文本(self._记录(HTTP状态码=404, 已抓章节=1, 次数=5))
+        self.assertIn('尝试 5 次', 多次)
+
+    def test_脏字段不致整页崩(self):
+        """清单是用户可编辑的 JSON: 一个脏值不能让整页渲染抛异常 (刷新循环会全炸)"""
+        文本 = self._文本(self._记录(HTTP状态码='x', 已抓章节=[], 次数='y'))
+        self.assertIn('内容为空', 文本, '脏状态码应回落"内容为空"而不是崩')
+        self.assertFalse([t for t in 文本 if t.startswith('尝试')], f'实得 {文本}')
+
+    def test_共享单元测试_确认键名与落盘侧一致(self):
+        """页面读的键名必须与 死书处理.记录死书 写出的键名逐字相同。
+
+        这是本缺口最可能的失效点: 一边写 'HTTP状态码' 一边读 '状态码'
+        → 页面恒显示错误短语, 且**没有任何异常** (静默)。
+        """
+        import json
+        import tempfile
+        from pathlib import Path
+        import _沙箱  # noqa: F401
+        import 死书处理 as D
+        with tempfile.TemporaryDirectory() as td:
+            原 = D.清单路径
+            D.清单路径 = lambda: str(Path(td) / '死书清单.json')
+            try:
+                D.记录死书('https://example.com/b/9', '书', D.类型_无章节, 'r',
+                           状态码=410, 已抓章节=87, 页面为空=False)
+                落盘 = json.loads(Path(D.清单路径()).read_text(encoding='utf-8'))
+            finally:
+                D.清单路径 = 原
+        记录 = 落盘['记录'][0]
+        for 键 in ('HTTP状态码', '已抓章节', '页面为空'):
+            self.assertIn(键, 记录, f'落盘侧未写键 {键}')
+        文本 = self._文本(记录)
+        self.assertIn('HTTP 410', 文本)
+        self.assertIn('已抓 87 章', 文本)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

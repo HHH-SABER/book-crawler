@@ -68,6 +68,32 @@ _筛选全部 = '全部'
 _批量上限 = 10
 
 
+def _整数(值, 默认: int = 0) -> int:
+    """安全取整 (清单是用户可编辑的 JSON, 脏字段不能把整页渲染炸掉)"""
+    if isinstance(值, bool):
+        return 默认
+    try:
+        return int(值)
+    except (TypeError, ValueError):
+        return 默认
+
+
+def _拼接_dot(片段: list) -> ft.Row:
+    """把若干文本片段用设计稿的 `·` 分隔点串成一行 (`.dot-sep`, opacity 0.5)。
+
+    设计稿 meta 行 = `URL · HTTP 码 · 判定于 <时间> · 已抓 N 章`,
+    分隔点在相邻片段**之间** (首尾不加), 与 .dot-sep 的用法一致。
+    """
+    controls = []
+    for _i, _c in enumerate(片段):
+        if _i:
+            controls.append(ft.Text('·', size=SIZE_MICRO, opacity=0.5,
+                                    color=取色('text-tertiary'),
+                                    font_family=FONT_STACK))
+        controls.append(_c)
+    return ft.Row(controls, spacing=6, tight=True, wrap=True)
+
+
 class DeadBookPage:
     """死书清单页 (main 装配: page / task_manager 注入)"""
 
@@ -317,9 +343,11 @@ class DeadBookPage:
         状态标签 = ft.Text(状态文案, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
                          color=颜色, font_family=FONT_STACK)
         登记重刷(状态标签, lambda c: setattr(c, 'color', 取色(颜色键)))
-        # meta 行 (设计稿 .deadbook-meta: 等宽 URL · 判定于 <时间> · 尝试 N 次)
-        # 只放记录里**真实存在**的字段 —— 设计稿的 HTTP 码 / 已抓章节 记录里没有,
-        # 不编造 (已在 文档/修改记录.md 登记为数据缺口, 待后续补数据链路)
+        # meta 行 (设计稿 .deadbook-meta: 等宽 URL · 失败短语 · 判定于 <时间> · 已抓 N 章)
+        # 批 3 数据缺口已于 2026-10-07 补齐: HTTP状态码 / 页面为空 / 已抓章节 由
+        # 判定死书 在判定侧采集 → 死书错误 → 记录死书 **落盘**。
+        # 其中 已抓章节 对**补字段之前的老记录**确实无值 (键不存在) → 该槽跳过;
+        # 不补 0 冒充 —— 0 与"不知道"必须分得开。
         网址 = r.get('网址') or ''
         _片段 = []
         if 网址:
@@ -327,14 +355,41 @@ class DeadBookPage:
                                 color=取色('text-tertiary'), font_family=FONT_TERMINAL,
                                 max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                                 selectable=True))
+        # 失败状态短语 (设计稿第 2 槽: `HTTP 404` / `内容为空` / `连接超时`)
+        # 设计稿该槽是**失败状态短语**, 不是"只有 HTTP 码" —— 8 张样卡里 3 张写
+        # `内容为空`、2 张写 `连接超时`。用词由**判定时带上来的事实**决定:
+        #   有响应状态码 → 报码; 否则页面为空(没拿到内容) → 连接超时; 否则 → 内容为空。
+        # ⚠️ 不得在此比对类型名推词 (测试/test_dead_book_ui_actions.py 明文禁止 UI 自比类型名)
+        _状态码 = _整数(r.get('HTTP状态码'))
+        if _状态码 > 0:
+            _失败短语 = f"HTTP {_状态码}"
+        elif r.get('页面为空'):
+            _失败短语 = '连接超时'
+        else:
+            _失败短语 = '内容为空'
+        _片段.append(ft.Text(_失败短语, size=SIZE_MICRO,
+                            weight=WEIGHT_BODY, color=取色('text-tertiary'),
+                            font_family=FONT_STACK))
         if r.get('最近时间'):
             _片段.append(ft.Text(f"判定于 {r.get('最近时间')}", size=SIZE_MICRO,
                                 weight=WEIGHT_BODY, color=取色('text-tertiary'),
                                 font_family=FONT_STACK))
-        _片段.append(ft.Text(f"尝试 {r.get('次数') or 1} 次", size=SIZE_MICRO,
-                            weight=WEIGHT_BODY, color=取色('text-tertiary'),
-                            font_family=FONT_STACK))
-        副信息 = ft.Row(_片段, spacing=6, tight=True, wrap=True)
+        # 已抓 N 章: 键存在即显示 (含 0 —— "这本书一章都没抓到"是用户判断
+        # "删记录会不会丢东西"的关键事实, 不是空值); 键不存在 = 本条是补字段
+        # 之前写的老记录 → 跳过。
+        if '已抓章节' in r:
+            _片段.append(ft.Text(f"已抓 {_整数(r.get('已抓章节'))} 章",
+                                size=SIZE_MICRO, weight=WEIGHT_BODY,
+                                color=取色('text-tertiary'), font_family=FONT_STACK))
+        # 与设计稿的**有意偏差**: 加一段「尝试 N 次」, 且仅在 >1 时出现 ——
+        # 设计稿的静态样卡都是首次失败, 没有这个概念; 而"同一本书反复判死 N 次"
+        # 是排障信息 (旧实现在这里恒显"尝试 1 次", 属噪声, 故不再常显)。
+        _次数 = _整数(r.get('次数'), 1)
+        if _次数 > 1:
+            _片段.append(ft.Text(f"尝试 {_次数} 次", size=SIZE_MICRO,
+                                weight=WEIGHT_BODY, color=取色('text-tertiary'),
+                                font_family=FONT_STACK))
+        副信息 = _拼接_dot(_片段)
         for _c in 副信息.controls:
             登记重刷(_c, lambda c: setattr(c, 'color', 取色('text-tertiary')))
         登记重刷(副信息, lambda c: setattr(c, 'color', 取色('text-secondary')))
