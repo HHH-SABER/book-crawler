@@ -154,10 +154,14 @@ class HistoryPage:
         header_card = make_card(
             ft.Column([
                 self._stat_row,
-                ft.Row([self._domain_dd, self._days_dd,
-                        self._book_filter, self._result_chips_row,
-                        refresh_btn, update_btn],
-                       spacing=6, wrap=True),
+                # 批 3(3): 刷新/一键更新书架推到行尾 (设计稿 刷新 在最右);
+                # 左侧下拉+chips 用嵌套 wrap 行, 窄窗口折行不出卡片
+                ft.Row([
+                    ft.Row([self._domain_dd, self._days_dd,
+                            self._book_filter, self._result_chips_row],
+                           spacing=6, wrap=True, expand=True),
+                    refresh_btn, update_btn],
+                    spacing=6),
                 self._shelf_info,
             ], spacing=10),
             padding=10,
@@ -222,33 +226,45 @@ class HistoryPage:
             self._result_chips_row.controls.append(self._make_chip(r, r))
 
     def _make_chip(self, result: "str | None", label: str) -> ft.Control:
-        """单个结果过滤 chip"""
+        """单个结果过滤 chip (批 3(3) 对齐设计稿 .filter-chip 规格)
+
+        设计稿: 高 28px · 胶囊 · 13px 常规字; 未选中 = 次按钮底 + 细描边 +
+        次要字; 选中 = 语义浅底 + 语义描边 + 语义字 (新增→success / 失败→error /
+        未变化→warning, 无语义色的 全部/更新 → brand-subtle 底 + 品牌字)。
+        """
         active = (self._filter_result == result)
-        # Phase 3: 令牌色构建期求值, 未登记重刷则切夜间主题 chip 颜色不变
-        令牌 = _结果令牌(result, 'btn-primary-bg')
-        color = 取色(令牌)
-        文字 = ft.Text(label, size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
-                       color=("#FFFFFF" if active else color),
-                       font_family=FONT_STACK)
+        语义令牌 = _结果令牌(result, 'brand-subtle')
+        if active:
+            # 选中: 语义浅底 + 语义描边 + 语义字 (设计稿 .filter-chip.active.*)
+            底色令牌 = (语义令牌 + '-bg') if 语义令牌.startswith('status-') else 语义令牌
+            描边令牌 = (语义令牌 + '-line') if 语义令牌.startswith('status-') else 'border-default'
+            字色令牌 = 语义令牌 if 语义令牌.startswith('status-') else 'on-brand-subtle'
+            字重 = WEIGHT_SUBTITLE
+        else:
+            # 未选中: 中性 (设计稿未选中 chip 一律中性, 不做彩色描边)
+            底色令牌 = 'btn-secondary-bg'
+            描边令牌 = 'border-subtle'
+            字色令牌 = 'btn-secondary-fg'
+            字重 = WEIGHT_BODY
+        文字 = ft.Text(label, size=SIZE_SMALL, weight=字重,
+                       color=取色(字色令牌), font_family=FONT_STACK)
         chip = ft.Container(
             content=文字,
-            padding=ft.Padding.symmetric(horizontal=10, vertical=4),
-            bgcolor=(color if active else None),
-            border=None if active else ft.Border.all(1, color),
+            height=28,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=0),
+            alignment=ft.Alignment(0, 0),
+            bgcolor=取色(底色令牌),
+            border=ft.Border.all(1, 取色(描边令牌)),
             border_radius=999,
             ink=True,
             on_click=lambda e, r=result: self._on_result_chip(r),
         )
 
-        def _重刷(_控件, _选中=active, _令牌=令牌):
-            """选中=同色填充白字, 未选中=同色描边彩字 —— 一个回调里一起改, 只登记一次
-
-            子控件从 _控件 身上取, 回调不额外持有它 (避免弱引用登记表把旧控件留活)。
-            """
-            新色 = 取色(_令牌)
-            _控件.content.color = "#FFFFFF" if _选中 else 新色
-            _控件.bgcolor = 新色 if _选中 else None
-            _控件.border = None if _选中 else ft.Border.all(1, 新色)
+        def _重刷(_控件, _激活=active, _底=底色令牌, _边=描边令牌, _字=字色令牌):
+            """切主题跟随换色 (一个回调改 bg/边框/字色, 只登记一次)"""
+            _控件.bgcolor = 取色(_底)
+            _控件.border = ft.Border.all(1, 取色(_边))
+            _控件.content.color = 取色(_字)
 
         return 登记重刷(chip, _重刷)
 
@@ -371,7 +387,7 @@ class HistoryPage:
                 pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
 
     def _build_stat_cards(self, stats: dict):
-        """重建 5 张统计卡"""
+        """重建 5 张统计卡 (批 3(3) 对齐设计稿: 数值 28px/千位分隔, 白卡细边框)"""
         self._stat_row.controls.clear()
         total = stats.get('总请求数', 0)
         items = [
@@ -383,8 +399,13 @@ class HistoryPage:
              'status-error' if stats.get('失败', 0) else 'status-warning'),
         ]
         for value, label, 令牌 in items:
+            # 批 3(3): 设计稿统计数字带千位分隔且更大 (2,847 / 1,923 …)
+            try:
+                显示值 = f"{int(value):,}"
+            except ValueError:
+                显示值 = value
             # Phase 3: 数值文字走令牌并登记重刷 (只 取色 不登记 = 切主题不掉色)
-            值文本 = ft.Text(value, size=SIZE_TITLE, weight=WEIGHT_TITLE,
+            值文本 = ft.Text(显示值, size=28, weight=WEIGHT_TITLE,
                             color=取色(令牌), font_family=FONT_STACK)
             _登记文本色(值文本, 令牌)
             self._stat_row.controls.append(ft.Container(
@@ -393,10 +414,11 @@ class HistoryPage:
                     ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
                             color=ft.Colors.ON_SURFACE_VARIANT,
                             font_family=FONT_STACK),
-                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.Padding.symmetric(horizontal=18, vertical=8),
-                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-                border_radius=10,
+                ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.Padding.symmetric(horizontal=18, vertical=14),
+                bgcolor=ft.Colors.SURFACE,
+                border=ft.Border.all(1, 取色('border-subtle')),
+                border_radius=8,
                 expand=True,
             ))
 
@@ -484,9 +506,10 @@ class HistoryPage:
                 _cell(_t(err[:40] if err else "—",
                          令牌='status-error' if err else None), 14),
             ], spacing=6),
-            padding=ft.Padding.symmetric(horizontal=8, vertical=3),
-            border_radius=6,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            # 批 3(3) 对齐设计稿: 行为白底 + 底部分隔线 (原灰底胶囊条)
+            bgcolor=ft.Colors.SURFACE,
+            border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
         )
 
     @staticmethod
@@ -537,9 +560,10 @@ class HistoryPage:
                     _cell(_t((s.get('首次抓取', '') or '')[:10]), 13),
                     _cell(_t((s.get('最近抓取', '') or '')[:16]), 14),
                 ], spacing=6),
-                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
-                border_radius=6,
-                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+                padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                # 批 3(3) 对齐设计稿: 行白底 + 底部分隔线
+                bgcolor=ft.Colors.SURFACE,
+                border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
                 ink=True,
                 tooltip="点击筛选该站点",
                 on_click=lambda e, d=s.get('域名', ''): self._filter_to_domain(d),

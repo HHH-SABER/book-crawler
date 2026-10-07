@@ -25,6 +25,7 @@ def _dbg(source: str, message: str):
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
 from ..ui_fluent import (txt, FONT_STACK, SIZE_SMALL, SIZE_BODY, SIZE_TITLE,
+                         SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
                          make_morandi_card, 提示条)
 # Phase 3 (2026-10-04): 页面颜色一律走令牌, 且登记重刷 —— 直接 import 上面那类
@@ -81,18 +82,24 @@ class RemotePage:
                 self._开关进行中 = False
                 self._btn.disabled = False
                 self._开关转圈.visible = False      # 切换已尘埃落定 → 收起 spinner
+            # 批 3(5) 设计稿形态: 停用 = 主色实心"开启远控"CTA; 启用 = 中性胶囊"停用"
             self._btn.bgcolor = (ft.Colors.PRIMARY_CONTAINER if 启用
-                                 else ft.Colors.SURFACE_CONTAINER)
+                                 else 取色('btn-primary-bg'))
             # 进行中保留"启用中…"文案, 不被本轮运行状态覆盖
             if not self._开关进行中:
-                self._btn_lab.value = "远控已启用" if 启用 else "远控已停用"
-            # Phase 3: 旧写法 color=MORANDI_SUCCESS/MORANDI_STOPPED 是构建期字符串
-            # 常量, 切夜间主题不重刷 → 改走令牌取色 (重刷回调在 build 里登记)。
+                self._btn_lab.value = ("停用远控" if 启用 else "开启远控")
+                self._btn_lab.color = (None if 启用 else 取色('btn-primary-fg'))
             self._btn_dot.color = (取色('status-success') if 启用
                                    else 取色('status-pending'))
+            # 状态卡左侧的 状态点 + 粗标题 (设计稿: "远控已启用/已关闭")
+            self._card_title.value = "远控已启用" if 启用 else "远控已关闭"
+            self._card_dot.color = (取色('status-success') if 启用
+                                    else 取色('status-pending'))
             self._btn.update()
             self._btn_lab.update()
             self._btn_dot.update()
+            self._card_title.update()
+            self._card_dot.update()
         except Exception:
             pass  # 刻意静默: 高频路径(同步外观(), 逐行/每秒级), 补日志会刷屏
 
@@ -116,11 +123,11 @@ class RemotePage:
             self._开关转圈.update()
 
     def _复位开关进行态(self):
-        """退出进行态: 恢复可点 + 文案回到当前运行状态 (调度失败时立即调用)"""
+        """退出进行态: 恢复可点 + 文案回到当前状态对应的动作 (调度失败时立即调用)"""
         self._开关进行中 = False
         self._btn.disabled = False
         self._开关转圈.visible = False
-        self._btn_lab.value = "远控已启用" if self._启用状态 else "远控已停用"
+        self._btn_lab.value = "停用远控" if self._启用状态 else "开启远控"
         if self.page is not None:
             self._btn.update()
             self._btn_lab.update()
@@ -144,6 +151,15 @@ class RemotePage:
             self._复位开关进行态()
 
     def build(self):
+        # 批 3(5): 设计稿状态卡左侧的 状态点 + 粗标题 (与 _btn 内的点同步取色)
+        self._card_dot = ft.Icon(ft.Icons.CIRCLE, size=9,
+                                 color=取色('status-success'))
+        登记重刷(self._card_dot, lambda c: setattr(
+            c, 'color', 取色('status-success') if self._启用状态
+            else 取色('status-pending')))
+        self._card_title = txt("远控已启用", size=SIZE_BODY,
+                               weight=WEIGHT_TITLE)
+
         # Phase 3: 点色走令牌 (旧 MORANDI_SUCCESS 是构建期字符串常量, 切主题不重刷)
         self._btn_dot = ft.Icon(ft.Icons.CIRCLE, size=9,
                                 color=取色('status-success'))
@@ -193,34 +209,37 @@ class RemotePage:
 
         self._status_card = ft.Container(
             content=ft.Column([
-                ft.Row([self._btn,
-                        ft.Container(expand=True),
-                        # 2026-10-03 #7: 默认 0.0.0.0 局域网直连, Tailscale 降为外网可选
-                        ft.Text("手机访问: 与电脑连同一 Wi-Fi, 浏览器打开本机地址",
-                                size=SIZE_SMALL, weight=WEIGHT_BODY,
-                                color=ft.Colors.ON_SURFACE_VARIANT,
-                                font_family=FONT_STACK),
-                        # 使用教程入口 (2026-09-29 用户反馈"EXE 里找不到使用说明"):
-                        # 教程页由内嵌远控服务的 /tutorial 渲染 (与手机端同一页面),
-                        # 故需远控处于开启状态
-                        ft.TextButton("使用教程", icon=ft.Icons.BOOK_OUTLINED,
-                                      on_click=self._open_tutorial)],
-                       spacing=10),
+                # 批 3(5) 对齐设计稿: 左侧 状态点+粗标题+描述, 右侧 教程+主开关
+                ft.Row([
+                    ft.Column([
+                        ft.Row([
+                            self._card_dot,
+                            self._card_title,
+                        ], spacing=8),
+                        txt("开启后手机端可访问本机并发抓取任务",
+                            size=SIZE_SMALL, weight=WEIGHT_BODY,
+                            color=ft.Colors.ON_SURFACE_VARIANT),
+                    ], spacing=4, tight=True),
+                    ft.Container(expand=True),
+                    ft.TextButton("使用教程", icon=ft.Icons.BOOK_OUTLINED,
+                                  on_click=self._open_tutorial),
+                    self._btn,
+                ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 self._divider,
-                ft.Row([txt("本机地址", size=SIZE_SMALL, weight=WEIGHT_BODY),
-                        self._addr], spacing=8),
-                ft.Row([txt("token   ", size=SIZE_SMALL, weight=WEIGHT_BODY),
-                        self._token, self._token按钮], spacing=8),
-                # 2026-10-04 #7: 地址可用性提示行 (内容为空时 visible=False 自动隐藏)
+                # 批 3(5): 访问信息改"标签 + 边框盒(等宽) + 复制" 设计稿形态
+                self._信息行("本地地址", self._addr, self._取当前地址,
+                             说明="手机与电脑连同一局域网"),
+                self._信息行("访问 token", self._token, self._取当前token,
+                             extra=[self._token按钮],
+                             说明="默认打码，需手动显示；请勿外传"),
+                self._信息行("外网访问", self._外网命令控件(),
+                             self._取外网命令,
+                             说明="需安装并登录 Tailscale (可选)"),
                 self._hint,
-                ft.Text("外网访问 (可选): 在电脑执行 tailscale serve --bg 8760, "
-                        "手机浏览器打开它给出的 https://….ts.net 地址",
-                        size=SIZE_SMALL, weight=WEIGHT_BODY,
-                        color=ft.Colors.ON_SURFACE_VARIANT,
-                        font_family=FONT_STACK),
-            ], spacing=8, tight=True),
-            padding=14, border_radius=10,
-            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            ], spacing=10),
+            padding=14, border_radius=8,
+            bgcolor=ft.Colors.SURFACE,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
         )
 
         self._empty = txt("暂无手机端记录 — 手机发起的抓取任务会实时出现在这里",
@@ -230,6 +249,9 @@ class RemotePage:
         # 就超出 Container 有界高度被裁, 且无滚动出口; expand 取满卡片剩余高度
         self._rows = ft.ListView(spacing=4, expand=True,
                                  scroll=ft.ScrollMode.ALWAYS)
+        # 批 3(5): 设计稿记录卡头右侧 "共 0 条" 计数
+        self._rows_count = txt("共 0 条", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                               color=ft.Colors.ON_SURFACE_VARIANT)
 
         return ft.Column([
             page_header('远控', '远程控制开关、手机访问方式与手机端任务记录'),
@@ -239,14 +261,16 @@ class RemotePage:
                     ft.Row([txt("手机端记录", size=SIZE_TITLE,
                                 weight=WEIGHT_TITLE),
                             ft.Container(expand=True),
+                            self._rows_count,
                             ft.IconButton(ft.Icons.REFRESH, icon_size=16,
                                           tooltip="刷新",
                                           on_click=lambda e: self.refresh())],
                            vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     self._rows,
                 ], spacing=8, expand=True),
-                padding=14, border_radius=10,
-                bgcolor=ft.Colors.SURFACE_CONTAINER, expand=True,
+                padding=14, border_radius=8,
+                bgcolor=ft.Colors.SURFACE, expand=True,
+                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
             ),
         ], spacing=10, expand=True)
 
@@ -264,6 +288,72 @@ class RemotePage:
         import webbrowser
         地址 = (info.get("地址") or "http://127.0.0.1:8760/").rstrip("/")
         webbrowser.open(f"{地址}/tutorial")
+
+    # ---------------------------------------------------------------- 信息行
+    @staticmethod
+    def _边框盒(内容控件) -> ft.Container:
+        """批 3(5): 设计稿的等宽值盒 (细边框圆角, 内容可选中)"""
+        return ft.Container(
+            content=内容控件,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=4,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+        )
+
+    def _信息行(self, 标签: str, 值控件: ft.Control, 取值,
+                extra=None, 说明: str = "") -> ft.Control:
+        """设计稿信息行: 标签 + 边框值盒 + 复制按钮 (+ 附加按钮) + 下方说明"""
+        复制钮 = ft.IconButton(
+            icon=ft.Icons.CONTENT_COPY, icon_size=14,
+            tooltip="复制到剪贴板",
+            on_click=lambda e, v=取值: self._复制(v))
+        行 = ft.Row([
+            txt(标签, size=SIZE_SMALL, weight=WEIGHT_BODY),
+            self._边框盒(值控件),
+            复制钮,
+            *(extra or []),
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        部件 = [行]
+        if 说明:
+            部件.append(txt(说明, size=SIZE_TINY, weight=WEIGHT_BODY,
+                            color=ft.Colors.ON_SURFACE_VARIANT))
+        return ft.Column(部件, spacing=3, tight=True)
+
+    def _取当前地址(self) -> str:
+        try:
+            return self._addr.value or "—"
+        except Exception:
+            return "—"
+
+    def _取当前token(self) -> str:
+        """复制 token 复制的是**明文** (展示层打码不影响剪贴板内容)"""
+        return self._token明文 or "—"
+
+    def _外网命令控件(self) -> ft.Control:
+        """外网访问命令的等宽值盒内容 (设计稿: tailscale serve --bg 8760)"""
+        return txt("tailscale serve --bg 8760", size=SIZE_SMALL,
+                   weight=WEIGHT_BODY, font_family=FONT_STACK, selectable=True)
+
+    def _取外网命令(self) -> str:
+        return "tailscale serve --bg 8760"
+
+    def _复制(self, 值: str):
+        """写系统剪贴板 (flet Clipboard 服务, 异步; 轻提示反馈)"""
+        if not 值 or 值 == "—":
+            self._toast("没有可复制的内容")
+            return
+        try:
+            from flet.controls.services.clipboard import Clipboard
+            if self.page is None:
+                return
+            async def _run():
+                await Clipboard().set(值)
+                self._toast("已复制到剪贴板")
+            self.page.run_task(_run)
+        except Exception as _e:
+            _dbg("远控页", f'复制失败: {type(_e).__name__}: {_e}')
+            self._toast("复制失败")
 
     def _toast(self, msg: str):
         """SnackBar 轻提示 (同 detail_drawer._toast 模式, 经 ui_fluent.open_dialog)"""
@@ -316,6 +406,10 @@ class RemotePage:
         try:
             tasks = [t for t in self.task_manager.get_all_tasks()
                      if getattr(t, '来源', '本机') == '手机']
+            try:
+                self._rows_count.value = f"共 {len(tasks)} 条"
+            except Exception as _e:
+                _dbg("远控页", f'记录计数更新失败: {type(_e).__name__}: {_e}')
             self._rows.controls.clear()
             if not tasks:
                 self._rows.controls.append(self._empty)
