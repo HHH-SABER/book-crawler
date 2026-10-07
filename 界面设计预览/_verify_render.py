@@ -181,7 +181,37 @@ COMPONENT_PROBE = """
 }
 """
 
-CHROME = r"C:\Users\HEWEN\AppData\Local\ms-playwright\chromium-1234\chrome-win64\chrome.exe"
+def _找chromium() -> str:
+    """定位 Playwright 自带的 Chromium 可执行文件。
+
+    2026-10-07: 原先这里**写死**了某个用户目录下的 ms-playwright 绝对路径 ——
+    既把本机用户名带进了公开仓库 (红线: 个人信息不得入库), 也让这个脚本在
+    **任何别的机器上必然跑不了** (硬编码的 chromium 版本号还会随 Playwright 升级失效)。
+    现在按 环境变量 → 常见安装位置 探测, 找不到就给出可照做的提示。
+    """
+    for 键 in ('NC_CHROME', 'PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH'):
+        值 = os.environ.get(键)
+        if 值 and pathlib.Path(值).is_file():
+            return 值
+    候选根 = []
+    if os.environ.get('PLAYWRIGHT_BROWSERS_PATH'):
+        候选根.append(pathlib.Path(os.environ['PLAYWRIGHT_BROWSERS_PATH']))
+    if os.environ.get('LOCALAPPDATA'):
+        候选根.append(pathlib.Path(os.environ['LOCALAPPDATA']) / 'ms-playwright')
+    候选根.append(pathlib.Path.home() / 'AppData' / 'Local' / 'ms-playwright')
+    for 根目录 in 候选根:
+        if 根目录.is_dir():
+            for p in sorted(根目录.glob('chromium*/chrome-win*/chrome.exe'),
+                            reverse=True):
+                return str(p)
+    raise SystemExit(
+        '未找到 Playwright 的 Chromium。三种办法任选一种:\n'
+        '  1) 设环境变量 NC_CHROME=<chrome.exe 绝对路径>\n'
+        '  2) 跑一次: python -m playwright install chromium\n'
+        '  3) 设 PLAYWRIGHT_BROWSERS_PATH 指向浏览器安装目录')
+
+
+CHROME = _找chromium()
 
 with sync_playwright() as pw:
     # ⚠️ headless=True 必须显式传: Playwright 0.86 在 Windows 上默认有头,
