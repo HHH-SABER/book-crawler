@@ -321,12 +321,14 @@ class SiteManagePage:
         # Fluent 页面大标题 (设计稿: 标题+副标题在页头)
         header = page_header("站点管理", "管理小说站点配置、健康度监控与适配器扩展")
 
+        # 批 3(4): 统计文案右置同一行 (设计稿: 按钮居左 · "共 N 个站点 · M 个启用"居右)
         toolbar = make_card(
-            ft.Column([
+            ft.Row([
                 ft.Row([add_btn, probe_all_btn, import_btn, export_btn],
                        spacing=6, wrap=True),
+                ft.Container(expand=True),
                 self._info_text,
-            ], spacing=8),
+            ], spacing=6),
             padding=10,
         )
 
@@ -489,19 +491,26 @@ class SiteManagePage:
                                      color=ft.Colors.ON_SURFACE_VARIANT,
                                      font_family=FONT_STACK)
         self._adapter_view = ft.Column(spacing=4)
-        self._adapter_card = make_card(
+        # 批 3(4) 对齐设计稿: 插件卡奶油底 (设计稿 .adapter-card 的 warning 浅底),
+        # 行内白底小卡
+        self._adapter_card = ft.Container(
             ft.Column([
                 ft.Row([
                     _色图标(ft.Icons.EXTENSION_OUTLINED, 'accent-fg', size=18),
                     ft.Text("站点适配插件 (免重新打包)", size=SIZE_SUBTITLE,
                             weight=WEIGHT_TITLE, font_family=FONT_STACK),
+                    ft.Container(expand=True),
+                    new_btn, open_btn, refresh_btn,
                 ], spacing=6),
-                ft.Row([new_btn, open_btn, refresh_btn], spacing=6, wrap=True),
                 self._adapter_info,
                 self._adapter_view,
             ], spacing=8),
-            padding=10,
+            padding=12,
+            bgcolor=取色('status-warning-bg'),
+            border_radius=8,
         )
+        登记重刷(self._adapter_card,
+                 lambda c: setattr(c, 'bgcolor', 取色('status-warning-bg')))
         self._render_adapters()
         return self._adapter_card
 
@@ -563,7 +572,6 @@ class SiteManagePage:
                 caps.append("正文")
             if st['paginate']:
                 caps.append("分页")
-            cap_text = '/'.join(caps) if caps else "仅配置"
             ok = bool(st['domain'])
             del_btn = ft.IconButton(
                 icon=ft.Icons.DELETE_OUTLINE, icon_size=14,
@@ -573,28 +581,40 @@ class SiteManagePage:
                     padding=2, shape=ft.RoundedRectangleBorder(radius=6),
                     bgcolor=ft.Colors.ERROR_CONTAINER,
                     color=ft.Colors.ON_ERROR_CONTAINER))
+
+            # 批 3(4) 对齐设计稿: 能力徽章 = 独立小 pill (设计稿 .badge 规格:
+            # 高 20 · 胶囊 · 11px/500 · warning 浅底深字)
+            能力徽章 = [ft.Container(
+                content=ft.Text(cap, size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
+                                color=取色('status-warning'), font_family=FONT_STACK),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=0),
+                height=20, border_radius=999,
+                alignment=ft.Alignment(0, 0),
+                bgcolor=取色('status-warning-bg')) for cap in caps]
+
             self._adapter_view.controls.append(ft.Container(
                 content=ft.Row([
                     _色图标(ft.Icons.TERMINAL if ok else ft.Icons.ERROR_OUTLINE,
                             'status-success' if ok else 'status-error',
                             size=14),
-                    # 旧 MORANDI_SECONDARY 实为成功绿 (ui_fluent 历史名) → status-success
-                    _色文本(st['file'],
-                            'status-success' if ok else 'status-error',
-                            size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                            font_family=FONT_STACK, max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS),
-                    ft.Text(st['domain'] or (st['error'] or '—'),
-                            size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
-                            font_family=FONT_STACK),
-                    _色文本(cap_text, 'accent-fg', size=SIZE_TINY,
-                            font_family=FONT_STACK),
+                    # 设计稿: 文件名(加粗) 与 域名(小字灰色) 两行
+                    ft.Column([
+                        _色文本(st['file'],
+                                'status-success' if ok else 'status-error',
+                                size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                                font_family=FONT_STACK, max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(st['domain'] or (st['error'] or '—'),
+                                size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                                font_family=FONT_STACK),
+                    ], spacing=1, tight=True),
                     ft.Container(expand=True),
+                    *能力徽章,
                     del_btn,
-                ], spacing=6),
-                padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                ], spacing=8),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=5),
                 border_radius=6,
-                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+                bgcolor=ft.Colors.SURFACE,
             ))
 
     # ---------------------------------------------------- 自愈建议审核卡 (批3 PoC-C)
@@ -1010,13 +1030,15 @@ class SiteManagePage:
             for t, c in parts[:2]
         ], spacing=6)
 
-        # 启用开关
+        # 启用开关 (批 3(4) 对齐设计稿: Windows 11 蓝色轨道, 非 iOS 绿)
         switch = ft.Switch(
             value=enabled,
-            active_color=取色('status-success'),
+            active_track_color=取色('btn-primary-bg'),
+            active_color=ft.Colors.WHITE,
             on_change=lambda e, i=idx: self._on_toggle_enabled(i, e),
         )
-        _登记色(switch, 'status-success', 'active_color')
+        登记重刷(switch, lambda c: setattr(
+            c, 'active_track_color', 取色('btn-primary-bg')))
 
         # 操作: 测试 / 编辑 / 删除
         probe_btn = ft.IconButton(
@@ -1068,8 +1090,9 @@ class SiteManagePage:
                              alignment=ft.MainAxisAlignment.CENTER), 20),
             ], spacing=6),
             padding=ft.Padding.symmetric(horizontal=8, vertical=4),
-            border_radius=6,
-            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            # 批 3(4) 对齐设计稿: 行白底 + 底部分隔线 (原灰底胶囊条)
+            bgcolor=ft.Colors.SURFACE,
+            border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
             opacity=0.6 if not enabled else 1.0,
         )
 
