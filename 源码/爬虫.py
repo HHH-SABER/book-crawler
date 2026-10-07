@@ -5866,8 +5866,84 @@ class NovelSpider:
         return any(('乱码率' in r and '>' in r) or
                    ('中文占比' in r and '<' in r) for r in 报告.原因)
 
-    def _生成质检汇总报告(self, output_file, total, failed):
+    # 章节标记的两族常见写法。通用解析把页面 <title> 当章节名, 各站写法不一,
+    # 所以按"族"分别检查编号连续性, 而不是假定全站统一。
+    _章节号族 = (('部分', re.compile(r'第\s*(\d+)\s*部分')),
+                ('章', re.compile(r'第\s*(\d+)\s*章')))
+
+    def _检查输出一致性(self, output_file, novel_title):
+        """抓完自检: 输出文件是否"缺头/断号/重号", 或混进了别的书。
+
+        2026-10-08 事故倒逼 (`抓取结果/novel.txt`): 一本书**缺「第 1 部分」**
+        且**混进了另一本书的章节**, 全程没有任何报警 —— 是用户在浏览器里
+        手动查看才发现的。本方法只读输出文件, 不改动任何东西。
+
+        Returns:
+            list[str]: 问题描述 (空列表 = 未发现问题)
+        """
+        问题 = []
+        if not output_file or not os.path.isfile(output_file):
+            return 问题
+        标记 = []
+        try:
+            with open(output_file, 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    if line.startswith('## '):
+                        标记.append(line[3:].strip())
+                        if len(标记) >= 20000:      # 兜底: 超大文件不无限读
+                            break
+        except OSError as e:
+            _log.info(f"[一致性] 读取输出文件失败, 跳过自检: {e}")
+            return 问题
+        if not 标记:
+            return 问题
+
+        # ① 每个命名族: 缺头 / 断号 / 重号
+        for 族名, 族 in self._章节号族:
+            号s = [m.group(1) for m in (族.search(t) for t in 标记) if m]
+            if not 号s:
+                continue
+            数字 = sorted({int(x) for x in 号s})
+            if 数字[0] > 1:
+                问题.append(f'疑似缺头: 「第 N {族名}」从 {数字[0]} 开始, '
+                            f'缺第 1-{数字[0] - 1} {族名}')
+            现有 = set(数字)
+            缺 = [n for n in range(数字[0], 数字[-1] + 1) if n not in 现有]
+            if 缺:
+                问题.append(f'「第 N {族名}」断号 {len(缺)} 处: 缺 {缺[:8]}')
+            # 重号 = 同一章号出现多次 → 典型"两份来源(或多本书)被合并写入"
+            重复 = sorted({int(x) for x in 号s if 号s.count(x) > 1})
+            if 重复:
+                问题.append(f'「第 N {族名}」重号 {len(重复)} 个 (前几个: '
+                            f'{重复[:8]}) —— 疑似两份来源/两本书被写进同一文件')
+
+        # ② 混入其它书: 用同目录其它文件名做词表 (文件名常带装饰, 按分隔符切词)
+        try:
+            目录 = os.path.dirname(os.path.abspath(output_file))
+            本名 = os.path.basename(output_file)
+            词s = set()
+            for 名 in os.listdir(目录):
+                if not 名.lower().endswith('.txt') or 名.endswith('.质检报告.txt'):
+                    continue
+                if 名 == 本名:
+                    continue
+                for 段 in re.split(r'[（(【\[：:】\]）)_\-—\s]+', 名[:-4]):
+                    段 = 段.strip()
+                    if len(段) >= 3 and not 段.isdigit():
+                        词s.add(段)
+            for 词 in sorted(词s):
+                if any(词 in t for t in 标记):
+                    问题.append(f'疑似混入其它书: 章节标记里出现了同目录书名片段「{词}」')
+        except OSError as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__} (一致性检查无法比对同目录书名)')
+        return 问题
+
+    def _生成质检汇总报告(self, output_file, total, failed, 一致性问题=None):
         """整书完成后生成质检汇总报告 (控制台输出 + 保存到输出文件旁)。
+
+        Args:
+            一致性问题: `_检查输出一致性` 的结果 (2026-10-08 新增)。有值时
+                写入报告, 让"缺头/断号/混入其它书"随质检报告一起落盘。
 
         Returns:
             dict: 一行式摘要 {'质检章数','通过','未通过','平均分'} (供站点历史记录)
@@ -5908,6 +5984,10 @@ class NovelSpider:
             lines.append(f'增量跳过章节: {self._增量跳过数} (未变更, 复用旧输出)')
         if failed:
             lines.append(f'抓取失败章节号 ({len(failed)}): {failed}')
+        if 一致性问题:
+            lines.append(f'⚠️ 输出一致性告警 ({len(一致性问题)}):')
+            for _条 in 一致性问题:
+                lines.append(f'  - {_条}')
         lines.append('=' * 60)
         文本 = '\n'.join(lines)
         _log.info(f"\n{文本}")
@@ -6169,9 +6249,21 @@ class NovelSpider:
         self.last_failed = failed
         self.last_total = total
         self.last_aborted = not 正常完成
+        # 抓完输出一致性自检 (2026-10-08): 缺头/断号/重号/混入其它书 → 报警 + 写进质检报告。
+        # 只在"正常完成"时做 —— 用户停止/中断时文件本来就是半截的, 报警只会是噪声。
+        一致性问题 = []
+        if 正常完成:
+            try:
+                一致性问题 = self._检查输出一致性(output_file, novel_title)
+            except Exception as e:
+                一致性问题 = []
+                _log.info(f"[一致性] 输出自检异常: {e}")
+            for _条 in 一致性问题:
+                _log.info(f"⚠️ [一致性] {_条}")
         # 整书质检汇总报告 + 站点抓取历史记录
         try:
-            质检摘要 = self._生成质检汇总报告(output_file, total, failed)
+            质检摘要 = self._生成质检汇总报告(output_file, total, failed,
+                                             一致性问题=一致性问题)
         except Exception as e:
             质检摘要 = None
             _log.info(f"[质检] 汇总报告生成异常: {e}")
@@ -6316,11 +6408,25 @@ class NovelSpider:
 
         # 处理输出文件名 (安全: 只使用 basename, 禁止 ../ 路径穿越)
         if not output_file:
-            safe_title = re.sub(r'[<>:"/\\|?*]', '_', novel_title)
+            取名 = novel_title
+            if _书名已退化(取名):
+                # 2026-10-08: 书名没解析出来时**不要**拿字面量 novel/小说当文件名
+                # (用户无法辨认这是什么书, 同目录多本退化书还会混在一起)。
+                # ⚠️ 只改"文件名", **不动 novel_title 本身** —— 那个值还担着
+                # 死书处理"书名退化 ⇒ 书已删除"的判定语义, 改了会把判定弄坏。
+                标识 = _从URL取书标识(catalog_url)
+                if 标识:
+                    取名 = f"未识别书名_{标识}"
+                    _log.info(f"⚠️ 书名未识别, 输出文件名回退为: {取名}.txt")
+            safe_title = re.sub(r'[<>:"/\\|?*]', '_', 取名)
             # 去重连续下划线并去除首尾下划线, 限制文件名长度 80 字
             safe_title = re.sub(r'_+', '_', safe_title).strip('_')
             if len(safe_title) > 80:
                 safe_title = safe_title[:80]
+            if not safe_title:
+                # 兜底: 全被过滤干净时也绝不留出 ".txt" 这种空名文件
+                safe_title = '未命名'
+                _log.info("⚠️ 书名与 URL 都生成不出文件名, 回退为「未命名」")
             if chapter_range:
                 sr, er = chapter_range
                 output_file = f"{safe_title}_第{sr}-{er}章.txt"
@@ -6925,6 +7031,56 @@ def 注入人工浏览器工厂(管理器) -> bool:
         _log.info(f"[验证码模块] 可见浏览器工厂注入失败 (人工兜底不可用): "
                   f"{type(e).__name__}: {e}")
         return False
+
+
+# 书名退化集合: **必须与 死书处理.书名退化集合 同口径** ——
+# 那边用它判定"书已删除"(书名都解析不出来), 这边用它决定"输出文件名是否回退到 URL"。
+# 两处一旦漂移, 就会出现"文件名回退了但死书判定不认"这类对不上的行为,
+# 故 测试/test_输出一致性.py 会断言两个集合相等。
+书名退化集合 = (None, '', 'novel', '小说')
+
+
+def _书名已退化(书名) -> bool:
+    """书名是否未解析出来 (空 / 占位字面量, 允许带 `(N)` 去重序号)。
+
+    ⚠️ 必须容忍 `(N)`: `_resolve_unique_title` 会先把退化名消解成 `novel(1)`,
+    之后才走到文件名推导 —— 若这里只做精确匹配, 第二本退化书就会漏掉回退,
+    继续产出 `novel(1).txt` 这种不可辨认的名字。
+    """
+    名 = str(书名 if 书名 is not None else '').strip()
+    名 = re.sub(r'\(\d+\)$', '', 名).strip()
+    return 名 in {str(x).strip() for x in 书名退化集合 if x is not None}
+
+
+def _从URL取书标识(catalog_url: str) -> str:
+    """书名解析失败时, 用 URL 生成可辨识的名字 (替代字面量 `novel`/`小说`)。
+
+    2026-10-08 事故倒逼 (`抓取结果/novel.txt`): 书名退化 → 输出文件就叫
+    `novel.txt`, 用户**完全无法辨认是什么书**; 且该名字不含任何来源信息,
+    多本退化书还会互相混淆 (同一目录里出现多个 `novel` 只能靠 `(1)(2)` 区分)。
+    改为取 `<域名去 www./m. 前缀>_<路径末段(去掉 index.html 这类页名)>`。
+
+    返回空串表示无法从 URL 得到标识 (调用方保持原行为)。
+    """
+    try:
+        from urllib.parse import urlsplit
+        分 = urlsplit(str(catalog_url or ''))
+        域名 = re.sub(r'^(?:www|m)\.', '', (分.netloc or '').lower())
+        if not 域名 or '.' not in 域名:
+            return ''               # 拿不到可用域名 → 给不出有意义的标识
+        路径段 = [p for p in (分.path or '').split('/') if p]
+        段 = ''
+        for p in reversed(路径段):
+            if not re.search(r'\.(?:html?|aspx?|php|jsp)$', p, re.IGNORECASE):
+                段 = p                      # 优先取"目录名/书号"这类有辨识度的
+                break
+        if not 段 and 路径段:
+            段 = re.sub(r'\.(?:html?|aspx?|php|jsp)$', '', 路径段[-1],
+                        flags=re.IGNORECASE)
+        return f'{域名}_{段}' if 段 else 域名
+    except Exception as e:
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (从URL取书标识失败)')
+        return ''
 
 
 def _resolve_unique_title(novel_title: str, output_dir: str,
