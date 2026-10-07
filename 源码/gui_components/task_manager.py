@@ -1098,8 +1098,17 @@ class TaskManager:
             # gui_app._弹双失效 成了死代码 (2026-10-04 审查发现, 见 文档/审查报告汇总.md)。
             # 这里不再嗅探, 只读标志, 并交给 记录死书 落盘 (清单页/重启后仍可见)。
             网站失效 = bool(getattr(exc, '网站失效', False))
+            # 批 3 数据缺口收口 (2026-10-07): 设计稿死书卡片 meta 行第 2 槽是
+            # **失败状态短语** (`HTTP 404` / `内容为空` / `连接超时`), 第 4 槽是
+            # `已抓 N 章`。三者由 判定死书 在判定侧采集、随 死书错误 结构化携带到
+            # 此处落盘。**不在这里猜** —— 0/False 即未知, 页面据此换词或不显示。
+            状态码 = int(getattr(exc, '状态码', 0) or 0)
+            已抓章节 = int(getattr(exc, '已抓章节', 0) or 0)
+            页面为空 = bool(getattr(exc, '页面为空', False))
             记录, 首次 = 记录死书(task.url, task.title, exc.类型, exc.原因, task.task_id,
-                                  网站失效=网站失效)
+                                  网站失效=网站失效,
+                                  状态码=状态码, 已抓章节=已抓章节,
+                                  页面为空=页面为空)
             task.dead = 记录
             task.status = 'dead_pending'      # end_time 由随后的 _set_terminal 冻结
             if 首次:

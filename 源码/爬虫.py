@@ -834,6 +834,11 @@ class NovelSpider:
         # 下游只能对死书错误的固定文案做特征嗅探 → 恒 False → 该需求从未生效。
         self.last_request_error = ''
         self._inspect_cache_lock = threading.Lock()
+        # 最后一次目录页响应的 HTTP 状态码 (2026-10-07, 批 3 数据缺口收口):
+        # 死书清单页 meta 行要显示「HTTP 码」, 而 死书处理 的记录里原本没有该字段
+        # (设计会话明确留的数据缺口)。0 = 未知 (网络层异常/未取到响应),
+        # 下游据此不显示该片段 —— 不编造。取值点与 last_request_error 同一处。
+        self.last_status_code = 0
         # ===== 反爬机制自动检测 + 内容语义质检 =====
         # _get_with_js_challenge 每次请求先过检测器: 限频退避/UA轮换自动处理,
         # WAF验证码/JS挑战仍由下方分级循环作为执行器解决
@@ -1532,9 +1537,15 @@ class NovelSpider:
             _conn_retries = 3
             response = None
             self.last_request_error = ''   # 每次进入请求路径先清零, 防上一次的失败原因串味
+            self.last_status_code = 0      # 同上: 状态码也清零, 防上一次响应的码串味
             for _attempt in range(1, _conn_retries + 1):
                 try:
                     response = self._get_with_js_challenge(url, headers)
+                    # 状态码就地采集 (批 3 数据缺口): 必须在下面的 5xx 分支把
+                    # response 置 None **之前**取, 否则 502 也记成"未知"。
+                    if response is not None:
+                        self.last_status_code = int(
+                            getattr(response, 'status_code', 0) or 0)
                     # K36: 5xx 错误页与网络异常同等对待 —— shuhaige 源站间歇 502,
                     # 错误页被当目录解析 → 书名 "502 Bad Gateway" → 0 章节死书
                     # (2026-10-03 task_10 实测)。重试耗尽 response=None → 空 soup
@@ -6401,11 +6412,24 @@ class NovelSpider:
             # 判定链完全不受影响。
             try:
                 from 死书处理 import 判定死书
+                # 已抓章节 (批 3 数据缺口): 判定发生在"目录 0 章节"这一步 —— 本书
+                # 本次确实一章未抓, 但输出文件里可能已有**上一轮的部分进度**。
+                # 这正是用户决定"该不该删这本书"最有用的一个数, 故取自实际文件
+                # 而不是想当然填 0 (复用断点续传同一计数器, 口径一致)。
+                try:
+                    _已抓 = self._count_written_chapters(output_file)
+                except Exception as _ce:
+                    _已抓 = 0
+                    _log.debug(f'裸 except 吞异常: {type(_ce).__name__}: {_ce}')
                 self.last_dead = 判定死书(页面为空=getattr(self, '_目录页为空', False),
                                           书名=novel_title, 章节数=total,
-                                          网络异常文本=getattr(self, 'last_request_error', ''))
+                                          网络异常文本=getattr(self, 'last_request_error', ''),
+                                          状态码=getattr(self, 'last_status_code', 0),
+                                          已抓章节=_已抓)
                 _log.info(f"⚠️ 未提取到任何章节，抓取终止 (死书判定: "
-                          f"{self.last_dead['类型']} — {self.last_dead['原因']})")
+                          f"{self.last_dead['类型']} — {self.last_dead['原因']}; "
+                          f"HTTP {self.last_dead.get('状态码') or '未知'}, "
+                          f"已抓 {self.last_dead.get('已抓章节', 0)} 章)")
             except Exception as _de:
                 self.last_dead = None
                 _log.debug(f'裸 except 吞异常: {type(_de).__name__}: {_de}')
@@ -7195,8 +7219,13 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
             _死 = getattr(src_spider, 'last_dead', None)
             from 死书处理 import 死书错误
             if isinstance(_死, dict) and _死.get('类型'):
+                # 批 3 数据缺口: 状态码 / 已抓章节 / 页面为空 随判定结果一路结构化
+                # 带走 (与 网站失效 同一纪律 —— 下游只读字段, 不回头嗅探文案)。
                 last_error = 死书错误(_死['类型'], _死['原因'], src,
-                                      _死.get('网站失效', False))
+                                      _死.get('网站失效', False),
+                                      _死.get('状态码', 0),
+                                      _死.get('已抓章节', 0),
+                                      _死.get('页面为空', False))
             elif not isinstance(last_error, 死书错误):
                 last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
             continue
