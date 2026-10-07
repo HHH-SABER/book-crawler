@@ -31,6 +31,8 @@ from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
 # **构建期求值**的字符串对象, 切夜间主题后本地引用不会被更新 (见
 # phase3_迁移规范.md / log_tab.py 样例)。取色() 只在构建期取值 → 配 登记重刷()。
 from .ui_tokens import 取色, 登记重刷
+from . import states
+from . import 布局档位
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
@@ -183,8 +185,9 @@ class DetailDrawer:
                 self._detail_view,
                 self._preview_view,
             ], spacing=6, expand=True),
-            # 宽度跟随窄档 (设置窄档 可反复切换, 见文件末尾)
-            width=(_WIDTH_NARROW if self._窄档 else _WIDTH_OPEN),
+            # 宽度跟随布局档位 (设置档位 可反复切换, 见文件末尾)。
+            # 批 4: 按档取值 (基准/中档 320, 窄档 280), 构建时读"当前档"。
+            width=int(布局档位.取参数(布局档位.当前档())['抽屉宽']),
             padding=ft.Padding.symmetric(horizontal=10, vertical=10),
             bgcolor=ft.Colors.SURFACE,
             border=ft.Border(left=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
@@ -328,8 +331,19 @@ class DetailDrawer:
                     and self._日志条标题.value != "实时日志":
                 self._日志条标题.value = "实时日志"
             self._log_sig = None
+            # 批 4 (2026-10-07): 旧实现只 clear() → 底部常驻日志条**一片纯空白**
+            # (整条控件树里什么都没有)。补空态告诉用户为什么空 + 怎么让它有内容。
+            # 本方法每秒被调 → 已建过就不重建, 否则每秒换控件白白 patch。
+            if getattr(self, '_日志条无选中', False):
+                return
+            self._日志条无选中 = True
             self._log_list.controls.clear()
+            self._log_list.controls.append(states.空态(
+                图标=ft.Icons.TOUCH_APP_OUTLINED, 标题='未选中任务',
+                说明='点击上方任务表的任意一行, 这里会显示它的实时日志。',
+                填满=False))
             return
+        self._日志条无选中 = False      # 有选中任务了 → 允许下次再建空态
         task = self.task_manager.get_task(tid)
         if not task:
             return
@@ -408,11 +422,13 @@ class DetailDrawer:
         tid = self.task_manager.selected_task_id
         task = self.task_manager.get_task(tid) if tid else None
         if not task:
+            # 批 4: 手写单行 → 统一状态组件。
+            # 填满=False 是必须的: _detail_view 是 scroll=ALWAYS 的 Column,
+            # 可滚动容器主轴无界, 子控件再 expand 会被算成 0 高 → 空态看不见。
             self._detail_view.controls.clear()
-            self._detail_view.controls.append(ft.Text(
-                "未选中任务 (点击表格行选中)",
-                size=SIZE_SMALL, color=ft.Colors.ON_SURFACE_VARIANT,
-                font_family=FONT_STACK))
+            self._detail_view.controls.append(states.空态(
+                图标=ft.Icons.TOUCH_APP_OUTLINED, 标题='未选中任务',
+                说明='点击上方任务表的任意一行查看详情。', 填满=False))
             return
 
         mt = task.metrics
@@ -570,9 +586,11 @@ class DetailDrawer:
         txt_files = glob.glob(os.path.join(output_dir, "*.txt"))
         txt_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
         if not txt_files:
-            self._file_list.controls.append(ft.Text(
-                "暂无抓取结果", size=SIZE_SMALL, italic=True,
-                color=ft.Colors.ON_SURFACE_VARIANT, font_family=FONT_STACK))
+            # 批 4: 手写小字 → 统一空态, 并**把输出目录写出来** ——
+            # "没有结果"最常见的真实原因是用户改了输出目录, 不说清就查不出来。
+            self._file_list.controls.append(states.空态(
+                图标=ft.Icons.FOLDER_OFF_OUTLINED, 标题='暂无抓取结果',
+                说明=f'输出目录里还没有 .txt 产物:\n{output_dir}', 填满=False))
             return
         for i, fp in enumerate(txt_files):
             size_kb = os.path.getsize(fp) / 1024
@@ -767,8 +785,52 @@ class DetailDrawer:
 
         threading.Thread(target=_worker, daemon=True, name='dedupe-clean').start()
 
+    def 设置档位(self, 档: str, 参数: dict = None):
+        """按布局档位调整抽屉宽度 + 底部日志条 (批 4)。
+
+        设计稿依据:
+          - `.detail-drawer width:320px`, ≤960 档收窄到 280px;
+          - `.log-body max-height:160px`, 展开态 400px, 而 ≤960 档展开态限到 260px
+            (设计稿原注: 「展开态在小屏限高, 避免吃掉整屏」)。
+        程序现状: 我们的"折叠"是**显示/隐藏**日志条体 (不是 160↔400 换高), 所以
+        设计稿的"展开态限高"在本实现里退化为基础高 160 —— 窄档再额外**自动收起**,
+        理由见下方注释 (实测会把任务表挤没)。
+        """
+        try:
+            参数 = 参数 or 布局档位.取参数(档)
+            宽 = int(参数.get('抽屉宽') or _WIDTH_OPEN)
+            self._档 = 档
+            self._窄档 = (档 == 布局档位.窄)      # 兼容字段
+            if self.container is not None and self.container.width != 宽:
+                self.container.width = 宽
+                try:
+                    self.container.update()
+                except Exception as _e:
+                    _dbg("详情面板", f'抽屉宽度 update 跳过: {type(_e).__name__}: {_e}')
+            # 日志条体高度按档 (设计稿 .log-body max-height:160px)。
+            # ⚠️ 不能引用 build_log_strip() 里的局部 `_日志条高` (那是局部量,
+            # check_undefined_refs.py 会当场报未定义引用) → 用档位表的值, 兜底 160。
+            体 = getattr(self, '_日志条体', None)
+            if 体 is not None:
+                高 = int(参数.get('日志基础高') or 160)
+                if 体.height != 高:
+                    体.height = 高
+            # ⚠️ 窄档自动收起日志条 —— 2026-10-07 EXE 实测: 逻辑 952px 时左列只剩
+            # ~430px 宽, 输入卡换行后变得很高, 日志条再占 160-180px 会把
+            # **任务表挤到 0 高 (整张表看不见)**。设计稿对同一个小屏问题的处理是
+            # "展开态限高, 避免吃掉整屏" → 本实现直接收起, 是同一意图的更强形式。
+            if self._窄档 and getattr(self, '_日志条展开', False):
+                self._日志条展开 = False
+                self._应用日志条展开()
+                _dbg("详情面板", '窄档: 已自动收起底部日志条, 把高度让给任务表')
+            self._update()
+        except Exception as _e:
+            _dbg("详情面板", f'档位切换失败: {type(_e).__name__}: {_e}')
+
     def 设置窄档(self, 窄: bool):
-        """窄窗口(≤1200px)模式: 抽屉宽度 320 → 260, 把省下的宽度让给任务表。
+        """兼容旧接口 (窄 → 窄档参数)。原文如下, 供对照:
+
+        窄窗口(≤1200px)模式: 抽屉宽度 320 → 260, 把省下的宽度让给任务表。
 
         (2026-10-04 UX 改进: 960px 窗宽下任务表横向溢出 538px, 抽屉收窄
         与 task_table.设置窄档 配合使用。)

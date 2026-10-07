@@ -33,6 +33,7 @@ from ..ui_fluent import (txt, FONT_STACK, SIZE_SMALL, SIZE_BODY, SIZE_TITLE,
 # 的 globals().update 改不到页面里的本地名); 详见 文档/审查报告汇总.md Phase 3 结论。
 from ..ui_tokens import 取色, 登记重刷
 from ..ui_theme import page_header
+from .. import states
 
 
 # 开关切换的兜底时长 (秒): 切换是"调度即返回"的异步过程, 正常靠运行状态变化
@@ -242,9 +243,12 @@ class RemotePage:
             border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
         )
 
-        self._empty = txt("暂无手机端记录 — 手机发起的抓取任务会实时出现在这里",
-                          size=SIZE_SMALL, weight=WEIGHT_BODY,
-                          color=ft.Colors.ON_SURFACE_VARIANT)
+        # 批 4 (2026-10-07): 手写一行小字 → 统一空态 (设计稿这张卡就是 .empty-state:
+        # 图标 + 标题 + 说明, 文案与设计稿样卡一致)。
+        # 填满=False: _rows 是 ListView, 无界高度里 expand 会被算成 0 高。
+        self._empty = states.空态(
+            图标=ft.Icons.PHONE_IPHONE_OUTLINED, 标题='暂无手机端记录',
+            说明='手机发起的抓取任务会实时出现在这里', 填满=False)
         # ListView + 常显滚动条 (2026-09-29): 旧实现 Column(tight) 记录一多
         # 就超出 Container 有界高度被裁, 且无滚动出口; expand 取满卡片剩余高度
         self._rows = ft.ListView(spacing=4, expand=True,
@@ -253,6 +257,12 @@ class RemotePage:
         self._rows_count = txt("共 0 条", size=SIZE_SMALL, weight=WEIGHT_BODY,
                                color=ft.Colors.ON_SURFACE_VARIANT)
 
+        # 批 4 (2026-10-07): build() 末尾补一次 refresh —— 旧实现要等切页或
+        # 1s 轮询才有内容, 首帧是"地址/token = —、记录区纯空白"的空壳。
+        try:
+            self.refresh()
+        except Exception as _e:
+            _dbg("远控页", f'首帧刷新失败: {type(_e).__name__}: {_e}')
         return ft.Column([
             page_header('远控', '远程控制开关、手机访问方式与手机端任务记录'),
             self._status_card,
@@ -401,8 +411,10 @@ class RemotePage:
                 _提示 = info.get("提示") or ""
                 self._hint.value = _提示
                 self._hint.visible = bool(_提示)
-        except Exception:
-            pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
+        except Exception as _e:
+            # 批 4: 旧实现纯静默 → 取信息失败时地址/token 停在 "—" 且界面无提示,
+            # 排障只能靠猜。高频路径仍不打 INFO (会刷屏), 但必须留痕。
+            _dbg("远控页", f'远控信息读取失败: {type(_e).__name__}: {_e}')
         try:
             tasks = [t for t in self.task_manager.get_all_tasks()
                      if getattr(t, '来源', '本机') == '手机']
@@ -432,5 +444,16 @@ class RemotePage:
                     ))
             if self.page is not None:
                 self._rows.update()
-        except Exception:
-            pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
+        except Exception as _e:
+            # 批 4: 旧实现纯静默 → 列表保持空白或陈旧, 且**空态分支永远到不了**
+            # (try 从取数那行起), 用户无法分辨"没有手机端任务"和"读取出错了"。
+            _dbg("远控页", f'手机端任务读取失败: {type(_e).__name__}: {_e}')
+            try:
+                self._rows.controls.clear()
+                self._rows.controls.append(states.错误态(
+                    '记录读取失败', f'{type(_e).__name__}: {_e}',
+                    重试回调=lambda e=None: self.refresh(), 填满=False))
+                if self.page is not None:
+                    self._rows.update()
+            except Exception as _e2:
+                _dbg("远控页", f'错误态渲染失败: {type(_e2).__name__}: {_e2}')
