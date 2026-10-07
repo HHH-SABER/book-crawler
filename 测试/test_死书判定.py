@@ -80,7 +80,8 @@ class Test判定死书(unittest.TestCase):
         """三个返回分支的键集合必须一致 (UI 读键不会 KeyError)"""
         for 页面为空, 书名 in ((True, 'x'), (False, 'novel'), (False, 'x')):
             r = D.判定死书(页面为空=页面为空, 书名=书名, 章节数=0)
-            self.assertEqual(set(r), {'类型', '原因', '可询问删除', '网站失效'})
+            self.assertEqual(set(r), {'类型', '原因', '可询问删除', '网站失效',
+                                      '状态码', '已抓章节', '页面为空'})
 
     def test_章节数为零或负都判死书(self):
         for n in (0, -1):
@@ -127,7 +128,81 @@ class Test错误页标题K36(unittest.TestCase):
 
     def test_返回键完整_错误页分支(self):
         r = D.判定死书(页面为空=False, 书名='502 Bad Gateway', 章节数=0)
-        self.assertEqual(set(r), {'类型', '原因', '可询问删除', '网站失效'})
+        self.assertEqual(set(r), {'类型', '原因', '可询问删除', '网站失效',
+                                  '状态码', '已抓章节', '页面为空'})
+
+
+class Test数据缺口_状态码与已抓章节(unittest.TestCase):
+    """批 3 数据缺口收口 (2026-10-07)。
+
+    设计稿死书卡片 meta 行 = `URL · HTTP 码 · 判定于 <时间> · 已抓 N 章`,
+    而记录里原本**没有**这两个字段 (设计会话明确留的缺口, 不许在 UI 层猜)。
+    修法: 判定侧采集 → 判定死书 返回 → 死书错误 携带 → 记录死书 落盘。
+    """
+
+    def test_判定死书携带状态码与已抓章节(self):
+        r = D.判定死书(页面为空=False, 书名='normal', 章节数=0,
+                      状态码=404, 已抓章节=412)
+        self.assertEqual(r['状态码'], 404)
+        self.assertEqual(r['已抓章节'], 412)
+
+    def test_每个分支都携带(self):
+        """四条分支都必须带上 (漏一条 → UI 读到 0, 静默显示不全)"""
+        分支 = [dict(页面为空=True, 书名='x'),
+                dict(页面为空=False, 书名='502 Bad Gateway'),
+                dict(页面为空=False, 书名='novel'),
+                dict(页面为空=False, 书名='正常书名')]
+        for kw in 分支:
+            r = D.判定死书(章节数=0, 状态码=410, 已抓章节=7, **kw)
+            self.assertEqual((r['状态码'], r['已抓章节']), (410, 7), f'分支 {kw}')
+
+    def test_缺省即零不编造(self):
+        r = D.判定死书(页面为空=True, 书名='x', 章节数=0)
+        self.assertEqual(r['状态码'], 0)
+        self.assertEqual(r['已抓章节'], 0)
+
+    def test_页面为空随判定结果带走(self):
+        """设计稿第 2 槽的词 (连接超时 / 内容为空) 取决于这个事实, 而非类型名"""
+        self.assertTrue(D.判定死书(页面为空=True, 书名='x', 章节数=0)['页面为空'])
+        # 5xx 错误页: 页面**拿到了** (只是内容是错误页) → 页面为空=False 且带状态码
+        r = D.判定死书(页面为空=False, 书名='502 Bad Gateway', 章节数=0, 状态码=502)
+        self.assertFalse(r['页面为空'])
+        self.assertEqual(r['状态码'], 502)
+        self.assertFalse(D.判定死书(页面为空=False, 书名='正常书名',
+                                   章节数=0)['页面为空'])
+
+    def test_页面为空非布尔值也被规整(self):
+        for v, 期望 in ((1, True), (0, False), (None, False), ('', False)):
+            r = D.判定死书(页面为空=v, 书名='x', 章节数=0)
+            self.assertIs(r['页面为空'], 期望, f'值 {v!r}')
+
+    def test_非法值归零(self):
+        """None/空串不得让 int() 抛, 也不得写成假值"""
+        for v in (None, '', 'x', 0):
+            r = D.判定死书(页面为空=True, 书名='x', 章节数=0,
+                          状态码=v, 已抓章节=v)
+            self.assertEqual((r['状态码'], r['已抓章节']), (0, 0), f'值 {v!r}')
+
+    def test_死书错误结构化携带(self):
+        e = D.死书错误(D.类型_书已删除, '原因', 'https://example.com/b',
+                       False, 404, 412, True)
+        self.assertEqual(e.状态码, 404)
+        self.assertEqual(e.已抓章节, 412)
+        self.assertTrue(e.页面为空)
+
+    def test_死书错误旧调用方式不破(self):
+        """向后兼容: 老的三/四参位置调用仍可用, 新字段缺省为 0/False"""
+        e = D.死书错误(D.类型_站点不可达, '页面为空', 'https://example.com/b', True)
+        self.assertTrue(e.网站失效)
+        self.assertEqual((e.状态码, e.已抓章节), (0, 0))
+        self.assertFalse(e.页面为空)
+
+    def test_死书错误脏值不抛(self):
+        """异常对象在**工作线程**里构造 —— 脏值抛出去会连死书记录都落不下"""
+        for v in (None, '', 'x', [1], {}):
+            e = D.死书错误(D.类型_书已删除, '原因', 'https://e.example.com/b',
+                           False, v, v)
+            self.assertEqual((e.状态码, e.已抓章节), (0, 0), f'值 {v!r}')
 
 
 if __name__ == '__main__':
