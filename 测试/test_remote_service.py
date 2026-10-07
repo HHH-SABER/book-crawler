@@ -468,15 +468,44 @@ class Test教程端点与md转换(unittest.TestCase):
 
     def test_tutorial端点200且含教程标题(self):
         """源码环境直接读 文档/远控使用教程.md"""
-        r = self.client.get('/tutorial')
+        r = self.client.get('/tutorial?k=testtoken')
         self.assertEqual(r.status_code, 200)
         self.assertIn('text/html', r.headers['content-type'])
         # 教程 md 的一级标题应出现在渲染结果中
         self.assertIn('远控使用教程', r.text)
 
-    def test_tutorial免鉴权(self):
-        r = self.client.get('/tutorial')
-        self.assertEqual(r.status_code, 200, '教程与面板同级, 免 token')
+    def test_tutorial需鉴权(self):
+        """2026-10-07 起 /tutorial 纳入鉴权 (回归用例)。
+
+        改动背景: 服务默认绑定 0.0.0.0 (同 Wi-Fi 可达), 而教程正文会讲出配置
+        文件路径、token 存放位置、默认端口与绑定 —— 是原先三个免鉴权端点里唯一
+        泄露**运维细节**的一个。面板外壳 `/` 不含凭据且要承担"手机首次访问入口"
+        职责, 故保持免鉴权; healthz 只回 ok+时间戳, 留给看门狗。
+        ⚠️ 本用例原先叫 test_tutorial免鉴权 且断言 200 —— 属**有意变更**,
+        不是被顺手改绿 (GUI「使用教程」按钮与面板链接已同步带上 ?k=)。
+        """
+        self.assertEqual(self.client.get('/tutorial').status_code, 401,
+                         '不带 token 必须 401')
+        self.assertEqual(self.client.get('/tutorial?k=wrong').status_code, 401,
+                         '错误 token 必须 401')
+        self.assertEqual(self.client.get('/tutorial?k=testtoken').status_code, 200)
+
+    def test_面板与healthz仍免鉴权(self):
+        """只有这两处免鉴权: 面板外壳 (手机首次访问入口) 与 healthz (看门狗)。"""
+        self.assertEqual(self.client.get('/').status_code, 200,
+                         '面板外壳必须免鉴权, 否则手机首次访问无从输入 token')
+        self.assertEqual(self.client.get('/api/v1/healthz').status_code, 200)
+
+    def test_面板教程链接带token(self):
+        """面板的「📖 使用教程」是 <a target=_blank>, 发不出 Authorization 头 ——
+        必须由 JS 拼 ?k=, 否则点开就是 401 (收紧 /tutorial 时最容易漏的一环)。"""
+        html = (Path(服务.__file__).parent / '面板.html').read_text(encoding='utf-8')
+        self.assertIn("id=\"教程链接\"", html, '教程链接缺 id, JS 找不到它')
+        self.assertIn("/tutorial?k=", html, '面板未给教程链接拼 token')
+        self.assertIn('同步教程链接', html, '缺同步函数')
+        # 登录成功与启动各要同步一次 (否则"先登录再看教程"仍是旧 href)
+        self.assertGreaterEqual(html.count('同步教程链接();'), 2,
+                                '至少要在 提交token() 与启动处各调一次')
 
     def test_md转html_标题与段落(self):
         html = 服务._md转html('# 一级\n\n正文段落\n## 二级\n### 三级')
@@ -524,11 +553,22 @@ class Test桌面教程入口(unittest.TestCase):
         self.rp.build()
 
     def test_运行中打开教程页(self):
+        """2026-10-07: /tutorial 需鉴权 → GUI 入口必须带上 ?k=<token>"""
         self.rp.取信息 = lambda: {'运行': True,
                                  '地址': 'http://127.0.0.1:8760/', 'token': 'x'}
         with mock.patch('webbrowser.open') as op:
             self.rp._open_tutorial(None)
-        op.assert_called_once_with('http://127.0.0.1:8760/tutorial')
+        op.assert_called_once_with('http://127.0.0.1:8760/tutorial?k=x')
+
+    def test_运行中但取不到token_提示且不开浏览器(self):
+        """取不到 token 时打开只会得到 401 页 → 改成给一句能查的话"""
+        self.rp.取信息 = lambda: {'运行': True,
+                                 '地址': 'http://127.0.0.1:8760/', 'token': ''}
+        with mock.patch('webbrowser.open') as op, \
+                mock.patch.object(self.rp, '_toast') as tt:
+            self.rp._open_tutorial(None)
+        op.assert_not_called()
+        tt.assert_called_once()
 
     def test_未启用时提示且不开浏览器(self):
         self.rp.取信息 = lambda: {'运行': False, '地址': '', 'token': ''}

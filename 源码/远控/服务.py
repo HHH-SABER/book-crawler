@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """远控服务 FastAPI 层: 手机/外部设备对 TaskManager 的唯一 HTTP 入口。
 
-端点一览 (/api/v1, 除 healthz 与面板外均需 token):
-  GET  /                          面板 (单页 HTML, JS 持 token 调 API)
-  GET  /api/v1/healthz            健康检查 (免鉴权, 供看门狗)
+端点一览 (/api/v1, **只有两处免鉴权**: 面板外壳 与 healthz):
+  GET  /                          面板外壳 (单页 HTML; 本身不含 token, JS 持 token 调 API)
+  GET  /tutorial                  使用教程页 (**需鉴权**, ?k= 或 Bearer) —— 2026-10-07 起收紧
+  GET  /api/v1/healthz            健康检查 (免鉴权, 供看门狗; 只回 ok+时间戳)
   POST /api/v1/tasks              发任务 {url, mode?, resume?, export_epub?}
   GET  /api/v1/tasks              任务列表 (含进度/状态/耗时)
   GET  /api/v1/tasks/{id}/logs?after=N   日志增量 (返回 total/entries/截断)
@@ -420,8 +421,20 @@ def 面板():
 
 
 @app.get("/tutorial")
-def 教程():
-    """远控使用教程页 (免鉴权, 与面板同级; 2026-09-29 教程入 UI)"""
+def 教程(k: Optional[str] = None,
+        authorization: Optional[str] = Header(default=None)):
+    """远控使用教程页 —— **2026-10-07 起需鉴权**。
+
+    为什么收紧: 服务默认绑定 0.0.0.0 (同 Wi-Fi 可达), 而教程正文会讲出
+    配置文件的绝对路径、token 存放位置、默认端口与绑定 —— 是三个免鉴权端点里
+    唯一泄露**运维细节**的一个。面板外壳 (`/`) 不含任何凭据、且要承担"手机首次
+    访问的入口"职责, 故保持免鉴权; healthz 只回 ok+时间戳, 留给看门狗。
+    教程在 GUI 的远控页本来就有入口 (「使用教程」按钮), 网上收紧损失极小。
+
+    ⚠️ 面板里的「📖 使用教程」是 `<a target="_blank">`, **发不出 Authorization 头**
+    → 那个链接必须由面板 JS 拼上 `?k=<token>` (见 面板.html 的 同步教程链接())。
+    """
+    _要求鉴权(k, authorization)
     p = _教程md路径()
     if not p.is_file():
         raise HTTPException(status_code=404, detail="教程文件缺失")

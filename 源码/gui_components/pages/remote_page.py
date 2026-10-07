@@ -286,7 +286,12 @@ class RemotePage:
 
     # ---------------------------------------------------------------- 教程
     def _open_tutorial(self, e=None):
-        """打开使用教程 (系统浏览器 → 内嵌远控 /tutorial, 与手机端同一页面)"""
+        """打开使用教程 (系统浏览器 → 内嵌远控 /tutorial, 与手机端同一页面)
+
+        2026-10-07: `/tutorial` 已纳入鉴权 (它会讲出配置路径与 token 位置) →
+        **必须带 `?k=<token>`**, 否则浏览器打开的是一个 401 页面。
+        token 与面板「访问 token」行同源, 都取自 取信息()。
+        """
         try:
             info = self.取信息() if self.取信息 else {}
         except Exception as _e:
@@ -295,9 +300,16 @@ class RemotePage:
         if not info.get("运行"):
             self._toast("请先启用远控 —— 教程页由远控服务提供")
             return
+        token = (info.get("token") or "").strip()
+        if not token:
+            # 宁可给一条能查的话, 也别把用户送进 401 页
+            _dbg("远控页", '取不到 token, 不打开教程页')
+            self._toast("读不到访问 token, 无法打开教程页 (见 数据/远控配置.json)")
+            return
         import webbrowser
+        from urllib.parse import quote
         地址 = (info.get("地址") or "http://127.0.0.1:8760/").rstrip("/")
-        webbrowser.open(f"{地址}/tutorial")
+        webbrowser.open(f"{地址}/tutorial?k={quote(token)}")
 
     # ---------------------------------------------------------------- 信息行
     @staticmethod
