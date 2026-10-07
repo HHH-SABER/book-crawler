@@ -547,7 +547,10 @@ CARD_RADIUS    = RADIUS_LG    # 8
 CARD_PADDING   = SP_3         # 12
 
 # 空态/加载态尺寸 (states.py 用)
-EMPTY_ICON_SIZE   = 44
+# 空态图标 48px: 对齐设计稿 `.empty-state-icon { font-size: 48px }` (index.html:1316)。
+# ⚠️ 与 `.workbuddy/artifacts/小说爬虫-界面布局说明.md:120` 记的"实机 44px"冲突 ——
+# 那条描述的是**改版前**死书页手写的空态图标; Phase 4 的验收基准是设计稿 → 取 48。
+EMPTY_ICON_SIZE   = 48
 LOADING_ICON_SIZE = 32
 
 # 焦点环: 2px 焦点环色 + 2px 偏移, 仅键盘焦点时出现

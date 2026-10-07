@@ -11,6 +11,7 @@ import time
 
 from . import history_data
 from .. import states
+from .. import 布局档位
 from ..ui_theme import make_card, tonal_btn, page_header
 from ..ui_fluent import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, WEIGHT_TITLE,
@@ -143,6 +144,10 @@ class HistoryPage:
 
         # 统计卡行 + 过滤器 + 表格
         self._stat_row = ft.Row(spacing=6)
+        # 批 4 (2026-10-07): 窄档统计卡 5 列 → 3 列, 溢出的 2 张要有地方放 ——
+        # 设计稿 ≤960 是 `.stats-row repeat(3,1fr)` (5 张卡自然排成 3+2)。
+        # 这里用"第二行承载溢出"复现同一排版 (Flet 的 Row 不会自动折行)。
+        self._stat_row2 = ft.Row(spacing=6, visible=False)
         self._table_view = ft.ListView(expand=True, spacing=2, auto_scroll=True,
                                        scroll=ft.ScrollMode.ALWAYS)
 
@@ -154,6 +159,7 @@ class HistoryPage:
         header_card = make_card(
             ft.Column([
                 self._stat_row,
+                self._stat_row2,
                 # 批 3(3): 刷新/一键更新书架推到行尾 (设计稿 刷新 在最右);
                 # 左侧下拉+chips 用嵌套 wrap 行, 窄窗口折行不出卡片
                 ft.Row([
@@ -356,6 +362,7 @@ class HistoryPage:
         """重新查询并刷新 (主线程调用)"""
         if self._table_view is None:
             return
+        history_data.清错误()      # 批 4: 先清上一轮的错误, 免得误报
         start, end = self._time_range()
         domain = self._filter_domain
         result = self._filter_result
@@ -386,9 +393,46 @@ class HistoryPage:
             except Exception:
                 pass  # 刻意静默: 高频路径(refresh(), 逐行/每秒级), 补日志会刷屏
 
+    def 设置档位(self, 档: str, 参数: dict = None):
+        """批 4: 档位变化时重排统计卡 (gui_app 的 resize 回调会调)。
+
+        本页**只在切页时** refresh() → 窗口拖动时不会自动重排, 必须由 gui_app
+        主动通知 (实测: 拖到 952px 后日志已打印"窄档", 统计卡却仍是 5 张一行)。
+        """
+        try:
+            self._档 = 档
+            if self._stat_row is None or self._stat_row2 is None:
+                return
+            卡们 = list(self._stat_row.controls) + list(self._stat_row2.controls)
+            if not 卡们:
+                return
+            self._排统计卡(卡们)
+            if self.page is not None:
+                self._stat_row.update()
+                self._stat_row2.update()
+        except Exception as _e:
+            _dbg("爬取历史", f'档位重排失败: {type(_e).__name__}: {_e}')
+
+    def _排统计卡(self, 卡们: list):
+        """按**当前档位**把统计卡排成 1 行(5 张) 或 2 行(3+2) —— 批 4。
+
+        档位从 布局档位.当前档() 读 (gui_app 在 resize 时写入), 因此本页
+        每次 refresh() 都会自动跟上, 不需要 gui_app 反向持有本页引用。
+        """
+        列数 = int(布局档位.取参数(布局档位.当前档()).get('统计列数') or 5)
+        self._stat_row.controls.clear()
+        self._stat_row2.controls.clear()
+        if 列数 >= len(卡们):
+            self._stat_row.controls.extend(卡们)
+            self._stat_row2.visible = False
+        else:
+            self._stat_row.controls.extend(卡们[:列数])
+            self._stat_row2.controls.extend(卡们[列数:])
+            self._stat_row2.visible = True
+
     def _build_stat_cards(self, stats: dict):
         """重建 5 张统计卡 (批 3(3) 对齐设计稿: 数值 28px/千位分隔, 白卡细边框)"""
-        self._stat_row.controls.clear()
+        卡们 = []
         total = stats.get('总请求数', 0)
         items = [
             (str(total), "总请求", 'btn-primary-bg'),
@@ -408,7 +452,7 @@ class HistoryPage:
             值文本 = ft.Text(显示值, size=28, weight=WEIGHT_TITLE,
                             color=取色(令牌), font_family=FONT_STACK)
             _登记文本色(值文本, 令牌)
-            self._stat_row.controls.append(ft.Container(
+            卡们.append(ft.Container(
                 content=ft.Column([
                     值文本,
                     ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
@@ -421,6 +465,7 @@ class HistoryPage:
                 border_radius=8,
                 expand=True,
             ))
+        self._排统计卡(卡们)
 
     def _table_header(self, cols: list, flexes: list) -> ft.Control:
         """明细表头"""
@@ -453,11 +498,19 @@ class HistoryPage:
             ["书名", "网站", "URL", "最后抓取", "状态码", "耗时", "字节", "结果", "错误原因"],
             [16, 11, 22, 11, 6, 6, 7, 7, 14]))
         if not rows:
-            # Phase 3 UX: 筛选后为空不再只显示"暂无历史记录"(会被误解成数据丢了),
-            # 改统一空态 + 一键清除筛选; 无任何筛选条件时保持原"首次为空"文案。
-            if self._有筛选条件():
+            # 批 4 (2026-10-07): 三分支 —— **读失败 / 筛选后为空 / 首次为空**。
+            # 旧实现只有后两支, "文件损坏"被归进"首次为空" → 谎报"暂无记录",
+            # 用户会以为历史被清空了 (已登记的 P0 体验问题)。
+            # 填满=False: _table_view 是 ListView, 无界高度里 expand 会被算成 0 高。
+            _读失败 = history_data.取上次错误()
+            if _读失败:
+                self._table_view.controls.append(states.错误态(
+                    '历史数据读取失败', _读失败,
+                    重试回调=lambda e=None: self.refresh(), 填满=False))
+            elif self._有筛选条件():
                 self._table_view.controls.append(states.筛选后为空(
-                    清除筛选回调=self._清除筛选, 说明=self._筛选说明()))
+                    清除筛选回调=self._清除筛选, 说明=self._筛选说明(),
+                    填满=False))
             else:
                 self._append_empty("暂无历史记录 (启动抓取后自动记录)")
             return
@@ -578,16 +631,14 @@ class HistoryPage:
         self.refresh()
 
     def _append_empty(self, msg: str):
-        """空状态占位"""
-        self._table_view.controls.append(
-            ft.Container(
-                content=ft.Column([
-                    ft.Icon(ft.Icons.HISTORY_TOGGLE_OFF, size=40,
-                            color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.5),
-                    ft.Text(msg, size=SIZE_SMALL, weight=WEIGHT_BODY,
-                            color=ft.Colors.ON_SURFACE_VARIANT,
-                            font_family=FONT_STACK),
-                ], spacing=8,
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.Padding.symmetric(vertical=36),
-            ))
+        """首次为空占位 (批 4: 改走统一状态组件; 站点汇总视图也复用它)"""
+        self._table_view.controls.append(states.首次为空(
+            图标=ft.Icons.HISTORY_TOGGLE_OFF, 标题=msg,
+            说明=self._首次为空说明(msg), 填满=False))
+
+    @staticmethod
+    def _首次为空说明(msg: str) -> str:
+        """按场景给"下一步该干什么" —— 只说"暂无"用户不知道怎么办"""
+        if '站点' in msg:
+            return '抓取过任意站点后, 这里会出现该站点的汇总 (请求数/失败率/最近抓取)。'
+        return '启动一次抓取后, 每一条 URL 的结果都会自动记录在这里。'

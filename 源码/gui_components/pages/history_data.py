@@ -2,6 +2,11 @@
 """历史页数据源：爬取历史 + 站点历史的查询封装 (GUI 与底层模块解耦)
 
 读取失败/模块不可用时降级为空数据, 页面仍可渲染。
+
+⚠️ 批 4 (2026-10-07) 改口径: 降级为"空"**必须同时留痕并可被页面识别** ——
+旧实现一律 `except Exception: return []`, 于是"历史文件损坏"与"确实没抓过"
+在界面上完全同形 (都是"暂无历史记录" + 统计卡全 0), 用户会以为数据被删了。
+现在: 失败写日志 + 记进 `取上次错误()`, 页面据此显示**可重试的错误态**。
 """
 import os
 import sys
@@ -22,6 +27,33 @@ try:
     _站点历史可用 = True
 except Exception:
     _站点历史可用 = False
+
+
+# 最近一次读取失败的人话描述 (空串 = 本轮没有失败)。
+# 页面在 refresh 开头 清错误(), 读完后 取上次错误() —— 拿到就在列表区显示错误态。
+_上次错误 = {'值': ''}
+
+
+def 取上次错误() -> str:
+    """最近一次读取失败描述 (空串 = 没失败)。供页面决定显示错误态还是空态。"""
+    return _上次错误['值']
+
+
+def 清错误():
+    """新一轮读取开始前调用, 免得把上一轮的错误当成本轮的。"""
+    _上次错误['值'] = ''
+
+
+def _失败(e: Exception, 场景: str, 兜底):
+    """静默兜底的统一出口: 留痕 + 记账 + 返回兜底值。"""
+    try:
+        sys.path.insert(0, _HERE)
+        import 日志 as _日志
+        _日志.get('爬取历史页').info(f'{场景} 读取失败: {type(e).__name__}: {e}')
+    except Exception:
+        pass          # 刻意静默: 日志链路本身失败时不能递归
+    _上次错误['值'] = f'{场景}: {type(e).__name__}: {e}'
+    return 兜底
 
 
 def is_available() -> bool:
@@ -45,8 +77,8 @@ def query_history(域名=None, 起始时间=None, 结束时间=None, 结果=None
                      结束时间=结束时间, 结果=结果)
         # 明细表只显示前 500 行 (防大数据量拖垮渲染)
         return rows[:500]
-    except Exception:
-        return []
+    except Exception as _e:
+        return _失败(_e, 'query_history', [])
 
 
 def get_stats(域名=None, 起始时间=None, 结束时间=None) -> dict:
@@ -56,8 +88,8 @@ def get_stats(域名=None, 起始时间=None, 结束时间=None) -> dict:
     try:
         return 取爬取历史().统计(域名=域名, 起始时间=起始时间,
                                      结束时间=结束时间)
-    except Exception:
-        return {}
+    except Exception as _e:
+        return _失败(_e, 'get_stats', {})
 
 
 def list_domains() -> list:
@@ -67,8 +99,8 @@ def list_domains() -> list:
     try:
         return [s.get('域名', '') for s in 取爬取历史().列出全部站点()
                 if s.get('域名')]
-    except Exception:
-        return []
+    except Exception as _e:
+        return _失败(_e, 'list_domains', [])
 
 
 def list_sites_summary() -> list:
@@ -77,8 +109,8 @@ def list_sites_summary() -> list:
         return []
     try:
         return 取爬取历史().列出全部站点()
-    except Exception:
-        return []
+    except Exception as _e:
+        return _失败(_e, 'list_sites_summary', [])
 
 
 def site_prior(domain: str) -> dict:
@@ -87,8 +119,8 @@ def site_prior(domain: str) -> dict:
         return {}
     try:
         return 取站点历史().查站点(f"https://{domain}") or {}
-    except Exception:
-        return {}
+    except Exception as _e:
+        return _失败(_e, 'site_prior', {})
 
 
 # ======================================================================
@@ -131,8 +163,8 @@ def 补网站信息(rows: list) -> list:
                 d.setdefault('小说名', '')
             out.append(d)
         return out
-    except Exception:
-        return rows
+    except Exception as _e:
+        return _失败(_e, '补网站信息', rows)
 
 
 def 按书名过滤(rows: list, 关键词: str) -> list:
@@ -151,5 +183,5 @@ def 按书名过滤(rows: list, 关键词: str) -> list:
                if (r.get('url', '') in 命中urls
                    or 关键词 in (r.get('url', '') or ''))]
         return out
-    except Exception:
-        return rows
+    except Exception as _e:
+        return _失败(_e, '按书名过滤', rows)

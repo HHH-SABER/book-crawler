@@ -141,22 +141,24 @@ class DeadBookPage:
         # scroll=ALWAYS: 常显滚动条 (2026-10-03 八项需求#6 统一可见滚动条)
         self._列表 = ft.Column(spacing=6, tight=True, scroll=ft.ScrollMode.ALWAYS)
         # Phase 3: 图标/说明文字同样走令牌 + 登记重刷
-        空态图标 = ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=44,
-                          color=取色('status-success'))
-        登记重刷(空态图标, lambda c: setattr(c, 'color', 取色('status-success')))
-        空态说明 = ft.Text("抓取失败若被判定为「书已删除」会记到这里, 可在此集中处置。\n"
-                          "若列表为空但任务表有「书已删除」行, 可刷新本页。",
-                          size=SIZE_SMALL, weight=WEIGHT_BODY,
-                          color=取色('text-secondary'), font_family=FONT_STACK,
-                          text_align=ft.TextAlign.CENTER)
-        登记重刷(空态说明, lambda c: setattr(c, 'color', 取色('text-secondary')))
-        self._空态 = ft.Column([
-            空态图标,
-            txt("死书清单为空", size=SIZE_BODY, weight=WEIGHT_SUBTITLE),
-            空态说明,
-        ], spacing=8, alignment=ft.MainAxisAlignment.CENTER, tight=True)
+        # 批 4 (2026-10-07): 手写空态 → 统一状态组件。
+        # **图标色保留语义绿**: "一本死书都没有"是好消息, 灰图标表达不出这一点 ——
+        # states.空态 的 图标色 参数就是为这种页面语义开的唯一口子。
+        # 填满=False: _列表 是 scroll=ALWAYS 的 Column, 无界高度里 expand 会算成 0 高。
+        # 文案原样保留 (测试/test_dead_book_page.py 用源码断言钉着"死书清单为空")。
+        self._空态 = states.空态(
+            图标=ft.Icons.CHECK_CIRCLE_OUTLINE, 标题='死书清单为空',
+            说明='抓取失败若被判定为「书已删除」会记到这里, 可在此集中处置。\n'
+                 '若列表为空但任务表有「书已删除」行, 可刷新本页。',
+            图标色='status-success', 填满=False)
         # 「筛选后为空」槽 (Phase 3 UX): 有数据但被筛选条件滤空时用它, 不再是一片空白
         self._筛选空态 = ft.Container(visible=False)
+        # 批 4 (2026-10-07): build() 不读数据 (数据在切页/轮询时读) —— 旧实现让
+        # _空态 默认可见, 于是**首帧先谎报一次"死书清单为空"**再被真实数据覆盖。
+        # 现在首帧显示加载态, 首次 refresh() 后收起 (空态只有读到空清单才出现)。
+        self._加载槽 = ft.Container(
+            content=states.加载态('正在读取死书清单…'), visible=True)
+        self._空态.visible = False
 
         头 = page_header(
             "死书清单",
@@ -174,7 +176,8 @@ class DeadBookPage:
             头,
             self._筛选栏(),
             self._摘要,
-            ft.Container(content=ft.Column([self._列表, self._空态, self._筛选空态],
+            ft.Container(content=ft.Column([self._列表, self._加载槽,
+                                            self._空态, self._筛选空态],
                                           spacing=0, expand=True),
                          expand=True),
         ], expand=True, spacing=10)
@@ -297,6 +300,7 @@ class DeadBookPage:
         # 类型下拉随清单变化同步(数据被其他会话/远控改动时选项会变)
         self._同步类型下拉()
 
+        self._加载槽.visible = False      # 批 4: 数据已读到 → 收起加载态
         self._列表.controls.clear()
         if not 记录:
             self._列表.visible = False

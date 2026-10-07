@@ -358,32 +358,43 @@ def main(page: ft.Page):
     # 任务表格行点击 → 选中 (右侧面板日志/详情自动跟随); 预览按钮 → 切到文件预览
     task_table.on_open_preview = lambda tid: drawer.open("preview", tid)
 
-    # ---- 窄窗口适配 (Phase 3, 2026-10-04): 960px 下任务表横向溢出 538px ----
-    # 单档阈值 1200px —— 刻意不做 720/480 多档: 页面按 1200px 以上设计, 再细分
-    # 收益低而分支组合爆炸 (审查结论)。120ms 防抖: 拖动窗口时 on_resize 高频触发,
-    # 每次重排所有列会明显卡顿。
-    _窄档 = [None]
+    # ---- 响应式档位 (Phase 4 批 4, 2026-10-07) ----
+    # 旧实现: 单档 1200px 布尔, 窄档把任务表 4 个次级列**隐藏**掉 (910 → 606px)。
+    # 用户 2026-10-07 拍板**对齐设计稿**: 任何断点都不隐藏任务表列
+    # (固定 910px + 横向滚动), 改为按档调抽屉宽/统计列数/日志展开限高。
+    # 真值在 gui_components/布局档位.py (纯函数, 由 测试/test_布局档位.py 钉死) ——
+    # 改动前响应式在 测试/ 与 测试_本地/ 里**零命中**, 只靠这行日志 + 人工看。
+    # ≤720 / ≤480 两档因窗口 min_width=960 实机不可达 → 不实现 (设计稿自己也注了
+    # 这条实机约束, 见 index.html:2300)。
+    # 120ms 防抖照旧: 拖动窗口时 on_resize 高频触发, 每次重排所有控件会明显卡顿。
+    import gui_components.布局档位 as _档位
+    _当前档 = [None]
+    # 档位回调的目标 (可增): 先只有工作台的两个控件; pages_map 建好后把
+    # 页面对象补进来 —— "只在切页时刷新"的页面(如历史页)不会自己跟上档位变化。
+    _档位目标 = [task_table, drawer]
 
     def _计算窄档():
         try:
             宽 = int(getattr(page, 'width', 0) or 0)
             if 宽 <= 0:
                 return
-            窄 = 宽 <= 1200
-            if _窄档[0] == 窄:
+            档 = _档位.计算档位(宽)
+            参数 = _档位.取参数(档)
+            _档位.设置当前档(档)      # 页面构建时读它取初始参数
+            if _当前档[0] == 档:
                 return
-            _窄档[0] = 窄
-            for _目标 in (task_table, drawer):
-                _设 = getattr(_目标, '设置窄档', None)   # 接口由 task_table/drawer 提供
+            _当前档[0] = 档
+            for _目标 in _档位目标:
+                _设 = getattr(_目标, '设置档位', None)   # 接口由 task_table/drawer 提供
                 if callable(_设):
                     try:
-                        _设(窄)
+                        _设(档, 参数)
                     except Exception as _e2:
-                        app_log.debug("GUI", f'窄档切换失败({type(_目标).__name__}): '
+                        app_log.debug("GUI", f'档位切换失败({type(_目标).__name__}): '
                                              f'{type(_e2).__name__}: {_e2}')
-            app_log.info("系统", f"窗口 {宽}px → {'窄档(隐藏次级列)' if 窄 else '宽档'}")
+            app_log.info("系统", f"窗口 {宽}px → {_档位.档位说明(档)}")
         except Exception as _e:
-            app_log.debug("GUI", f'窄档计算失败: {type(_e).__name__}: {_e}')
+            app_log.debug("GUI", f'档位计算失败: {type(_e).__name__}: {_e}')
 
     _尺寸防抖 = [None]
 
@@ -451,6 +462,12 @@ def main(page: ft.Page):
         expand=True)
     for i, p in enumerate(pages_map.values()):
         p.visible = (i == 0)
+
+    # 批 4: 补上实现了 设置档位 的页面对象 (注意 pages_map 的值是 build() 出来的
+    # **控件**, 不是页面对象本身, 所以不能从 pages_map.values() 里找)。
+    _档位目标.extend(_p for _p in (history_page, dead_page, site_page,
+                                  log_tab, remote_page)
+                     if callable(getattr(_p, '设置档位', None)))
 
     def _switch_page(key: str):
         """切换页面: 导航高亮 + 可见性 + 页面级刷新"""

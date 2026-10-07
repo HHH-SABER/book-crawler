@@ -30,6 +30,7 @@ from ..ui_fluent import (open_dialog, close_dialog,
 # 页面里的本地引用纹丝不动 → 夜间主题下这些控件颜色不掉色 (审查报告 Phase 3)。
 from ..ui_tokens import 取色, 登记重刷
 from . import history_data
+from .. import states
 
 try:
     from _path_utils import resolve_data_file, get_app_base_dir
@@ -254,19 +255,38 @@ class SiteManagePage:
         self.file_picker = None  # Flet 0.86 FilePicker 是 Service, 页面构建时实例化
 
     # ------------------------------------------------------------- 配置读写
+    def _重试读取配置(self, e=None):
+        """错误态「重试」: 重新读站点配置并重绘表格 (批 4)"""
+        try:
+            self.configs = self._load_configs()
+            self._refresh_table()
+            if self.page is not None and self._table_view is not None:
+                self._table_view.update()
+        except Exception as _e:
+            _dbg("站点管理", f'重试读取配置失败: {type(_e).__name__}: {_e}')
+
     def _load_configs(self) -> list:
         """加载配置: JSON 优先, 回退内置 SITE_PATTERNS"""
+        self._配置读取失败 = ''
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as _e:
-                _dbg("站点管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+                # 批 4: 解析失败不能只留痕就静默回落到内置表 —— 用户的站点配置坏了,
+                # 界面却若无其事地显示内置表, 用户会以为自己的配置被程序清掉了。
+                _dbg("站点管理", f'站点配置解析失败: {type(_e).__name__}: {_e}')
+                self._配置读取失败 = f'站点配置.json 解析失败: {type(_e).__name__}: {_e}'
         try:
             sys.path.insert(0, _HERE)
             from sites_config import SITE_PATTERNS
             return [dict(p) for p in SITE_PATTERNS]
-        except Exception:
+        except Exception as _e:
+            # 批 4 (2026-10-07): 旧实现 `except Exception: return []` **连留痕都没有**
+            # (测试/test_no_silent_except.py 只抓 body 纯 pass 的, 故长期漏网)
+            # → 表格显示"暂无站点配置", 与"用户真的没配过"完全不可区分。
+            _dbg("站点管理", f'内置站点表也不可用: {type(_e).__name__}: {_e}')
+            self._配置读取失败 = f'内置站点表不可用: {type(_e).__name__}: {_e}'
             return []
 
     def _save_configs(self) -> bool:
@@ -545,6 +565,9 @@ class SiteManagePage:
                             'content': content, 'paginate': paginate, 'error': error})
         except Exception as ex:
             _log("站点管理", f"读取插件状态失败: {ex}")
+            # 批 4: 失败要能被界面认出来 —— 否则"读失败"与"目录里真没插件"
+            # 都显示同一句"暂无站点适配插件", 用户以为插件被删了。
+            self._适配器读取失败 = f'{type(ex).__name__}: {ex}'
         return out
 
     def _render_adapters(self, force: bool = False):
@@ -556,13 +579,21 @@ class SiteManagePage:
                      s['paginate']) for s in statuses)
         if not force and sig == getattr(self, '_adapter_sig', None):
             return
+        self._适配器读取失败 = ''      # 批 4: 每轮重读前清账, 免得拿上一轮的错当本轮
         self._adapter_sig = sig
         self._adapter_view.controls.clear()
         if not statuses:
-            self._adapter_view.controls.append(
-                ft.Text("无插件 · 目录为空 (点“新建适配器”或“打开目录”)",
-                        size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
-                        font_family=FONT_STACK))
+            # 批 4: 统一空态; 并把"读取失败"与"目录为空"分开 —— 旧实现
+            # 插件读取失败(:546 只 _log)与真没插件同形, 都显示这句话。
+            _读失败 = getattr(self, '_适配器读取失败', '')
+            if _读失败:
+                self._adapter_view.controls.append(states.错误态(
+                    '适配器读取失败', _读失败, 填满=False))
+            else:
+                self._adapter_view.controls.append(states.空态(
+                    图标=ft.Icons.EXTENSION_OFF_OUTLINED, 标题='暂无站点适配插件',
+                    说明='点「新建适配器」创建, 或点「打开目录」查看 站点适配/ 文件夹。',
+                    填满=False))
             return
         for st in statuses:
             caps = []
@@ -672,10 +703,12 @@ class SiteManagePage:
             return
         self._heal_view.controls.clear()
         if not items:
-            self._heal_view.controls.append(
-                ft.Text("暂无待审建议 · 抓取中站点选择器失效时会自动发现新容器并在此列出",
-                        size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
-                        font_family=FONT_STACK))
+            # 批 4: 手写单行 → 统一空态 (填满=False: _heal_view 高度无界)。
+            # 说明保留原文案里的"什么时候会出现", 这是用户最需要的信息。
+            self._heal_view.controls.append(states.空态(
+                图标=ft.Icons.HEALING_OUTLINED, 标题='暂无待审建议',
+                说明='抓取中站点选择器失效时, 会自动发现新容器并在这里列出。',
+                填满=False))
             return
         for sug in items:
             domain = sug.get('域名', '—')
@@ -947,18 +980,18 @@ class SiteManagePage:
         self._table_view.controls.clear()
 
         if not self.configs:
-            self._table_view.controls.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.Icons.DNS_OUTLINED, size=40,
-                                color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.5),
-                        ft.Text("暂无站点配置", size=SIZE_LABEL,
-                                color=ft.Colors.ON_SURFACE_VARIANT,
-                                font_family=FONT_STACK),
-                    ], spacing=8,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=ft.Padding.symmetric(vertical=40),
-                ))
+            # 批 4: "读失败"与"真没配置"必须分开 —— 旧实现两者同形,
+            # 用户会以为自己的站点配置被清空了 (填满=False 见 ListView 说明)。
+            _错 = getattr(self, '_配置读取失败', '')
+            if _错:
+                self._table_view.controls.append(states.错误态(
+                    '站点配置读取失败', _错, 重试回调=self._重试读取配置,
+                    填满=False))
+            else:
+                self._table_view.controls.append(states.首次为空(
+                    图标=ft.Icons.DNS_OUTLINED, 标题='暂无站点配置',
+                    说明='点右上「刷新」重新读取, 或用「新建适配器」添加站点。',
+                    填满=False))
             return
 
         # 表头
