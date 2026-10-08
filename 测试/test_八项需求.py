@@ -193,6 +193,75 @@ class Test通知队列与静音(unittest.TestCase):
         self.assertFalse(界面偏好.取('提示音', True), '开关切换应持久化')
 
 
+class Test托盘终态气泡(unittest.TestCase):
+    """#2 (2026-10-09 补): 窗口最小化/隐藏到托盘时 SnackBar 不可见,
+    终态通知改走 pystray 系统气泡 —— 纯文案聚合与发送容错在此离线验证。"""
+
+    def test_单条成功文案与SnackBar一致(self):
+        from gui_components.tray import 终态气泡文本
+        self.assertEqual(终态气泡文本([{'书名': '甲', '状态': 'success', '原因': ''}]),
+                         '抓取完成: 《甲》')
+
+    def test_单条失败带原因(self):
+        from gui_components.tray import 终态气泡文本
+        self.assertEqual(终态气泡文本([{'书名': '甲', '状态': 'fail', '原因': '超时'}]),
+                         '抓取失败: 《甲》\n超时')
+
+    def test_多条聚合成功失败分行(self):
+        from gui_components.tray import 终态气泡文本
+        t = 终态气泡文本([
+            {'书名': '甲', '状态': 'success', '原因': ''},
+            {'书名': '乙', '状态': 'success', '原因': ''},
+            {'书名': '丙', '状态': 'fail', '原因': ''},
+        ])
+        self.assertIn('抓取完成 2 本', t)
+        self.assertIn('《甲》、《乙》', t)
+        self.assertIn('抓取失败 1 本', t)
+        self.assertIn('《丙》', t)
+
+    def test_超3本折叠为等(self):
+        from gui_components.tray import 终态气泡文本
+        items = [{'书名': c, '状态': 'success', '原因': ''} for c in 'ABCDE']
+        t = 终态气泡文本(items)
+        self.assertIn('抓取完成 5 本', t)
+        self.assertNotIn('《D》', t, '超过 3 本须折叠, 不得全列')
+        self.assertTrue(t.endswith('等'))
+
+    def test_空列表返回空串(self):
+        from gui_components.tray import 终态气泡文本
+        self.assertEqual(终态气泡文本([]), '')
+
+    def test_发气泡调用notify并带标题(self):
+        from gui_components.tray import 发终态气泡
+
+        class 假托盘:
+            def __init__(self):
+                self.calls = []
+
+            def notify(self, msg, title=None):
+                self.calls.append((msg, title))
+
+        icon = 假托盘()
+        self.assertTrue(发终态气泡(icon, [{'书名': '甲', '状态': 'success', '原因': ''}]))
+        self.assertEqual(len(icon.calls), 1)
+        self.assertEqual(icon.calls[0][1], '小说爬虫', '气泡须带应用标题')
+
+    def test_无托盘返回假不抛(self):
+        from gui_components.tray import 发终态气泡
+        self.assertFalse(发终态气泡(None, [{'书名': '甲', '状态': 'success', '原因': ''}]))
+        self.assertFalse(发终态气泡(None, []))
+
+    def test_notify异常静默返回假(self):
+        from gui_components.tray import 发终态气泡
+
+        class 炸托盘:
+            def notify(self, *a, **k):
+                raise RuntimeError('后端不支持')
+
+        self.assertFalse(发终态气泡(炸托盘(), [{'书名': '甲', '状态': 'fail', '原因': ''}]),
+                         'notify 异常须吞掉并返回 False (调用方回退 SnackBar)')
+
+
 class Test异常路径顺序(unittest.TestCase):
     """#2 顺序修正: task.error 先于 _记死书 先于 _set_terminal。
 
