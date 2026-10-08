@@ -281,22 +281,47 @@ def main(page: ft.Page):
         except Exception as e:
             app_log.debug("死书", f"队列排空失败: {type(e).__name__}: {e}")
 
+    def _弹终态SnackBar(n: dict) -> None:
+        行 = f"抓取完成: 《{n.get('书名', '')}》"
+        if n.get('状态') != 'success':
+            行 = f"抓取失败: 《{n.get('书名', '')}》"
+            原因 = (n.get('原因') or '').strip()
+            if 原因:
+                行 += f"\n{原因}"
+        # 2026-10-06: 改走 ui_fluent.提示条(显式 toast 底色+字色成对, 防黑底黑字)
+        page.show_dialog(提示条(行, 时长=6000))
+
+    def _窗口不在前台() -> bool:
+        """最小化或已隐藏到托盘 → 应用内 SnackBar 不可见, 终态通知走系统气泡。"""
+        try:
+            return (not page.window.visible) or page.window.minimized
+        except Exception as _e:
+            app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            return False
+
     def _排空通知():
         """终态通知排空 (八项需求 #2): 每 tick 至多一条 SnackBar —— 书名+状态+
-        失败原因, 音效已在 _set_terminal (工作线程侧) 播放, 后台挂机可感知。"""
+        失败原因, 音效已在 _set_terminal (工作线程侧) 播放, 后台挂机可感知。
+        2026-10-09: 窗口最小化/隐藏到托盘时 SnackBar 根本看不见 → 整批取空
+        聚合为一条 pystray 系统气泡 (防连续气泡互相顶掉); 托盘不可用/发送失败
+        回退首条 SnackBar (恢复窗口后至少可见一条)。"""
         try:
-            n = task_manager.取一条待弹通知()
-            if not n:
+            if _窗口不在前台():
+                n = task_manager.取一条待弹通知()
+                if n:
+                    items = [n]
+                    while True:
+                        m = task_manager.取一条待弹通知()
+                        if not m:
+                            break
+                        items.append(m)
+                    from gui_components.tray import 发终态气泡 as _发气泡
+                    if not _发气泡(_托盘["对象"], items):
+                        _弹终态SnackBar(items[0])
                 return
-            if n.get('状态') == 'success':
-                行 = f"抓取完成: 《{n.get('书名', '')}》"
-            else:
-                行 = f"抓取失败: 《{n.get('书名', '')}》"
-                原因 = (n.get('原因') or '').strip()
-                if 原因:
-                    行 += f"\n{原因}"
-            # 2026-10-06: 改走 ui_fluent.提示条(显式 toast 底色+字色成对, 防黑底黑字)
-            page.show_dialog(提示条(行, 时长=6000))
+            n = task_manager.取一条待弹通知()
+            if n:
+                _弹终态SnackBar(n)
         except Exception as e:
             app_log.debug("通知", f"终态通知展示失败: {type(e).__name__}: {e}")
 
