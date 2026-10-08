@@ -828,20 +828,20 @@ class NovelSpider:
                 self._captcha_manager.current_strategy()))
         except Exception as e:
             _log.info(f"[验证码模块] 初始化失败, 使用内置人工流程: {e}")
-        # tanmixs.com 持久化 Selenium driver: 验证码解决后复用同一浏览器实例
+        # WAF 站点持久化 Selenium driver: 验证码解决后复用同一浏览器实例
         # 避免每次创建新driver都触发WAF验证码
-        self._tanmixs_driver = None
-        self._tanmixs_user_data = os.path.join(tempfile.gettempdir(), 'tanmixs_chrome_profile')
+        self._waf_driver = None
+        self._waf_user_data = os.path.join(tempfile.gettempdir(), 'waf_chrome_profile')
         # 并发模式: 每个线程独立 driver + 独立 profile (Selenium driver 非线程安全)
-        self._tanmixs_concurrent = False
+        self._waf_concurrent = False
         # H1 修复: 并发模式的线程级 driver 槽位必须在实例上只建一次 —
         # 旧实现在方法内每次新建 threading.local(), hasattr 恒 False,
         # 每次调用都创建新 Chrome driver 且从不 quit (进程级泄漏)。
-        self._tanmixs_tls = threading.local()
+        self._waf_tls = threading.local()
         # 并发模式 driver 登记表: worker 线程结束后其 TLS 槽位不可达,
-        # close() 靠这份列表统一 quit 回收 (配合 _tanmixs_drivers_lock)
-        self._tanmixs_drivers_lock = threading.Lock()
-        self._tanmixs_all_drivers = []
+        # close() 靠这份列表统一 quit 回收 (配合 _waf_drivers_lock)
+        self._waf_drivers_lock = threading.Lock()
+        self._waf_all_drivers = []
         # 并发章节状态隔离: 以下四项原为实例属性, 多 worker 并发时互相踩踏
         # (指纹被清→重复正文/误判截断; datafile HTML 串章)。改为线程本地存储,
         # 每个抓取线程独立一份 (经属性读写, 调用点零改动)
@@ -890,8 +890,8 @@ class NovelSpider:
                               RESULT_UNCHANGED: 0, RESULT_FAIL: 0} \
             if _爬取历史可用 else {}
 
-    def _create_tanmixs_driver(self, visible=False, profile_dir=None):
-        """创建 tanmixs.com 专用的浏览器 driver (支持反检测引擎)
+    def _create_waf_driver(self, visible=False, profile_dir=None):
+        """创建 WAF 站点专用的浏览器 driver (支持反检测引擎)
 
         Args:
             visible: 是否使用非无头模式 (验证码解决时需要)
@@ -901,7 +901,7 @@ class NovelSpider:
             新建的 driver (PlaywrightDriver 或 Selenium WebDriver, 接口兼容)
         """
         if profile_dir is None:
-            profile_dir = self._tanmixs_user_data
+            profile_dir = self._waf_user_data
 
         # 引擎选择: 默认 Playwright (反检测指纹, 显著降低 WAF 验证码触发率)
         # 可在 captcha_config.json 的 browser_engine 字段切换为 selenium
@@ -918,7 +918,7 @@ class NovelSpider:
                                        user_data_dir=profile_dir)
                 return driver
             except Exception as e:
-                _log.info(f"[tanmixs] Playwright 反检测引擎启动失败: {str(e)[:100]}, 回退 Selenium")
+                _log.info(f"[WAF驱动] Playwright 反检测引擎启动失败: {str(e)[:100]}, 回退 Selenium")
 
         options = Options()
         if not visible:
@@ -940,16 +940,16 @@ class NovelSpider:
         except Exception as e:
             # profile 损坏(上次运行崩溃遗留)会导致 Chrome 无法启动:
             # 备份损坏的 profile 并换全新 profile 重试, 保证爬虫可用
-            _log.info(f"[tanmixs] 使用持久化 profile 启动失败: {str(e)[:120]}")
-            _log.info("[tanmixs] 备份损坏的 profile 并创建新 profile 重试...")
+            _log.info(f"[WAF驱动] 使用持久化 profile 启动失败: {str(e)[:120]}")
+            _log.info("[WAF驱动] 备份损坏的 profile 并创建新 profile 重试...")
             try:
                 import shutil
                 backup_dir = profile_dir + f'_corrupt_{int(time.time())}'
                 if os.path.exists(profile_dir):
                     shutil.move(profile_dir, backup_dir)
-                    _log.info(f"[tanmixs] 已备份损坏 profile 到: {backup_dir}")
+                    _log.info(f"[WAF驱动] 已备份损坏 profile 到: {backup_dir}")
             except Exception as be:
-                _log.info(f"[tanmixs] 备份失败(继续尝试): {be}")
+                _log.info(f"[WAF驱动] 备份失败(继续尝试): {be}")
                 try:
                     shutil.rmtree(profile_dir, ignore_errors=True)
                 except Exception as e:
@@ -960,8 +960,8 @@ class NovelSpider:
         driver.set_script_timeout(30)
         return driver
 
-    def _get_tanmixs_driver(self, visible=False):
-        """获取或创建 tanmixs.com 专用的持久化 Selenium driver
+    def _get_waf_driver(self, visible=False):
+        """获取或创建 WAF 站点专用的持久化 Selenium driver
 
         Args:
             visible: 是否使用非无头模式 (验证码解决时需要)
@@ -970,35 +970,35 @@ class NovelSpider:
             WebDriver 实例 (持久化, 跨请求复用; 并发模式下为线程独立实例)
         """
         # 并发模式: 每个线程独立 driver + 独立 profile (避免共享 driver 竞态与 profile 锁)
-        if self._tanmixs_concurrent:
-            tls = self._tanmixs_tls
-            if not hasattr(tls, '_tanmixs_driver'):
-                driver = self._create_tanmixs_driver(
-                    visible, os.path.join(tempfile.gettempdir(), f'tanmixs_profile_{threading.get_ident()}'))
-                with self._tanmixs_drivers_lock:
-                    self._tanmixs_all_drivers.append(driver)
-                tls._tanmixs_driver = driver
-            return tls._tanmixs_driver
+        if self._waf_concurrent:
+            tls = self._waf_tls
+            if not hasattr(tls, '_waf_driver'):
+                driver = self._create_waf_driver(
+                    visible, os.path.join(tempfile.gettempdir(), f'waf_profile_{threading.get_ident()}'))
+                with self._waf_drivers_lock:
+                    self._waf_all_drivers.append(driver)
+                tls._waf_driver = driver
+            return tls._waf_driver
 
         # 如果已有持久化driver且模式匹配, 直接复用
-        if self._tanmixs_driver is not None:
+        if self._waf_driver is not None:
             try:
                 # 测试driver是否还活着
-                _ = self._tanmixs_driver.current_url
-                return self._tanmixs_driver
+                _ = self._waf_driver.current_url
+                return self._waf_driver
             except Exception:
                 try:
-                    self._tanmixs_driver.quit()
+                    self._waf_driver.quit()
                 except Exception as e:
                     _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-                self._tanmixs_driver = None
+                self._waf_driver = None
 
-        driver = self._create_tanmixs_driver(visible)
-        self._tanmixs_driver = driver
+        driver = self._create_waf_driver(visible)
+        self._waf_driver = driver
         return driver
 
-    def _solve_tanmixs_captcha(self, driver, url):
-        """检测并处理 tanmixs.com WAF验证码
+    def _solve_waf_captcha(self, driver, url):
+        """检测并处理 WAF 站点验证码
         
         如果当前页面是验证码页面, 切换到非无头浏览器让用户解决,
         解决后复用同一driver继续。如果已有driver是非无头的, 直接在当前driver上等待。
@@ -1015,40 +1015,40 @@ class NovelSpider:
         if '__wafcaptcha' not in page_source and '_waform' not in page_source and '访问频率太高' not in page_source:
             return page_source  # 不是验证码页面, 直接返回
 
-        _log.info("[tanmixs] 检测到WAF验证码页面")
+        _log.info("[WAF驱动] 检测到WAF验证码页面")
         # 优先走验证码模块的自动识别链 (ddddocr → slider → 打码平台 → 人工)
         # 仅当配置中启用了对应识别策略时才会尝试自动识别, 否则直接进入人工流程
         if self._captcha_manager is not None:
             try:
                 solved = self._captcha_manager.handle(driver, url, page_source)
                 if solved is not None and not self._captcha_manager.is_captcha_page(solved):
-                    _log.info("[tanmixs] ✅ 验证码模块已解决 (自动识别或人工输入)")
+                    _log.info("[WAF驱动] ✅ 验证码模块已解决 (自动识别或人工输入)")
                     self._captcha_manager.record_request(True)
                     return solved
-                _log.info("[tanmixs] 验证码模块未解决, 回退内置人工流程")
+                _log.info("[WAF驱动] 验证码模块未解决, 回退内置人工流程")
             except Exception as e:
-                _log.info(f"[tanmixs] 验证码模块异常, 回退内置人工流程: {e}")
+                _log.info(f"[WAF驱动] 验证码模块异常, 回退内置人工流程: {e}")
         # 关闭当前headless driver, 切换到可见driver
         try:
             driver.quit()
         except Exception as e:
             _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        if self._tanmixs_concurrent:
+        if self._waf_concurrent:
             # 并发模式: 旧 driver 已在上方 quit, 重置当前线程的 TLS 槽位并
             # 用可见模式重建 (写入登记表供 close() 回收; 旧实现把 driver 存进
             # 方法内新建的局部 threading.local(), 方法一返回即不可达 → 泄漏)
-            visible_driver = self._create_tanmixs_driver(
-                visible=True, profile_dir=os.path.join(tempfile.gettempdir(), f'tanmixs_profile_{threading.get_ident()}'))
-            with self._tanmixs_drivers_lock:
-                self._tanmixs_all_drivers.append(visible_driver)
-            self._tanmixs_tls._tanmixs_driver = visible_driver
+            visible_driver = self._create_waf_driver(
+                visible=True, profile_dir=os.path.join(tempfile.gettempdir(), f'waf_profile_{threading.get_ident()}'))
+            with self._waf_drivers_lock:
+                self._waf_all_drivers.append(visible_driver)
+            self._waf_tls._waf_driver = visible_driver
         else:
-            self._tanmixs_driver = None
+            self._waf_driver = None
             # 创建可见driver (复用同一user-data-dir)
-            visible_driver = self._get_tanmixs_driver(visible=True)
+            visible_driver = self._get_waf_driver(visible=True)
         visible_driver.get(url)
-        _log.info("[tanmixs] 已打开浏览器窗口, 请在浏览器中输入验证码图片字符并提交")
-        _log.info("[tanmixs] 系统将自动检测验证码是否已解决 (最多等待5分钟)...")
+        _log.info("[WAF驱动] 已打开浏览器窗口, 请在浏览器中输入验证码图片字符并提交")
+        _log.info("[WAF驱动] 系统将自动检测验证码是否已解决 (最多等待5分钟)...")
 
         # 自动轮询检测验证码是否已解决
         captcha_solved = False
@@ -1058,15 +1058,15 @@ class NovelSpider:
                 cur_src = visible_driver.page_source
                 if '__wafcaptcha' not in cur_src and '_waform' not in cur_src and '访问频率太高' not in cur_src:
                     captcha_solved = True
-                    _log.info(f"[tanmixs] 验证码已解决 (等待了{(wait_round+1)*5}秒)")
+                    _log.info(f"[WAF驱动] 验证码已解决 (等待了{(wait_round+1)*5}秒)")
                     break
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
             if (wait_round + 1) % 6 == 0:
-                _log.info(f"[tanmixs] 仍在等待验证码解决... (已等待{(wait_round+1)*5}秒)")
+                _log.info(f"[WAF驱动] 仍在等待验证码解决... (已等待{(wait_round+1)*5}秒)")
 
         if not captcha_solved:
-            _log.info("[tanmixs] 验证码等待超时(5分钟)")
+            _log.info("[WAF驱动] 验证码等待超时(5分钟)")
             raise RuntimeError('验证码超时未解决')
 
         # 验证码解决后, 用同一driver访问目标URL
@@ -1076,7 +1076,7 @@ class NovelSpider:
         )
         time.sleep(2)
         page_source = visible_driver.page_source
-        _log.info(f"[tanmixs] 验证码解决后页面长度: {len(page_source)} 字符")
+        _log.info(f"[WAF驱动] 验证码解决后页面长度: {len(page_source)} 字符")
         return page_source
 
     def _get_with_js_challenge(self, url, headers=None, timeout=15):
@@ -1525,26 +1525,26 @@ class NovelSpider:
             'TE': 'trailers'
         }
         
-        # tanmixs.com: 使用持久化 Selenium driver, 验证码解决后复用同一浏览器实例
+        # WAF 站点: 使用持久化 Selenium driver, 验证码解决后复用同一浏览器实例
         # 避免每次创建新driver都触发WAF验证码
         if 'tanmixs.com' in url and selenium_available:
-            _log.info("[tanmixs] 使用持久化Selenium driver抓取")
+            _log.info("[WAF驱动] 使用持久化Selenium driver抓取")
             try:
-                driver = self._get_tanmixs_driver(visible=False)
+                driver = self._get_waf_driver(visible=False)
                 driver.get(url)
                 _wait_driver_body(driver)
-                # tanmixs 为服务端渲染静态页, driver.get 返回即内容就绪, 无需额外等待
+                # 该类站点为服务端渲染静态页, driver.get 返回即内容就绪, 无需额外等待
                 page_source = driver.page_source
                 # 检测并处理验证码 (如有)
-                page_source = self._solve_tanmixs_captcha(driver, url)
+                page_source = self._solve_waf_captcha(driver, url)
                 if '<html' in page_source.lower() or '<body' in page_source.lower():
-                    _log.info(f"[tanmixs] 成功获取页面, 长度: {len(page_source)} 字符")
+                    _log.info(f"[WAF驱动] 成功获取页面, 长度: {len(page_source)} 字符")
                     soup = BeautifulSoup(page_source, 'lxml')
                     return soup
                 else:
-                    _log.info("[tanmixs] 未能获取到HTML内容")
+                    _log.info("[WAF驱动] 未能获取到HTML内容")
             except Exception as e:
-                _log.info(f"[tanmixs] Selenium抓取失败: {e}")
+                _log.info(f"[WAF驱动] Selenium抓取失败: {e}")
                 import traceback
                 traceback.print_exc()
 
@@ -4100,7 +4100,7 @@ class NovelSpider:
             success = False
 
             # ===== 通用数据文件解码 (content_decoder): 所有站点自动生效, 优先于通用检测 =====
-            # 部分站点把正文放在独立数据文件中 (tanmixs .xs / banlvzw .book 码点流等),
+            # 部分站点把正文放在独立数据文件中 (站点专属扩展名码点流等),
             # 且正文页本身只是"加载中"占位 — 通用检测会把占位内容误判为正文,
             # 因此数据文件探测必须先于通用检测执行。
             if page_index == 0:
@@ -4273,7 +4273,7 @@ class NovelSpider:
             # 对未知站点自动识别内容模式 (qsbs_bb / html_selector), 优先尝试通用提取;
             # 已知站点的域名分支作为备用, 保证向后兼容。
             # 检测只在第1页做一次, 后续页面复用结果 (避免重复请求)
-            # tanmixs.com: requests必然401, 跳过通用检测层直接走Selenium分支, 省去每页~15秒重试
+            # WAF 站点: requests必然401, 跳过通用检测层直接走Selenium分支, 省去每页~15秒重试
             # ciyewk.com等使用数据文件模式的站点，跳过通用检测
             if site_pattern and site_pattern.get('pattern') == 'datafile':
                 # 站点配置已处理，跳过通用检测
@@ -4349,27 +4349,27 @@ class NovelSpider:
 
             # 通用层未命中或返回空内容, 尝试其他提取方式 (Selenium 等)
 
-            # 对于tanmixs.com (探秘小说网移动版), 使用持久化Selenium driver
+            # 对于该 WAF 站点移动版, 使用持久化Selenium driver
             # 正文容器为 div#chapter-content, 内含 <p class="chapter-line"> 段落
             # 段落中混有内联base64表情图, 需剔除; 首段为章节标题, 次段为元信息 (作者/字数/日期)
             # 分页: ?page=N 查询参数, 末页的下一页链接指向下一章 (无 ?page=)
-            # 验证码: 使用 _solve_tanmixs_captcha 自动检测处理, 解决后复用同一driver
+            # 验证码: 使用 _solve_waf_captcha 自动检测处理, 解决后复用同一driver
             if 'tanmixs.com' in current_url and selenium_available:
-                _log.info("[tanmixs] 使用持久化Selenium driver抓取章节内容")
+                _log.info("[WAF驱动] 使用持久化Selenium driver抓取章节内容")
                 try:
-                    driver = self._get_tanmixs_driver(visible=False)
+                    driver = self._get_waf_driver(visible=False)
                     driver.get(current_url)
                     _wait_driver_body(driver)
                     time.sleep(2)
                     # 检测并处理验证码 (如有)
-                    page_source = self._solve_tanmixs_captcha(driver, current_url)
-                    _log.info(f"[tanmixs] 页面长度: {len(page_source)} 字符")
+                    page_source = self._solve_waf_captcha(driver, current_url)
+                    _log.info(f"[WAF驱动] 页面长度: {len(page_source)} 字符")
 
                     soup = BeautifulSoup(page_source, 'lxml')
                     # 提取 div#chapter-content
                     content_div = soup.select_one('div#chapter-content')
                     if not content_div:
-                        _log.info("[tanmixs] 未找到 div#chapter-content")
+                        _log.info("[WAF驱动] 未找到 div#chapter-content")
                         page_text = ''
                     else:
                         paragraphs = []
@@ -4389,22 +4389,22 @@ class NovelSpider:
                                 continue
                             paragraphs.append(txt)
                         page_text = '\n\n'.join(paragraphs)
-                        _log.info(f"[tanmixs] 提取 {len(paragraphs)} 段, 共 {len(page_text)} 字符")
+                        _log.info(f"[WAF驱动] 提取 {len(paragraphs)} 段, 共 {len(page_text)} 字符")
 
                     if len(page_text) < 50:
-                        _log.info(f"[tanmixs] 第{page_index+1}页正文过短 ({len(page_text)}字符), 结束分页")
+                        _log.info(f"[WAF驱动] 第{page_index+1}页正文过短 ({len(page_text)}字符), 结束分页")
                         success = False
                     else:
                         import hashlib
                         # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
                         fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
                         if fingerprint == self._last_page_fingerprint:
-                            _log.info(f"[tanmixs] 第{page_index+1}页与上一页指纹相同, 停止抓取")
+                            _log.info(f"[WAF驱动] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                             success = False
                         else:
                             self._last_page_fingerprint = fingerprint
                             total_content += page_text + '\n\n'
-                            _log.info(f"[tanmixs] 第{page_index+1}页: 合并, 累计 {len(total_content)} 字符")
+                            _log.info(f"[WAF驱动] 第{page_index+1}页: 合并, 累计 {len(total_content)} 字符")
                             success = True
 
                             # 检测是否有下一页 (仅在分页URL ?page= 模式下)
@@ -4429,18 +4429,18 @@ class NovelSpider:
                                     try:
                                         validate_public_url(next_href)
                                     except ValueError:
-                                        _log.info(f"[tanmixs] 下一页URL校验失败: {next_href}")
+                                        _log.info(f"[WAF驱动] 下一页URL校验失败: {next_href}")
                                         next_href = None
                                     if next_href:
                                         # 显式递增到下一分页
                                         page_index += 1
                                         current_url = next_href
-                                        _log.info(f"[tanmixs] 检测到下一分页: {current_url}")
+                                        _log.info(f"[WAF驱动] 检测到下一分页: {current_url}")
                                         continue
                                 else:
-                                    _log.info("[tanmixs] 未找到 ?page= 链接, 本章分页结束")
+                                    _log.info("[WAF驱动] 未找到 ?page= 链接, 本章分页结束")
                 except Exception as e:
-                    _log.info(f"[tanmixs] Selenium抓取失败: {e}")
+                    _log.info(f"[WAF驱动] Selenium抓取失败: {e}")
                     import traceback
                     traceback.print_exc()
 
@@ -4485,7 +4485,7 @@ class NovelSpider:
             max_retries = 3
             success = False
             for i in range(max_retries):  # 重试机制
-                # tanmixs.com: requests必然401, 跳过重试 (已由上方Selenium分支处理)
+                # WAF 站点: requests必然401, 跳过重试 (已由上方Selenium分支处理)
                 if 'tanmixs.com' in current_url:
                     break
                 try:
@@ -5450,22 +5450,22 @@ class NovelSpider:
         """释放爬虫持有的资源: 持久化 Selenium driver、验证码模块浏览器等。
 
         GUI 停止任务 / 抓取异常中断后必须调用, 否则 Chrome 进程和临时
-        profile 目录 (tanmixs_chrome_profile 等) 会残留在系统中。
+        profile 目录 (waf_chrome_profile 等) 会残留在系统中。
         可重复调用, 幂等。"""
-        # 持久化 tanmixs driver (串行模式)
-        driver = self._tanmixs_driver
-        self._tanmixs_driver = None
+        # 持久化 WAF driver (串行模式)
+        driver = self._waf_driver
+        self._waf_driver = None
         if driver is not None:
             try:
                 driver.quit()
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-        # 持久化 tanmixs driver (并发模式): worker 线程结束后其 TLS 槽位不可达,
+        # 持久化 WAF driver (并发模式): worker 线程结束后其 TLS 槽位不可达,
         # 靠登记表统一 quit (close 在线程池收尾后的主线程执行, 可安全遍历)
-        with self._tanmixs_drivers_lock:
-            tanmixs_drivers = list(self._tanmixs_all_drivers)
-            self._tanmixs_all_drivers.clear()
-        for _d in tanmixs_drivers:
+        with self._waf_drivers_lock:
+            waf_drivers = list(self._waf_all_drivers)
+            self._waf_all_drivers.clear()
+        for _d in waf_drivers:
             try:
                 _d.quit()
             except Exception as e:
@@ -5916,11 +5916,11 @@ class NovelSpider:
                 threads, delay = 1, 1.0   # 兜底: 控制器不可用时回到最稳妥的串行
             _log.info(f"[速度自适应] 控制器构建失败, 沿用指定速度: {e}")
 
-        # tanmixs 的 WAF 按 IP 限流: 多浏览器并发会更容易触发验证码(实测并发3线程反而更慢)
+        # 该站 WAF 按 IP 限流: 多浏览器并发会更容易触发验证码(实测并发3线程反而更慢)
         # 强制串行 + 持久化 driver 复用是最优策略
-        # (速度自适应站点约束已把 tanmixs 压到标准档, 此处兜底)
+        # (速度自适应站点约束已把该站压到标准档, 此处兜底)
         if 'tanmixs.com' in catalog_url and (threads or 0) > 1:
-            _log.info("[并发] ⚠️ tanmixs.com WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
+            _log.info("[并发] ⚠️ 该站 WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
             threads = 1
 
         failed = []
@@ -6037,7 +6037,7 @@ class NovelSpider:
                         # M6: 超时被弃的章节 worker 仍在后台跑 — 显式排空并给上限/可见性。
                         # (with 退出时 shutdown(wait=True) 本就会等; 若不排空, run 收尾
                         # close() 与仍存活的 worker 相撞: 用已关闭 session 报错, 或恰在
-                        # close 后创建 tanmixs driver → Chrome 进程泄漏)
+                        # close 后创建 WAF driver → Chrome 进程泄漏)
                         if timed_out:
                             _log.info(f"等待 {len(timed_out)} 个超时章节的 worker 收尾 (每个最长 60s)...")
                             for _tf in timed_out:

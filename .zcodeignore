@@ -45,7 +45,8 @@ _tmp_*/
 # ============ 浏览器 / Selenium / Playwright 临时文件 ============
 tempdir/
 temp/
-.tanmixs_chrome_profile/
+waf_chrome_profile/
+waf_profile_*/
 chromedriver.log
 geckodriver.log
 playwright.log
