@@ -210,6 +210,29 @@ def 获取广告规则(url):
 
 
 # ============================================================
+# 站点级水印 token (站点脱钩 D层): 站点表条目可选键
+#   "watermark_tokens": [...] —— 内嵌正文的水印串 (段落内部/段尾, 非整行)
+# 由 clean_content 按域名合并移除; 公开形态 (站点表缺失) 返回空, 无水印清洗。
+# ============================================================
+
+
+def 获取水印token(url):
+    """按 URL 查询站点级水印 token 列表 (未配置返回空列表)。"""
+    try:
+        pat = get_site_pattern(url)
+        if pat:
+            toks = pat.get('watermark_tokens')
+            if isinstance(toks, list):
+                return [str(x) for x in toks if x]
+    except Exception as e:
+        try:
+            _log.info(f"[水印token] 查询失败: {e}")
+        except Exception:
+            pass  # 刻意静默: 日志链路兜底, 避免递归写日志
+    return []
+
+
+# ============================================================
 # 运行时配置合并: 站点配置.json (GUI 站点管理页写入) 覆盖/追加内置配置
 # ============================================================
 _RUNTIME_APPLIED = False
@@ -508,6 +531,59 @@ def _load_site_table():
         _log.info(f"[站点表] 已加载 {len(items)} 条内置站点 (站点适配_本地/站点表.json)")
     except Exception as e:
         _log.info(f"[站点表] 加载失败, 使用现有配置: {e}")
+
+
+# ============================================================
+# 站点代号匹配 (站点脱钩 Wave 2 步骤③): 代码内不再硬编码真实域名
+#   数据源: 站点适配_本地/站点映射.json = {代号: 域名} (不入库; 公开形态缺失)
+#   本地形态: 站点匹配(url, 'siteO') 与原 `if '域名' in url` 逐字等价 (同为子串匹配)
+#   公开形态: 映射为空 → 恒 False → 站点专属分支不触发, 走通用路径
+#             (与 _CATALOG_PARSERS 外置同一口径, 行为差异仅在"本地专属 vs 通用"之间)
+# ============================================================
+_站点代号映射 = {}
+_站点代号映射状态 = {'已加载': False}
+
+
+def _加载站点代号映射():
+    """惰性加载 站点适配_本地/站点映射.json (幂等; 缺失即公开形态, 映射留空)。"""
+    if _站点代号映射状态['已加载']:
+        return
+    _站点代号映射状态['已加载'] = True
+    try:
+        from _path_utils import get_app_base_dir
+        import json as _json
+        _p = os.path.join(get_app_base_dir(), '站点适配_本地', '站点映射.json')
+        if not os.path.isfile(_p):
+            return
+        with open(_p, 'r', encoding='utf-8') as f:
+            数据 = _json.load(f)
+        if isinstance(数据, dict):
+            for k, v in 数据.items():
+                if isinstance(k, str) and not k.startswith('_') and isinstance(v, str) and v:
+                    _站点代号映射[k.lower()] = v.lower()
+    except Exception as e:
+        try:
+            _log.info(f'[站点代号] 映射加载失败 (站点专属分支将不触发): {e}')
+        except Exception:
+            pass  # 刻意静默: 日志链路兜底, 避免递归写日志
+
+
+def 站点匹配(url, *代号s):
+    """url 是否命中任一站点代号的域名 (子串匹配, 语义同原 `if '域名' in url`)。
+
+    代号一律小写; 映射缺失 (公开形态) 或未登记的代号 → False。
+    """
+    if not url or not 代号s:
+        return False
+    _加载站点代号映射()
+    if not _站点代号映射:
+        return False
+    u = url.lower()
+    for 代号 in 代号s:
+        域 = _站点代号映射.get(str(代号).lower())
+        if 域 and 域 in u:
+            return True
+    return False
 
 
 def _register_extractors():
