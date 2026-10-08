@@ -5714,12 +5714,40 @@ class NovelSpider:
             _log.info(f"[断点续传] 删除检查点失败: {e}")
 
     def _count_written_chapters(self, output_file):
-        """统计输出文件中已写的章节数 (检查点损坏/缺失时的兜底)"""
+        """统计输出文件中已写的章节数 (检查点损坏/缺失时的兜底)。
+
+        ⚠️ **只数真正的章节标题行**：`## ` 开头但内容是裸 URL 的行是异常写入的
+        头部残留（2026-10-08 在 `novel.txt` 首行见到）。把它算成"已写 1 章"会让
+        续传位置整体偏 1 → **跳章**，实证症状正是「缺第 1 部分」。
+        （另一类虚增来源——正文里残留的 `## `——已在清洗阶段去掉，见本文件 3555 行。）
+        """
         try:
+            n = 0
             with Path(output_file).open('r', encoding='utf-8') as f:
-                return sum(1 for line in f if line.startswith('## '))
+                for line in f:
+                    if not line.startswith('## '):
+                        continue
+                    if re.match(r'^##\s+https?://', line):
+                        continue                      # 头部残留, 不是章节
+                    n += 1
+            return n
         except (FileNotFoundError, UnicodeDecodeError, OSError):
             return 0
+
+    @staticmethod
+    def _另起输出文件名(output_file) -> str:
+        """在输出文件旁另取一个不冲突的名字 (同名时加 `(N)` 序号)。
+
+        用于"既有文件属于**别的书**"时：既不能追加（越写越混），也不能截断
+        （毁掉别的书的内容）→ 只能另起一个名字写。
+        """
+        目录 = os.path.dirname(os.path.abspath(output_file))
+        主, 扩展 = os.path.splitext(os.path.basename(output_file))
+        for i in range(1, 10000):
+            候选 = os.path.join(目录, f'{主}({i}){扩展}')
+            if not os.path.exists(候选):
+                return 候选
+        raise ValueError(f'无法为 {os.path.basename(output_file)} 找到可用的新文件名')
 
     def _是否应跳过章节(self, chapter_url) -> bool:
         """增量模式判断: 该 URL 是否在时间窗口内成功抓取且未变化 (可跳过)。
@@ -6558,7 +6586,20 @@ class NovelSpider:
             else:
                 # 无有效检查点时, 用输出文件中已写章节数兜底
                 fallback = self._count_written_chapters(output_file)
-                if fallback >= total:
+                if fallback > total:
+                    # ⚠️ 文件里的章节**比本书目录还多** → 它不可能是本书。
+                    # 2026-10-08 实证: `novel.txt` 里 77 个 `## ` 行 vs 本书目录 24 章 ——
+                    # 多本书书名退化后撞成同一个文件名, 又被断点续传/增量**追加**到一起
+                    # (日志里 task_15/8/34/63/73/76 反复"以追加模式写入"同一文件)。
+                    # 此路**既不能追加**(会把别的书越写越混), **也不能截断**
+                    # (会毁掉别的书的内容) → 另起一个文件名写, 原文件保持原样。
+                    _log.info(f"⚠️ [断点续传] 输出文件已有 {fallback} 章 > 本书目录 "
+                              f"{total} 章, 判定为**别的书的文件**, 改为另起文件名写入"
+                              f"(不追加也不截断原文件): {output_file}")
+                    output_file = self._另起输出文件名(output_file)
+                    _log.info(f"[断点续传] 本次实际写入: {output_file}")
+                    self._remove_checkpoint(output_file)
+                elif fallback >= total:
                     _log.info(f"[断点续传] 输出文件已包含全部 {total} 章，从头重新抓取")
                 elif fallback > 0:
                     start = fallback
