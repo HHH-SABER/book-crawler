@@ -115,6 +115,33 @@ class Test加载器契约(unittest.TestCase):
         pag = {'type': 'function', 'function': '不存在的机制名', 'max_pages': 30}
         self.assertIsNone(sc.build_paged_url('https://example.com/a/1/2.html', 1, pag))
 
+    def test_站点匹配_公开形态映射缺失恒False(self):
+        """站点脱钩 Wave2 步骤③: 站点映射.json 缺失 (公开形态) 时
+        站点匹配 恒 False → 爬虫.py 站点专属分支不触发, 走通用路径。"""
+        import sites_config as sc
+        saved_map = dict(sc._站点代号映射)
+        saved_state = dict(sc._站点代号映射状态)
+        try:
+            # 模拟公开形态: 映射清空 + 已加载标志置位 (阻断惰性加载真实映射)
+            sc._站点代号映射.clear()
+            sc._站点代号映射状态['已加载'] = True
+            self.assertFalse(sc.站点匹配('https://example.com/book/1/', 'siteO'))
+            # URL 恰含代号字面量也不得命中 (匹配的是映射中的域名, 非代号本身)
+            self.assertFalse(
+                sc.站点匹配('https://example.com/x/siteO/1.html', 'siteO'))
+            # 多代号 / 大小写混合 URL 同样恒 False
+            self.assertFalse(sc.站点匹配(
+                'https://WWW.Example.COM/1.html', 'siteO', 'siteAD'))
+            # 参数边界: 空 url / None / 无代号 → False (不抛错)
+            self.assertFalse(sc.站点匹配('', 'siteO'))
+            self.assertFalse(sc.站点匹配(None, 'siteO'))
+            self.assertFalse(sc.站点匹配('https://example.com/1.html'))
+        finally:
+            sc._站点代号映射.clear()
+            sc._站点代号映射.update(saved_map)
+            sc._站点代号映射状态.clear()
+            sc._站点代号映射状态.update(saved_state)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
