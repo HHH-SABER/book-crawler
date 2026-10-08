@@ -966,6 +966,138 @@ class TestNovelPathIndexList(unittest.TestCase):
         self.assertEqual(self.解析('https://www.example.com/'), ('', ''))
 
 
+class TestNovelPath数字分页(unittest.TestCase):
+    """_resolve_novel_paths 模式8 (2026-10-08 实网取证新增)。
+
+    形态: **字母数字书号 + 纯数字分页/章节页, 且 URL 里没有 index**, 如
+    `/<书号>/1.html`。此前**七个模式没有一个命中**: 模式2/3 要求前缀纯字母
+    (`ab12` 这类含数字), 模式5 要求 URL 带 index/indexlist, 模式6 要求末段 ≥2 位
+    字母数字且无扩展名。结果 novel_path 为空 → 通用提取的
+    `novel_path and novel_path in href` 恒假 → **整页 47 个链接全被过滤 → 0 章**。
+    实网日志: `当前小说路径:` (空) → `找到 47 个链接` → `共找到 0 个章节`。
+    """
+
+    def setUp(self):
+        import 爬虫
+        self.解析 = 爬虫._resolve_novel_paths
+
+    def test_字母数字书号_数字分页(self):
+        self.assertEqual(
+            self.解析('https://example.com/ab12/1.html'),
+            ('/ab12/', '/ab12/'))
+        self.assertEqual(
+            self.解析('https://example.com/ab12/24.html'),
+            ('/ab12/', '/ab12/'))
+
+    def test_纯数字段不抢模式4(self):
+        """`/2024/1.html` 的段是纯数字 → 交给模式4按"数字ID"处理, 模式8 不得抢。"""
+        self.assertEqual(self.解析('https://x.example.com/2024/1.html'),
+                         ('2024', '2024'))
+
+    def test_带index时仍走模式5(self):
+        self.assertEqual(
+            self.解析('https://m.example.com/ab12/index.html'),
+            ('/ab12/', '/ab12/'))
+
+    def test_更早的模式仍优先(self):
+        self.assertEqual(self.解析('https://www.example.com/books/301597.html'),
+                         ('/books/301597/', '/books/301597/'))
+        self.assertEqual(self.解析('https://www.example.com/97_97855/'),
+                         ('/97_97855/', '/97_97855/'))
+
+    def test_根路径与非章节页仍为空(self):
+        for url in ('https://www.example.com/',
+                    'https://www.example.com/ab12/',
+                    'https://www.example.com/ab12/liked.html'):
+            with self.subTest(url=url):
+                self.assertEqual(self.解析(url), ('', ''))
+
+
+class Test非章节页被排除(unittest.TestCase):
+    """导航/功能页不得被当成章节 (2026-10-08 实网取证)。
+
+    实网: 「[寻找更多新章] -> /<书号>/liked.html」通过了 `novel_path in href` 过滤
+    被当章节抓 → 正文为空、质检 0 分, 还占掉一个章节号 →
+    误导性报告 "抓取失败章节号 (1): [1]"。
+    """
+
+    def setUp(self):
+        import 爬虫
+        self.蜘蛛 = 爬虫.NovelSpider('https://example.com')
+
+    def tearDown(self):
+        self.蜘蛛.close()
+
+    def _打桩(self, html):
+        from bs4 import BeautifulSoup
+        self.蜘蛛.inspect_page = lambda url, polite_delay=True: BeautifulSoup(
+            html, 'html.parser')
+
+    def test_导航页被排除且正文章保留(self):
+        self._打桩('<html><body>'
+                 '<a href="/book/12345/liked.html">[寻找更多新章]</a>'
+                 '<a href="/book/12345/index.html">返回目录</a>'
+                 + ''.join(f'<a href="/book/12345/{i}.html">第 {i} 章</a>'
+                           for i in range(1, 6))
+                 + '</body></html>')
+        章 = self.蜘蛛.get_chapter_list('https://example.com/book/12345/1.html')
+        网址s = [c['url'] for c in 章]
+        self.assertFalse(any('liked.html' in u for u in 网址s),
+                         f'导航页被当成章节了: {网址s}')
+        self.assertFalse(any('index.html' in u for u in 网址s),
+                         f'目录页被当成章节了: {网址s}')
+        self.assertGreaterEqual(len(章), 5, f'正常章节被误伤: {网址s}')
+
+    def test_非章节页名清单本身(self):
+        """清单要含取证到的那几个, 且不得把常见章节写法列进去。"""
+        import 爬虫
+        名单 = 爬虫._非章节页名()
+        for 应含 in ('/liked.html', '/index.html', '/indexlist.html'):
+            self.assertIn(应含, 名单)
+        for 不该含 in ('/chapter-1.html', '/1.html'):
+            self.assertNotIn(不该含, 名单)
+
+
+class Test绝对化链接(unittest.TestCase):
+    """`_绝对化链接`: 协议相对 `//host/path` 与缺前导斜杠的相对路径 (2026-10-08)。"""
+
+    def setUp(self):
+        import 爬虫
+        self.蜘蛛 = 爬虫.NovelSpider('https://example.com')
+
+    def tearDown(self):
+        self.蜘蛛.close()
+
+    def test_协议相对不再拼坏(self):
+        """实网取证: 页面里有 `//ft.example.com/1.html` (镜像站)。
+
+        旧写法 `base_url + href` 会拼出 `https://example.com//ft.example.com/...`
+        这种不存在的地址, 抓它必失败却仍占一个"章节"位。
+        """
+        self.assertEqual(
+            self.蜘蛛._绝对化链接('//ft.example.com/1.html'),
+            'https://ft.example.com/1.html')
+
+    def test_站内绝对路径(self):
+        self.assertEqual(self.蜘蛛._绝对化链接('/2.html'),
+                         'https://example.com/2.html')
+
+    def test_缺前导斜杠的相对路径(self):
+        """旧写法会拼成 `https://example.coma/2.html` (域名粘连) —— 现已补斜杠。"""
+        self.assertEqual(self.蜘蛛._绝对化链接('a/2.html'),
+                         'https://example.com/a/2.html')
+
+    def test_已是绝对URL不动(self):
+        for url in ('http://x.example.com/a', 'https://x.example.com/a'):
+            with self.subTest(url=url):
+                self.assertEqual(self.蜘蛛._绝对化链接(url), url)
+
+    def test_空值返回空(self):
+        for 空 in ('', None, '   '):
+            with self.subTest(值=空):
+                self.assertEqual(self.蜘蛛._绝对化链接(空), '')
+
+
 class _FakeWafResp:
     """脚本化响应: 覆盖检测器/WAF循环访问到的最小属性面。"""
 
