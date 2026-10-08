@@ -237,5 +237,49 @@ class Test收尾汇总接线(unittest.TestCase):
                              '中断的任务不该报一致性告警 (文件本就是半截的)')
 
 
+class Test续传计数与另起名(unittest.TestCase):
+    """缺「第 1 部分」的机制 + 防"混书越写越混" (2026-10-08 补)。"""
+
+    def setUp(self):
+        self._目录 = tempfile.TemporaryDirectory(prefix='nc_count_')
+        self.目录 = Path(self._目录.name)
+
+    def tearDown(self):
+        self._目录.cleanup()
+
+    def _写(self, 名, 文本):
+        p = self.目录 / 名
+        p.write_text(文本, encoding='utf-8')
+        return p
+
+    def test_裸URL头不算章节(self):
+        """`## <URL>` 是异常写入的头部残留; 算成 1 章会让续传位置偏 1 → 跳章。"""
+        p = self._写('a.txt', '## https://example.com/book/index.html\n\n'
+                             '## 第2部分\n\n正文\n\n## 第3部分\n\n正文\n')
+        self.assertEqual(C.NovelSpider._count_written_chapters(None, str(p)), 2,
+                         'URL 头被算成了章节 → 续传会跳章 (实证症状: 缺第 1 部分)')
+
+    def test_正常章节照数(self):
+        p = self._写('b.txt', ''.join(f'## 第{i}章 标题\n\n正文\n\n'
+                                     for i in range(1, 6)))
+        self.assertEqual(C.NovelSpider._count_written_chapters(None, str(p)), 5)
+
+    def test_文件不存在返回0(self):
+        self.assertEqual(
+            C.NovelSpider._count_written_chapters(None, str(self.目录 / 'x.txt')), 0)
+
+    def test_另起文件名避让既有文件(self):
+        (self.目录 / '书.txt').write_text('x', encoding='utf-8')
+        (self.目录 / '书(1).txt').write_text('x', encoding='utf-8')
+        新 = C.NovelSpider._另起输出文件名(str(self.目录 / '书.txt'))
+        self.assertEqual(os.path.basename(新), '书(2).txt')
+
+    def test_另起名字不覆盖原文件(self):
+        p = self._写('原.txt', '原始内容不能被毁')
+        新 = C.NovelSpider._另起输出文件名(str(p))
+        self.assertNotEqual(os.path.abspath(新), os.path.abspath(str(p)))
+        self.assertEqual(p.read_text(encoding='utf-8'), '原始内容不能被毁')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
