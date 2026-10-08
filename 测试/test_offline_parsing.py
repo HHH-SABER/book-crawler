@@ -796,6 +796,10 @@ class Test站点O_目录取自章节页(unittest.TestCase):
         未声明/无匹配域名 → None; 异常 → None (不阻断抓取)。"""
         import sites_config
         saved = dict(sites_config.ADAPTERS)
+        saved_loaded = sites_config._ADAPTERS_LOADED
+        # get_adapter 内部会 load_adapters(): 首建真实站点表会覆盖下方注入,
+        # 置位幂等标志阻断重建 (公开形态下本测试只验证注入表的分发行为)
+        sites_config._ADAPTERS_LOADED = True
 
         def fake_fn(url, base_url=None):
             return 'https://x.example/book/1/'
@@ -818,6 +822,7 @@ class Test站点O_目录取自章节页(unittest.TestCase):
                 'https://unknown.example.com/book/1/2.html'))
         finally:
             sites_config.ADAPTERS = saved
+            sites_config._ADAPTERS_LOADED = saved_loaded
 
 
 class Test站点O_样本(unittest.TestCase):
