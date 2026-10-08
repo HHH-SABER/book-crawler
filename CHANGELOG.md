@@ -1265,7 +1265,7 @@
   因此备注列不会被覆盖。
 - **同书不同站主动标注**（用户要求"保留但标作或说明"）：检出 3 组 ——
   示例书名丁（示例站点.example.com / siteaf.example.cc / book.siteai.example.net）、示例书名戊（sitef.example.com /
-  sitez.example.com）、端庄美艳教师妈妈的沉沦（siteo.example.cc / sites.example.com），全部保留并在备注列互指。
+  sitez.example.com）、示例书名己（siteo.example.cc / sites.example.com），全部保留并在备注列互指。
 - **同站同书只留一条**在程序清单：`sitef.example.com/book/3432/1.html` 与 `/book/3432/`
   是同域名同书的两个入口，程序清单只留后者（带书名），前者在母表保留并注明指向。
 - **爬取历史兜底**：只在 `爬取历史.json` 里出现、别处无 URL 的站点（siteo.example.cc / sitec.example.cc /
@@ -2457,7 +2457,7 @@
 
 - **新站接入**：`脚本/probe_adapter.py` 探测辅助（URL → 适配草稿）、
   `脚本/replay_consistency.py` 样本回放验收（正文页模式判定一致率 5/5）、
-  sitex（星光书苑）分卷结构适配、《少年阿宾》124 卷完整抓取验证、
+  sitex 分卷结构适配、示例书名（124 卷）完整抓取验证、
   "找回新域名"类广告通用过滤
 
 ### 测试

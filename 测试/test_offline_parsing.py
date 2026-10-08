@@ -859,7 +859,8 @@ class Test站点O_样本(unittest.TestCase):
         title = self.mod.get_title(
             soup, 'https://www.sitef.example.com/book/3432/',
             'https://www.sitef.example.com')
-        self.assertEqual(title, '我的美母教师')
+        # 期望书名外置到本地 fixture (红线: 书名不入库); 公开形态上方 _read 已跳过
+        self.assertEqual(title, _read('sitef_期望书名.txt').strip())
 
 
 class TestSortSampleIndex(unittest.TestCase):
