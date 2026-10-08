@@ -44,8 +44,8 @@ class Test书名退化口径(unittest.TestCase):
                    'novel(1)', '小说(2)', ' 小说(3) '):
             with self.subTest(值=真):
                 self.assertTrue(C._书名已退化(真), f'{真!r} 应判为退化')
-        for 假 in ('凡人策', '十日终焉', 'novel 外传', '小说集', 'novelx',
-                   '端庄美艳教师妈妈的沉沦',
+        for 假 in ('示例书名甲', '示例书名乙', 'novel 外传', '小说集', 'novelx',
+                   '示例书名丙',
                    # 大小写**刻意**不折叠: 死书处理 用的是精确匹配, 这里必须同口径,
                    # 否则就出现"文件名回退了但死书判定不认"的漂移 (本文件的第一个用例在守这条)。
                    'NOVEL'):
@@ -57,7 +57,7 @@ class Test从URL取书标识(unittest.TestCase):
 
     def test_取域名与路径段(self):
         表 = {
-            'https://banlvzw.com/4y9k/index.html': 'banlvzw.com_4y9k',
+            'https://example.com/4y9k/index.html': 'example.com_4y9k',
             'https://m.example.com/abc/def.html': 'example.com_abc',
             # 末段是纯数字时它就是"书号", 比上一级目录更有辨识度 → 取它
             'http://www.site.example.org/book/123': 'site.example.org_123',
@@ -125,8 +125,8 @@ class Test输出一致性自检(unittest.TestCase):
         self.assertTrue(any('重号' in x for x in 问题), 问题)
 
     def test_混入其它书被报出(self):
-        p = self._写('甲书.txt', ['第1章 a', '第2章 b', '十日终焉 第25章 分歧点'])
-        self._写('全本解锁：十日终焉（TXT+云书架）.txt', ['第1章 x'])
+        p = self._写('甲书.txt', ['第1章 a', '第2章 b', '示例书名乙 第25章 分歧点'])
+        self._写('示例书名乙（TXT+云书架）.txt', ['第1章 x'])
         问题 = self._查(p, '甲书')
         self.assertTrue(any('混入其它书' in x for x in 问题), 问题)
 
