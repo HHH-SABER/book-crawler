@@ -380,7 +380,16 @@ def load_adapters():
                 domain = ''
                 if isinstance(site, dict) and site.get('domain'):
                     domain = str(site['domain']).strip()
-                    _merge_site_pattern(site)
+                    # 站点脱钩 Wave 2: 允许适配器**只登记 parse_catalog 而不并入 SITE_PATTERNS**。
+                    # 为什么需要: 有些站点原先没有任何站点表条目, 走的是
+                    # `get_site_pattern() -> None`; 若给它 upsert 一个最小条目,
+                    # get_site_pattern() 就变成真值, 会改变 `if 站点配置:` 类分支的行为。
+                    # 声明 `SITE = {'domain': …, '仅注册解析器': True}` 即跳过合并 →
+                    # 行为与原内置解析器**完全一致**。(字段缺省 = 原行为, 向后兼容)
+                    if site.get('仅注册解析器'):
+                        _log.info(f"[适配器] {fname}: 仅注册解析器, 不并入站点表")
+                    else:
+                        _merge_site_pattern(site)
                 if not domain:
                     _log.info(f"[适配器] 跳过 {fname}: 未定义 SITE['domain']")
                     continue
