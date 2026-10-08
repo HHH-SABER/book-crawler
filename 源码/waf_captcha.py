@@ -80,6 +80,32 @@ def _ddddocr_enabled() -> bool:
     return _USE_DDDDOCR
 
 
+def looks_like_waf_captcha(text: str) -> bool:
+    """**状态码无关**的质询页特征判定 (2026-10-08 新增)。
+
+    为什么要它: **目录解析阶段**手上只有抓到的 HTML, 拿不到状态码, 而正是这里
+    出过事故 —— 命中 WAF 质询页时, 页面自身的链接被当章节收下
+    (实抓日志: `找到 2 个链接` → `链接 1: …/1.html?from=…`), 标题退化成 URL
+    写进正文, 就是历史上的 `## <URL>` 头部残留, 后续让续传计数偏 1 → 跳章。
+
+    口径 = 两类形态的**并集**:
+      - 经典: body 含 `__wafcaptcha` 且含"验证码";
+      - 内容型: body 含"访问验证" 且含 `check_code`。
+
+    与 `is_waf_captcha_page` 的分工: 后者是**请求层**判定(要状态码, 条件更严,
+    用于决定"要不要进解答流程"); 本函数是**解析层**判定, 只用于"别把质询页里的
+    链接当章节"。并集在此处是**安全方向**: 即使偶发误判, 代价也只是"这次没解析出
+    目录"(可重试), 而不会写错数据。
+    """
+    if not text:
+        return False
+    if '__wafcaptcha' in text and ('验证码' in text or '_waform' in text):
+        return True
+    if '访问验证' in text and 'check_code' in text:
+        return True
+    return False
+
+
 def is_waf_captcha_page(status_code: int, text: str) -> bool:
     """判断响应是否为 WAF 图片验证码拦截页
 

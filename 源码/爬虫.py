@@ -498,6 +498,20 @@ def _is_ad_line(line, 额外正则=None):
     return False
 
 
+def _非章节页名() -> tuple:
+    """目录页里"看着像章节、其实是导航/功能区"的链接特征 (2026-10-08 实网取证)。
+
+    实网: <站点> 的「[寻找更多新章] -> /<书号>/liked.html」通过了 `novel_path in href`
+    过滤被当成章节抓 → **正文为空、质检 0 分, 还占掉一个章节号**, 于是
+    "抓取失败章节号 (1): [1]" 这种误导性报告就出来了 (实抓日志逐字可见)。
+
+    只收**确定不是章节**的页名, 不用"必须纯数字"这类激进规则 —— 后者会误伤
+    `chapter-123.html` / 拼音 slug 等正当写法。
+    """
+    return ('/ch1.html', '/dx1.html', '/index.html', '/indexlist.html',
+            '/liked.html', '/bookcase.html', '/comment.html', '/about.html')
+
+
 def _resolve_novel_paths(catalog_url):
     r"""按站点规则计算小说路径前缀 (第 4 批重构: 从 get_chapter_list 抽出)。
 
@@ -608,6 +622,20 @@ def _resolve_novel_paths(catalog_url):
                                 if path7:
                                     novel_path = f"{path7.group(1)}/"
                                     _log.info(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
+                                else:
+                                    # 模式8: /<书号>/1.html → /<书号>/ (2026-10-08 新增, 实网取证)
+                                    # 「字母数字书ID + 纯数字章节页, 且 URL 里没有 index」——
+                                    # 这一形态此前**没有任何模式命中** (模式2/3 要求前缀纯字母;
+                                    # 模式5 要求 URL 带 index; 模式6 要求末段 ≥2 位字母数字且无扩展名)
+                                    # → novel_path 为空 → 通用提取按 `novel_path in href` 一条都接不住
+                                    # → 判 0 章。实网: <站点> 的 /<书号>/1.html, 页面**真有**
+                                    # 本书 24 个分页链接与「返回目录 /<书号>/index.html」。
+                                    # `(?!\d+/)` 排除纯数字段 (那类由模式4按"数字ID"处理, 不抢它)。
+                                    path8 = re.search(
+                                        r'/((?!\d+/)[A-Za-z0-9]{2,12})/\d+\.html?$', catalog_url)
+                                    if path8:
+                                        novel_path = f"/{path8.group(1)}/"
+                                        _log.info(f"[路径提取] 模式8: 从URL提取小说路径 {novel_path}")
 
         novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
 
@@ -2441,6 +2469,27 @@ class NovelSpider:
             _log.info(f"  ... (共 {len(chapters)} 章)")
         return chapters
 
+    def _绝对化链接(self, href: str) -> str:
+        """把页面里的 href 补成可直接请求的绝对 URL。
+
+        ⚠️ 必须处理**协议相对**写法 `//host/path` —— 实网取证:
+        页面里有 `//ft.example.com/<书号>/1.html` (镜像站)。旧写法
+        `self.base_url + href` 会拼成 `https://<站点>//ft.example.com/...`
+        这种**根本不存在的地址**: 抓它必然失败, 却会被当成一个"章节"占位
+        (章节标题/编号都可能是错的)。
+        顺带修掉"相对路径缺前导斜杠"的同类拼接错误 (`base_url + 'a/1.html'`)。
+        """
+        href = (href or '').strip()
+        if not href:
+            return ''
+        if href.startswith('//'):
+            return 'https:' + href
+        if href.startswith(('http://', 'https://')):
+            return href
+        if href.startswith('/'):
+            return self.base_url + href
+        return self.base_url + '/' + href
+
     def get_chapter_list(self, catalog_url, sort_chapters=False):
         """
         从小说目录页提取章节列表。
@@ -2478,6 +2527,24 @@ class NovelSpider:
         # inspect_page 三次重试耗尽 (:1493) 与 Selenium 兜底失败 (:1533-1534)
         # 都 return BeautifulSoup('', 'lxml') 而不抛异常, 这是唯一可抓的信号。
         self._目录页为空 = not str(soup).strip()
+
+        # 死书信号② (2026-10-08): **WAF 质询页被当成目录页**。
+        # 质询页里只有"自身链接 + 站点首页"这类导航, 通用链接选择会把它们当章节收下
+        # (实抓实证: `找到 2 个链接` → `链接 1: …/1.html?from=…`), 标题退化成 URL
+        # 写进正文 = 历史上的 `## <URL>` 头部残留, 又会让续传计数偏 1 而跳章。
+        # 这里直接判"没拿到真实目录"并返回空, 不进入任何链接收集。
+        self._目录页被质询 = False
+        try:
+            from waf_captcha import looks_like_waf_captcha as _像质询页
+            if _像质询页(str(soup)):
+                self._目录页被质询 = True
+                _log.info("[目录解析] ⚠️ 抓到的是 WAF 验证码质询页, 不是真实目录 → "
+                          "判定为『未拿到目录』, 不把质询页里的链接当章节 "
+                          "(启用 captcha_config.json 的 strategies.dddddocr.enabled=true "
+                          "可让自动识别处理该质询)")
+                return []
+        except ImportError as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__} (waf_captcha 不可用, 跳过质询页判定)')
 
         # ===== 站点专属目录解析 (第 4 批重构: 原为内联的 ~660 行 if 链) =====
         # 命中站点即返回其章节列表; 未命中返回 None, 继续走下方通用流程。
@@ -2948,12 +3015,12 @@ class NovelSpider:
                                 if 'javascript:' in href:
                                     continue
                                 # 过滤掉可能的目录页和下载页
-                                if any(keyword in href for keyword in ['/ch1.html', '/dx1.html', '/index.html', '/index_']):
+                                if any(keyword in href for keyword in list(_非章节页名()) + ['/index_']):
                                     continue
                                 # 过滤掉非章节链接（如排序链接）
                                 if '正序' in text or '倒序' in text or '切换' in text or text == '开始阅读':
                                     continue
-                                url = self.base_url + href if not href.startswith('http') else href
+                                url = self._绝对化链接(href)
                                 chapters.append({'title': text, 'url': url})
                                 _log.info(f"添加链接: {text} -> {url}")
                         else:
@@ -2972,7 +3039,7 @@ class NovelSpider:
                                 if 'javascript:' in href:
                                     continue
                                 # 过滤掉可能的目录页和下载页
-                                if any(keyword in href for keyword in ['/ch1.html', '/dx1.html', '/index.html']):
+                                if any(keyword in href for keyword in list(_非章节页名())):
                                     continue
                                 # 过滤掉路径结尾的链接（可能是目录页）
                                 if href.endswith(novel_path):
@@ -2980,7 +3047,7 @@ class NovelSpider:
                                 # 过滤掉非章节链接（如排序链接）
                                 if '正序' in text or '倒序' in text or '切换' in text:
                                     continue
-                                url = self.base_url + href if not href.startswith('http') else href
+                                url = self._绝对化链接(href)
                                 chapters.append({'title': text, 'url': url})
                 
                 # 对于pjxdd.com网站，尝试直接从文本中提取链接
@@ -3038,8 +3105,13 @@ class NovelSpider:
                 nav_filtered += 1
                 _log.info(f"[章节过滤] 移除导航链接: '{title_stripped[:30]}' -> {chap['url']}")
                 continue
-            # 过滤目录/列表/首页链接 (URL 特征: list/mulu/catalog 页或站点根)
+            # 过滤目录/列表/首页链接 (URL 特征: list/mulu/catalog 页, 站点根,
+            # 以及**实网取证到的导航/功能页名**) —— 2026-10-08: <站点> 的
+            # 「[寻找更多新章] -> /<书号>/liked.html」不在原词表里, 被当章节抓,
+            # 正文为空、质检 0 分, 还占掉一个章节号 → 误报"抓取失败章节号 [1]"。
+            # 放在这个统一收口处, 才能覆盖上面各个选择器分支 (逐分支补已漏过一次)。
             if re.search(r'/(list|mulu|catalog|booklist)\d*\.html', chap['url']) or \
+                    any(k in chap['url'] for k in _非章节页名()) or \
                     chap['url'].rstrip('/') == self.base_url.rstrip('/'):
                 nav_filtered += 1
                 _log.info(f"[章节过滤] 移除目录页链接: '{title_stripped[:30]}' -> {chap['url']}")
@@ -7424,7 +7496,17 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
                                       _死.get('已抓章节', 0),
                                       _死.get('页面为空', False))
             elif not isinstance(last_error, 死书错误):
-                last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
+                if getattr(src_spider, '_目录页被质询', False):
+                    # 2026-10-08: 0 章的真实原因是"抓到的是 WAF 质询页" ——
+                    # 泛泛报"未提取到章节"会让用户以为是站点结构变了/需要适配,
+                    # 而不是"先过验证码"。这里给可照做的指引。
+                    last_error = RuntimeError(
+                        "目录页被 WAF 验证码质询页拦截（未拿到真实目录, 故无章节可抓）; "
+                        "可在 captcha_config.json 启用 "
+                        "strategies.dddddocr.enabled=true 让自动识别处理, "
+                        "或稍后重试等站点限频解除")
+                else:
+                    last_error = RuntimeError("未提取到章节，所有可用源均未能完成抓取")
             continue
         last_result = result
         any_content = any_content or total_n > len(failed)
