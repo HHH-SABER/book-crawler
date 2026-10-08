@@ -17,9 +17,9 @@ import 任务事件 as _任务事件
     5. 断点续传 / 进度条显示 / 章节数字排序
 
 正文模式识别顺序（通用分发层优先）：
-    a. qsbs_bb      — <script>qsbs.bb('BASE64')</script> 加密块（云趣阁/zhiruo/biquwx/ahxsw 等）
-    b. ajax_two_step — /api/read_sign.php 两步 AJAX 动态加载（11bzw.org 等）
-    c. html_selector — 遍历 14 种常见 CSS 选择器取最长正文（yqyp.net 等）
+    a. qsbs_bb      — <script>qsbs.bb('BASE64')</script> 加密块（siteAA/siteW/siteY/siteP 等）
+    b. ajax_two_step — /api/read_sign.php 两步 AJAX 动态加载（siteZ 等）
+    c. html_selector — 遍历 14 种常见 CSS 选择器取最长正文（siteAD 等）
     d. selenium      — 以上均失败时，用浏览器渲染兜底
 
 默认输出目录：项目根目录/抓取结果/（基于脚本路径计算，避免从不同 cwd 启动产生重复）
@@ -103,10 +103,15 @@ try:
         resolve_catalog_from_chapter,
         validate_public_url,
         解析提取器名, 提取器已注册,
+        站点匹配,
     )
     SITES_CONFIG_AVAILABLE = True
 except ImportError:
     SITES_CONFIG_AVAILABLE = False
+
+    def 站点匹配(url, *代号s):
+        """兜底: sites_config 不可用时无本地映射表, 站点专属分支一律不触发。"""
+        return False
 
     def validate_public_url(url):
         """本地兜底 URL 校验 (sites_config 未导入时使用)"""
@@ -241,7 +246,7 @@ def _split_range_digits(digits):
 
 
 def _format_range_chapter_title(text):
-    """将站点区间式数字标题规范化为 "第N-M章"（630wang/ltbook等按2章1页发布）：
+    """将站点区间式数字标题规范化为 "第N-M章"（siteAE/siteAF等按2章1页发布）：
     "12"→"第1-2章"、"9"→"第9章"、"1112"→"第11-12章"；
     "【书名】（3-4）"→"第3-4章"、"（10）"→"第10章"；无法识别时返回原文本。"""
     if not text:
@@ -374,7 +379,7 @@ _CONTENT_FILTER_KEYWORDS = [
     '本站爬虫遵循robots协议', '本站仅对抓取到的内容',
     # 阅读器提示
     '请勿开启浏览器阅读模式',
-    # 元信息标记 (云趣阁等站点在正文前插入的元数据)
+    # 元信息标记 (siteAA/siteAB 等站点在正文前插入的元数据)
     '创作者：', '创作完成日：', '最新章节txt——',
     '最新章节列表', '刚刚更新',
     # JS 残留 (Base64 解码或渲染失败时的脚本碎片)
@@ -387,11 +392,10 @@ _CONTENT_FILTER_KEYWORDS = [
 ]
 
 # 站点内嵌水印 token (嵌入正文段落内部/段尾, 非整行, 行级过滤抓不到):
-# orion34g.com 等站点在 qsbs_bb 解码后的每段末尾嵌入 "W站点名" 字符作水印。
-# 精确匹配已知 token 并连同前后空白一起移除, 不误伤正文 (如 "W先生" 等写法)。
-_WATERMARK_TOKENS = (
-    'W阿木战恋雪',   # orion34g.com 内嵌水印
-)
+# 站点级 token 已外置站点表 watermark_tokens 字段 (站点脱钩 D层),
+# clean_content 经 sites_config.获取水印token(site_url) 按域名合并;
+# 此处内置为空 —— 公开形态无站点表即无水印清洗, 本地形态行为不变。
+_WATERMARK_TOKENS = ()
 
 # 行内 URL/邮箱剥离正则 (clean_content 的 URL 行处理):
 # 旧实现"整行含 URL 即删"会误杀含链接的正文行; 现在只剥离 URL 本身,
@@ -522,8 +526,8 @@ def _resolve_novel_paths(catalog_url):
     Returns:
         (novel_path, novel_path_alt): 两个候选路径前缀
     """
-    if 'hatxt.cc' in catalog_url:
-        _log.info("检测到hatxt.cc网站，使用专门的处理逻辑")
+    if 站点匹配(catalog_url, 'siteR'):
+        _log.info("检测到siteR网站，使用专门的处理逻辑")
         # 提取小说ID
         novel_id_pattern = re.search(r'/books/(\d+)', catalog_url)
         novel_id = novel_id_pattern.group(1) if novel_id_pattern else ''
@@ -531,33 +535,33 @@ def _resolve_novel_paths(catalog_url):
         # 构建两种可能的路径格式
         novel_path = f'/books/{novel_id}/'
         novel_path_alt = f'/books/{novel_id}'  # 用于匹配194971_1.html这种格式
-    # 特殊处理pjxdd.com网站
-    elif 'pjxdd.com' in catalog_url:
-        _log.info("检测到pjxdd.com网站，使用专门的处理逻辑")
+    # 特殊处理siteO网站
+    elif 站点匹配(catalog_url, 'siteO'):
+        _log.info("检测到siteO网站，使用专门的处理逻辑")
         # 提取小说路径
         novel_path_pattern = re.search(r'(/xiaoshuo/\d+/)', catalog_url)
         novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
-        novel_path_alt = novel_path  # 对于pjxdd.com，两种路径格式相同
-    # 特殊处理ahxsw.com网站
-    elif 'ahxsw.com' in catalog_url:
-        _log.info("检测到ahxsw.com网站，使用专门的处理逻辑")
+        novel_path_alt = novel_path  # 对于siteO，两种路径格式相同
+    # 特殊处理siteP网站
+    elif 站点匹配(catalog_url, 'siteP'):
+        _log.info("检测到siteP网站，使用专门的处理逻辑")
         # 提取小说ID路径，如 /book/143259/
         novel_path_pattern = re.search(r'(/book/\d+/)', catalog_url)
         novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
-        # ahxsw.com的章节链接格式为 /read/143/143259/xxx.html
+        # siteP的章节链接格式为 /read/143/143259/xxx.html
         # 提取/read/路径部分用于匹配
         read_path_pattern = re.search(r'(/read/\d+/\d+/)', catalog_url)
         novel_path_alt = read_path_pattern.group(1) if read_path_pattern else '/read/'
         _log.info(f"当前小说路径: {novel_path}, 读取路径: {novel_path_alt}")
-    elif '5hbook.net' in catalog_url:
-        _log.info("检测到5hbook.net网站，使用专门的处理逻辑")
+    elif 站点匹配(catalog_url, 'siteQ'):
+        _log.info("检测到siteQ网站，使用专门的处理逻辑")
         # 提取小说ID路径，如 /books/539.html → /books/539/
         novel_path_pattern = re.search(r'(/books/\d+)\.html', catalog_url)
         novel_path = (novel_path_pattern.group(1) + '/') if novel_path_pattern else ''
         novel_path_alt = novel_path
         _log.info(f"当前小说路径: {novel_path}")
-    elif 'exotxt.net' in catalog_url:
-        _log.info("检测到exotxt.net网站，使用专门的处理逻辑")
+    elif 站点匹配(catalog_url, 'siteS'):
+        _log.info("检测到siteS网站，使用专门的处理逻辑")
         book_id_match = re.search(r'/infos/(\d+)', catalog_url)
         book_id = book_id_match.group(1) if book_id_match else ''
         novel_path = f"/infos/{book_id}/" if book_id_match else ''
@@ -568,12 +572,12 @@ def _resolve_novel_paths(catalog_url):
         novel_path = ''
         novel_path_alt = ''
 
-        # 模式1: /97_97855/ (27xsw.cc格式)
+        # 模式1: /97_97855/ (siteV格式)
         novel_path_pattern = re.search(r'(/\d+_\d+/)', catalog_url)
         if novel_path_pattern:
             novel_path = novel_path_pattern.group(1)
         else:
-            # 模式2: /books/301597.html → /books/301597/ (baoshuism.com格式)
+            # 模式2: /books/301597.html → /books/301597/ (siteX格式)
             novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)\.html?', catalog_url)
             if novel_path_pattern:
                 prefix = novel_path_pattern.group(1)
@@ -581,7 +585,7 @@ def _resolve_novel_paths(catalog_url):
                 novel_path = f"{prefix}{book_id}/"
                 _log.info(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
             else:
-                # 模式3: /infos/5523629.html → /infos/5523629/ (zhiruo.org格式)
+                # 模式3: /infos/5523629.html → /infos/5523629/ (siteW格式)
                 novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)(?:\.html?|/)', catalog_url)
                 if novel_path_pattern:
                     prefix = novel_path_pattern.group(1)
@@ -598,7 +602,7 @@ def _resolve_novel_paths(catalog_url):
                         # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
                         # 字母数字书ID + index_分页目录)
                         # 2026-10-03 扩: 允许大写书ID与 indexlist.html 文件名
-                        # (hulaisb /mmHJ/indexlist.html → /mmHJ/, 章节链接
+                        # (siteK /mmHJ/indexlist.html → /mmHJ/, 章节链接
                         #  /mmHJ/{N}.html; 旧正则「小写」与「index/index_N」两道
                         #  限制都匹配不上 → novel_path 空 → 通用提取全过滤,
                         #  即使分页重取到真页面也判 0 章节)
@@ -609,14 +613,14 @@ def _resolve_novel_paths(catalog_url):
                             novel_path = f"/{alt_match.group(1)}/"
                             _log.info(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
                         else:
-                            # 模式6: /shu/OqWe.html → /shu/OqWe/ (ciyewk等字母数字书ID
+                            # 模式6: /shu/OqWe.html → /shu/OqWe/ (siteAG等字母数字书ID
                             # 目录页, 章节链接 /shu/OqWe/{N}.html)
                             path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
                             if path6:
                                 novel_path = f"{path6.group(1)}/"
                                 _log.info(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
                             else:
-                                # 模式7: /163/163654/index.html → /163/163654/ (zhiruo等
+                                # 模式7: /163/163654/index.html → /163/163654/ (siteW等
                                 # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
                                 path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
                                 if path7:
@@ -691,7 +695,7 @@ class NovelSpider:
         初始化爬虫实例。
 
         Args:
-            base_url: 站点根 URL，例如 'https://www.28zw.org'，
+            base_url: 站点根 URL，例如 'https://www.siteAA'，
                       用于相对 URL 拼接与 AJAX 请求的 Referer/同源设置。
         """
         self.base_url = base_url
@@ -1080,7 +1084,7 @@ class NovelSpider:
         return page_source
 
     def _get_with_js_challenge(self, url, headers=None, timeout=15):
-        """发起GET请求并处理JS cookie校验反爬(如zhiruo.org的ge_js_validator)。
+        """发起GET请求并处理JS cookie校验反爬(如siteW的ge_js_validator)。
         首次响应可能是一个通过<script>设置cookie后window.location.reload的校验页面，
         这里提取document.cookie并重试，直到拿到真实内容。返回最终的response对象。
         注意: 调用方headers中不要硬编码Cookie头，否则会覆盖session.cookies导致校验cookie发不出去。"""
@@ -1259,11 +1263,11 @@ class NovelSpider:
                     except Exception as e:
                         _log.info(f"[反爬检测] WAF JS 挑战处理异常: {e}")
 
-            # 3. 裸 401/403 质询 (hulaisb 类 WAF 的"补发 _wa_ cookie"变体):
+            # 3. 裸 401/403 质询 (siteK 类 WAF 的"补发 _wa_ cookie"变体):
             #    401 + meta-refresh 小页面, 无 @wafjs/验证码/JS-cookie 任何特征 →
             #    检测器与上面两关全部不命中, 旧实现把质询页当正文返回 → 适配器
             #    找不到容器 return None、通用提取 0 章节, 表现为"目录无章节"死书
-            #    (2026-10-03 hulaisb task_8 实证)。
+            #    (2026-10-03 siteK task_8 实证)。
             #    小说站 401/403 不可能是正文; body <4KB 才视为质询 (真实正文页
             #    远大于此), 重发后下一轮会拿到 @wafjs 质询体 (走第 2 关解决) 或
             #    带 _wa_ 直接放行。UA 用 _fixed_ua (令牌 cookie 绑定 UA, 与第 2 关
@@ -1464,7 +1468,7 @@ class NovelSpider:
                 _wait_driver_body(driver)
                 time.sleep(2)
                 page_source = driver.page_source
-                # 处理 JS cookie 校验反爬 (如 zhiruo.org)
+                # 处理 JS cookie 校验反爬 (如 siteW)
                 challenge_markers = ['ge_js_validator', 'window.location.reload', 'document.cookie']
                 for _ in range(5):
                     if not any(m in page_source for m in challenge_markers):
@@ -1519,7 +1523,7 @@ class NovelSpider:
             # 不要在此硬编码 'Host'：requests 会按 URL 自动生成（含跳转后的新主机），
             # 手写它会打断 www/主机级跳转 → 无限 301 → Exceeded 30 redirects（踩坑总表 K29）。
             # 不要在此硬编码 Cookie 头：requests 传入 headers 中的 Cookie 会覆盖 session.cookies，
-            # 导致反爬提取的 cookie(如 zhiruo.org 的 ge_js_validator_20)无法随请求发出，校验永远过不去。
+            # 导致反爬提取的 cookie(如 siteW 的 ge_js_validator_20)无法随请求发出，校验永远过不去。
             # 让 session.cookies 自动管理即可。
             'Pragma': 'no-cache',
             'TE': 'trailers'
@@ -1527,7 +1531,7 @@ class NovelSpider:
         
         # WAF 站点: 使用持久化 Selenium driver, 验证码解决后复用同一浏览器实例
         # 避免每次创建新driver都触发WAF验证码
-        if 'tanmixs.com' in url and selenium_available:
+        if 站点匹配(url, 'siteT') and selenium_available:
             _log.info("[WAF驱动] 使用持久化Selenium driver抓取")
             try:
                 driver = self._get_waf_driver(visible=False)
@@ -1548,10 +1552,10 @@ class NovelSpider:
                 import traceback
                 traceback.print_exc()
 
-        # 对于qingheks.com、27xsw.cc网站，直接使用Selenium
-        # (zhiruo.org也使用JS cookie校验反爬ge_js_validator，但经测试用requests提取cookie重试即可绕过，
-        #  无需Selenium，因此zhiruo.org走下方requests路径；仅当requests失败时才回退到末尾的Selenium)
-        if ('qingheks.com' in url or '27xsw.cc' in url) and selenium_available:
+        # 对于siteU、siteV网站，直接使用Selenium
+        # (siteW也使用JS cookie校验反爬ge_js_validator，但经测试用requests提取cookie重试即可绕过，
+        #  无需Selenium，因此siteW走下方requests路径；仅当requests失败时才回退到末尾的Selenium)
+        if (站点匹配(url, 'siteU', 'siteV')) and selenium_available:
             _log.info(f"直接使用Selenium抓取{url.split('/')[2]}网站")
             soup = self._selenium_get_soup(url, headers)
             if soup:
@@ -1561,7 +1565,7 @@ class NovelSpider:
             time.sleep(3)  # 增加延迟，避免被反爬虫 (章节级高频路径传 polite_delay=False)
         
         try:
-            # 网络异常(如 zhiruo.org 目录页的 ConnectionResetError)时自动重试, 避免直接进入Selenium兜底
+            # 网络异常(如 siteW 目录页的 ConnectionResetError)时自动重试, 避免直接进入Selenium兜底
             _conn_retries = 3
             response = None
             self.last_request_error = ''   # 每次进入请求路径先清零, 防上一次的失败原因串味
@@ -1635,7 +1639,7 @@ class NovelSpider:
             _log.info(f"请求失败: {e}")
         
         # requests 失败后的 Selenium 兜底 (复用 _selenium_get_soup 方法)
-        if ('qingheks.com' in url or '27xsw.cc' in url or 'zhiruo.org' in url or 'tanmixs.com' in url) and selenium_available:
+        if (站点匹配(url, 'siteU', 'siteV', 'siteW', 'siteT')) and selenium_available:
             soup = self._selenium_get_soup(url, headers)
             if soup:
                 return soup
@@ -1702,7 +1706,7 @@ class NovelSpider:
         从小说目录页提取章节列表。
 
         处理顺序：
-            1. 域名特判分支（zhiruo / baoshuism / 11bzw / yqyp / 云趣阁等）
+            1. 域名特判分支（siteW / siteX / siteZ / siteAD / siteAA 等）
                — 目录页结构差异大的站点单独适配
             2. 通用链接过滤：按路径规则 + 同路径前缀 筛选出所有疑似章节链接
             3. 数字排序（sort_chapters=True 时）：按章节号 / URL 尾号重排
@@ -1718,14 +1722,14 @@ class NovelSpider:
         
         # 提取当前小说的URL路径部分，用于过滤章节链接
 
-        # exotxt.net: URL规范化 (在fetch之前), /infos/5556990/1/ → /infos/5556990.html
-        if 'exotxt.net' in catalog_url:
+        # siteS: URL规范化 (在fetch之前), /infos/5556990/1/ → /infos/5556990.html
+        if 站点匹配(catalog_url, 'siteS'):
             book_id_match = re.search(r'/infos/(\d+)', catalog_url)
             if book_id_match:
                 book_id = book_id_match.group(1)
                 normalized_url = f"{self.base_url}/infos/{book_id}.html"
                 if normalized_url != catalog_url:
-                    _log.info(f"[exotxt.net] 规范化目录URL: {catalog_url} → {normalized_url}")
+                    _log.info(f"[siteS] 规范化目录URL: {catalog_url} → {normalized_url}")
                     catalog_url = normalized_url
 
         # 先查看网页结构
@@ -1765,9 +1769,9 @@ class NovelSpider:
         _log.info(f"当前小说路径: {novel_path}")
         _log.info(f"章节排序选项: {'启用' if sort_chapters else '禁用'}")
 
-        # 5hbook.net: 专用章节提取 (路径 + 正则双重验证)
-        if '5hbook.net' in catalog_url and not chapters:
-            _log.info("[5hbook.net] 使用专用章节提取逻辑")
+        # siteQ: 专用章节提取 (路径 + 正则双重验证)
+        if 站点匹配(catalog_url, 'siteQ') and not chapters:
+            _log.info("[siteQ] 使用专用章节提取逻辑")
             book_id_match = re.search(r'/books/(\d+)', catalog_url)
             book_id = book_id_match.group(1) if book_id_match else ''
             if book_id:
@@ -1794,19 +1798,19 @@ class NovelSpider:
                     seen_ids.add(chap_id)
                     url = href if href.startswith('http') else self.base_url + href
                     chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                _log.info(f"[5hbook.net] 专用提取: {len(chapters)} 个章节 (去重后)")
+                _log.info(f"[siteQ] 专用提取: {len(chapters)} 个章节 (去重后)")
                 if sort_chapters and chapters:
                     chapters.sort(key=_chapter_sort_key)
-                    _log.info("[5hbook.net] 已按章节号排序")
+                    _log.info("[siteQ] 已按章节号排序")
                 for i, chap in enumerate(chapters[:5]):
                     _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
                 if len(chapters) > 5:
                     _log.info(f"  ... 共 {len(chapters)} 章")
                 return chapters
 
-        # exotxt.net: 专用章节提取 (.yanqing_list ul 结构)
-        if 'exotxt.net' in catalog_url and not chapters:
-            _log.info("[exotxt.net] 使用专用章节提取逻辑")
+        # siteS: 专用章节提取 (.yanqing_list ul 结构)
+        if 站点匹配(catalog_url, 'siteS') and not chapters:
+            _log.info("[siteS] 使用专用章节提取逻辑")
             book_id_match = re.search(r'/infos/(\d+)', catalog_url)
             book_id = book_id_match.group(1) if book_id_match else ''
             if book_id:
@@ -1854,10 +1858,10 @@ class NovelSpider:
                         seen_ids.add(chap_id)
                         url = href if href.startswith('http') else self.base_url + href
                         chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                _log.info(f"[exotxt.net] 专用提取: {len(chapters)} 个章节 (去重后)")
+                _log.info(f"[siteS] 专用提取: {len(chapters)} 个章节 (去重后)")
                 if sort_chapters and chapters:
                     chapters.sort(key=_chapter_sort_key)
-                    _log.info("[exotxt.net] 已按章节号排序")
+                    _log.info("[siteS] 已按章节号排序")
                 for i, chap in enumerate(chapters[:5]):
                     _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
                 if len(chapters) > 5:
@@ -1866,14 +1870,14 @@ class NovelSpider:
 
         # 首先检查是否有章节目录链接
         catalog_link = None
-        # 对于ahxsw.com网站，构建章节目录URL并跳转
-        if 'ahxsw.com' in catalog_url:
-            _log.info("ahxsw.com网站，跳转到章节目录页面提取完整章节列表")
+        # 对于siteP网站，构建章节目录URL并跳转
+        if 站点匹配(catalog_url, 'siteP'):
+            _log.info("siteP网站，跳转到章节目录页面提取完整章节列表")
             # 从/book/143259/构建/mulu/143/143259/1.html
             book_id_match = re.search(r'/book/(\d+)/', catalog_url)
             if book_id_match:
                 book_id = book_id_match.group(1)
-                # ahxsw.com的mulu URL格式: /mulu/{前3位数字}/{完整ID}/1.html
+                # siteP的mulu URL格式: /mulu/{前3位数字}/{完整ID}/1.html
                 mulu_url = f"{self.base_url}/mulu/{book_id[:3]}/{book_id}/1.html"
                 _log.info(f"构建章节目录URL: {mulu_url}")
                 catalog_soup = self.inspect_page(mulu_url)
@@ -1917,13 +1921,13 @@ class NovelSpider:
                 catalog_soup = self.inspect_page(catalog_link)
                 soup = catalog_soup
         
-        # 处理分页（特别针对322zw.com等有分页的网站）
-        # 对于ahxsw.com网站，使用/mulu/分页URL格式
-        if 'ahxsw.com' in catalog_url and catalog_link:
-            _log.info("\n[分页检测] ahxsw.com网站，使用/mulu/分页URL格式")
+        # 处理分页（特别针对siteAJ等有分页的网站）
+        # 对于siteP网站，使用/mulu/分页URL格式
+        if 站点匹配(catalog_url, 'siteP') and catalog_link:
+            _log.info("\n[分页检测] siteP网站，使用/mulu/分页URL格式")
             _log.info(f"[分页检测] 起始目录页: {catalog_link}")
             page_urls = [catalog_link]
-            # ahxsw.com的mulu分页格式: /mulu/{前3位}/{完整ID}/{页码}.html
+            # siteP的mulu分页格式: /mulu/{前3位}/{完整ID}/{页码}.html
             # 尝试获取后续分页页面（最多10页）
             book_id_match = re.search(r'/mulu/\d+/(\d+)/', catalog_link)
             if book_id_match:
@@ -2033,7 +2037,7 @@ class NovelSpider:
                 'ul.chapter a',  # 无序列表形式的章节
                 'ol.chapter a',  # 有序列表形式的章节
                 'div[id*="chapter"] a',  # 包含chapter的ID
-                'dl a',  # dl/dd 章节列表结构 (3gxs/笔趣阁风格), 需在 chapter 容器之前
+                'dl a',  # dl/dd 章节列表结构 (siteAG 等常见风格), 需在 chapter 容器之前
                 'div[class*="chapter"] a',  # 包含chapter的class
                 'dd a',  # 常见的章节列表结构
                 'li a[href*="/chapter/"]',  # 包含chapter的链接
@@ -2064,10 +2068,10 @@ class NovelSpider:
                 '.list-title a',  # 列表标题
                 '.list-link a',  # 列表链接
                 '.content-list a',  # 内容列表
-                # 新增ahxsw.com网站选择器
-                '#list a',  # ahxsw.com的章节列表
+                # 新增siteP网站选择器
+                '#list a',  # siteP的章节列表
                 '#chapterlist a',  # 可能的章节列表ID
-                'div.list a[href*="/read/"]',  # ahxsw.com的读取链接
+                'div.list a[href*="/read/"]',  # siteP的读取链接
                 '.content-item a',  # 内容项
                 '.content-title a',  # 内容标题
                 '.content-link a',  # 内容链接
@@ -2082,7 +2086,7 @@ class NovelSpider:
                 'li a[href*="/xiaoshuo/"]',  # 包含xiaoshuo的链接
                 'a[href*="/chapter"]',  # 包含chapter的链接
                 'a[href*="/xiaoshuo/"]',  # 包含xiaoshuo的链接
-                # 新增pjxdd.com网站可能的选择器
+                # 新增siteO网站可能的选择器
                 'a[href*="/chapter/"]',  # 包含chapter的链接
             ]
             
@@ -2090,8 +2094,8 @@ class NovelSpider:
             # 尝试使用更简单的选择器
             simple_selectors = ['a', 'a[href]', 'div a', 'span a', 'li a', 'ul a', 'ol a']
             
-            # 对于ahxsw.com网站，优先使用#list a选择器
-            if 'ahxsw.com' in catalog_url and not found_chapters:
+            # 对于siteP网站，优先使用#list a选择器
+            if 站点匹配(catalog_url, 'siteP') and not found_chapters:
                 ahxsw_selectors = ['#list a', 'dd a[href*="/read/"]', 'dd a', 'li a[href*="/read/"]']
                 for selector in ahxsw_selectors:
                     links = page_soup.select(selector)
@@ -2103,7 +2107,7 @@ class NovelSpider:
                                 relevant_links.append(link)
                         
                         if relevant_links:
-                            _log.info(f"ahxsw.com: 找到章节列表，使用选择器: {selector}")
+                            _log.info(f"siteP: 找到章节列表，使用选择器: {selector}")
                             for link in relevant_links:
                                 title = link.get_text().strip()
                                 url = link.get('href')
@@ -2124,16 +2128,16 @@ class NovelSpider:
                     relevant_links = []
                     for link in links:
                         href = link.get('href', '')
-                        # 对于hatxt.cc网站，同时检查两种路径格式
-                        if 'hatxt.cc' in catalog_url:
+                        # 对于siteR网站，同时检查两种路径格式
+                        if 站点匹配(catalog_url, 'siteR'):
                             if novel_path in href or novel_path_alt in href:
                                 relevant_links.append(link)
-                        elif 'pjxdd.com' in catalog_url:
-                            # 对于pjxdd.com网站，检查是否包含小说路径或章节路径
+                        elif 站点匹配(catalog_url, 'siteO'):
+                            # 对于siteO网站，检查是否包含小说路径或章节路径
                             if novel_path in href and href.endswith('.html') and link.get_text().strip():
                                 relevant_links.append(link)
-                        elif 'ahxsw.com' in catalog_url:
-                            # 对于ahxsw.com网站，检查是否包含/read/路径
+                        elif 站点匹配(catalog_url, 'siteP'):
+                            # 对于siteP网站，检查是否包含/read/路径
                             if '/read/' in href and href.endswith('.html') and link.get_text().strip():
                                 relevant_links.append(link)
                         else:
@@ -2171,8 +2175,8 @@ class NovelSpider:
                         relevant_links = []
                         for link in links:
                             href = link.get('href', '')
-                            # 对于pjxdd.com网站，检查是否包含小说路径或章节路径
-                            if 'pjxdd.com' in catalog_url:
+                            # 对于siteO网站，检查是否包含小说路径或章节路径
+                            if 站点匹配(catalog_url, 'siteO'):
                                 if novel_path in href or '/chapter/' in href:
                                     relevant_links.append(link)
                             else:
@@ -2214,8 +2218,8 @@ class NovelSpider:
                     
                     # 过滤掉太短的文本
                     if len(text) > 1:
-                        # 对于pjxdd.com网站，使用更宽松的条件
-                        if 'pjxdd.com' in catalog_url:
+                        # 对于siteO网站，使用更宽松的条件
+                        if 站点匹配(catalog_url, 'siteO'):
                             # 检查是否包含小说路径、章节路径或小说ID
                             if novel_path and novel_path in href and href.endswith('.html') and text:
                                 # 过滤掉JavaScript代码
@@ -2233,7 +2237,7 @@ class NovelSpider:
                         else:
                             # 对于其他网站，使用原来的条件
                             path_match = False
-                            if 'hatxt.cc' in catalog_url:
+                            if 站点匹配(catalog_url, 'siteR'):
                                 if (novel_path and novel_path in href) or \
                                    (novel_path_alt and novel_path_alt in href):
                                     path_match = True
@@ -2257,8 +2261,8 @@ class NovelSpider:
                                 url = self._绝对化链接(href)
                                 chapters.append({'title': text, 'url': url})
                 
-                # 对于pjxdd.com网站，尝试直接从文本中提取链接
-                if 'pjxdd.com' in catalog_url and not chapters:
+                # 对于siteO网站，尝试直接从文本中提取链接
+                if 站点匹配(catalog_url, 'siteO') and not chapters:
                     _log.info("尝试直接从文本中提取链接")
                     # 获取原始文本
                     text = str(page_soup)
@@ -2412,11 +2416,11 @@ class NovelSpider:
                 url = chap['url']
                 url_patterns = [
                     r'/book/\d+/([\d]+)\.html',
-                    r'/books/\d+/([\d]+)\.html',  # baoshuism.com格式
+                    r'/books/\d+/([\d]+)\.html',  # siteX格式
                     r'/chapter/([\d]+)',
                     r'/xs/([\d]+)',
-                    r'/\d+_\d+/([\d]+)\.html',  # 322zw.com格式
-                    r'/read/\d+/\d+/([\d]+)\.html',  # ahxsw.com格式
+                    r'/\d+_\d+/([\d]+)\.html',  # siteAJ格式
+                    r'/read/\d+/\d+/([\d]+)\.html',  # siteP格式
                 ]
 
                 for i, pattern in enumerate(url_patterns):
@@ -2640,7 +2644,7 @@ class NovelSpider:
             if len(content) == old_len:
                 break
 
-        # 移除反爬干扰串: 部分站点 (如 oldtimeswx.net) 会在正文中随机插入
+        # 移除反爬干扰串: 部分站点 (如 siteAK) 会在正文中随机插入
         # "字母+数字"混合短串作为水印 (如"给体0N肏烂了"中的"0N")。
         # 规则: 直接夹在两个汉字之间的 2-4 位"含数字且含字母"的混合串 → 删除。
         # 白名单保护正常词汇 (如 "5G时代"/"3D眼镜"); 纯字母串 (SPA/NBA/RBQ) 与
@@ -2670,8 +2674,17 @@ class NovelSpider:
                     '符号行': 0, '广告行': 0, '水印': 0}
 
         # 移除站点内嵌水印 (段落内部/段尾, 非整行): 连同前后空白一起删,
-        # 保证 "句号。 W阿木战恋雪 新段落" 清洗后自然衔接为 "句号。 新段落"
-        for _wm in _WATERMARK_TOKENS:
+        # 保证 "句号。 W<水印串> 新段落" 清洗后自然衔接为 "句号。 新段落"
+        # token 来源: 内置 (空) + 站点表 watermark_tokens 按域名合并 (D层外置)
+        _wm_tokens = list(_WATERMARK_TOKENS)
+        if site_url:
+            try:
+                from sites_config import 获取水印token as _获取水印token
+                _wm_tokens += _获取水印token(site_url)
+            except Exception as _e:
+                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e} '
+                           f'(站点水印token加载失败, 仅用内置)')
+        for _wm in _wm_tokens:
             content, _wm_n = re.subn(r'\s*' + re.escape(_wm) + r'\s*', '', content)
             清洗统计['水印'] += _wm_n
 
@@ -2769,7 +2782,7 @@ class NovelSpider:
             filtered_lines.append(stripped_line)
 
         # 段落排版整理: 合并碎片化短行
-        # 云趣阁/笔趣阁等站点的 <p> 标签可能因分段不一致产生短行,
+        # siteAA/siteY 等站点的 <p> 标签可能因分段不一致产生短行,
         # 这些短行既非对话引语 (不以中文/英文引号开头) 也非独立段落,
         # 应合并到上一段, 使正文段落完整、连贯。
         _段末终结标点 = ('。', '！', '？', '…', '”', '』', '」', '!', '?')
@@ -2871,7 +2884,7 @@ class NovelSpider:
             if qsbs_blocks:
                 _log.info(f"[通用检测] ✅ 识别到 qsbs.bb Base64 加密, 共 {len(qsbs_blocks)} 个加密块")
                 return 'qsbs_bb'
-            # 1b. str_decode Base64 加密 (5hbook.net 等)
+            # 1b. str_decode Base64 加密 (siteQ 等)
             str_decode_blocks = re.findall(r'str_decode\("([^"]+)"\)', html)
             if str_decode_blocks:
                 _log.info(f"[通用检测] ✅ 识别到 str_decode Base64 加密, 共 {len(str_decode_blocks)} 个加密块")
@@ -2975,7 +2988,7 @@ class NovelSpider:
     def _extract_qsbs_bb_generic(self, url, headers):
         """通用 qsbs.bb Base64 解码提取 (不依赖域名)
 
-        适用于所有使用 qsbs.bb() 加密的站点 (zhiruo/biquwx/ahxsw/28zw/spscl 等)。
+        适用于所有使用 qsbs.bb() 加密的站点 (siteW/siteY/siteP/siteAA/siteAB 等)。
         复用 _extract_base64_blocks 通用解码逻辑。
         """
         return self._extract_base64_blocks(url, headers,
@@ -2984,7 +2997,7 @@ class NovelSpider:
     def _extract_str_decode_generic(self, url, headers):
         """通用 str_decode Base64 解码提取 (不依赖域名)
 
-        适用于所有使用 str_decode("...") 加密的站点 (5hbook.net 等)。
+        适用于所有使用 str_decode("...") 加密的站点 (siteQ 等)。
         复用 _extract_base64_blocks 通用解码逻辑。
         """
         return self._extract_base64_blocks(url, headers,
@@ -3050,7 +3063,7 @@ class NovelSpider:
             best_text, best_sel = _try_extract(headers)
             if best_text:
                 _log.info(f"[通用提取-html] 首次提取: '{best_sel}' → {len(best_text)} 字符")
-            # 内容过短时用 PC UA 重试 (部分网站如 yqyp.net 随机 UA 返回移动版, 内容缺失)
+            # 内容过短时用 PC UA 重试 (部分网站如 siteAD 随机 UA 返回移动版, 内容缺失)
             if len(best_text) < 500:
                 _log.info(f"[通用提取-html] 内容过短 ({len(best_text)} 字符), 用 PC UA 重试...")
                 pc_headers = dict(headers)
@@ -3071,7 +3084,7 @@ class NovelSpider:
     def _extract_ajax_two_step_generic(self, url, headers):
         """通用 AJAX 两步加载提取 (不依赖域名)
 
-        适用于所有使用 /api/read_sign.php 两步 AJAX 加载的站点 (如 11bzw.org)。
+        适用于所有使用 /api/read_sign.php 两步 AJAX 加载的站点 (如 siteZ)。
         自动从 URL 或页面 HTML 中提取 aid/cid 和 page_path, 执行两步 AJAX 获取正文:
           步骤1: GET /api/read_sign.php?aid=X&cid=Y 获取 {sign, bk}
           步骤2: GET {page_path}?ajax=1&aid=X&cid=Y&bk=Z&sign=S 获取正文
@@ -3248,7 +3261,7 @@ class NovelSpider:
           方法1    script 标签 / 原始二进制中的 Base64 编码正文
           方法1.2  script 正则模式
           方法2    内联 JSON 数据 + 通用解密链 (decrypt_utils)
-          方法3    内容容器选择器 (含 hatxt/baoshuism/zhiruo/pjxdd/27xsw 站点专属分支)
+          方法3    内容容器选择器 (含 siteR/siteX/siteW/siteO/siteV 站点专属分支)
           方法4    正则长段落 / 引号长文本启发式
         最后统一尝试 Base64 解码, 并按站点做专属清理。
 
@@ -3349,14 +3362,15 @@ class NovelSpider:
                                     text = decoded_text
 
                                 if text and len(text) > 80:
-                                    # 对于27xsw.cc网站，使用更严格的过滤
-                                    if '27xsw.cc' in chapter_url:
+                                    # 对于siteV网站，使用更严格的过滤
+                                    if 站点匹配(chapter_url, 'siteV'):
                                         # 过滤广告和无关内容
+                                        # (站点广告词/推荐书名已外置站点表 ad_rules,
+                                        #  输出经 clean_content(site_url) 按域名合并过滤 — D层)
                                         filter_keywords = ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
-                                                           '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
+                                                           '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '登录', '注册',
                                                            '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
-                                                           '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
-                                                           '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读']
+                                                           '番外+大结局', '最新章节', '全文阅读', '免费阅读']
 
                                         # 按行过滤
                                         filtered_lines = []
@@ -3538,8 +3552,8 @@ class NovelSpider:
                 '.chapter_text'
             ]
                         
-            # 针对hatxt.cc网站添加专门的选择器
-            if 'hatxt.cc' in chapter_url:
+            # 针对siteR网站添加专门的选择器
+            if 站点匹配(chapter_url, 'siteR'):
                 content_selectors.extend([
                     '.content',
                     '.read',
@@ -3567,8 +3581,8 @@ class NovelSpider:
                     '.text',
                     '#text'
                 ])
-            # 针对baoshuism.com网站添加专门的选择器
-            elif 'baoshuism.com' in chapter_url:
+            # 针对siteX网站添加专门的选择器
+            elif 站点匹配(chapter_url, 'siteX'):
                 content_selectors.extend([
                     '.word_read',
                     '#content',
@@ -3588,8 +3602,8 @@ class NovelSpider:
                     '.read-content',
                     '.chapter-content'
                 ])
-            # 针对zhiruo.org网站添加专门的选择器
-            elif 'zhiruo.org' in chapter_url:
+            # 针对siteW网站添加专门的选择器
+            elif 站点匹配(chapter_url, 'siteW'):
                 content_selectors.extend([
                     '#content',
                     '.content',
@@ -3605,8 +3619,8 @@ class NovelSpider:
                     '.read-content',
                     '.chapter-content'
                 ])
-            # 针对pjxdd.com网站添加专门的选择器
-            elif 'pjxdd.com' in chapter_url:
+            # 针对siteO网站添加专门的选择器
+            elif 站点匹配(chapter_url, 'siteO'):
                 content_selectors.extend([
                     '.content',
                     '#content',
@@ -3644,8 +3658,8 @@ class NovelSpider:
                     '.novel_text',
                     '.chapter_text'
                 ])
-            # 针对27xsw.cc网站添加专门的选择器
-            elif '27xsw.cc' in chapter_url:
+            # 针对siteV网站添加专门的选择器
+            elif 站点匹配(chapter_url, 'siteV'):
                 content_selectors.extend([
                     '#content',
                     '.content',
@@ -3693,17 +3707,17 @@ class NovelSpider:
                     # 移除导航元素
                     for nav in content_div(['nav', 'footer', 'aside']):
                         nav.decompose()
-                    # baoshuism.com: word_read 内剔除标题(h3)/导航/广告元素,
+                    # siteX: word_read 内剔除标题(h3)/导航/广告元素,
                     # 避免 "第X部分（第1页）" 等标题混入正文
-                    if 'baoshuism.com' in chapter_url:
+                    if 站点匹配(chapter_url, 'siteX'):
                         for el in content_div(['h1', 'h2', 'h3', 'h4', 'div', 'a']):
                             el.decompose()
                     # 获取文本
                     text = content_div.get_text(separator='\n\n', strip=True)
                                 
-                    # 针对hatxt.cc网站的特殊处理
-                    if 'hatxt.cc' in chapter_url:
-                        # 对hatxt.cc网站使用更严格的过滤条件
+                    # 针对siteR网站的特殊处理
+                    if 站点匹配(chapter_url, 'siteR'):
+                        # 对siteR网站使用更严格的过滤条件
                         _log.info(f"原始内容长度: {len(text)} 字符")
                         # 移除导航、版权、推荐等无关信息
                         lines = text.split('\n')
@@ -3712,7 +3726,7 @@ class NovelSpider:
                         # 定义更全面的过滤关键词
                         nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
                         copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
-                        recommend_keywords = ['《蜜母》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
+                        recommend_keywords = ['《示例书名》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
                         nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
                                     
                         # 标记是否进入小说正文
@@ -3751,23 +3765,18 @@ class NovelSpider:
                         filtered_lines = []
                                     
                         # 定义更全面的过滤关键词
+                        # (站点广告词/推荐书名已外置站点表 ad_rules,
+                        #  输出经 clean_content(site_url) 按域名合并过滤 — D层)
                         filter_keywords = [
                             '上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
-                            '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
+                            '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '登录', '注册',
                             '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
-                            '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
-                            '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读',
-                            '快穿：心机BOSS日日撩', '快穿成大佬的死对头', '穿成路人甲替深情男配挡箭后',
-                            '学长今天回家吗？', '敢吗？到我怀里来', '神话同人', '杨戬', '莲花千里不如君',
-                            '开朗少年奸淫记', '异世界一支枪', '农女天降', '娘子又又又乌鸦嘴了',
-                            '同人续写', '珠帘篇', '纳兰公瑾', 'z76488', '隨心', '孤牧栀笙'
+                            '番外+大结局', '最新章节', '全文阅读', '免费阅读'
                         ]
-                                    
+
                         # 定义广告模式
                         ad_patterns = [
                             r'第\d+章.*?一秒记住新域名',
-                            r'一秒记住新域名.*?27小说网',
-                            r'27小说网.*?[《》]',
                             r'[《》].*?最新章节',
                             r'[《》].*?全文阅读',
                             r'[《》].*?免费阅读'
@@ -3795,8 +3804,8 @@ class NovelSpider:
                                     
                         content = '\n\n'.join(filtered_lines)
                                     
-                        # 对于27xsw.cc网站，进行额外的过滤
-                        if '27xsw.cc' in chapter_url:
+                        # 对于siteV网站，进行额外的过滤
+                        if 站点匹配(chapter_url, 'siteV'):
                             # 移除重复的空行
                             content = re.sub(r'\n{3,}', '\n\n', content)
                             # 移除行首行尾的空白
@@ -3816,8 +3825,8 @@ class NovelSpider:
                         _log.info(f"从容器提取到内容，长度: {len(content)} 字符")
                         break
                         
-            # 如果仍然没有找到内容，对hatxt.cc网站尝试直接从整个页面提取
-            if not content and 'hatxt.cc' in chapter_url:
+            # 如果仍然没有找到内容，对siteR网站尝试直接从整个页面提取
+            if not content and 站点匹配(chapter_url, 'siteR'):
                 _log.info("尝试直接从整个页面提取内容")
                 # 移除脚本和样式
                 for script in soup(['script', 'style']):
@@ -3829,14 +3838,14 @@ class NovelSpider:
                 full_text = soup.get_text(separator='\n\n', strip=True)
                 _log.info(f"整个页面原始内容长度: {len(full_text)} 字符")
                             
-                # 对hatxt.cc网站使用更严格的过滤条件
+                # 对siteR网站使用更严格的过滤条件
                 lines = full_text.split('\n')
                 filtered_lines = []
                             
                 # 定义更全面的过滤关键词
                 nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
                 copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
-                recommend_keywords = ['《蜜母》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
+                recommend_keywords = ['《示例书名》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
                 nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
                             
                 # 标记是否进入小说正文
@@ -3882,8 +3891,8 @@ class NovelSpider:
                         
             for para in paragraphs:
                 para = para.strip()
-                if (len(para) > 300 and 
-                    not any(keyword in para for keyword in ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式', '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册', '搜索', 'Copyright', '版权所有', '本站所有内容']) and
+                if (len(para) > 300 and
+                    not any(keyword in para for keyword in ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式', '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', 'Copyright', '版权所有', '本站所有内容']) and
                     'http' not in para and
                     '.com' not in para):
                     filtered_paragraphs.append(para)
@@ -3961,9 +3970,9 @@ class NovelSpider:
                 # 清理重复的标点符号
                 content = re.sub(r'([.!?,;])\1+', r'\1', content)
                             
-                # 对于pjxdd.com网站，进行额外的清理
-                if 'pjxdd.com' in current_url:
-                    _log.info("对pjxdd.com网站进行额外的内容清理")
+                # 对于siteO网站，进行额外的清理
+                if 站点匹配(current_url, 'siteO'):
+                    _log.info("对siteO网站进行额外的内容清理")
                     # 移除可能的乱码和特殊符号
                     # 注意: 字符类必须排除 \n (U+000A) 与 \t/\r (由下一步行内压缩处理),
                     # 否则换行被杀, 后续 4463 的空白压缩把整章压成一行 (分段丢失根因⑤)
@@ -4005,7 +4014,7 @@ class NovelSpider:
             if site_pattern:
                 _log.info(f"[sites_config] 匹配到站点配置: {site_pattern['domain']}, 模式: {site_pattern['pattern']}")
 
-        # 使用更真实的User-Agent，针对hatxt.cc网站添加特殊处理
+        # 使用更真实的User-Agent，针对siteR网站添加特殊处理
         headers = {
             'User-Agent': self._fixed_ua,  # 会话固定UA (验证码cookie绑定UA)
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -4016,7 +4025,7 @@ class NovelSpider:
             'Cache-Control': 'max-age=0',
             'DNT': '1',
             'Sec-GPC': '1',
-            # 针对hatxt.cc网站添加的额外头信息
+            # 针对siteR网站添加的额外头信息
             'Referer': chapter_url,
             # 不要在此硬编码 'Host'（同 inspect_page，踩坑总表 K29）：
             # 手写它会打断主机级跳转 → Exceeded 30 redirects → 章节正文拿不到内容。
@@ -4036,13 +4045,13 @@ class NovelSpider:
         page_index = 0
         # ===== 优先使用 sites_config 中的分页配置 =====
         # K35: isinstance 守卫 —— 适配器可声明 content_pagination: None (单页直出,
-        # hulaisb 2026-10-03 实测)。旧守卫 'content_pagination' in 只查键存在,
+        # siteK 2026-10-03 实测)。旧守卫 'content_pagination' in 只查键存在,
         # None.get() 抛 TypeError 被 _fetch_with_qc 吞成 "抓取异常" → 全章瞬时空正文。
         if site_pattern and isinstance(site_pattern.get('content_pagination'), dict):
             site_max_pages = site_pattern['content_pagination'].get('max_pages', 30)
-        elif 'ahxsw.com' in chapter_url:
+        elif 站点匹配(chapter_url, 'siteP'):
             site_max_pages = 30
-        elif 'baoshuism.com' in chapter_url or 'zhiruo.org' in chapter_url or 'biquwx.cc' in chapter_url or '11bzw.org' in chapter_url:
+        elif 站点匹配(chapter_url, 'siteX', 'siteW', 'siteY', 'siteZ'):
             site_max_pages = 30
         else:
             site_max_pages = 20  # 未知站点默认 20 页 (原 5 页导致多页章节抓不全)
@@ -4085,8 +4094,8 @@ class NovelSpider:
                         _log.info("[分页] 已达到最大页数限制，停止")
                         break
                 elif '.html' in chapter_url:
-                    # 11bzw.org分页: 第2页是_2.html, 第3页是_3.html (page_index+1)
-                    if '11bzw.org' in chapter_url:
+                    # siteZ分页: 第2页是_2.html, 第3页是_3.html (page_index+1)
+                    if 站点匹配(chapter_url, 'siteZ'):
                         current_url = chapter_url.replace('.html', f'_{page_index+1}.html')
                     else:
                         current_url = chapter_url.replace('.html', f'_{page_index}.html')
@@ -4274,11 +4283,11 @@ class NovelSpider:
             # 已知站点的域名分支作为备用, 保证向后兼容。
             # 检测只在第1页做一次, 后续页面复用结果 (避免重复请求)
             # WAF 站点: requests必然401, 跳过通用检测层直接走Selenium分支, 省去每页~15秒重试
-            # ciyewk.com等使用数据文件模式的站点，跳过通用检测
+            # siteAG等使用数据文件模式的站点，跳过通用检测
             if site_pattern and site_pattern.get('pattern') == 'datafile':
                 # 站点配置已处理，跳过通用检测
                 pass
-            elif 'tanmixs.com' in current_url:
+            elif 站点匹配(current_url, 'siteT'):
                 self._detected_pattern = None
             elif page_index == 0:
                 self._detected_pattern = None  # 清除上一章节的缓存, 强制重新检测
@@ -4354,7 +4363,7 @@ class NovelSpider:
             # 段落中混有内联base64表情图, 需剔除; 首段为章节标题, 次段为元信息 (作者/字数/日期)
             # 分页: ?page=N 查询参数, 末页的下一页链接指向下一章 (无 ?page=)
             # 验证码: 使用 _solve_waf_captcha 自动检测处理, 解决后复用同一driver
-            if 'tanmixs.com' in current_url and selenium_available:
+            if 站点匹配(current_url, 'siteT') and selenium_available:
                 _log.info("[WAF驱动] 使用持久化Selenium driver抓取章节内容")
                 try:
                     driver = self._get_waf_driver(visible=False)
@@ -4444,9 +4453,9 @@ class NovelSpider:
                     import traceback
                     traceback.print_exc()
 
-            # 对于pjxdd.com、qingheks.com、27xsw.cc、tanmixs.com网站，尝试使用Selenium
-            # (zhiruo.org改用上方Base64解码分支，无需Selenium)
-            if ('pjxdd.com' in current_url or 'qingheks.com' in current_url or '27xsw.cc' in current_url) and selenium_available:
+            # 对于siteO、siteU、siteV、siteT网站，尝试使用Selenium
+            # (siteW改用上方Base64解码分支，无需Selenium)
+            if (站点匹配(current_url, 'siteO', 'siteU', 'siteV')) and selenium_available:
                 _log.info("[Selenium] 尝试使用Selenium抓取内容")
                 soup = self._selenium_get_soup(current_url, headers)
                 if soup:
@@ -4486,7 +4495,7 @@ class NovelSpider:
             success = False
             for i in range(max_retries):  # 重试机制
                 # WAF 站点: requests必然401, 跳过重试 (已由上方Selenium分支处理)
-                if 'tanmixs.com' in current_url:
+                if 站点匹配(current_url, 'siteT'):
                     break
                 try:
                     # 随机延迟 + 档位间隔: 取较大值而非相加 (见 _单页等待秒 注释)。
@@ -4517,7 +4526,7 @@ class NovelSpider:
                             _log.info("所有重试机会已用尽")
                             break
 
-                    # 处理JS cookie校验反爬(如zhiruo.org)
+                    # 处理JS cookie校验反爬(如siteW)
                     challenge_markers = ['ge_js_validator', 'window.location.reload']
                     for _ in range(4):
                         raw = response.content
@@ -4574,8 +4583,8 @@ class NovelSpider:
                     content = self._extract_content_from_html(
                         soup, response, current_url, chapter_url, text=text)
 
-                    # baoshuism.com: 站点占位提示("内容正在更新，请稍后查看")视为章节未发布
-                    if content and 'baoshuism.com' in current_url and \
+                    # siteX: 站点占位提示("内容正在更新，请稍后查看")视为章节未发布
+                    if content and 站点匹配(current_url, 'siteX') and \
                             any(m in content for m in ['内容正在更新', '请稍后查看']):
                         _log.info("⚠️ 该章节在网站端暂无内容(站点占位提示)，跳过")
                         content = ''
@@ -4619,15 +4628,12 @@ class NovelSpider:
                                 # 分割为段落
                                 paragraphs = re.split(r'\n\s*\n', clean_text)
                                 # 定义过滤关键词
+                                # (站点广告词/推荐书名已外置站点表 ad_rules, 经 clean_content 合并过滤 — D层)
                                 filter_keywords = [
                                     '上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
-                                    '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '书包网', '登录', '注册',
+                                    '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '登录', '注册',
                                     '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
-                                    '田园养包子', '相公太黏人', '蜜母', '小说海棠文无删节', '翠微居全集免费阅读',
-                                    '番外+大结局', '最新章节', '27小说网', '全文阅读', '免费阅读',
-                                    '快穿：心机BOSS日日撩', '快穿成大佬的死对头', '穿成路人甲替深情男配挡箭后',
-                                    '学长今天回家吗？', '敢吗？到我怀里来', '神话同人', '杨戬', '莲花千里不如君',
-                                    '开朗少年奸淫记', '异世界一支枪', '农女天降', '娘子又又又乌鸦嘴了'
+                                    '番外+大结局', '最新章节', '全文阅读', '免费阅读'
                                 ]
                                 
                                 # 过滤段落
@@ -4691,7 +4697,7 @@ class NovelSpider:
                 _log.info(f"多次尝试后仍然无法抓取 {current_url}，结束分页抓取")
                 break
 
-        # 整章段落级去重 (云趣阁等站点分页会重复前页内容)
+        # 整章段落级去重 (siteAA/siteAB 等站点分页会重复前页内容)
         if total_content:
             total_content = self.deduplicate_paragraphs(total_content)
 
@@ -4766,23 +4772,43 @@ class NovelSpider:
             if soup.title:
                 title = soup.title.string.strip() if soup.title.string else ""
                 # 清理标题，移除可能的网站名称等
-                for suffix in ['-书包网', '-小说', '-阅读', '-全文阅读', '最新章节', '-pjxdd.com', '-m.pjxdd.com', '-qingheks.com', '-ahxsw.com']:
+                # 通用后缀 + 站点域名/站名后缀动态生成 (站点脱钩 D层:
+                # 原硬编码 '-<域名>'/'-<站名>' 已移除, 对任意站点自适应)
+                for suffix in ['-小说', '-阅读', '-全文阅读', '最新章节']:
                     if title.endswith(suffix):
                         title = title[:-len(suffix)]
+                try:
+                    from urllib.parse import urlparse as _urlparse
+                    _host = _urlparse(catalog_url or '').netloc.lower()
+                except Exception:
+                    _host = ''
+                if _host:
+                    _host = _host.removeprefix('www.')
+                    for _s in (f'-{_host}', f'-m.{_host}', f'-www.{_host}'):
+                        if title.endswith(_s):
+                            title = title[:-len(_s)]
+                    # 中文站名后缀 (如 "-<站名>"): 域名映射 (本地形态) 反查
+                    try:
+                        from 网站清单 import 域名网站名 as _域名网站名
+                        _站名 = _域名网站名(_host)
+                        if _站名 and _站名 != _host and title.endswith('-' + _站名):
+                            title = title[:-(len(_站名) + 1)]
+                    except Exception:
+                        pass  # 站名映射不可用 (公开形态) → 跳过站名后缀清理
 
-                # 对于ahxsw.com网站，清理标题格式"小说名无防盗_小说名全文阅读_作者_安徽小说网"
-                if 'ahxsw.com' in catalog_url:
+                # 对于siteP网站，清理标题格式"小说名无防盗_小说名全文阅读_作者_站名"
+                if 站点匹配(catalog_url, 'siteP'):
                     # 取第一个下划线前的部分作为小说名
                     if '_' in title:
                         title = title.split('_')[0]
                     # 移除"无防盗"后缀
                     title = title.replace('无防盗', '').strip()
 
-                # 云趣阁 (28zw.org / spscl.com) 详情页 <title> 格式:
-                # "书名最新章节列表_书名刚刚更新(作者)_云趣阁" 或
-                # "书名最新章节_txt全文阅读_作者_云趣阁"
+                # siteAA/siteAB 详情页 <title> 格式:
+                # "书名最新章节列表_书名刚刚更新(作者)_站名" 或
+                # "书名最新章节_txt全文阅读_作者_站名"
                 # 优先用 <h1> 或详情页书名容器提取; 失败则从 <title> 中正则提取纯书名
-                if '28zw.org' in catalog_url or 'spscl.com' in catalog_url:
+                if 站点匹配(catalog_url, 'siteAA', 'siteAB'):
                     # 优先从详情页的书名容器提取 (最准确)
                     yq_selectors = [
                         'div.info h1', 'div.book-info h1', 'div.bookname h1',
@@ -4807,7 +4833,7 @@ class NovelSpider:
                                 yq_title = t
                     if not yq_title:
                         # 从 <title> 正则提取纯书名:
-                        # "美熟妇深渊堕落最新章节列表_..." -> "美熟妇深渊堕落"
+                        # "示例书名最新章节列表_..." -> "示例书名"
                         m = re.match(r'^(.+?)最新章节', title)
                         if m and m.group(1):
                             yq_title = m.group(1).strip()
@@ -4816,7 +4842,7 @@ class NovelSpider:
                         for kw in ['txt', 'TXT', '全文阅读', '免费阅读', '无弹窗', '最新章节']:
                             yq_title = yq_title.replace(kw, '').strip()
                         if yq_title:
-                            _log.info(f"[云趣阁] 从详情页提取到小说名称: {yq_title}")
+                            _log.info(f"[siteAA/siteAB] 从详情页提取到小说名称: {yq_title}")
                             return yq_title
 
                 # 清理标题中的乱码和特殊字符
@@ -4881,7 +4907,7 @@ class NovelSpider:
                     return title
             
             # 对于特定网站，使用默认名称
-            if 'pjxdd.com' in catalog_url or 'qingheks.com' in catalog_url:
+            if 站点匹配(catalog_url, 'siteO', 'siteU'):
                 return "小说"
 
             # 首次请求可能命中反爬挑战页 (标题为 loading/验证码占位), 等待后重试一次
@@ -4908,7 +4934,7 @@ class NovelSpider:
         except Exception as e:
             _log.info(f"提取小说名称失败: {e}")
             # 对于特定网站，使用默认名称
-            if 'pjxdd.com' in catalog_url or 'qingheks.com' in catalog_url:
+            if 站点匹配(catalog_url, 'siteO', 'siteU'):
                 return "小说"
             return "novel"
 
@@ -5094,7 +5120,7 @@ class NovelSpider:
         import time as _t
         content = self._fetch_with_qc(chap)
         # 连续失败快速跳过: 本任务已连续失败 ≥3 章 (站点大概率整体拒连/被限频,
-        # 如书海阁 RemoteDisconnected), 外层补试只徒增等待, 直接返回空占位,
+        # 如 RemoteDisconnected), 外层补试只徒增等待, 直接返回空占位,
         # 由断点续传稍后补抓 (v2.4.28 超长书提速)
         if not content and self._连续失败章数 >= 3:
             _log.info(f"[跳过] 连续 {self._连续失败章数} 章失败, 跳过本层重试直接占位: "
@@ -5919,7 +5945,7 @@ class NovelSpider:
         # 该站 WAF 按 IP 限流: 多浏览器并发会更容易触发验证码(实测并发3线程反而更慢)
         # 强制串行 + 持久化 driver 复用是最优策略
         # (速度自适应站点约束已把该站压到标准档, 此处兜底)
-        if 'tanmixs.com' in catalog_url and (threads or 0) > 1:
+        if 站点匹配(catalog_url, 'siteT') and (threads or 0) > 1:
             _log.info("[并发] ⚠️ 该站 WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
             threads = 1
 
@@ -6125,10 +6151,10 @@ class NovelSpider:
 def _站点冷却秒(域名: str) -> float:
     """限频后写入的域冷却秒数。
 
-    站点可覆写: als1010.space 软限频恢复极慢 (2026-09-12 实测静默 24 分钟
+    站点可覆写: siteAC 软限频恢复极慢 (2026-09-12 实测静默 24 分钟
     仍未解除), 默认 300s 不足以冷却 → 900s, 防封后立刻重撞。
     """
-    return 900 if 'als1010.space' in (域名 or '') else 300
+    return 900 if 站点匹配(域名, 'siteAC') else 300
 
 
 def get_base_url(url):
@@ -6172,8 +6198,8 @@ def interactive_menu():
     _log.info("=== 小说爬虫 ===")
     _log.info("请输入小说网站的目录页面URL:")
     _log.info("例如: https://www.shubaoxs.net/book/391625/")
-    _log.info("     https://www.baoshuism.com/books/301597.html")
-    _log.info("     https://www.zhiruo.org/infos/5523629.html")
+    _log.info("     https://www.siteX/books/301597.html")
+    _log.info("     https://www.siteW/infos/5523629.html")
 
     catalog_url = input("\nURL: ").strip()
     if not catalog_url:
@@ -6475,7 +6501,7 @@ def _规范化目录URL(catalog_url):
 
     用户常把章节页 URL 当任务 URL, 通用管线把章节页当目录页解析会只剩
     "目录"链接 1 个"章节", 把详情页当正文抓导致整单失败 (2026-09-11
-    yunshuzhai 实测)。适配器未声明/推导失败/异常时按原 URL 返回 (幂等)。
+    siteAH 实测)。适配器未声明/推导失败/异常时按原 URL 返回 (幂等)。
     run_crawl 与 run() 都要调用: 前者的 unique_title 标题预取发生在 run() 之前,
     不规范化会把章节页标题当书名 (2026-09-12 批量实测)。
     """
