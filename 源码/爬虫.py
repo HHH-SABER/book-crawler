@@ -675,6 +675,36 @@ def _取UA引擎():
     return _UA单例
 
 
+def _目录折叠提示(soup, 解析章数):
+    """目录折叠站检测 (2026-10-09): 页面宣称章节总数远大于实际解析数时告警。
+
+    背景: 天秋类站点目录页只展示首尾章节 (如"点击查看中间隐藏的【1454】章节"),
+    中间章节收进独立分页 (directory_N.html); 把可见链接当全部目录会大量漏抓
+    (实测某书仅得 40/1494 章)。仅提示不改抓取行为。
+    """
+    try:
+        if 解析章数 > 60:
+            return None
+        text = soup.get_text(' ', strip=True)[:20000]
+        隐藏 = 0
+        m = re.search(r'隐藏的?【?\[?(\d+)】?\]?章节?', text) or \
+            re.search(r'隐藏的?(\d+)章', text)
+        if m:
+            隐藏 = int(m.group(1))
+        else:
+            m2 = re.search(r'共\s*(\d+)\s*章', text)
+            if m2:
+                隐藏 = max(0, int(m2.group(1)) - 解析章数)
+        if 隐藏 >= max(50, 解析章数 * 2):
+            return (f'⚠️ 该目录页疑似折叠: 实际解析 {解析章数} 章, 页面提示另有'
+                    f'约 {隐藏} 章未展示 (中间章节被站点隐藏或收进分页目录)。'
+                    f'建议确认完整目录入口 (如"全部章节目录"链接) 后重试, '
+                    f'否则将大量漏抓。')
+    except Exception as e:
+        _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e} (折叠检测失败不影响主流程)')
+    return None
+
+
 class NovelSpider:
     """
     通用小说爬虫主类。
@@ -1761,6 +1791,9 @@ class NovelSpider:
         # 命中站点即返回其章节列表; 未命中返回 None, 继续走下方通用流程。
         parsed = self._parse_catalog_by_site(catalog_url, sort_chapters, soup)
         if parsed is not None:
+            _折叠 = _目录折叠提示(soup, len(parsed))
+            if _折叠:
+                _log.warning(_折叠)
             return parsed
 
         # 通用提取段 (第 4 批修复: 曾随路径计算误切进 _resolve_novel_paths, 迁回此处)
@@ -2463,6 +2496,10 @@ class NovelSpider:
             _log.info(f"  {_i+1}. {chapters[_i]['title']} -> {chapters[_i]['url']}")
         for i, chap in enumerate(chapters):
             _log.debug(f"  {i+1}. {chap['title']} -> {chap['url']}")
+
+        _折叠 = _目录折叠提示(soup, len(chapters))
+        if _折叠:
+            _log.warning(_折叠)
 
         return chapters
     def clean_chapter_title(self, title):
