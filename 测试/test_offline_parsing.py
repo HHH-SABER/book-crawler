@@ -825,6 +825,50 @@ class Test站点O_目录取自章节页(unittest.TestCase):
             sites_config._ADAPTERS_LOADED = saved_loaded
 
 
+class Test目录折叠检测(unittest.TestCase):
+    """折叠目录站检测 (2026-10-09): 天秋类站点目录只展示首尾, 中间章节隐藏。"""
+
+    @staticmethod
+    def _soup(html):
+        from bs4 import BeautifulSoup
+        return BeautifulSoup(html, 'lxml')
+
+    def test_折叠页命中提示(self):
+        import 爬虫 as C
+        html = ('<html><body>'
+                '<div>第1章 空屋</div><div>第20章 寻道</div>'
+                '<a>点击查看中间隐藏的【1454】章节</a>'
+                '</body></html>')
+        提示 = C._目录折叠提示(self._soup(html), 40)
+        self.assertIsNotNone(提示)
+        self.assertIn('1454', 提示)
+        self.assertIn('折叠', 提示)
+
+    def test_共N章特征命中(self):
+        import 爬虫 as C
+        html = '<html><body>全部章节目录(共1494章)</body></html>'
+        提示 = C._目录折叠提示(self._soup(html), 20)
+        self.assertIsNotNone(提示)
+        self.assertIn('1474', 提示)   # 1494 - 20
+
+    def test_正常目录不误报(self):
+        import 爬虫 as C
+        html = '<html><body><div>第1章 开端</div><div>第2章 相遇</div></body></html>'
+        self.assertIsNone(C._目录折叠提示(self._soup(html), 2))
+
+    def test_章节数多时跳过检测(self):
+        import 爬虫 as C
+        html = '<html><body>共3000章</body></html>'
+        # 解析数 > 60 时直接返回 None (正常分页目录页不告警)
+        self.assertIsNone(C._目录折叠提示(self._soup(html), 200))
+
+    def test_宣称数不足阈值不告警(self):
+        import 爬虫 as C
+        html = '<html><body>共50章</body></html>'
+        # 隐藏数 50-40=10 < max(50, 80) → 不告警
+        self.assertIsNone(C._目录折叠提示(self._soup(html), 40))
+
+
 class Test站点O_样本(unittest.TestCase):
     """真实页面快照契约: 目录解析 / 正文提取 / 书名 (09-10/09-11 两轮修复)。"""
 
