@@ -304,10 +304,20 @@ class TaskTable:
                              max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                              font_family=FONT_STACK,
                              color=ft.Colors.PRIMARY if is_selected else None)
+        # URL 改为可点击超链接 (2026-10-09):
+        #   · Flet 0.86 的 Text 无 url= 参数, 用 on_tap + page.launch_url()
+        #     经系统默认浏览器打开 (与 icon_rail 侧栏 GitHub 卡同一通道)
+        #   · tooltip= → 悬停显示完整网址 (列宽 200px, 长 URL 必被省略号截断)
+        #   · PRIMARY 色 + TextStyle 下划线 → 明确的可点击视觉提示, 与整体配色一致
+        #   · 内层 on_tap 在 Flutter 手势竞技场中胜出, 不会触发行 on_click 选中
         url_text = ft.Text(task.url, size=SIZE_TINY, weight=WEIGHT_BODY,
-                           color=ft.Colors.ON_SURFACE_VARIANT, opacity=0.7,
+                           color=ft.Colors.PRIMARY,
+                           tooltip=task.url,
+                           on_tap=lambda e, u=task.url: self._打开链接(u),
                            max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
-                           font_family=FONT_STACK)
+                           font_family=FONT_STACK,
+                           style=ft.TextStyle(
+                               decoration=ft.TextDecoration.UNDERLINE))
         title_cell = _cell(ft.Column([title_text, url_text],
                                      spacing=1, tight=True), width=_w(0))
 
@@ -503,6 +513,25 @@ class TaskTable:
         return row
 
     # -------------------------------------------------------------- 交互
+    def _打开链接(self, url: str):
+        """任务列表超链接 → 系统默认浏览器打开原网页。
+
+        主通道 page.launch_url (Flet 跨端 API); page 未就绪时兜底标准库
+        webbrowser (桌面端等价)。任何失败只留痕不抛 —— 链接点击绝不能炸 UI。
+        """
+        try:
+            if self.page is not None:
+                self.page.launch_url(url)
+                return
+        except Exception as _e:
+            _log("GUI", f"launch_url 失败, 走 webbrowser 兜底: "
+                        f"{type(_e).__name__}: {_e}")
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception as _e:
+            _log("GUI", f"打开链接失败: {type(_e).__name__}: {_e}")
+
     def _on_row_click(self, task_id: str):
         """行点击 → 选中任务 (联动日志条/抽屉)"""
         self.task_manager.select_task(task_id)
