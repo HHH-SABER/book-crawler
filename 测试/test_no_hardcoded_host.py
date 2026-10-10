@@ -10,6 +10,11 @@
 三处都走 `_get_with_js_challenge`, 症状分别是 目录 0 章 / 正文全空 / 书名空。
 本测试对三个函数逐一断言, 防止任意一处被重新引入。
 
+**2026-10-10 结构变更 (C4 书名清洗)**: 书名那位改成了两层 ——
+`get_novel_title()` 成了**只做清洗的薄包装**, 真正的请求体(含 `headers`)改名为
+`_提取书名原始()`。故受查符号跟着换成 `_提取书名原始`（**本守卫就是这么设计的**:
+结构一改就红, 逼人来看一眼, 而不是静默失去覆盖）。请求路径本身未变。
+
 **防"空转通过"**: 若将来 headers 被重构(改名/抽成函数), 本测试必须**响亮地失败**
 而不是静默通过 —— 因此同时断言"三个函数都还在"且"能找到那个字典"且"里面有 User-Agent"。
 """
@@ -21,7 +26,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _爬虫源码 = _PROJECT_ROOT / '源码' / '爬虫.py'
 
 # 修复覆盖的三个函数: 任一处重新硬编码 Host, 都是同一个 bug 复发
-_受查函数 = ('inspect_page', 'get_chapter_content', 'get_novel_title')
+# (第三个在 2026-10-10 由 get_novel_title 改名为 _提取书名原始, 见模块 docstring)
+_受查函数 = ('inspect_page', 'get_chapter_content', '_提取书名原始')
 
 
 def _解析源码():
