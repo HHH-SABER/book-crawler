@@ -261,6 +261,26 @@ class Test托盘终态气泡(unittest.TestCase):
         self.assertFalse(发终态气泡(炸托盘(), [{'书名': '甲', '状态': 'fail', '原因': ''}]),
                          'notify 异常须吞掉并返回 False (调用方回退 SnackBar)')
 
+    # ---- 自动去重片段 (2026-10-10): 下载完就已去重的通知呈现 ----
+
+    def test_去重片段无动作返回空(self):
+        from gui_components.tray import 去重片段
+        self.assertEqual(去重片段(0, 0), '', '无去重动作时不打扰')
+
+    def test_单条成功带自动去重片段(self):
+        from gui_components.tray import 终态气泡文本
+        t = 终态气泡文本([{'书名': '甲', '状态': 'success', '原因': '',
+                         '去重清理': 2, '去重待确认': 1}])
+        self.assertEqual(t, '抓取完成: 《甲》\n已自动去重 2 项，1 项疑似待确认')
+
+    def test_多条聚合去重合计一行(self):
+        from gui_components.tray import 终态气泡文本
+        t = 终态气泡文本([
+            {'书名': '甲', '状态': 'success', '原因': '', '去重清理': 2},
+            {'书名': '乙', '状态': 'success', '原因': '', '去重待确认': 1},
+        ])
+        self.assertIn('已自动去重 2 项，1 项疑似待确认', t)
+
 
 class Test异常路径顺序(unittest.TestCase):
     """#2 顺序修正: task.error 先于 _记死书 先于 _set_terminal。

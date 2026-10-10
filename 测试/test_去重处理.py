@@ -398,5 +398,123 @@ class Test清理编排(_底座):
         self.assertTrue(r['失败'])
 
 
+class Test自动去重(_底座):
+    """自动去重新文件 (2026-10-10): 抓取收尾自动查重的核心契约。
+
+    锁定: 更全者留 / 劣势副本隔离 (绝不删) / 平手保原名 / 灰区不动作只记待确认 /
+    进行中(checkpoint)不参与 / 已忽略组尊重 / 配置可关 / 指纹缓存按文件变化失效。
+    """
+
+    def setUp(self):
+        super().setUp()
+        D.保存([])
+        self._配置路径 = os.path.join(os.path.dirname(D.清单路径()), D.配置文件名)
+        try:
+            os.remove(self._配置路径)
+        except OSError:
+            pass
+
+    def tearDown(self):
+        D.保存([])
+        try:
+            os.remove(self._配置路径)
+        except OSError:
+            pass
+        super().tearDown()
+
+    def test_新更全_隔离旧保留新(self):
+        旧 = self._写('示例书甲.txt', range(100))
+        新 = self._写('示例书甲B站版.txt', range(101))
+        r = D.自动去重新文件(新)
+        self.assertEqual(r['清理'], ['示例书甲.txt'])
+        self.assertEqual(r['失败'], [])
+        self.assertTrue(os.path.isfile(新), '更全的新文件必须保留')
+        self.assertFalse(os.path.exists(旧), '劣势旧副本应被移走')
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.目录, D.隔离目录名, '示例书甲.txt')), '应移入隔离区')
+        self.assertEqual(D.载入()[0]['状态'], D.状态_已清理)
+
+    def test_旧更全_隔离新(self):
+        旧 = self._写('示例书乙.txt', range(110))
+        新 = self._写('示例书乙B站版.txt', range(100))
+        r = D.自动去重新文件(新)
+        self.assertEqual(r['清理'], ['示例书乙B站版.txt'])
+        self.assertTrue(os.path.isfile(旧), '更全的既有文件必须保留')
+        self.assertFalse(os.path.exists(新))
+
+    def test_平手_保留原名隔离数字后缀(self):
+        原 = self._写('示例书丙.txt', range(100))
+        副 = self._写('示例书丙(1).txt', range(100))
+        r = D.自动去重新文件(副)
+        self.assertEqual(r['清理'], ['示例书丙(1).txt'])
+        self.assertTrue(os.path.isfile(原), '平手应保留原名副本')
+        self.assertFalse(os.path.exists(副))
+
+    def test_灰区不动文件只记待确认(self):
+        旧 = self._写('示例书丁.txt', range(100))
+        新 = self._写('示例书丁B站版.txt', range(40, 161))
+        r = D.自动去重新文件(新)
+        self.assertEqual(r['清理'], [])
+        self.assertTrue(r['待确认'], '灰区必须进待确认清单')
+        self.assertTrue(os.path.isfile(旧), '灰区不得移文件')
+        self.assertTrue(os.path.isfile(新))
+        self.assertEqual(D.载入()[0]['状态'], D.状态_待确认)
+
+    def test_不同书零动作(self):
+        旧 = self._写('示例书戊.txt', range(100))
+        新 = self._写('示例书己.txt', range(1000, 1100))
+        r = D.自动去重新文件(新)
+        self.assertEqual(r['清理'], [])
+        self.assertEqual(r['待确认'], [])
+        self.assertEqual(D.载入(), [])
+        self.assertTrue(os.path.isfile(旧))
+        self.assertTrue(os.path.isfile(新))
+
+    def test_进行中文件不参与比对(self):
+        旧 = self._写('示例书庚.txt', range(100))
+        _写文本(旧 + '.checkpoint.json', '{}')
+        新 = self._写('示例书庚B站版.txt', range(101))
+        r = D.自动去重新文件(新)
+        self.assertEqual(r['清理'], [])
+        self.assertTrue(os.path.isfile(旧), '带 checkpoint 的未完成文件不得被移走')
+        self.assertTrue(os.path.isfile(新))
+
+    def test_已忽略组不自动处理(self):
+        旧 = self._写('示例书辛.txt', range(100))
+        新 = self._写('示例书辛B站版.txt', range(101))
+        D.保存([{'键': D.组键(新), '状态': D.状态_已忽略, '最近时间': '',
+                 '代表': {'路径': 新, '名': os.path.basename(新), '字数': 0, '字节': 0},
+                 '可自动清理': [], '待确认': []}])
+        r = D.自动去重新文件(新)
+        self.assertEqual(r['清理'], [])
+        self.assertTrue(os.path.isfile(旧), '用户已忽略的组, 自动路径不得清理')
+        self.assertTrue(os.path.isfile(新))
+        self.assertEqual(D.载入()[0]['状态'], D.状态_已忽略)
+
+    def test_配置禁用时跳过(self):
+        旧 = self._写('示例书壬.txt', range(100))
+        新 = self._写('示例书壬B站版.txt', range(101))
+        os.makedirs(os.path.dirname(self._配置路径), exist_ok=True)
+        with open(self._配置路径, 'w', encoding='utf-8') as f:
+            f.write('{"启用": false}')
+        r = D.自动去重新文件(新)
+        self.assertIn('未启用', r['跳过'])
+        self.assertTrue(os.path.isfile(旧), '禁用时不得清理')
+        self.assertTrue(os.path.isfile(新))
+
+    def test_不存在的新文件不崩(self):
+        r = D.自动去重新文件(os.path.join(self.目录, '不存在.txt'))
+        self.assertTrue(r['跳过'])
+        self.assertEqual(r['清理'], [])
+
+    def test_指纹缓存按文件变化失效(self):
+        p = self._写('缓存书.txt', range(10))
+        _, 字1 = D._读指纹带缓存(p)
+        with open(p, 'w', encoding='utf-8') as f:
+            f.write(_造书(range(20)))
+        _, 字2 = D._读指纹带缓存(p)
+        self.assertGreater(字2, 字1, '文件变化后缓存必须失效重读')
+
+
 if __name__ == '__main__':
     unittest.main()

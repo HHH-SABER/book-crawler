@@ -5673,6 +5673,17 @@ class NovelSpider:
                 _log.info(f"\n抓取结束: 共{total}章，{len(failed)}章失败(章节号: {failed})，已保存至{output_file}")
             else:
                 _log.info(f"\n抓取完成，共{total}章，已保存至{output_file}")
+            # 自动去重 (2026-10-10): 下载完成后立即查重 —— 同一本书多站来源时
+            # 自动保留内容更全的一份, 劣势副本移入 _已去重/ (可反悔, 绝不自动删);
+            # 疑似重复仅记清单待确认, 不替用户判断。异常绝不影响本次抓取结果。
+            try:
+                import 去重处理 as _去重处理
+                _去重r = _去重处理.自动去重新文件(output_file)
+                if _去重r.get('清理') or _去重r.get('待确认'):
+                    _任务事件.发布('自动去重', 清理数=len(_去重r['清理']),
+                                   待确认数=len(_去重r['待确认']))   # U19 结构化事件
+            except Exception as _e去重:
+                _log.debug(f'裸 except 吞异常: {type(_e去重).__name__} (自动去重)')
             _任务事件.发布('输出文件', 路径=output_file)      # U19 结构化事件
             # U19: 完成终态也走事件 (此前只有 write() 里内联的 "抓取完成" 正则会置
             # status=completed, 是删正则的最后一道障碍)

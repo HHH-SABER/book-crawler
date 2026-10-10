@@ -76,6 +76,9 @@ class TaskMetrics:
     # 最近一章的清洗统计 ('清洗' 事件, 2026-09-29 可观测性):
     # {关键词行, 推广行, 过短行, 符号行, 广告行, 水印} — 全为 int
     clean_summary: dict = dataclasses.field(default_factory=dict)
+    # 自动去重 (2026-10-10): 抓取收尾自动查重的动作统计 ('自动去重' 事件回填)
+    auto_dedup_cleaned: int = 0   # 已移入 _已去重/ 的重复副本数
+    auto_dedup_pending: int = 0   # 疑似重复待人工确认数
 
 
 @dataclasses.dataclass
@@ -448,6 +451,15 @@ class TaskLogRedirector:
                     k: int(v) for k, v in 数据.items() if isinstance(v, (int, float))}
             except (TypeError, ValueError):
                 pass        # 字段异常 → 保持上次统计 (与质检得分缺失同语义)
+            return
+        if 类型 == '自动去重':
+            # 2026-10-10: 抓取收尾自动查重的动作统计 (爬虫 _收尾汇总 发布)。
+            # 完成通知 (_set_terminal) 直接读这两个字段拼去重提示。
+            try:
+                self.task.metrics.auto_dedup_cleaned = int(数据.get('清理数') or 0)
+                self.task.metrics.auto_dedup_pending = int(数据.get('待确认数') or 0)
+            except (TypeError, ValueError):
+                pass        # 字段异常 → 保持原值 (与质检得分缺失同语义)
             return
 
     def _backfill_quality(self, task):
@@ -986,7 +998,16 @@ class TaskManager:
             return                      # 幂等: 重复置同终态不重复打扰
         书名 = (task.title or '').strip() or '未知书名'
         if status == "completed":
-            self._入队通知({'书名': 书名, '状态': 'success', '原因': ''})
+            项 = {'书名': 书名, '状态': 'success', '原因': ''}
+            # 自动去重 (2026-10-10): 成功通知附去重动作 —— 下载完就已去重,
+            # 用户需要知道"刚下载的副本被隔离了 / 有疑似待确认"。
+            _清理数 = int(getattr(task.metrics, 'auto_dedup_cleaned', 0) or 0)
+            _待确数 = int(getattr(task.metrics, 'auto_dedup_pending', 0) or 0)
+            if _清理数:
+                项['去重清理'] = _清理数
+            if _待确数:
+                项['去重待确认'] = _待确数
+            self._入队通知(项)
         else:
             # failed / dead_pending: 失败原因优先 task.error, 死书用判定原因
             原因 = ''
