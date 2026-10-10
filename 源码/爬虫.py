@@ -185,7 +185,7 @@ except Exception:
 
 
 def _is_waf_js_challenge(response) -> bool:
-    """判断响应是否为 WAF JS 动态令牌挑战页 (banlvzw 等)
+    """判断响应是否为 WAF JS 动态令牌挑战页 (某站 等)
 
     特征: 401 + Loading 转圈动画 + /@wafjs? 混淆脚本
     """
@@ -354,7 +354,7 @@ _AD_PHRASE_FRAGMENTS = (
     '创作者：', '创作完成日',
     'Copyright', '版权所有', 'All Rights Reserved',
     # "找不到原站/被屏蔽后引导去新域名"类广告 (多站点模板, 如
-    # "最新找回4F4F4F,C〇M" / "网址被屏蔽 请访问 xxx,C0M" — 2026-09 实测 banlvzw 移动版)
+    # "最新找回4F4F4F,C〇M" / "网址被屏蔽 请访问 xxx,C0M" — 2026-09 实测某站移动版)
     '最新找回', '地址找回', '网址找回', '原域名', '新域名',
     'C〇M', ',C0M', ',C○M',
 )
@@ -599,11 +599,11 @@ def _resolve_novel_paths(catalog_url):
                         novel_path = id_match.group(1)
                         _log.info(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
                     else:
-                        # 模式5: /4y9k/index_1.html → /4y9k/ (banlvzw伴侣中文网等:
+                        # 模式5: /<书号>/index_1.html → /<书号>/ (某站等:
                         # 字母数字书ID + index_分页目录)
                         # 2026-10-03 扩: 允许大写书ID与 indexlist.html 文件名
-                        # (siteK /mmHJ/indexlist.html → /mmHJ/, 章节链接
-                        #  /mmHJ/{N}.html; 旧正则「小写」与「index/index_N」两道
+                        # (siteK /<书号>/indexlist.html → /<书号>/, 章节链接
+                        #  /<书号>/{N}.html; 旧正则「小写」与「index/index_N」两道
                         #  限制都匹配不上 → novel_path 空 → 通用提取全过滤,
                         #  即使分页重取到真页面也判 0 章节)
                         alt_match = re.search(
@@ -1224,7 +1224,7 @@ class NovelSpider:
                 self._ua连续失败 += 1
             else:
                 self._ua连续失败 = 0
-        # ---- 反爬分级循环处理 (banlvzw 等站点可能"JS挑战 → 图片验证码"连续多层) ----
+        # ---- 反爬分级循环处理 (某站等站点可能"JS挑战 → 图片验证码"连续多层) ----
         # 每轮先识别并解决一层 (图片验证码 / JS令牌挑战), 解决后重试;
         # 若重试后仍未通过 (再次命中反爬页), 进入下一轮继续解决, 最多 _MAX_WAF_ROUNDS 轮。
         try:
@@ -1273,7 +1273,7 @@ class NovelSpider:
                     except Exception as e:
                         _log.info(f"[反爬检测] WAF 验证码处理异常: {e}")
 
-            # 2. WAF JS 动态令牌挑战 (banlvzw 等: 401 + @wafjs 混淆脚本)
+            # 2. WAF JS 动态令牌挑战 (某站等: 401 + @wafjs 混淆脚本)
             if is_waf_captcha_page is not None and _is_waf_js_challenge(response):
                 if not hasattr(self, '_waf_js_last_try'):
                     self._waf_js_last_try = 0.0
@@ -4155,7 +4155,7 @@ class NovelSpider:
                 try:
                     from content_decoder import decode_chapter_data
                     # 用本会话 (含 WAF 放行 cookie 等) 获取页面 HTML 后传入,
-                    # 避免 decode_chapter_data 内部独立请求被反爬拦截 (如 banlvzw WAF 验证码)
+                    # 避免 decode_chapter_data 内部独立请求被反爬拦截 (如某站 WAF 验证码)
                     self._datafile_page_html = None
                     try:
                         soup = self.inspect_page(current_url, polite_delay=False)
