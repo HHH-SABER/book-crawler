@@ -288,6 +288,13 @@ def main(page: ft.Page):
             原因 = (n.get('原因') or '').strip()
             if 原因:
                 行 += f"\n{原因}"
+        else:
+            # 自动去重 (2026-10-10): 成功通知附"已自动去重 N 项/疑似待确认"
+            from gui_components.tray import 去重片段 as _去重片段
+            片段 = _去重片段(int(n.get('去重清理') or 0),
+                             int(n.get('去重待确认') or 0))
+            if 片段:
+                行 += f"\n{片段}"
         # 2026-10-06: 改走 ui_fluent.提示条(显式 toast 底色+字色成对, 防黑底黑字)
         page.show_dialog(提示条(行, 时长=6000))
 
