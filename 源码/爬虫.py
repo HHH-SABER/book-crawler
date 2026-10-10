@@ -516,6 +516,18 @@ def _非章节页名() -> tuple:
             '/liked.html', '/bookcase.html', '/comment.html', '/about.html')
 
 
+def _是非章节链接(href: str, 含index前缀: bool = False) -> bool:
+    """统一收口: 该链接是否为"非章节页"(目录/书架/评论/关于/首页列表等)。
+
+    2026-10-10 (E1): 原先 3 处各写一遍 `any(k in href for k in _非章节页名())`,
+    其中一处还额外拼了 `['/index_']` —— 改词表时容易漏改一处, 口径会漂移
+    (实测就漏过一次: `liked.html` 曾从某个选择器分支被当章节抓)。
+    """
+    if any(k in href for k in _非章节页名()):
+        return True
+    return bool(含index前缀 and '/index_' in href)
+
+
 def _resolve_novel_paths(catalog_url):
     r"""按站点规则计算小说路径前缀 (第 4 批重构: 从 get_chapter_list 抽出)。
 
@@ -2259,7 +2271,7 @@ class NovelSpider:
                                 if 'javascript:' in href:
                                     continue
                                 # 过滤掉可能的目录页和下载页
-                                if any(keyword in href for keyword in list(_非章节页名()) + ['/index_']):
+                                if _是非章节链接(href, 含index前缀=True):
                                     continue
                                 # 过滤掉非章节链接（如排序链接）
                                 if '正序' in text or '倒序' in text or '切换' in text or text == '开始阅读':
@@ -2283,7 +2295,7 @@ class NovelSpider:
                                 if 'javascript:' in href:
                                     continue
                                 # 过滤掉可能的目录页和下载页
-                                if any(keyword in href for keyword in list(_非章节页名())):
+                                if _是非章节链接(href):
                                     continue
                                 # 过滤掉路径结尾的链接（可能是目录页）
                                 if href.endswith(novel_path):
@@ -2355,7 +2367,7 @@ class NovelSpider:
             # 正文为空、质检 0 分, 还占掉一个章节号 → 误报"抓取失败章节号 [1]"。
             # 放在这个统一收口处, 才能覆盖上面各个选择器分支 (逐分支补已漏过一次)。
             if re.search(r'/(list|mulu|catalog|booklist)\d*\.html', chap['url']) or \
-                    any(k in chap['url'] for k in _非章节页名()) or \
+                    _是非章节链接(chap['url']) or \
                     chap['url'].rstrip('/') == self.base_url.rstrip('/'):
                 nav_filtered += 1
                 _log.info(f"[章节过滤] 移除目录页链接: '{title_stripped[:30]}' -> {chap['url']}")
