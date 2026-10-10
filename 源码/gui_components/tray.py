@@ -57,11 +57,25 @@ def 停止托盘(icon) -> None:
 # 系统气泡 (icon.notify)。纯文案聚合在此模块, 便于离线单测 (不依赖 flet/pystray)。
 
 
+def 去重片段(清理: int, 待确认: int) -> str:
+    """自动去重结果的展示片段 (SnackBar 与托盘气泡共用; 纯逻辑, 离线可测)。
+
+    无动作 → 空串 (不打扰); 有 → "已自动去重 N 项，M 项疑似待确认" 类。
+    """
+    片段 = []
+    if 清理 > 0:
+        片段.append(f"已自动去重 {清理} 项")
+    if 待确认 > 0:
+        片段.append(f"{待确认} 项疑似待确认")
+    return "，".join(片段)
+
+
 def 终态气泡文本(items: list) -> str:
     """把终态通知列表聚合为一条气泡文案。
 
-    - 单条: 与应用内 SnackBar 同文案 (成功"抓取完成: 《书名》" / 失败附原因)
-    - 多条: 成功/失败各一行计数 + 书名 (超 3 本折叠为"等", 气泡空间有限)
+    - 单条: 与应用内 SnackBar 同文案 (成功"抓取完成: 《书名》" / 失败附原因);
+      成功且带自动去重动作时追加去重片段 (2026-10-10)
+    - 多条: 成功/失败各一行计数 + 书名 (超 3 本折叠为"等"), 去重动作合计一行
     """
     ok = [i for i in items if i.get('状态') == 'success']
     fail = [i for i in items if i.get('状态') != 'success']
@@ -70,7 +84,12 @@ def 终态气泡文本(items: list) -> str:
     if len(items) == 1:
         n = items[0]
         if ok:
-            return f"抓取完成: 《{n.get('书名', '')}》"
+            行 = f"抓取完成: 《{n.get('书名', '')}》"
+            片段 = 去重片段(int(n.get('去重清理') or 0),
+                             int(n.get('去重待确认') or 0))
+            if 片段:
+                行 += f"\n{片段}"
+            return 行
         行 = f"抓取失败: 《{n.get('书名', '')}》"
         原因 = (n.get('原因') or '').strip()
         if 原因:
@@ -86,6 +105,10 @@ def 终态气泡文本(items: list) -> str:
         行s.append(f"抓取完成 {len(ok)} 本: {_名单(ok)}")
     if fail:
         行s.append(f"抓取失败 {len(fail)} 本: {_名单(fail)}")
+    片段 = 去重片段(sum(int(i.get('去重清理') or 0) for i in items),
+                     sum(int(i.get('去重待确认') or 0) for i in items))
+    if 片段:
+        行s.append(片段)
     return "\n".join(行s)
 
 
