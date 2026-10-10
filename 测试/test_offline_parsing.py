@@ -980,19 +980,19 @@ class TestNovelPathIndexList(unittest.TestCase):
 
     def test_indexlist_with_upper_book_id(self):
         self.assertEqual(
-            self.解析('https://www.example.com/mmHJ/indexlist.html'),
-            ('/mmHJ/', '/mmHJ/'))
+            self.解析('https://www.example.com/ab12/indexlist.html'),
+            ('/ab12/', '/ab12/'))
 
     def test_indexlist_lower_book_id(self):
         self.assertEqual(
-            self.解析('https://www.example.com/mmhj/indexlist.html'),
-            ('/mmhj/', '/mmhj/'))
+            self.解析('https://www.example.com/ab12/indexlist.html'),
+            ('/ab12/', '/ab12/'))
 
     def test_legacy_index_page_still_works(self):
-        """原 banlvzw 形态 /4y9k/index_1.html 不得回归。"""
+        """原某站形态 /ab34/index_1.html 不得回归。"""
         self.assertEqual(
-            self.解析('https://www.example.com/4y9k/index_1.html'),
-            ('/4y9k/', '/4y9k/'))
+            self.解析('https://www.example.com/ab34/index_1.html'),
+            ('/ab34/', '/ab34/'))
         self.assertEqual(
             self.解析('https://www.example.com/ab12/index.html'),
             ('/ab12/', '/ab12/'))

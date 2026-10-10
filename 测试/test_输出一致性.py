@@ -57,7 +57,7 @@ class Test从URL取书标识(unittest.TestCase):
 
     def test_取域名与路径段(self):
         表 = {
-            'https://example.com/4y9k/index.html': 'example.com_4y9k',
+            'https://example.com/ab34/index.html': 'example.com_ab34',
             'https://m.example.com/abc/def.html': 'example.com_abc',
             # 末段是纯数字时它就是"书号", 比上一级目录更有辨识度 → 取它
             'http://www.site.example.org/book/123': 'site.example.org_123',

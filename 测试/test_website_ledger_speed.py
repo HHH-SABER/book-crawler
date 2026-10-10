@@ -119,7 +119,7 @@ class Test网站清单(unittest.TestCase):
     def test_记录去重(self):
         清单.自动生成若缺失()
         self.assertTrue(清单.记录('https://www.sitec.example.cc/book/47.html',
-                                     '站名sitec', '深空彼岸'))
+                                     '站名sitec', '示例书名X'))
         self.assertTrue(清单.记录('https://www.sitec.example.cc/book/47.html',
                                      '', ''))   # 同 URL 再记 → 不重复
         条目 = 清单.读取()
@@ -127,7 +127,7 @@ class Test网站清单(unittest.TestCase):
         self.assertEqual(条目[0]['网址'],
                          'https://www.sitec.example.cc/book/47.html')
         self.assertEqual(条目[0]['网站名'], '站名sitec')
-        self.assertEqual(条目[0]['小说名'], '深空彼岸')
+        self.assertEqual(条目[0]['小说名'], '示例书名X')
 
     def test_重复记录补齐空字段(self):
         清单.自动生成若缺失()
@@ -186,9 +186,9 @@ class Test网站清单(unittest.TestCase):
 
     def test_按小说名搜索(self):
         清单.自动生成若缺失()
-        清单.记录('http://a.com/1.html', '站A', '深空彼岸')
+        清单.记录('http://a.com/1.html', '站A', '示例书名X')
         清单.记录('http://b.com/2.html', '站B', '示例书名')
-        self.assertEqual(len(清单.按小说名搜索('彼岸')), 1)
+        self.assertEqual(len(清单.按小说名搜索('书名X')), 1)
         self.assertEqual(len(清单.按小说名搜索('不存在')), 0)
         self.assertEqual(清单.按小说名搜索(''), [])
 
@@ -254,7 +254,7 @@ class Test历史页关联网站清单(unittest.TestCase):
         self._env.start()
         self.addCleanup(self._env.stop)
         清单.自动生成若缺失()
-        清单.记录('https://www.sitec.example.cc/read/47/3980.html', '站名sitec', '深空彼岸')
+        清单.记录('https://www.sitec.example.cc/read/47/3980.html', '站名sitec', '示例书名X')
         import gui_components.pages.history_data as hd
         importlib.reload(hd)
         self.hd = hd
@@ -265,7 +265,7 @@ class Test历史页关联网站清单(unittest.TestCase):
                 {'url': 'https://no-record.com/x.html', '域名': 'no-record.com'}]
         out = self.hd.补网站信息(rows)
         self.assertEqual(out[0]['网站名'], '站名sitec')
-        self.assertEqual(out[0]['小说名'], '深空彼岸')
+        self.assertEqual(out[0]['小说名'], '示例书名X')
         # 未命中: 网站名回退域名, 书名 '—' 由页面层处理 (空串)
         self.assertEqual(out[1]['网站名'], 'no-record.com')
         self.assertEqual(out[1]['小说名'], '')
@@ -275,7 +275,7 @@ class Test历史页关联网站清单(unittest.TestCase):
             {'url': 'https://www.sitec.example.cc/read/47/3980.html', '域名': 'sitec.example.cc'},
             {'url': 'https://other.com/x.html', '域名': 'other.com'},
         ]
-        out = self.hd.按书名过滤(rows, '深空')
+        out = self.hd.按书名过滤(rows, '书名X')
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]['url'],
                          'https://www.sitec.example.cc/read/47/3980.html')
