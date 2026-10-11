@@ -22,6 +22,7 @@ sys.path.insert(0, str(_根 / '测试'))
 
 import _沙箱          # noqa: E402,F401  状态根沙箱 (LOCALAPPDATA 隔离)
 import flet as ft     # noqa: E402
+import 去重处理        # noqa: E402  (C8: 判定常量与状态常量)
 from gui_components.detail_drawer import DetailDrawer   # noqa: E402
 from gui_components.task_manager import TaskManager      # noqa: E402
 
@@ -260,7 +261,7 @@ class Test查重弹窗展示自动去重记录(unittest.TestCase):
             _造记录(键='k2', 状态='待确认', 待确认=[('乙.txt', 20)]),
             _造记录(键='k3', 状态='已忽略', 可清理=[('丙.txt', 30)]),
         ]
-        可还原, 灰区 = DetailDrawer._分拣去重记录(记录)
+        可还原, 灰区, 仅提示 = DetailDrawer._分拣去重记录(记录)
         self.assertEqual([x['名'] for x in 可还原], ['甲.txt'])
         self.assertEqual([x['键'] for x in 可还原], ['k1'])
         self.assertEqual([x['名'] for x in 灰区], ['乙.txt'])
@@ -268,8 +269,8 @@ class Test查重弹窗展示自动去重记录(unittest.TestCase):
         self.assertEqual(可还原[0]['字数'], 10)
 
     def test_分拣_空与异常输入不炸(self):
-        self.assertEqual(DetailDrawer._分拣去重记录([]), ([], []))
-        self.assertEqual(DetailDrawer._分拣去重记录(None), ([], []))
+        self.assertEqual(DetailDrawer._分拣去重记录([]), ([], [], []))
+        self.assertEqual(DetailDrawer._分拣去重记录(None), ([], [], []))
 
     # ------------------------------------------------------ 弹窗渲染
     def test_弹窗列出已清理项与还原按钮(self):
@@ -366,6 +367,68 @@ class Test查重弹窗展示自动去重记录(unittest.TestCase):
         dlg = self.页.dialogs[0]
         self.assertTrue(dlg.actions[1].disabled, '灰区不该给"移入隔离区并清理"入口')
         self.assertNotIn('还原', [_标签(b) for b in _收集按钮(dlg)])
+
+
+class Test同名不同文只提示(unittest.TestCase):
+    """C8: 「同名不同文」在界面上**只能忽略, 不能隔离/还原** —— 两份都该留。"""
+
+    def setUp(self):
+        self.d = DetailDrawer(TaskManager(page=None))
+        self.页 = _假页()
+        self.d.page = self.页
+
+    def _造记录(self, 键='dup:1', 名='示例书名甲（另版）.txt', 字数=1900):
+        判 = 去重处理.判定_同名不同文
+        return {
+            '键': 键, '状态': 去重处理.状态_待确认,
+            '代表': {'路径': 'X:/示例书名甲.txt', '名': '示例书名甲.txt',
+                     '字数': 2000, '字节': 1},
+            '可自动清理': [],
+            '待确认': [{'路径': f'X:/{名}', '名': 名, '字数': 字数, '字节': 1,
+                     '判定': 判, '理由': '标题相同但正文几乎不重合', '指标': {}}],
+            '最近时间': '2026-10-11 13:00', '次数': 1, '首次时间': '2026-10-11 13:00',
+        }
+
+    def test_分拣把同名不同文排进第三桶(self):
+        记录 = [self._造记录(),
+                _造记录(键='k2', 状态='待确认', 待确认=[('普通灰区.txt', 20)])]
+        可还原, 灰区, 仅提示 = DetailDrawer._分拣去重记录(记录)
+        self.assertEqual(可还原, [])
+        self.assertEqual([x['名'] for x in 灰区], ['普通灰区.txt'],
+                         '普通灰区仍走"可隔离"桶')
+        self.assertEqual([x['名'] for x in 仅提示], ['示例书名甲（另版）.txt'],
+                         '同名不同文必须单独一桶')
+
+    def test_弹窗给忽略按钮且不给隔离还原(self):
+        self.d._显示查重结果([], '', [self._造记录()])
+        dlg = self.页.dialogs[0]
+        文本 = _收集文本(dlg)
+        self.assertIn('疑似同名不同文 1 个', 文本)
+        self.assertIn('示例书名甲（另版）.txt', 文本)
+        标签s = [_标签(b) for b in _收集按钮(dlg)]
+        self.assertIn('忽略', 标签s)
+        self.assertNotIn('隔离', 标签s, '两份都该留, 不该给「隔离」')
+        self.assertNotIn('还原', 标签s, '它从未被移动过, 不该给「还原」')
+
+    def test_忽略按钮调设状态为已忽略(self):
+        self.d._显示查重结果([], '', [self._造记录(键='dup:9')])
+        dlg = self.页.dialogs[0]
+        调用 = []
+
+        def _假设状态(键, 状态):
+            调用.append((键, 状态))
+            return True
+
+        with mock.patch('去重处理.设状态', _假设状态):
+            for b in [x for x in _收集按钮(dlg) if _标签(x) == '忽略']:
+                b.on_click(None)
+            time.sleep(0.3)
+        self.assertEqual(调用, [('dup:9', '已忽略')])
+
+    def test_只有同名不同文时一键清理仍禁用(self):
+        self.d._显示查重结果([], '', [self._造记录()])
+        dlg = self.页.dialogs[0]
+        self.assertTrue(dlg.actions[1].disabled, '这里没有任何可清理项')
 
 
 if __name__ == '__main__':
