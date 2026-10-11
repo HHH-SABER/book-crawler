@@ -199,6 +199,33 @@ def _is_waf_js_challenge(response) -> bool:
         return False
 
 
+挑战页通用标记 = ('@wafjs', 'Loading...')
+
+
+def 挑战页标记(配置: dict = None) -> tuple:
+    """WAF 挑战页「尚未解析完成」的标记 = **通用标记 + 站点专属标记** (C9)。
+
+    为什么要有这个函数: 原先 `_solve_waf_js_challenge` 的等待循环里**写死了某站的名字**
+    (`'loading <站名>' not in src`) —— 那是公开仓库不该出现的站点信息, 也把"某站的
+    挑战页特征"硬编码进了通用解析代码。
+
+    站点专属标记改从站点配置的 **`挑战页标记`** 字段读 (本地站点表, 不入库):
+      - 本机形态: 站点表里有该字段 → 标记集合与改造前**完全一致**;
+      - 配置缺失/异常: 只用通用标记 (公开形态 —— 该站本就没有公开条目, 不影响别的站)。
+
+    纯函数 (只吃配置 dict), 便于离线单测。
+    """
+    出 = list(挑战页通用标记)
+    try:
+        额外 = (配置 or {}).get('挑战页标记') or ()
+        if isinstance(额外, str):
+            额外 = (额外,)
+        出.extend(str(x) for x in 额外 if x)
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (挑战页标记读取)')
+    return tuple(出)
+
+
 def _title_chapter_nums(title):
     """从章节标题提取章节号集合: "第1-2章"→{1,2}, "1、从丢魂说起"→{1};
     无法提取时返回 None。用于判断连读页与已抓章节是否内容重叠。"""
@@ -1433,14 +1460,21 @@ class NovelSpider:
         try:
             driver = create_driver(engine='playwright', visible=False)
             driver.get(url)
+            # 挑战页"尚未解析完成"的标记: 通用标记 + **站点专属标记**(C9, 从站点表读,
+            # 不再把某站的名字写死在代码里)。循环外算一次即可。
+            try:
+                from sites_config import get_site_pattern
+                标记 = 挑战页标记(get_site_pattern(url) or {})
+            except Exception as e:  # noqa: BLE001 — 必须留痕
+                _log.debug(f'裸 except 吞异常: {type(e).__name__} (站点点配置读取)')
+                标记 = 挑战页标记(None)
             # 等待 JS 挑战执行 (spinner → 跳转真实页), 最长 max_wait 秒
             deadline = time.time() + max_wait
             while time.time() < deadline:
                 time.sleep(2)
                 try:
                     src = driver.page_source
-                    if src and '@wafjs' not in src and 'Loading...' not in src \
-                            and '<title>' in src and 'loading banlvzw' not in src:
+                    if src and '<title>' in src and not any(m in src for m in 标记):
                         break
                 except Exception as e:
                     _log.debug(f'裸 except 吞异常: {type(e).__name__}')
