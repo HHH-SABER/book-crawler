@@ -707,16 +707,17 @@ class DetailDrawer:
             该给「隔离」—— 即 2026-10-07 补的「点名批准」路径
             (`执行清理(…, 额外确认项=[名])`), 灰区绝不自动处理。
 
-        返回 ([{'键','名','字数'}…], [{'键','名','字数','理由'}…])
+        返回三元组 ([可还原…], [可隔离灰区…], [仅提示的同名不同文…])
         """
         try:
             import 去重处理
             状态_已清理 = 去重处理.状态_已清理
             状态_待确认 = 去重处理.状态_待确认
+            仅提示判定 = tuple(getattr(去重处理, '仅提示判定', ()))
         except Exception as e:  # noqa: BLE001
             _dbg("详情栏", f'去重状态常量不可用: {type(e).__name__}: {e}')
-            return [], []
-        可还原, 灰区 = [], []
+            return [], [], []
+        可还原, 灰区, 仅提示项 = [], [], []
         for r in 记录 or []:
             状态 = r.get('状态') or ''
             键 = r.get('键') or ''
@@ -726,10 +727,15 @@ class DetailDrawer:
                                '字数': x.get('字数') or 0})
             elif 状态 == 状态_待确认:
                 for x in (r.get('待确认') or []):
-                    灰区.append({'键': 键, '名': x.get('名') or '',
-                              '字数': x.get('字数') or 0,
-                              '理由': x.get('理由') or ''})
-        return 可还原, 灰区
+                    条目 = {'键': 键, '名': x.get('名') or '',
+                          '字数': x.get('字数') or 0,
+                          '理由': x.get('理由') or ''}
+                    # C8: 「同名不同文」**只提示** —— 两份都该留, 不能给「隔离」。
+                    if (x.get('判定') or '') in 仅提示判定:
+                        仅提示项.append(条目)
+                    else:
+                        灰区.append(条目)
+        return 可还原, 灰区, 仅提示项
 
     def _显示查重结果(self, 组: list, 错误: str, 记录: list = None):
         """查重结果弹窗: 每组列出保留项 + 可清理项 + 待确认项。
@@ -782,7 +788,7 @@ class DetailDrawer:
         # ---- C10: 自动去重记录 (已清理) + 灰区待确认 ----
         # 这两类**不在"本次扫描"结果里**: 已清理的文件已被移走(扫描不到), 灰区项当时未处理。
         # 不给用户看 = 自动去重"在跑但看不见", 隔离的文件也**无处可还原**。
-        可还原, 灰区 = self._分拣去重记录(
+        可还原, 灰区, 仅提示项 = self._分拣去重记录(
             记录 if 记录 is not None else self._取去重记录())
         if 可还原:
             块.append(ft.Text(f"已自动去重 {len(可还原)} 个 (已移入隔离区, 可逐项还原)",
@@ -819,6 +825,28 @@ class DetailDrawer:
                 ], spacing=4))
             if len(灰区) > 20:
                 块.append(ft.Text(f"…另有 {len(灰区) - 20} 个未显示",
+                                  size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                                  font_family=FONT_STACK))
+
+        # ---- C8: 同名不同文 (换字/防盗版副本) —— **只提示, 不能动文件** ----
+        # 两份都该留 (是不同版本), 所以这里既没有「隔离」也没有「还原」, 只有「忽略」。
+        if 仅提示项:
+            块.append(ft.Text(
+                f"疑似同名不同文 {len(仅提示项)} 个 (正文几乎不重合, 两份都保留)",
+                size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                color=ft.Colors.ON_SURFACE, font_family=FONT_STACK))
+            for x in 仅提示项[:20]:
+                块.append(ft.Row([
+                    ft.Text(f"{x['名']} ({x['字数']:,} 字)", size=SIZE_TINY,
+                            max_lines=1, color=ft.Colors.ON_SURFACE_VARIANT,
+                            font_family=FONT_STACK, expand=True,
+                            overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.TextButton("忽略",
+                                  on_click=lambda _, 键=x['键']:
+                                      self._忽略提示项(键, dialog)),
+                ], spacing=4))
+            if len(仅提示项) > 20:
+                块.append(ft.Text(f"…另有 {len(仅提示项) - 20} 个未显示",
                                   size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
                                   font_family=FONT_STACK))
 
@@ -934,6 +962,32 @@ class DetailDrawer:
             self._dispatch(_ui)
 
         threading.Thread(target=_worker, daemon=True, name='dedupe-approve').start()
+
+    def _忽略提示项(self, 键: str, dialog=None):
+        """把「同名不同文」提示标记为已忽略 (C8)。
+
+        ⚠️ 这是这类项**唯一**的动作 —— 它们的两份文件都该保留 (不同版本),
+        所以既不能隔离也不能还原。忽略后 `写出清单` 的状态继承会一直保持
+        (与"别再管这组"同语义), 下次扫描不再打扰。
+        """
+        try:
+            close_dialog(self.page, dialog)
+        except Exception as _e:  # noqa: BLE001 — 必须留痕
+            _dbg("详情栏", f'关窗失败: {type(_e).__name__}: {_e}')
+
+        def _worker():
+            try:
+                import 去重处理
+                好 = 去重处理.设状态(键, 去重处理.状态_已忽略)
+            except Exception as e:  # noqa: BLE001 — 必须留痕
+                _dbg("详情栏", f'忽略提示项异常: {type(e).__name__}: {e}')
+                好 = False
+
+            def _ui():
+                self._toast("✅ 已忽略该提示" if 好 else "⚠️ 忽略失败 (清单未更新)")
+            self._dispatch(_ui)
+
+        threading.Thread(target=_worker, daemon=True, name='dedupe-ignore').start()
 
     def 设置档位(self, 档: str, 参数: dict = None):
         """按布局档位调整抽屉宽度 + 底部日志条 (批 4)。
