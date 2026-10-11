@@ -684,7 +684,54 @@ class DetailDrawer:
 
         threading.Thread(target=_worker, daemon=True, name='dedupe-scan').start()
 
-    def _显示查重结果(self, 组: list, 错误: str):
+    @staticmethod
+    def _取去重记录() -> list:
+        """读去重清单 (C10)。
+
+        清单很小 (几十条), 但**读不到绝不能让弹窗挂掉** —— 一律当空处理。
+        """
+        try:
+            import 去重处理
+            return 去重处理.载入() or []
+        except Exception as e:  # noqa: BLE001 — 必须留痕
+            _dbg("详情栏", f'去重清单读取失败: {type(e).__name__}: {e}')
+            return []
+
+    @staticmethod
+    def _分拣去重记录(记录: list) -> tuple:
+        """把去重清单分成「可还原的已清理项」与「待点名批准的灰区项」(C10)。
+
+        **两类必须给不同动作** —— 这是本函数存在的理由:
+          - `已清理` 项的文件**已经被移走**到 `_已去重/`, 所以给「还原」;
+          - `待确认`(灰区) 项的文件**还在结果目录里**(从未移动), 给它「还原」是错的,
+            该给「隔离」—— 即 2026-10-07 补的「点名批准」路径
+            (`执行清理(…, 额外确认项=[名])`), 灰区绝不自动处理。
+
+        返回 ([{'键','名','字数'}…], [{'键','名','字数','理由'}…])
+        """
+        try:
+            import 去重处理
+            状态_已清理 = 去重处理.状态_已清理
+            状态_待确认 = 去重处理.状态_待确认
+        except Exception as e:  # noqa: BLE001
+            _dbg("详情栏", f'去重状态常量不可用: {type(e).__name__}: {e}')
+            return [], []
+        可还原, 灰区 = [], []
+        for r in 记录 or []:
+            状态 = r.get('状态') or ''
+            键 = r.get('键') or ''
+            if 状态 == 状态_已清理:
+                for x in (r.get('可自动清理') or []):
+                    可还原.append({'键': 键, '名': x.get('名') or '',
+                               '字数': x.get('字数') or 0})
+            elif 状态 == 状态_待确认:
+                for x in (r.get('待确认') or []):
+                    灰区.append({'键': 键, '名': x.get('名') or '',
+                              '字数': x.get('字数') or 0,
+                              '理由': x.get('理由') or ''})
+        return 可还原, 灰区
+
+    def _显示查重结果(self, 组: list, 错误: str, 记录: list = None):
         """查重结果弹窗: 每组列出保留项 + 可清理项 + 待确认项。
 
         ⚠️ EXE 文字必须显式 color (v2.4.19 G-H1 教训: 缺色渲染成不可见)。
@@ -730,6 +777,49 @@ class DetailDrawer:
                 块.append(ft.Text(f"…另有 {len(组) - 20} 组未显示",
                                   size=SIZE_TINY,
                                   color=ft.Colors.ON_SURFACE_VARIANT,
+                                  font_family=FONT_STACK))
+
+        # ---- C10: 自动去重记录 (已清理) + 灰区待确认 ----
+        # 这两类**不在"本次扫描"结果里**: 已清理的文件已被移走(扫描不到), 灰区项当时未处理。
+        # 不给用户看 = 自动去重"在跑但看不见", 隔离的文件也**无处可还原**。
+        可还原, 灰区 = self._分拣去重记录(
+            记录 if 记录 is not None else self._取去重记录())
+        if 可还原:
+            块.append(ft.Text(f"已自动去重 {len(可还原)} 个 (已移入隔离区, 可逐项还原)",
+                              size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                              color=ft.Colors.ON_SURFACE, font_family=FONT_STACK))
+            for x in 可还原[:20]:
+                块.append(ft.Row([
+                    ft.Text(f"已隔离 {x['名']}", size=SIZE_TINY, max_lines=1,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                            font_family=FONT_STACK, expand=True,
+                            overflow=ft.TextOverflow.ELLIPSIS),
+                    # 默认参数绑定当前的 键/名: 防闭包晚绑定导致所有按钮都作用于最后一项
+                    ft.TextButton("还原",
+                                  on_click=lambda _, 键=x['键'], 名=x['名']:
+                                      self._还原副本(键, 名, dialog)),
+                ], spacing=4))
+            if len(可还原) > 20:
+                块.append(ft.Text(f"…另有 {len(可还原) - 20} 个未显示",
+                                  size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
+                                  font_family=FONT_STACK))
+        if 灰区:
+            块.append(ft.Text(f"待确认 {len(灰区)} 个 (差异较大, 需逐项批准才隔离)",
+                              size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                              color=ft.Colors.ON_SURFACE, font_family=FONT_STACK))
+            for x in 灰区[:20]:
+                块.append(ft.Row([
+                    ft.Text(f"待确认 {x['名']}", size=SIZE_TINY, max_lines=1,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                            font_family=FONT_STACK, expand=True,
+                            overflow=ft.TextOverflow.ELLIPSIS),
+                    ft.TextButton("隔离",
+                                  on_click=lambda _, 键=x['键'], 名=x['名']:
+                                      self._隔离确认项(键, 名, dialog)),
+                ], spacing=4))
+            if len(灰区) > 20:
+                块.append(ft.Text(f"…另有 {len(灰区) - 20} 个未显示",
+                                  size=SIZE_TINY, color=ft.Colors.ON_SURFACE_VARIANT,
                                   font_family=FONT_STACK))
 
         有可清理 = any(g['可自动清理'] for g in 组)
@@ -784,6 +874,66 @@ class DetailDrawer:
             self._dispatch(_ui)
 
         threading.Thread(target=_worker, daemon=True, name='dedupe-clean').start()
+
+    def _还原副本(self, 键: str, 名: str, dialog=None):
+        """把**已隔离**的副本移回结果目录 (C10)。走工作线程, 不在主线程做文件 IO。"""
+        try:
+            close_dialog(self.page, dialog)
+        except Exception as _e:  # noqa: BLE001 — 必须留痕
+            _dbg("详情栏", f'关窗失败: {type(_e).__name__}: {_e}')
+        self._toast(f"正在还原 {名}…")
+
+        def _worker():
+            try:
+                import 去重处理
+                r = 去重处理.还原副本(键, 名)
+            except Exception as e:  # noqa: BLE001 — 必须留痕
+                _dbg("详情栏", f'还原异常: {type(e).__name__}: {e}')
+                r = {'失败': f'{type(e).__name__}: {e}'}
+
+            def _ui():
+                if r.get('失败'):
+                    self._toast(f"⚠️ 还原失败: {r['失败']}")
+                else:
+                    self._toast(f"✅ 已还原 {名}")
+                self._scan_files()
+            self._dispatch(_ui)
+
+        threading.Thread(target=_worker, daemon=True, name='dedupe-restore').start()
+
+    def _隔离确认项(self, 键: str, 名: str, dialog=None):
+        """灰区(待确认)项**逐项点名批准**后隔离 (C10)。
+
+        ⚠️ 灰区项**从不自动处理** —— 这里也必须由用户逐个点「隔离」才动,
+        走的是 `执行清理(…, 额外确认项=[名])` 这条点名批准路径。
+        """
+        try:
+            close_dialog(self.page, dialog)
+        except Exception as _e:  # noqa: BLE001 — 必须留痕
+            _dbg("详情栏", f'关窗失败: {type(_e).__name__}: {_e}')
+        self._toast(f"正在隔离 {名}…")
+
+        def _worker():
+            try:
+                import 去重处理
+                r = 去重处理.执行清理(键, '隔离', 额外确认项=[名])
+            except Exception as e:  # noqa: BLE001 — 必须留痕
+                _dbg("详情栏", f'隔离确认项异常: {type(e).__name__}: {e}')
+                r = {'清理': [], '失败': [(名, f'{type(e).__name__}: {e}')]}
+
+            def _ui():
+                清理 = r.get('清理') or []
+                失败 = r.get('失败') or []
+                if 失败 and not 清理:
+                    self._toast(f"⚠️ 隔离失败: {失败[0][1]}")
+                elif 失败:
+                    self._toast(f"⚠️ 已隔离 {len(清理)} 个, {len(失败)} 个失败")
+                else:
+                    self._toast(f"✅ 已隔离 {名} (可反悔, 可还原)")
+                self._scan_files()
+            self._dispatch(_ui)
+
+        threading.Thread(target=_worker, daemon=True, name='dedupe-approve').start()
 
     def 设置档位(self, 档: str, 参数: dict = None):
         """按布局档位调整抽屉宽度 + 底部日志条 (批 4)。
