@@ -215,6 +215,9 @@ def warn(source: str, message: str): AppLogger().warn(source, message)
 def error(source: str, message: str): AppLogger().error(source, message)
 def error_exc(source: str, message: str, exc: Exception = None):
     AppLogger().error_exc(source, message, exc)
+# 标准 logging 风格的别名 (2026-10-12 补, 见 BoundLogger 里的说明)
+def warning(source: str, message: str): AppLogger().warn(source, message)
+def critical(source: str, message: str): AppLogger().error(source, message)
 
 
 # ---------------------------------------------------------------- 镜像回调
@@ -268,6 +271,15 @@ class BoundLogger:
     def error(self, message: str):  AppLogger().error(self._source, message)
     def error_exc(self, message: str, exc: Exception = None):
         AppLogger().error_exc(self._source, message, exc)
+
+    # `warning`/`critical` 是标准 logging 的方法名 (2026-10-12 补):
+    # 本项目自己的名字是 `warn`, 但写 `_log.warning(...)` 是绝大多数人的肌肉记忆 ——
+    # 而 BoundLogger 没有 __getattr__ 兜底, 于是那种写法**直接 AttributeError**。
+    # 实测事故: 爬虫.py 两处 `_log.warning(_折叠)` 让整个抓取任务以
+    # "任务异常: 'BoundLogger' object has no attribute 'warning'" 崩掉
+    # (在"目录解析折叠站"这条分支上, 真机抓到)。故补别名, 两种写法都能用。
+    def warning(self, message: str):  self.warn(message)
+    def critical(self, message: str): self.error(message)
 
 
 _BOUND_CACHE = {}
