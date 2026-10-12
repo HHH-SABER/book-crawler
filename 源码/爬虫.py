@@ -1839,7 +1839,7 @@ class NovelSpider:
         if parsed is not None:
             _折叠 = _目录折叠提示(soup, len(parsed))
             if _折叠:
-                _log.warning(_折叠)
+                _log.warn(_折叠)
             return parsed
 
         # 通用提取段 (第 4 批修复: 曾随路径计算误切进 _resolve_novel_paths, 迁回此处)
@@ -2545,7 +2545,7 @@ class NovelSpider:
 
         _折叠 = _目录折叠提示(soup, len(chapters))
         if _折叠:
-            _log.warning(_折叠)
+            _log.warn(_折叠)
 
         return chapters
     def clean_chapter_title(self, title):
