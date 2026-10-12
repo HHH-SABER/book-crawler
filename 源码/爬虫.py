@@ -202,6 +202,51 @@ def _is_waf_js_challenge(response) -> bool:
 挑战页通用标记 = ('@wafjs', 'Loading...')
 
 
+# WAF 验证码页的传统标记 (站点专属历史遗留, 保留以兼容既有分支行为)
+验证码页_传统标记 = ('__wafcaptcha', '_waform', '访问频率太高')
+
+
+def _像验证码页(文本) -> bool:
+    """判断一段页面文本是否**像** WAF 验证码/质询页 (通用口径, 2026-10-12)。
+
+    **为什么要抽出来**: 原先"是不是验证码页"的判定**散在** `_solve_waf_captcha` 里
+    (只认三个站点专属标记), 而它的调用又被 `站点匹配(url, 'siteT')` 限制 ——
+    实测某站(非 siteT)页面明明取得到、却**始终进不了验证码管理器**, 于是用户打开的
+    "自动识别 / 失败转人工"对它**完全无效**。抽成通用口径后, 通用路径也能识别并接管。
+
+    判定 = 传统标记 ∪ `waf_captcha.looks_like_waf_captcha()` 的通用特征;
+    该模块不可用时只认传统标记 ⇒ 行为**不劣于**改造前。
+    """
+    if not 文本:
+        return False
+    if any(m in 文本 for m in 验证码页_传统标记):
+        return True
+    try:
+        from waf_captcha import looks_like_waf_captcha
+        return bool(looks_like_waf_captcha(文本))
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (验证码页通用判定)')
+        return False
+
+
+def _应主动接管验证码(管理器) -> bool:
+    """通用路径是否值得**主动起浏览器**去接管验证码页 (2026-10-12)。
+
+    **安全阀**: 只有当用户**启用了至少一个自动识别策略**时才主动接管。
+    为什么必须加: 管理器里的人工会**弹可见浏览器并等用户输入** —— 若"自动识别全关"
+    (合规默认) 时也对"疑似验证码页"主动接管, 用户抓书会被莫名弹窗打断。
+    主动开过自动识别的用户才是有此诉求的人; 且达 `auto_max_fail` 次后转人工正是其预期。
+    """
+    if 管理器 is None:
+        return False
+    try:
+        return any(管理器.config.strategy_enabled(n) for n in
+                   ('ddddocr', 'slider', 'third_party', 'point_click'))
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (验证码接管闸门)')
+        return False
+
+
 def 挑战页标记(配置: dict = None) -> tuple:
     """WAF 挑战页「尚未解析完成」的标记 = **通用标记 + 站点专属标记** (C9)。
 
@@ -714,6 +759,55 @@ def _取UA引擎():
     return _UA单例
 
 
+# 折叠站"完整目录"入口的候选特征 (2026-10-12 折叠自救)
+完整目录_文本 = ('全部章节', '全部章节目录', '查看全部', '完整目录', '全部目录',
+              '章节目录', '展开全部', '查看更多章节', '完整章节', '目录列表')
+完整目录_href = ('indexlist', 'allchapter', 'chapterlist', 'all.html', '/mulu',
+              'mulu.', 'list_all', 'full_list', 'alllist')
+
+
+def _找完整目录链接(soup, catalog_url: str) -> str:
+    """在目录页里找"完整目录/全部章节"入口, 返回绝对 URL; 找不到返回 ''。
+
+    **为什么要它** (2026-10-12 真机实测倒逼): 折叠站只把**头尾若干章**放在目录页,
+    中间章节收进"全部目录"子页/分页 —— 实测某站页面自述**另有约 126 章未展示**,
+    而程序此前只会**告警**, 让用户自己去找那个入口。
+
+    判定: 锚文本命中常见措辞, **或** href 命中目录类特征 (很多站入口文字写"更多")。
+    安全: 只接受 http(s) 绝对化后的链接 (跳过 `javascript:`/`#`/`mailto:`),
+    跳过指回当前页自身的链接; **同域优先** (跨域入口多半是推荐位)。
+    """
+    候选 = []
+    try:
+        from urllib.parse import urljoin, urlsplit
+        当前 = urlsplit(catalog_url or '')
+        当前键 = (catalog_url or '').rstrip('/')
+        for a in soup.find_all('a', href=True):
+            文本 = (a.get_text(strip=True) or '')
+            href = (a.get('href') or '').strip()
+            if not href or href.startswith(('javascript:', '#', 'mailto:', 'tel:')):
+                continue
+            绝对 = urljoin(catalog_url or '', href)
+            分 = urlsplit(绝对)
+            if 分.scheme not in ('http', 'https') or not 分.netloc:
+                continue
+            if 绝对.rstrip('/') == 当前键:
+                continue                      # 指回本页 → 无意义
+            命中文本 = any(t in 文本 for t in 完整目录_文本)
+            命中链接 = any(h in 绝对.lower() for h in 完整目录_href)
+            if not (命中文本 or 命中链接):
+                continue
+            # 排序键: 同域优先 → 文本命中优先 → 先出现者
+            候选.append((0 if 分.netloc == 当前.netloc else 1,
+                       0 if 命中文本 else 1, len(候选), 绝对))
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (完整目录入口查找)')
+    if not 候选:
+        return ''
+    候选.sort(key=lambda x: (x[0], x[1], x[2]))
+    return 候选[0][3]
+
+
 def _目录折叠提示(soup, 解析章数):
     """目录折叠站检测 (2026-10-09): 页面宣称章节总数远大于实际解析数时告警。
 
@@ -1085,7 +1179,7 @@ class NovelSpider:
             None: 如果不是验证码页面
         """
         page_source = driver.page_source
-        if '__wafcaptcha' not in page_source and '_waform' not in page_source and '访问频率太高' not in page_source:
+        if not _像验证码页(page_source):
             return page_source  # 不是验证码页面, 直接返回
 
         _log.info("[WAF驱动] 检测到WAF验证码页面")
@@ -1151,6 +1245,35 @@ class NovelSpider:
         page_source = visible_driver.page_source
         _log.info(f"[WAF驱动] 验证码解决后页面长度: {len(page_source)} 字符")
         return page_source
+
+    def _尝试通用验证码接管(self, url):
+        """通用请求路径遇到"像验证码页"时的接管尝试 (2026-10-12)。
+
+        **为什么需要**: 进入验证码管理器的入口 `_solve_waf_captcha` 原先**只挂在
+        `站点匹配(url, 'siteT')` 分支**上 —— 非 siteT 站点即使返回验证码页, 也**永远
+        进不了管理器**, 于是用户打开的"自动识别 / 失败转人工"对它们**完全无效**。
+        本方法在通用路径补一道口子: 起一次持久化驱动 → 交给 `_solve_waf_captcha`
+        (内含管理器: 分级自动识别 → 达 `auto_max_fail` 次转人工)。
+
+        **安全**: 任何失败/仍是验证码页 → 返回 None, 调用方保持**原有结果** ——
+        新路径绝不把原本能用的站点搞坏。调用前应先过 `_应主动接管验证码()` 闸门。
+        """
+        if not selenium_available:
+            _log.info("[验证码接管] 未启用 Selenium, 跳过接管")
+            return None
+        try:
+            driver = self._get_waf_driver(visible=False)
+            driver.get(url)
+            _wait_driver_body(driver)
+            page_source = self._solve_waf_captcha(driver, url)
+            if page_source and not _像验证码页(page_source) and (
+                    '<html' in page_source.lower() or '<body' in page_source.lower()):
+                _log.info(f"[验证码接管] ✅ 接管后拿到可用页面, 长度: {len(page_source)} 字符")
+                return BeautifulSoup(page_source, 'lxml')
+            _log.info("[验证码接管] 接管后仍是验证码页或未取到内容, 保持原结果")
+        except Exception as e:  # noqa: BLE001 — 必须留痕
+            _log.info(f"[验证码接管] 接管失败: {type(e).__name__}: {e}")
+        return None
 
     def _get_with_js_challenge(self, url, headers=None, timeout=15):
         """发起GET请求并处理JS cookie校验反爬(如siteW的ge_js_validator)。
@@ -1691,6 +1814,16 @@ class NovelSpider:
                 # 检查解码后的内容是否包含HTML标签
                 if '<html' in text.lower() or '<body' in text.lower():
                     _log.info(f"成功获取到HTML内容，长度: {len(text)} 字符")
+                    # ---- 通用验证码接管 (2026-10-12) ----
+                    # 入口原先只挂在 siteT 分支 → 非 siteT 站点的验证码页永远进不了
+                    # 验证码管理器, 用户打开的"自动识别/失败转人工"对它们形同虚设。
+                    # 这里补一道: 页面像验证码页 **且** 用户启用过自动识别策略 → 接管。
+                    # 闸门与失败回退都在下方方法内, 保证不改变原本可用的站点行为。
+                    if _像验证码页(text) and _应主动接管验证码(self._captcha_manager):
+                        _log.info("[验证码接管] 通用路径检测到验证码页, 尝试接管")
+                        _接管soup = self._尝试通用验证码接管(url)
+                        if _接管soup is not None:
+                            return _接管soup
                     response.encoding = 'utf-8'
                     if not _含挑战特征(text[:2000]):
                         with self._inspect_cache_lock:
@@ -1777,7 +1910,35 @@ class NovelSpider:
             return self.base_url + href
         return self.base_url + '/' + href
 
-    def get_chapter_list(self, catalog_url, sort_chapters=False):
+    def _折叠自救(self, soup, catalog_url, 已有章节, sort_chapters):
+        """折叠目录自救 (2026-10-12): 找到"全部章节"入口就跳过去重新解析。
+
+        **为什么要它**: 折叠站把中间章节藏进"全部目录"子页, 目录页只给头尾若干章
+        (真实测: 页面自述另有约 126 章未展示)。此前只 `_log.warn` 告警, 用户得自己
+        去找入口并重跑; 现在**自动尝试跳过去**, 拿到更全的列表就直接用它。
+
+        返回: 更完整的章节列表; 没找到入口 / 抓取失败 / 没变多 → 原样返回。
+        防重入: 递归调用带 `_折叠自救层=1`, 那一层不再自救 (防两页互指成死循环)。
+        """
+        候选 = _找完整目录链接(soup, catalog_url)
+        if not 候选:
+            _log.info("[折叠自救] 未找到'全部目录'入口, 保持原结果")
+            return 已有章节
+        _log.info(f"[折叠自救] 发现完整目录入口: {候选} → 重新解析")
+        新 = None
+        try:
+            新 = self.get_chapter_list(候选, sort_chapters, _折叠自救层=1)
+        except Exception as e:  # noqa: BLE001 — 必须留痕
+            _log.info(f"[折叠自救] 该入口解析失败: {type(e).__name__}: {e}")
+        原数 = len(已有章节 or [])
+        if 新 and len(新) > 原数:
+            _log.info(f"[折叠自救] ✅ 生效: {原数} 章 → {len(新)} 章")
+            return 新
+        _log.info(f"[折叠自救] 未变多 (原 {原数} 章"
+                  f"{f', 新 {len(新)} 章' if 新 else ''}), 保持原结果")
+        return 已有章节
+
+    def get_chapter_list(self, catalog_url, sort_chapters=False, _折叠自救层=0):
         """
         从小说目录页提取章节列表。
 
@@ -1840,6 +2001,8 @@ class NovelSpider:
             _折叠 = _目录折叠提示(soup, len(parsed))
             if _折叠:
                 _log.warn(_折叠)
+                if _折叠自救层 == 0:      # 只在顶层自救一次 (防递归)
+                    parsed = self._折叠自救(soup, catalog_url, parsed, sort_chapters)
             return parsed
 
         # 通用提取段 (第 4 批修复: 曾随路径计算误切进 _resolve_novel_paths, 迁回此处)
@@ -2546,6 +2709,8 @@ class NovelSpider:
         _折叠 = _目录折叠提示(soup, len(chapters))
         if _折叠:
             _log.warn(_折叠)
+            if _折叠自救层 == 0:          # 只在顶层自救一次 (防递归)
+                chapters = self._折叠自救(soup, catalog_url, chapters, sort_chapters)
 
         return chapters
     def clean_chapter_title(self, title):
