@@ -65,6 +65,14 @@ DEFAULT_CONFIG = {
         "point_click": {"enabled": False},    # 点选/语义 (默认关闭, 未配置模型时转人工)
     },
     "retry_limit": 3,              # 识别失败重试上限
+    # ---- 自动识别失败 → 转人工接管 (2026-10-11 用户要求: "超过 5-10 次自动识别
+    # 无法通过就让人主动接管验证") ----
+    # 语义: **自动识别策略**连续失败达 auto_max_fail 次后, 不再尝试自动识别,
+    #       直接走人工策略 (弹可见浏览器由用户输入), 持续 handover_cooldown 秒;
+    #       期间若人工解掉, 冷却期满后再给自动识别机会 (避免站点已恢复却永久关闭自动)。
+    #       auto_max_fail 建议 5–10 (太小会过早打扰用户, 太大等于白烧请求)。
+    "auto_max_fail": 5,            # 自动识别连续失败阈值 (达此数转人工)
+    "handover_cooldown": 600,      # 转人工后多少秒内不再尝试自动识别 (0=本次会话内不再试)
     "monitor": {
         "alert_window": 20,        # 触发率统计窗口(最近N次请求)
         "max_consecutive_fail": 3, # 连续失败告警阈值
@@ -170,6 +178,24 @@ class Config:
     @property
     def retry_limit(self):
         return int(self.data.get('retry_limit', 3))
+
+    @property
+    def auto_max_fail(self) -> int:
+        """自动识别**连续失败**阈值 (达此数转人工接管); 非法值回退 5, 夹到 [1, 50]。"""
+        try:
+            值 = int(self.data.get('auto_max_fail', 5))
+        except (TypeError, ValueError):
+            值 = 5
+        return max(1, min(50, 值))
+
+    @property
+    def handover_cooldown(self) -> float:
+        """转人工后不再尝试自动识别的秒数 (0 = 本次会话内不再尝试); 夹到 [0, 86400]。"""
+        try:
+            值 = float(self.data.get('handover_cooldown', 600))
+        except (TypeError, ValueError):
+            值 = 600.0
+        return max(0.0, min(86400.0, 值))
 
 
 # ============================================================
@@ -1133,6 +1159,10 @@ class CaptchaManager:
         self._handlers = {}
         self._current = None
         self._lock = threading.Lock()
+        # 自动识别连续失败计数 + 转人工接管截止时间 (2026-10-11 用户要求)。
+        # 跨 handle() 调用累积, 故放在实例上 (一个 manager 对应一次程序会话)。
+        self._auto_fail = 0
+        self._handover_until = 0.0
         # 默认注册内置策略 (可被外部 register 覆盖/替换)
         self.register(DdddocrHandler(self.monitor, self.config))
         self.register(SliderCaptchaHandler(self.monitor, self.config))
@@ -1141,6 +1171,26 @@ class CaptchaManager:
         self.register(ManualCaptchaHandler(self.monitor, self.config))
         # 默认策略: manual (最保守); 用户开启识别后通过 set_strategy 切换
         self.set_strategy('auto' if config and config.strategy_enabled('ddddocr') else 'manual')
+
+    # ---- 自动失败 → 转人工接管 (2026-10-11) ----
+    def 接管状态(self) -> dict:
+        """当前接管状态 (诊断/单测用): 连续自动失败数、阈值、是否在接管窗口内。"""
+        return {
+            '连续自动失败': self._auto_fail,
+            '阈值': self.config.auto_max_fail,
+            '接管中': time.time() < self._handover_until,
+            '接管截止': self._handover_until,
+        }
+
+    def _在接管窗口内(self) -> bool:
+        return time.time() < self._handover_until
+
+    def _进入接管(self, 原因: str) -> None:
+        """进入人工接管窗口: 冷却期 (handover_cooldown) 内不再尝试自动识别。"""
+        冷却 = self.config.handover_cooldown
+        self._handover_until = (time.time() + 冷却) if 冷却 > 0 else float('inf')
+        _log.info(f"[验证码] {原因} → **转人工接管**: 接下来 "
+                  f"{'本次会话内' if 冷却 <= 0 else f'{冷却:.0f} 秒内'}不再尝试自动识别")
 
     # ---- 注册与选择 ----
     def register(self, handler):
@@ -1193,6 +1243,12 @@ class CaptchaManager:
         """检测并处理验证码。
 
         策略链依次尝试: 上一个失败自动降级到下一个 (分级处理 + 容错)。
+
+        **自动失败 → 转人工接管 (2026-10-11)**: 自动识别策略**连续失败**达
+        `auto_max_fail` 次 (建议 5–10) 后进入接管窗口 (`handover_cooldown` 秒):
+        窗口内**不再尝试**任何自动策略, 直接走人工 (弹可见浏览器由用户输入);
+        自动识别一旦成功则计数清零; 人工解掉后重新计时冷却期。
+
         Returns:
             解决后的页面源码; 非验证码页返回原始 page_source; 全部失败返回 None
         """
@@ -1204,7 +1260,24 @@ class CaptchaManager:
         # 记录触发
         self.monitor.record_request(True)
 
-        if self._current == 'auto':
+        # ---- 阈值闸 (2026-10-11): 自动识别连续失败达阈值 → 直接转人工 ----
+        # 为什么放在建链之前: 用户要的是"失败若干次后**别再烧自动识别**", 所以此时
+        # 应当**根本不尝试**自动策略, 而不是试完再降级 (后者每次都白请求一遍)。
+        接管中 = self._在接管窗口内()
+        if self._current == 'auto' and not 接管中 and \
+                self._auto_fail >= self.config.auto_max_fail:
+            self._进入接管(f"自动识别已连续失败 {self._auto_fail} 次 "
+                       f"(阈值 {self.config.auto_max_fail})")
+            接管中 = True
+
+        if 接管中:
+            # 接管窗口内: 只走人工, **不尝试**任何自动策略
+            chain = ['manual'] if self.config.strategy_enabled('manual') else []
+            if self._current == 'auto':
+                _log.info(f"[验证码] 人工接管窗口内, 跳过自动识别 "
+                          f"(连续失败 {self._auto_fail} 次 / 阈值 "
+                          f"{self.config.auto_max_fail})")
+        elif self._current == 'auto':
             chain = self._auto_chain()
             # 人工兜底必须最后
             chain = [c for c in chain if c != 'manual'] + ['manual'] if 'manual' in chain else chain
@@ -1214,13 +1287,15 @@ class CaptchaManager:
             # 能绕过 strategies.ddddocr.enabled=false 跑 OCR —— 与本项目
             # "验证码自动识别默认必须关闭"的硬边界冲突 (AGENTS.md)。
             # 注: 显式把 enabled 置 true 后再 set_strategy 的正当路径不受影响。
-            if self.strategy_enabled(self._current):
+            if self.config.strategy_enabled(self._current):
                 chain = [self._current]
             else:
                 _log.info(f"[验证码] 策略 {self._current} 未启用 "
                           f"(strategies.{self._current}.enabled=false), 拒绝执行")
-                chain = ['manual'] if self.strategy_enabled('manual') else []
+                chain = ['manual'] if self.config.strategy_enabled('manual') else []
 
+        结果, 命中 = None, None
+        试过自动 = False
         for name in chain:
             handler = self._handlers.get(name)
             if handler is None:
@@ -1230,12 +1305,39 @@ class CaptchaManager:
                 if not hasattr(handler, 'driver_factory') or handler.driver_factory is None:
                     _log.info("[验证码] 人工策略未配置浏览器工厂, 无法处理")
                     continue
+            else:
+                试过自动 = True
             _log.info(f"[验证码] 尝试策略: {name}")
             result = handler.handle(driver, url, page_source)
             if result is not None and not self.is_captcha_page(result):
-                return result
+                结果, 命中 = result, name
+                break
             # 失败 → 下一个策略 (降级)
-        return None
+
+        # ---- 失败计数 / 接管窗口维护 (2026-10-11) ----
+        # ⚠️ 两条规则的分工 (首版我把它们写混了, 被测试抓出来):
+        #   ① **接管窗口只由"自动识别连续失败达阈值"触发** —— 若"人工兜住一次"也进接管,
+        #      那第 1 次失败后就再不给自动识别机会, 用户要的"5-10 次"永远攒不到;
+        #   ② 人工在**窗口内**继续解掉验证码 → 顺延窗口 (别在用户正忙时插回自动识别)。
+        # 另: 自动失败要**先计数**, 不能因为人工兜住了就跳过 (否则同样攒不到阈值)。
+        try:
+            自动成功 = 命中 is not None and 命中 != 'manual'
+            if 自动成功:
+                self._auto_fail = 0            # 自动识别恢复 → 清零
+                self._handover_until = 0.0
+            elif 试过自动:
+                self._auto_fail += 1
+                if self._auto_fail >= self.config.auto_max_fail:
+                    self._进入接管(f"自动识别已连续失败 {self._auto_fail} 次 "
+                               f"(阈值 {self.config.auto_max_fail})")
+            if 命中 == 'manual' and self.config.handover_cooldown > 0 \
+                    and self._在接管窗口内():
+                # 人工**在接管窗口内**继续解掉 → 顺延窗口 (别在用户正忙时插回自动识别)。
+                # ⚠️ 不能无条件顺延: 否则第 1 次人工兜住就压住自动识别, 阈值永远攒不到。
+                self._handover_until = time.time() + self.config.handover_cooldown
+        except Exception as e:  # noqa: BLE001 — 必须留痕
+            _log.debug(f'裸 except 吞异常: {type(e).__name__} (接管计数)')
+        return 结果
 
     def is_captcha_page(self, page_source):
         """通用验证码页检测 (移动版站点 WAF + 通用特征)"""
