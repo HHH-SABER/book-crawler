@@ -808,6 +808,47 @@ def _找完整目录链接(soup, catalog_url: str) -> str:
     return 候选[0][3]
 
 
+def _目录列表可疑(章节列表) -> str:
+    """目录解析结果"看着不对"的廉价判据 (2026-10-12); 返回原因字符串, 正常返回 ''。
+
+    **为什么需要它** (真机实测倒逼): 有些站点把**别的书的推广章链接**混在目录页里, 而它的
+    href 形态与真章节**完全一致** —— 实测推广链 `/read/<书号>/671592.html` vs 真第 1 章
+    `/read/<书号>/3980.html`, 通用链接筛选会把推广链**排在真章节前面**收下, 于是抓回来的是
+    "本章未完, 点击下一页继续阅读"的空壳页, 正文只剩几十字节。
+    这类"结果不对"**用章节数根本发现不了**(数出来一大把), 故补此判据, 作为
+    折叠自救(`_折叠自救`)的**第二个触发条件**。
+
+    判据 (任一成立即可疑; 刻意保守, 避免给正常站点多抓一页):
+      ① 空列表;
+      ② **同一 URL 重复 ≥3 次** —— 推广位/导航位常被重复渲染;
+      ③ **首个章节号 ≥ 10× 列表中位数** —— "推广链挂最前"的典型签名
+         (真第 1 章号最小, 推广链号大得多)。
+    """
+    try:
+        章节列表 = [c for c in (章节列表 or []) if isinstance(c, dict)]
+        if not 章节列表:
+            return '目录解析结果为空'
+        from collections import Counter
+        计数 = Counter(str(c.get('url') or '') for c in 章节列表)
+        最重复网址, 次 = 计数.most_common(1)[0]
+        if 次 >= 3:
+            return (f'同一章节 URL 重复 {次} 次 (疑似推广位/导航位混入): '
+                    f'{最重复网址[:60]}')
+        号s = []
+        for c in 章节列表:
+            m = re.search(r'/(\d+)(?:_\d+)?\.html', str(c.get('url') or ''))
+            if m:
+                号s.append(int(m.group(1)))
+        if len(号s) >= 4:
+            首 = 号s[0]
+            中位 = sorted(号s)[len(号s) // 2]
+            if 中位 > 0 and 首 >= 中位 * 10:
+                return f'首个章节号 {首} 远大于中位数 {中位} (疑似推广链排在真章节之前)'
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (目录列表可疑判据)')
+    return ''
+
+
 def _目录折叠提示(soup, 解析章数):
     """目录折叠站检测 (2026-10-09): 页面宣称章节总数远大于实际解析数时告警。
 
@@ -1999,8 +2040,12 @@ class NovelSpider:
         parsed = self._parse_catalog_by_site(catalog_url, sort_chapters, soup)
         if parsed is not None:
             _折叠 = _目录折叠提示(soup, len(parsed))
-            if _折叠:
-                _log.warn(_折叠)
+            _可疑 = _目录列表可疑(parsed)
+            if _折叠 or _可疑:
+                if _折叠:
+                    _log.warn(_折叠)
+                if _可疑:
+                    _log.warn(f'⚠️ 目录解析结果可疑: {_可疑}')
                 if _折叠自救层 == 0:      # 只在顶层自救一次 (防递归)
                     parsed = self._折叠自救(soup, catalog_url, parsed, sort_chapters)
             return parsed
@@ -2707,8 +2752,12 @@ class NovelSpider:
             _log.debug(f"  {i+1}. {chap['title']} -> {chap['url']}")
 
         _折叠 = _目录折叠提示(soup, len(chapters))
-        if _折叠:
-            _log.warn(_折叠)
+        _可疑 = _目录列表可疑(chapters)
+        if _折叠 or _可疑:
+            if _折叠:
+                _log.warn(_折叠)
+            if _可疑:
+                _log.warn(f'⚠️ 目录解析结果可疑: {_可疑}')
             if _折叠自救层 == 0:          # 只在顶层自救一次 (防递归)
                 chapters = self._折叠自救(soup, catalog_url, chapters, sort_chapters)
 

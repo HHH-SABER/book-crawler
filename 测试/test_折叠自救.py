@@ -130,5 +130,61 @@ class Test折叠自救编排(unittest.TestCase):
                       'get_chapter_list 必须保留 `_折叠自救层` 参数 (防自救递归死循环)')
 
 
+class Test目录列表可疑判据(unittest.TestCase):
+    """`_目录列表可疑()`: 数章节数发现不了的一类脏结果 (推广链排在真章节前)。
+
+    真机案例: 某站目录页把**别的书的推广章链接**混进来, href 与真章节同形态
+    (`/read/<书号>/<大号>.html` vs 真第 1 章 `/read/<书号>/<小号>.html`),
+    于是抓到的是"本章未完, 点击下一页继续阅读"的空壳页 ⇒ 正文仅 37 字节。
+    """
+
+    def test_空列表可疑(self):
+        self.assertTrue(C._目录列表可疑([]))
+        self.assertTrue(C._目录列表可疑(None))
+
+    def test_同一URL重复三次即可疑(self):
+        章 = [{'title': '推广章', 'url': '/read/1/999.html'}] * 3 + \
+            [{'title': f'第{i}章', 'url': f'/read/1/{i}.html'} for i in range(1, 5)]
+        self.assertIn('重复', C._目录列表可疑(章))
+
+    def test_首个章节号远大于中位数即可疑(self):
+        # 真章节号 1..20, 但列表开头插了一个 99999 (推广链)
+        章 = [{'title': '别的书', 'url': '/read/1/99999.html'}] + \
+            [{'title': f'第{i}章', 'url': f'/read/1/{i}.html'} for i in range(1, 21)]
+        self.assertIn('远大于', C._目录列表可疑(章))
+
+    def test_正常升序列表不误报(self):
+        """⚠️ 误报防护: 正常目录不得被判可疑, 否则每本书都会白多抓一页。"""
+        正常s = [
+            [{'title': f'第{i}章', 'url': f'/book/1/{i}.html'} for i in range(1, 51)],
+            [{'title': f'第{i}章', 'url': f'/read/9/{1000 + i}.html'} for i in range(1, 31)],
+            [{'title': '楔子', 'url': '/book/1/1.html'},
+             {'title': '第1章', 'url': '/book/1/2.html'},
+             {'title': '第2章', 'url': '/book/1/3.html'}],
+        ]
+        for 章 in 正常s:
+            with self.subTest(首个=章[0]['url']):
+                self.assertEqual(C._目录列表可疑(章), '', '正常目录被判可疑 = 误报')
+
+    def test_异常输入不抛(self):
+        for 坏 in ([{'没有url': 1}], ['不是字典'], [None], [{}]):
+            with self.subTest(坏=repr(坏)[:30]):
+                try:
+                    C._目录列表可疑(坏)
+                except Exception as e:      # noqa: BLE001
+                    self.fail(f'不该抛异常: {type(e).__name__}: {e}')
+
+    def test_已接成自救的第二个触发条件(self):
+        """结构守卫: 两处解析分支都要把"结果可疑"纳入触发。"""
+        import ast as _ast
+        源码 = (_根 / '源码' / '爬虫.py').read_text(encoding='utf-8')
+        段 = ''
+        for n in _ast.walk(_ast.parse(源码)):
+            if isinstance(n, _ast.FunctionDef) and n.name == 'get_chapter_list':
+                段 = _ast.get_source_segment(源码, n) or ''
+        self.assertEqual(段.count('_目录列表可疑('), 2,
+                         '两处目录解析分支都应调用 _目录列表可疑() (插件命中 + 通用解析)')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
