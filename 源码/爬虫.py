@@ -600,6 +600,28 @@ def _是非章节链接(href: str, 含index前缀: bool = False) -> bool:
     return bool(含index前缀 and '/index_' in href)
 
 
+def _章节链接合正则(href: str, 站点正则: str) -> bool:
+    """站点表声明了 `chapter_url_regex` 时, 章节链接**必须**匹配它 (2026-10-13)。
+
+    **为什么要它**: `chapter_url_regex` 在 `sites_config.py` 有文档、在站点管理页可编辑,
+    但**爬虫从不读取**(实测全源码 0 处使用) ⇒ 这个字段一直是**死配置**: 站点明明声明了
+    自己章节 URL 的形状, 通用筛选却只靠弱启发式(路径前缀 + 词表) ⇒ 目录页里的
+    **导航位/外站链接**只要路径前缀凑得上, 就会被当章节收下。
+
+    口径 (安全方向):
+      - **未配置** → 一律放行 ⇒ 与改造前行为**完全一致** (18 个已配置站受益, 其余无变化);
+      - 配了 → `re.search` 命中才放行;
+      - 正则**写坏了** → 放行并留痕 (不能因为一个坏正则让整站抓不动)。
+    """
+    if not 站点正则:
+        return True
+    try:
+        return bool(re.search(站点正则, href))
+    except re.error as e:
+        _log.warn(f"[目录解析] 站点表 chapter_url_regex 非法 ({e}), 本次放行: {站点正则[:40]}")
+        return True
+
+
 def _resolve_novel_paths(catalog_url):
     r"""按站点规则计算小说路径前缀 (第 4 批重构: 从 get_chapter_list 抽出)。
 
@@ -2055,6 +2077,19 @@ class NovelSpider:
         novel_path, novel_path_alt = _resolve_novel_paths(catalog_url)
         _log.info(f"当前小说路径: {novel_path}")
         _log.info(f"章节排序选项: {'启用' if sort_chapters else '禁用'}")
+        # ---- 站点表声明的章节链接正则 (2026-10-13) ----
+        # 该字段此前**从未被读取**(死配置): 站点声明了章节 URL 形状却没人用, 通用筛选只能
+        # 靠弱启发式 ⇒ 导航位/外站链接只要路径前缀凑得上就被当章节收下。这里读一次, 在
+        # 下面两个放行点用它兜底。未配置 → 行为与改造前完全一致。
+        章节正则, _正则拒 = '', 0
+        try:
+            from sites_config import get_site_pattern
+            _站点配置 = get_site_pattern(catalog_url) or {}
+            章节正则 = str(_站点配置.get('chapter_url_regex') or '')
+            if 章节正则:
+                _log.info(f"[目录解析] 站点表声明章节链接正则: {章节正则}")
+        except Exception as e:  # noqa: BLE001 — 必须留痕
+            _log.debug(f'裸 except 吞异常: {type(e).__name__} (章节链接正则读取)')
 
         # siteQ: 专用章节提取 (路径 + 正则双重验证)
         if 站点匹配(catalog_url, 'siteQ') and not chapters:
@@ -2515,6 +2550,10 @@ class NovelSpider:
                                 # 过滤掉可能的目录页和下载页
                                 if _是非章节链接(href, 含index前缀=True):
                                     continue
+                                # 站点表正则兜底 (2026-10-13)
+                                if not _章节链接合正则(href, 章节正则):
+                                    _正则拒 += 1
+                                    continue
                                 # 过滤掉非章节链接（如排序链接）
                                 if '正序' in text or '倒序' in text or '切换' in text or text == '开始阅读':
                                     continue
@@ -2538,6 +2577,10 @@ class NovelSpider:
                                     continue
                                 # 过滤掉可能的目录页和下载页
                                 if _是非章节链接(href):
+                                    continue
+                                # 站点表正则兜底 (2026-10-13)
+                                if not _章节链接合正则(href, 章节正则):
+                                    _正则拒 += 1
                                     continue
                                 # 过滤掉路径结尾的链接（可能是目录页）
                                 if href.endswith(novel_path):
@@ -2750,6 +2793,10 @@ class NovelSpider:
             _log.info(f"  {_i+1}. {chapters[_i]['title']} -> {chapters[_i]['url']}")
         for i, chap in enumerate(chapters):
             _log.debug(f"  {i+1}. {chap['title']} -> {chap['url']}")
+
+        if _正则拒:
+            _log.info(f"[目录解析] 站点表章节链接正则拦下 {_正则拒} 个不合规链接 "
+                      f"(正则: {章节正则[:40]})")
 
         _折叠 = _目录折叠提示(soup, len(chapters))
         _可疑 = _目录列表可疑(chapters)
