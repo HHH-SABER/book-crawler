@@ -719,7 +719,7 @@ def main():
         log("    抓取结果/ / 站点配置.json / captcha_config.json / 网站清单.txt are placed NEXT TO the .exe.")
     elif mode == "ONEDIR":
         log(f"  - Distribute the ENTIRE folder: {final_exe_dir}   (not only the .exe)")
-    log("  - Missing chromedriver? Place it next to .exe or on PATH")
+    log("  - chromedriver: 程序启动时自动检测/匹配/下载 (需求 #7), 无需手动放置")
     log("  - Customize site configs: run the EXE once, edit 站点配置.json beside it")
     log("  - 隐私: 网站清单.txt 是你的个人爬取记录, 请勿上传/分享 (Release 内只含空模板)")
 
