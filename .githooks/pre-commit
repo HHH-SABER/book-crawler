@@ -1,0 +1,47 @@
+#!/bin/sh
+# 小说爬虫 pre-commit 钩子 (2026-10-13, 需求 #1 工程化补齐)
+#
+# 作用: 在**暂存区**上跑两道快检 (合计 <10s), 挡住两类"不可逆/高代价"错误:
+#   ① 红线: 真实站点域名/书名/用户数据文件进公开仓库 (本项目最高约束);
+#   ② 静态: 未定义引用 (改了函数名漏改调用方)。
+# 完整门禁 (1156 例单测约 50s) 仍由 CI 跑, 钩子只做"提交前快速拦截"。
+#
+# 安装 (一次性, 仓库本地配置, 不影响别人):
+#   git config core.hooksPath .githooks
+# 绕过 (仅紧急修复; 会在提交信息里留痕):
+#   git commit --no-verify
+#
+# 为什么不做 CRLF 检查: 本项目文件惯例就是 CRLF (Windows), 全量阻断会误伤
+# 存量文件; 而"用 LF 锚点去匹配 CRLF 文件"是工具使用问题, 钩子拦不住也不该拦。
+
+PY=".runtime/python314/python.exe"
+[ -x "$PY" ] || PY="python"
+
+echo "[pre-commit] 红线扫描 (暂存区)…"
+# ⚠️ 必须 -z: git 默认 core.quotepath=true 会把中文路径转义成 \350\204\232 这类
+# 八进制假路径 (本项目路径含中文), 拿它去扫等于扫不存在的文件 ⇒ **假通过**。
+# -z 输出 NUL 分隔且不做路径转义, 是中文路径下唯一正确用法 (2026-10-13 实测)。
+STAGED=$(git diff --cached --name-only -z --diff-filter=ACM)
+if [ -n "$STAGED" ]; then
+    # 逐文件扫 (扫描器支持传文件路径); 有命中即整体失败
+    HIT=$(printf '%s' "$STAGED" | xargs -0 "$PY" 脚本/红线扫描.py 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "------------------------------------------------------------"
+        echo "$HIT" | tail -20
+        echo "------------------------------------------------------------"
+        echo "[pre-commit] ❌ 红线命中, 提交被阻止。"
+        echo "处置: ①改成代号/占位; ②确属误报 → 在 脚本/红线扫描.py 加排除项"
+        echo "      并注明理由; ③紧急情况下 git commit --no-verify (留痕)。"
+        exit 1
+    fi
+fi
+
+echo "[pre-commit] 静态引用检查…"
+if ! "$PY" 脚本/check_undefined_refs.py > /tmp/_precommit_static.log 2>&1; then
+    tail -15 /tmp/_precommit_static.log
+    echo "[pre-commit] ❌ 静态检查未过, 提交被阻止。"
+    exit 1
+fi
+
+echo "[pre-commit] ✅ 通过"
+exit 0
