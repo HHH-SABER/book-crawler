@@ -307,6 +307,30 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
     divider_theme = ft.DividerTheme(
         color=cs_kwargs.get('outline_variant', MORANDI_OUTLINE_VARIANT))
 
+    # ---- 滚动条主题 (#6 需求, 2026-10-13): 全局统一 + 默认可见 ----
+    # 为什么放 Theme 而不是逐控件设: ① 一处生效, 新增页面自动继承, 不会漏;
+    # ② `thumb_visibility=True` 让**所有**可滚动区域默认显示滑块 —— 用户要求
+    #    "所有内容超长可滚动的界面统一可见滚动条"; ③ 日/暗双主题各自取色
+    #    (跟随 cs_kwargs 的 surface/on_surface, 不写死)。
+    # 与既有 13 处 `ScrollMode.ALWAYS` 的关系: 显式设置优先, Theme 是**兜底**,
+    # 两者叠加不冲突 (ALWAYS 常显 + Theme 管颜色/粗细/圆角)。
+    # ⚠️ 字段名是 flet 的 `thumb_visibility` (2026-10-13 实测: 写成
+    #    thumb_visible 会被 setattr 静默吞掉 ⇒ 不报错但没效果)。
+    _滚动条色 = cs_kwargs.get('on_surface', MORANDI_ON_SURFACE)
+    scrollbar_theme = ft.ScrollbarTheme(
+        thickness=10,                                  # 桌面鼠标友好宽度
+        radius=5,                                      # 胶囊圆角
+        thumb_color=cs_kwargs.get('outline', _滚动条色),
+        track_color='#00000000',                       # 轨道透明, 不抢内容视觉
+        track_border_color='#00000000',
+        thumb_visibility=True,                         # ★ 默认显示滑块 (需求 #6)
+        track_visibility=False,
+        interactive=True,                              # 可拖动 (不只点击)
+        min_thumb_length=36,                           # 短内容也可抓握
+        cross_axis_margin=2,
+        main_axis_margin=2,
+    )
+
     # 提示条主题 (2026-10-06): 兜底 —— 若有人手写裸 ft.SnackBar 而没给色,
     # 至少保证"深底浅字/浅底深字"成对, 不会出现黑底黑字。
     # 正常路径请用 ui_fluent.提示条(), 它还会登记主题重刷。
@@ -323,6 +347,7 @@ def _build_theme(cs_kwargs: dict) -> ft.Theme:
         color_scheme=cs,
         use_material3=True,
         font_family=FONT_STACK,
+        scrollbar_theme=scrollbar_theme,
         navigation_rail_theme=nav_rail_style,
         text_button_theme=text_btn_theme,
         filled_button_theme=filled_btn_theme,
