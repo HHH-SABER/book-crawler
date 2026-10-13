@@ -590,6 +590,7 @@ class Test静态契约(unittest.TestCase):
             'gui_components/pages/remote_page.py': 1,
             'gui_components/pages/site_manage_page.py': 3,
         }
+
         for 相对, 至少 in 预期下限.items():
             文本 = _读(相对)
             实际 = 文本.count('ScrollMode.ALWAYS')
@@ -598,6 +599,33 @@ class Test静态契约(unittest.TestCase):
             for 禁 in ('ScrollMode.AUTO', 'ScrollMode.HIDDEN'):
                 self.assertNotIn(禁, 文本, f'{相对} 出现 {禁} —— 主内容区不得回退')
 
+    def test_滚动条主题全局兜底(self):
+        """#6 (2026-10-13 补齐): Theme 级 scrollbar_theme —— 上面那条守"显式
+        ALWAYS 的主内容区", 本条守"其余可滚动区域的**兜底可见性**"。
+
+        为什么两条都要: 显式 ALWAYS 只覆盖 12 处主内容区; 弹窗/抽屉/将来新增
+        页面若忘了设 scroll 参数, 桌面端默认**不显示**滑块 ⇒ 用户找不到内容。
+        Theme 兜底 (`thumb_visibility=True`) 让所有可滚动区域默认可见, 且
+        新增页面自动继承, 不会再漏。
+        """
+        import sys as _sys
+        _根 = Path(__file__).resolve().parent.parent
+        if str(_根 / '源码') not in _sys.path:
+            _sys.path.insert(0, str(_根 / '源码'))
+        from gui_components.ui_fluent import (make_morandi_theme,
+                                              make_morandi_dark_theme)
+        for 名, 工厂 in (('日间', make_morandi_theme), ('暗色', make_morandi_dark_theme)):
+            with self.subTest(主题=名):
+                st = 工厂().scrollbar_theme
+                self.assertIsNotNone(st, f'{名}主题必须有 scrollbar_theme')
+                self.assertTrue(st.thumb_visibility,
+                                f'{名}主题必须默认显示滑块 (需求 #6 兜底)')
+                self.assertTrue(st.interactive, '滚动条必须可拖动')
+                self.assertGreaterEqual(st.thickness, 8, '桌面端滑块不能过细')
+        # 日/暗必须不同色 (否则暗色主题下滑块看不见)
+        self.assertNotEqual(make_morandi_theme().scrollbar_theme.thumb_color,
+                            make_morandi_dark_theme().scrollbar_theme.thumb_color,
+                            '暗色主题的滑块必须另取色')
     def test_首次引导失败不烧flag且flag原子写(self):
         """#5 (2026-10-04 修复): 一次瞬时失败不得让引导永久消失; 标记文件必须原子写"""
         文本 = _去整行注释(_读('gui_app.py'))   # 注释里提到函数名不算调用
