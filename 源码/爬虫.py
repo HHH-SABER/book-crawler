@@ -136,6 +136,7 @@ selenium_available = False
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
@@ -973,6 +974,33 @@ def _目录折叠提示(soup, 解析章数):
     return None
 
 
+# ---- chromedriver 自动就绪 (需求 #7, 2026-10-13) ----
+# 背景: `webdriver.Chrome()` 原先依赖 Selenium 自己找到 chromedriver —— 用户
+# 得手动下载并放对位置, 且 Chrome 每次自动升级都可能失配。改为: 首次创建驱动
+# 前调 `驱动管理.确保可用()` (检测 Chrome → 匹配版本 → 缺失则下载到程序目录)。
+# 懒加载 + 进程级缓存: 一次会话只检测/下载一次, 后续创建直接复用路径。
+_驱动路径 = None
+
+
+def _确保驱动就绪():
+    """返回可用 chromedriver 路径 (进程内缓存; 失败抛错, 消息面向用户)。"""
+    global _驱动路径
+    if _驱动路径:
+        return _驱动路径
+    try:
+        from 驱动管理 import 确保可用
+    except Exception as e:
+        _log.info(f"[驱动] 驱动管理模块不可用, 回退 Selenium 自动查找: {e}")
+        return None
+    try:
+        _驱动路径 = 确保可用(程序根=os.path.dirname(os.path.abspath(__file__)))
+        _log.info(f"[驱动] chromedriver 就绪: {_驱动路径}")
+        return _驱动路径
+    except Exception as e:
+        _log.info(f"[驱动] 自动就绪失败: {type(e).__name__}: {e}")
+        raise
+
+
 class NovelSpider:
     """
     通用小说爬虫主类。
@@ -1238,7 +1266,9 @@ class NovelSpider:
         options.add_argument(f'--user-data-dir={profile_dir}')
 
         try:
-            driver = webdriver.Chrome(options=options)
+            _drv = _确保驱动就绪()
+            driver = (webdriver.Chrome(service=Service(_drv), options=options)
+                      if _drv else webdriver.Chrome(options=options))
         except Exception as e:
             # profile 损坏(上次运行崩溃遗留)会导致 Chrome 无法启动:
             # 备份损坏的 profile 并换全新 profile 重试, 保证爬虫可用
@@ -1256,7 +1286,9 @@ class NovelSpider:
                     shutil.rmtree(profile_dir, ignore_errors=True)
                 except Exception as e:
                     _log.debug(f'裸 except 吞异常: {type(e).__name__}')
-            driver = webdriver.Chrome(options=options)
+            _drv = _确保驱动就绪()
+            driver = (webdriver.Chrome(service=Service(_drv), options=options)
+                      if _drv else webdriver.Chrome(options=options))
 
         driver.set_page_load_timeout(30)
         driver.set_script_timeout(30)
@@ -1795,7 +1827,9 @@ class NovelSpider:
             chrome_options.add_argument(f'user-agent={headers["User-Agent"]}')
             chrome_options.add_argument('--disable-notifications')
 
-            driver = webdriver.Chrome(options=chrome_options)
+            _drv = _确保驱动就绪()
+            driver = (webdriver.Chrome(service=Service(_drv), options=chrome_options)
+                      if _drv else webdriver.Chrome(options=chrome_options))
             driver.set_page_load_timeout(30)
             driver.set_script_timeout(30)
             try:

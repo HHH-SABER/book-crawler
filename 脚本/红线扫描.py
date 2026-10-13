@@ -73,6 +73,9 @@ _基建白名单 = ('99988866.xyz',   # flet 客户端缓存镜像 (构建用, �
              'pypi.org', 'python.org', 'pytorch.org', 'npmjs.com',
              'github.io', 'rust-lang.org', 'crates.io', 'docs.rs',
              'tsinghua.edu.cn', 'aliyun.com', 'tencent.com',
+             'storage.googleapis.com',   # chromedriver 官方下载 CDN (驱动用)
+             'registry.npmmirror.com',    # npmmirror 公共镜像 (驱动下载兜底)
+             'googlechromelabs.github.io',  # Chrome for Testing 官方 API (GitHub Pages)
              'alidns.com', 'dnspod.com', 'cloudflare.com', 'cloudflareinsights.com',
              'dns.google', '114dns.com')
 
