@@ -856,11 +856,25 @@ class Test目录折叠检测(unittest.TestCase):
         html = '<html><body><div>第1章 开端</div><div>第2章 相遇</div></body></html>'
         self.assertIsNone(C._目录折叠提示(self._soup(html), 2))
 
-    def test_章节数多时跳过检测(self):
+    def test_章节数多但宣称远大于实际仍告警(self):
+        """2026-10-13 判据修正: 删除 `解析章数 > 60` 早退。
+
+        旧断言假设"共 3000 / 解析 200 = 正常分页目录, 不告警", 但**真站证伪了它** ——
+        实测某折叠站正是"宣称 1494 / 首页 113"(15 倍差距), 按旧假设同样不会告警,
+        而它确实需要"找完整目录入口"自救。现在改倍率判据 ⇒ 解析章数多也照告警。
+        """
         import 爬虫 as C
         html = '<html><body>共3000章</body></html>'
-        # 解析数 > 60 时直接返回 None (正常分页目录页不告警)
-        self.assertIsNone(C._目录折叠提示(self._soup(html), 200))
+        提示 = C._目录折叠提示(self._soup(html), 200)
+        self.assertIsNotNone(提示, '宣称远大于实际时不应被"章节数多"放行')
+        self.assertIn('2800', 提示)   # 3000 - 200
+
+    def test_大目录但宣称接近实际不告警(self):
+        """防误报护栏: 章节数多**且**宣称≈实际 (真完整目录) ⇒ 不告警"""
+        import 爬虫 as C
+        html = '<html><body>共2000章</body></html>'
+        self.assertIsNone(C._目录折叠提示(self._soup(html), 1980),
+                          '宣称≈实际的大目录不该误告警')
 
     def test_宣称数不足阈值不告警(self):
         import 爬虫 as C

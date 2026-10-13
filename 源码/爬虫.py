@@ -935,26 +935,35 @@ def _剔除非章节单条(章节列表) -> tuple:
 
 
 def _目录折叠提示(soup, 解析章数):
-    """目录折叠站检测 (2026-10-09): 页面宣称章节总数远大于实际解析数时告警。
+    """目录折叠站检测 (2026-10-09 首版; 2026-10-13 改判据): 页面宣称章节总数
+    远大于实际解析数时告警。
 
     背景: 天秋类站点目录页只展示首尾章节 (如"点击查看中间隐藏的【1454】章节"),
     中间章节收进独立分页 (directory_N.html); 把可见链接当全部目录会大量漏抓
     (实测某书仅得 40/1494 章)。仅提示不改抓取行为。
+
+    **2026-10-13 判据修正 (真实快照复核)**: 首版开头有 `if 解析章数 > 60: return
+    None` 的早退, 假设"能解析 60+ 章就不算折叠"。实测**真折叠站首页能解析 113 条**
+    (宣称 1494 / 首页 113, 漏 1381 章) 却因这条早退**静默** ⇒ 早退条件不成立。
+    改为**倍率判据**: 宣称数显著大于解析数才告警 —— 完整展开的站 (宣称≈实际)
+    与"宣称 1494 / 实际 113"这种都能正确区分。
     """
     try:
-        if 解析章数 > 60:
-            return None
         text = soup.get_text(' ', strip=True)[:20000]
         隐藏 = 0
+        宣称 = 0
         m = re.search(r'隐藏的?【?\[?(\d+)】?\]?章节?', text) or \
             re.search(r'隐藏的?(\d+)章', text)
         if m:
             隐藏 = int(m.group(1))
+            宣称 = 解析章数 + 隐藏
         else:
             m2 = re.search(r'共\s*(\d+)\s*章', text)
             if m2:
-                隐藏 = max(0, int(m2.group(1)) - 解析章数)
-        if 隐藏 >= max(50, 解析章数 * 2):
+                宣称 = int(m2.group(1))
+                隐藏 = max(0, 宣称 - 解析章数)
+        if 隐藏 >= max(50, 解析章数 * 2) and (
+                宣称 >= 300 or 隐藏 >= 解析章数 * 3):
             return (f'⚠️ 该目录页疑似折叠: 实际解析 {解析章数} 章, 页面提示另有'
                     f'约 {隐藏} 章未展示 (中间章节被站点隐藏或收进分页目录)。'
                     f'建议确认完整目录入口 (如"全部章节目录"链接) 后重试, '
@@ -1313,7 +1322,8 @@ class NovelSpider:
         # 仅当配置中启用了对应识别策略时才会尝试自动识别, 否则直接进入人工流程
         if self._captcha_manager is not None:
             try:
-                solved = self._captcha_manager.handle(driver, url, page_source)
+                solved = self._captcha_manager.handle(driver, url, page_source,
+                                                     已判定=True)
                 if solved is not None and not self._captcha_manager.is_captcha_page(solved):
                     _log.info("[WAF驱动] ✅ 验证码模块已解决 (自动识别或人工输入)")
                     self._captcha_manager.record_request(True)
