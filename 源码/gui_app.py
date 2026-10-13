@@ -30,6 +30,7 @@ if getattr(sys, "frozen", False):
     if os.path.isdir(_bundled_flet_client):
         os.environ["FLET_VIEW_PATH"] = _bundled_flet_client
 
+from gui_components import 首次引导
 from gui_components.task_manager import TaskManager
 from gui_components.icon_rail import (IconRail, NAV_PAGES, build_theme_toggle,
                                       build_top_bar, build_remote_toggle)
@@ -638,58 +639,6 @@ def main(page: ft.Page):
     # 用户**明确表态**(创建成功 / 选择暂不) 才写 flag。
     # ⚠ 2026-10-04 (#5 修复): 失败时**不写** —— 旧实现写在 finally 里, 一次瞬时失败
     # (PowerShell 被杀 / 超时 / 非 0 退出) 就让引导永久不再出现, 而程序内没有手动入口。
-    def _写首次flag(结果: str = '已询问创建桌面快捷方式'):
-        """原子写首次启动标记 (tmp + os.replace, 对齐项目状态文件规约)"""
-        try:
-            import time as _tm
-            p = os.path.join(get_state_root(), "数据", "首次启动.flag")
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            tmp = f"{p}.tmp.{os.getpid()}"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write(f"{结果}: {_tm.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            os.replace(tmp, p)
-        except Exception as e:
-            app_log.debug("引导", f"首次启动 flag 写入失败: {type(e).__name__}: {e}")
-
-    def _建桌面快捷方式() -> None:
-        """PowerShell WScript.Shell 创建桌面快捷方式 (失败抛异常)。
-
-        实现注记: 桌面路径在 PS 侧取 ([Environment]::GetFolderPath 才拿得到
-        OneDrive 重定向后的真实桌面); 中文经 -EncodedCommand (UTF-16LE Base64)
-        传参, 规避 -Command 代码页转义坑; 只看退出码不捕获文本输出
-        (PS 中文 stdout 捕获不可靠, 2026-10-03 实测)。
-        """
-        import base64
-        import subprocess
-        if getattr(sys, "frozen", False):
-            target = os.path.abspath(sys.executable)
-        else:
-            target = os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "启动GUI.bat")
-        workdir = os.path.dirname(target)
-        ps = (
-            "$ErrorActionPreference='Stop';"
-            "$desk=[Environment]::GetFolderPath('Desktop');"
-            "$ws=New-Object -ComObject WScript.Shell;"
-            "$lnk=$ws.CreateShortcut((Join-Path $desk '小说爬虫.lnk'));"
-            f"$lnk.TargetPath='{target.replace(chr(39), chr(39) * 2)}';"
-            f"$lnk.WorkingDirectory='{workdir.replace(chr(39), chr(39) * 2)}';"
-            f"$lnk.IconLocation='{target.replace(chr(39), chr(39) * 2)},0';"
-            "$lnk.Description='小说爬虫 - 网文离线阅读与远控';"
-            "$lnk.Save();exit 0"
-        )
-        enc = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive",
-             "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc],
-            capture_output=True, timeout=20)
-        if r.returncode != 0:
-            # 2026-10-04 (#5 修复): 把 PS 的 stderr 带进异常 —— 旧实现只报退出码,
-            # 用户与日志都拿不到"为什么失败"。
-            err = (r.stderr or b'').decode('utf-8', errors='replace').strip()
-            raise RuntimeError(f"PowerShell 退出码 {r.returncode}"
-                               + (f": {err[:200]}" if err else ""))
-
     async def _首次引导():
         try:
             import asyncio
@@ -709,7 +658,7 @@ def main(page: ft.Page):
 
             async def _创建(_e=None):
                 try:
-                    await asyncio.to_thread(_建桌面快捷方式)
+                    await asyncio.to_thread(首次引导.建桌面快捷方式)
                 except Exception as e:
                     # 2026-10-04 (#5 修复): 失败**不写 flag** → 下次启动会再问一次
                     # (旧实现把 _写首次flag 放在 finally, 一次瞬时失败即永久放弃引导)。
@@ -719,12 +668,12 @@ def main(page: ft.Page):
                     return
                 page.show_dialog(提示条("桌面快捷方式已创建"))
                 app_log.info("引导", "桌面快捷方式创建成功")
-                _写首次flag('已创建桌面快捷方式')
+                首次引导.写首次flag('已创建桌面快捷方式')
                 _关窗()
 
             def _跳过(_e=None):
                 app_log.info("引导", "用户选择暂不创建快捷方式")
-                _写首次flag('用户选择暂不创建')
+                首次引导.写首次flag('用户选择暂不创建')
                 _关窗()
 
             dlg = ft.AlertDialog(
