@@ -886,6 +886,54 @@ def _目录列表可疑(章节列表) -> str:
     return ''
 
 
+def _剔除非章节单条(章节列表) -> tuple:
+    """B 修法 (2026-10-13): 单条级过滤 — 剔"章节号孤立异常大"的可疑链接。
+
+    与 A (`_目录列表可疑` → 折叠自救) **互补而非重复**:
+      A 是整表级 —— 判据成立就触发自救 (重新找完整目录入口重解析);
+      B 是单条级 —— 不重解析, 只把明显异常的单条剔掉。
+    A 覆盖不到、由 B 兜底的场景: 推广链只有一两条 (不满足 A 的"重复≥3")、
+    推广链不在最前 (A 只看首个)、A 自救失败或自救后仍有残留 —— 这时至少
+    把异常条剔掉, 让真第 1 章露出来。
+
+    判据 (刻意保守, 与 A 同阈值, 保证行为一致):
+      单条章节号 ≥ 10× 列表中位数 且 剔除后列表非空。
+    **宁不错杀**: 全部条目都异常时原样返回 (不动), 避免把真目录清空。
+
+    Returns:
+        (清洗后列表, 剔除条数, 原因字符串); 无需剔除时原样返回 (列表, 0, '')。
+    """
+    try:
+        章节列表 = [c for c in (章节列表 or []) if isinstance(c, dict)]
+        if len(章节列表) < 4:
+            return 章节列表, 0, ''
+        号s = []
+        for c in 章节列表:
+            m = re.search(r'/(\d+)(?:_\d+)?\.html', str(c.get('url') or ''))
+            号s.append(int(m.group(1)) if m else None)
+        有效 = [n for n in 号s if n is not None]
+        if len(有效) < 4:
+            return 章节列表, 0, ''
+        中位 = sorted(有效)[len(有效) // 2]
+        if 中位 <= 0:
+            return 章节列表, 0, ''
+        留, 剔号 = [], []
+        for c, n in zip(章节列表, 号s):
+            if n is not None and n >= 中位 * 10:
+                剔号.append(n)
+            else:
+                留.append(c)
+        if not 剔号:
+            return 章节列表, 0, ''
+        if not 留:
+            # 全异常: 保守不动 (清空真目录比放过推广链更糟)
+            return 章节列表, 0, '全列表章节号均异常, 保守不剔除 (宁不错杀)'
+        return 留, len(剔号), (f'剔除章节号 {剔号[:3]} (≥10× 中位数 {中位})')
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.debug(f'裸 except 吞异常: {type(e).__name__} (剔除非章节单条)')
+        return (章节列表 or []), 0, ''
+
+
 def _目录折叠提示(soup, 解析章数):
     """目录折叠站检测 (2026-10-09): 页面宣称章节总数远大于实际解析数时告警。
 
@@ -2822,6 +2870,13 @@ class NovelSpider:
                 _log.warn(f'⚠️ 目录解析结果可疑: {_可疑}')
             if _折叠自救层 == 0:          # 只在顶层自救一次 (防递归)
                 chapters = self._折叠自救(soup, catalog_url, chapters, sort_chapters)
+
+        # B 修法 (2026-10-13): 单条级兜底 —— A 判据未触发或自救后仍有孤立
+        # 异常条 (推广链只一两条/不在最前) 时, 剔掉让真第 1 章露出来。
+        # 放在 A 之后: 自救重解析过的列表同样过一遍 (幂等)。
+        chapters, _剔数, _剔因 = _剔除非章节单条(chapters)
+        if _剔数:
+            _log.warn(f'⚠️ B 修法剔除 {_剔数} 个孤立异常章节链接: {_剔因}')
 
         return chapters
     def clean_chapter_title(self, title):
