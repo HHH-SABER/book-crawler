@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import re
 import 日志 as _app_log
 _log = _app_log.get('captcha_module')
 
@@ -378,14 +379,37 @@ class CaptchaHandler(ABC):
     # ---- 通用工具 ----
     @staticmethod
     def is_captcha_page(page_source):
-        """通用验证码页检测 (支持多站点特征)"""
-        markers = [
-            '__wafcaptcha', '_waform', '访问频率太高',   # 某类站点 WAF
-            'captcha', 'geetest', 'verify-code',         # 通用验证码
-            'sec_captcha', 'validate-code', 'slide-verify',
-        ]
+        """通用验证码页检测 (F4 真机验收 2026-10-13 加固: 强弱特征分级)。
+
+        **为什么分级** (实测倒逼): 原实现对 `captcha` / `geetest` 等做**子串任意命中**,
+        导致**正常小说页只要引一个 `captcha.js` 备用脚本**就被判成验证码页 → 一旦有
+        路径绕过爬虫层第一道门 (`爬虫._像验证码页`, 那是严格口径), 就会误弹人工浏览器
+        打断抓取。当前调用链上第一道门已拦住, 故不是现网缺陷, 但属**潜在脆弱点**,
+        这里做防御性收窄。
+
+        分级:
+          · **强特征** (WAF 专用标记, 误判概率极低): 命中即判验证码
+            —— `__wafcaptcha` / `_waform` / `访问频率太高`
+          · **弱特征** (通用词, 极易撞车): 需**佐证**才判验证码
+            —— 页面同时含验证码 UI (input/img 的 name/src/id/class 含验证码类词)
+      """
+        if not page_source:
+            return False
         low = page_source.lower()
-        return any(m in low for m in markers)
+
+        强特征 = ('__wafcaptcha', '_waform', '访问频率太高')
+        if any(m in low for m in 强特征):
+            return True
+
+        弱特征 = ('captcha', 'geetest', 'verify-code',
+                  'sec_captcha', 'validate-code', 'slide-verify')
+        if not any(m in low for m in 弱特征):
+            return False
+        # 弱特征命中 → 需验证码 UI 佐证 (有输入框或验证码图片)
+        佐证 = re.search(
+            r'<(input|img)[^>]*(name|id|src|class)\s*=\s*["\'][^"\']*'
+            r'(captcha|verif|geetest|slide|validate)', low)
+        return bool(佐证)
 
     def _record(self, kind, start, success, note="", cost=0.0, method=None):
         """统一事件记录"""
