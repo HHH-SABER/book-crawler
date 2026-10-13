@@ -402,7 +402,11 @@ class CaptchaHandler(ABC):
             return True
 
         弱特征 = ('captcha', 'geetest', 'verify-code',
-                  'sec_captcha', 'validate-code', 'slide-verify')
+                  'sec_captcha', 'validate-code', 'slide-verify',
+                  # 真实快照复核补 (2026-10-13): 有的站不用 captcha/geetest,
+                  # 而用 check_code / 安全验证一类措辞 + <input> 的表单,
+                  # 原词表会把这类**真验证页**判成"不是验证码页" ⇒ 漏判。
+                  'check_code', '安全验证')
         if not any(m in low for m in 弱特征):
             return False
         # 弱特征命中 → 需验证码 UI 佐证 (有输入框或验证码图片)
@@ -1263,10 +1267,18 @@ class CaptchaManager:
         return chain
 
     # ---- 处理入口 ----
-    def handle(self, driver, url, page_source):
+    def handle(self, driver, url, page_source, 已判定: bool = False):
         """检测并处理验证码。
 
         策略链依次尝试: 上一个失败自动降级到下一个 (分级处理 + 容错)。
+
+        **已判定 (2026-10-13 真实快照复核后新增)**: 调用方 (爬虫层 `_像验证码页`,
+        口径更严的第一道门) **已判定为验证码页**时传 True → **跳过本方法内部的
+        二次判定**。为什么需要: 第二道门强弱特征分级后, 一份真实验证码页
+        (带输入框的验证表单, 但用 `verify`/`check_code` 一类措辞而非
+        `captcha`/`geetest`) 会被二次判定**否决** ⇒ 上游已认定、
+        下游却说不像 ⇒ **漏判**。传 True 即"信任上游判定"; 其他调用方不传,
+        独立自判能力原样保留。
 
         **自动失败 → 转人工接管 (2026-10-11)**: 自动识别策略**连续失败**达
         `auto_max_fail` 次 (建议 5–10) 后进入接管窗口 (`handover_cooldown` 秒):
@@ -1278,7 +1290,7 @@ class CaptchaManager:
         """
         if not self.config.data.get('enabled', True):
             return page_source
-        if not self.is_captcha_page(page_source):
+        if not 已判定 and not self.is_captcha_page(page_source):
             return page_source
 
         # 记录触发
