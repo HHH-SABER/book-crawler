@@ -79,6 +79,32 @@ class Test文案与结构(_隔离配置, unittest.TestCase):
         self.assertNotEqual(C.场景文案(C.场景_网站失效, '书')['标题'],
                             C.场景文案(C.场景_其他, '书')['标题'])
 
+    def test_三档场景互不相同(self):
+        """#3 (2026-10-13): 两档 → 三档, 三档标题必须两两可区分。"""
+        三档 = (C.场景_网站失效, C.场景_书籍失效, C.场景_其他)
+        标题们 = {C.场景文案(s, '书')['标题'] for s in 三档}
+        self.assertEqual(len(标题们), 3, f'三档标题必须两两不同: {标题们}')
+
+    def test_三档文案都完整且都提备用源(self):
+        for 场景 in (C.场景_网站失效, C.场景_书籍失效, C.场景_其他):
+            with self.subTest(场景=场景):
+                文 = C.场景文案(场景, '某本书', '书已删除或不可读', '未解析出章节')
+                for 键 in ('标题', '正文', '追问标题', '追问正文'):
+                    self.assertTrue(文.get(键), f'{键} 不能为空')
+                self.assertIn('备用源', 文['正文'])
+                self.assertIn('删除', 文['追问正文'])
+
+    def test_选场景三档分流(self):
+        """#3: `选场景()` 按结构化字段分流 (纯函数, gui_app 同款判定)。"""
+        self.assertEqual(C.选场景({'网站失效': True}), C.场景_网站失效)
+        self.assertEqual(C.选场景({'网站失效': True, '类型': '目录无章节'}),
+                         C.场景_网站失效, '网站失效优先于类型')
+        self.assertEqual(C.选场景({'类型': '书已删除或不可读'}), C.场景_书籍失效)
+        self.assertEqual(C.选场景({'类型': '目录无章节'}), C.场景_其他)
+        self.assertEqual(C.选场景({'类型': '站点不可达'}), C.场景_其他)
+        self.assertEqual(C.选场景({}), C.场景_其他, '空记录不得误判')
+        self.assertEqual(C.选场景(None), C.场景_其他, '非 dict 不得炸 (Mock 防御)')
+
     def test_追问文案承诺不删产物(self):
         """删除确认必须说明"已下载的文件不会被删除" —— 否则用户不敢删。"""
         for 场景 in (C.场景_网站失效, C.场景_其他):

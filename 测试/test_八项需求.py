@@ -546,10 +546,15 @@ class Test静态契约(unittest.TestCase):
         ① 网站失效仍要分流到专用文案场景; ② 弹窗本体只有一处实现。
         """
         文本 = _读('gui_app.py')
-        self.assertIn("死.get('网站失效')", 文本,
+        # 2026-10-13 (#3 三档): 分流改委托 `选场景()` —— 契约拆两半守:
+        # gui_app 委托 + 补址弹窗内部把 网站失效 映射到专用场景。
+        self.assertIn('补址弹窗.选场景(死)', 文本,
                       '双失效分流缺失 → 网站失效时走不到补址流程')
-        self.assertIn('补址弹窗.场景_网站失效', 文本,
+        弹窗 = _读('gui_components/补址弹窗.py')
+        self.assertIn("记录.get('网站失效')", 弹窗,
                       '必须把 网站失效 映射到专用文案场景 (与"疑似"场景区分)')
+        self.assertIn('场景_书籍失效', 弹窗,
+                      '#3 三档: 必须存在 书籍失效 专用场景')
         self.assertIn('补址弹窗.打开补址弹窗', 文本,
                       '必须复用唯一补址弹窗实现 (gui_components/补址弹窗.py)')
         self.assertTrue((_SRC / 'gui_components' / '补址弹窗.py').is_file(),
