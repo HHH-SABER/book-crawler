@@ -556,10 +556,21 @@ class Test静态契约(unittest.TestCase):
                         '补址弹窗模块缺失')
 
     def test_首次引导存在且写flag(self):
-        文本 = _读('gui_app.py')
-        self.assertIn('首次启动.flag', 文本)
-        self.assertIn('_建桌面快捷方式', 文本)
-        self.assertIn('page.run_task(_首次引导)', 文本)
+        """#5 契约 (2026-10-13 服务化提取后改口径): 引导功能存在。
+
+        原先是 gui_app.main() 闭包 (`_建桌面快捷方式`/`_写首次flag`), 现已提取到
+        `gui_components/首次引导.py` (可单测) ⇒ 契约拆两半:
+          · 入口仍在 gui_app (run_task 引导);
+          · 实现在模块 (flag 名/建快捷方式函数)。
+        行为契约 (失败不烧 flag/原子写) 由 `test_首次引导.py` 与下面一条守着。
+        """
+        入口 = _读('gui_app.py')
+        self.assertIn('page.run_task(_首次引导)', 入口)
+        self.assertIn('首次引导', 入口, 'gui_app 应调用首次引导模块')
+        实现 = _读('gui_components/首次引导.py')
+        self.assertIn('首次启动.flag', 实现)
+        self.assertIn('def 建桌面快捷方式', 实现)
+        self.assertIn('def 写首次flag', 实现)
 
     def test_滚动条常显覆盖全部主内容区(self):
         """#6 (2026-10-04 加固): 覆盖**全部 12 处**常显, 而不是只锁 4 个锚点。
@@ -590,16 +601,18 @@ class Test静态契约(unittest.TestCase):
     def test_首次引导失败不烧flag且flag原子写(self):
         """#5 (2026-10-04 修复): 一次瞬时失败不得让引导永久消失; 标记文件必须原子写"""
         文本 = _去整行注释(_读('gui_app.py'))   # 注释里提到函数名不算调用
-        写段 = 文本.split('def _写首次flag', 1)[1][:700]
-        self.assertIn('os.replace', 写段, 'flag 写入必须是原子写 (tmp + os.replace)')
+        # 原子写契约已随实现移到模块 (由 test_首次引导.py 单测覆盖), 这里仍锁一眼
+        模块 = _读('gui_components/首次引导.py')
+        self.assertIn('os.replace', 模块, 'flag 写入必须是原子写 (tmp + os.replace)')
+        # "创建成功才写 flag / 失败不烧 flag" 的编排仍在 gui_app 的 _创建 闭包里
         创段 = 文本.split('async def _创建', 1)[1].split('def _跳过', 1)[0]
-        self.assertIn('_写首次flag(', 创段, '创建成功后应写 flag')
+        self.assertIn('首次引导.写首次flag(', 创段, '创建成功后应写 flag')
         # 失败分支 = except 之后到 `return` 之前; 其中不得出现写 flag
         失败段 = 创段.split('except Exception as e:', 1)[1].split('return', 1)[0]
-        self.assertNotIn('_写首次flag', 失败段,
+        self.assertNotIn('首次引导.写首次flag', 失败段,
                          '失败分支不得写 flag —— 旧实现写在 finally, 一次瞬时失败就永久放弃引导')
         跳段 = 文本.split('def _跳过', 1)[1][:400]
-        self.assertIn('_写首次flag(', 跳段, '用户明确拒绝也应写 flag (只问一次)')
+        self.assertIn('首次引导.写首次flag(', 跳段, '用户明确拒绝也应写 flag (只问一次)')
 
     def test_组装发布脚本已改为默认清空私有适配(self):
         """静态锁: 私有适配目录必须挂在显式开关后面 (行为验证见 test_组装发布隐私.py)
