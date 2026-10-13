@@ -43,7 +43,7 @@ for _s in (sys.stdout, sys.stderr):
     try:
         _s.reconfigure(encoding='utf-8', errors='replace')
     except Exception:
-        pass
+        pass  # 刻意静默: 控制台编码重配置失败不该中断脚本 (Windows GBK 控制台常见)
 
 _根 = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_根 / '源码'))
