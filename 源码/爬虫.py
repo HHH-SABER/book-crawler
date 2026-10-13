@@ -6652,7 +6652,7 @@ def interactive_menu():
     threads: 并发线程数 / delay: 章节间间隔秒数 / export_epub: 是否同时导出 EPUB"""
     _log.info("=== 小说爬虫 ===")
     _log.info("请输入小说网站的目录页面URL:")
-    _log.info("例如: https://www.shubaoxs.net/book/391625/")
+    _log.info("例如: https://www.siteV/book/391625/")
     _log.info("     https://www.siteX/books/301597.html")
     _log.info("     https://www.siteW/infos/5523629.html")
 
