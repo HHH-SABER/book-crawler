@@ -993,7 +993,13 @@ def _确保驱动就绪():
         _log.info(f"[驱动] 驱动管理模块不可用, 回退 Selenium 自动查找: {e}")
         return None
     try:
-        _驱动路径 = 确保可用(程序根=os.path.dirname(os.path.abspath(__file__)))
+        # 程序根: EXE 下必须取 `sys.executable` 所在目录 —— PyInstaller onefile
+        # 的 `__file__` 指向 %TEMP%\\_MEIxxxxxx 临时解包目录, 驱动下到那里
+        # 每次启动都会重下 (2026-10-13 发版前自查发现)。
+        程序根 = (os.path.dirname(os.path.abspath(sys.executable))
+                  if getattr(sys, 'frozen', False)
+                  else os.path.dirname(os.path.abspath(__file__)))
+        _驱动路径 = 确保可用(程序根=程序根)
         _log.info(f"[驱动] chromedriver 就绪: {_驱动路径}")
         return _驱动路径
     except Exception as e:
