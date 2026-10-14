@@ -251,3 +251,149 @@ def _目录折叠提示(soup, 解析章数):
 # 前调 `驱动管理.确保可用()` (检测 Chrome → 匹配版本 → 缺失则下载到程序目录)。
 # 懒加载 + 进程级缓存: 一次会话只检测/下载一次, 后续创建直接复用路径。
 _驱动路径 = None
+
+
+# 通用广告行/无意义字符特征 (基于内容特征, 适用于所有小说网站)
+# 这些正则模式识别广告/导航/推荐列表的通用结构特征, 不依赖具体书名或站点名
+
+# 结构特征 (对所有行生效, 基于行的整体结构判断)
+_AD_LINE_STRUCT_PATTERNS = [
+    # 相邻推荐列表: 多个书名以连续空格(3+)分隔, 无中文标点
+    # 例: "书名1   书名2   书名3   书名4"
+    re.compile(r'^[^\s].*\s{3,}[^\s].*\s{3,}[^\s]'),
+    # 纯数字/字母组合 (如章节编号残留、验证码、页码)
+    re.compile(r'^[\d\s]{5,}$'),
+    # 站点域名行: www.xxx.com 或 m.xxx.com 格式
+    re.compile(r'^(www\.|m\.|https?://)[\w\.\-]+'),
+    # 纯符号分隔行 (如 "----------" 或 "=========")
+    re.compile(r'^[\-\=\*\_]{5,}$'),
+]
+
+# 标签特征 (仅对短行 <40 字生效, 避免误伤正文段落)
+# 这些模式匹配小说搜索标签、站点宣传语等短行广告
+_AD_LINE_TAG_PATTERNS = [
+    # "XX小说网" / "XX阅读网" 等站点名后缀 (通用, 不针对具体站点)
+    re.compile(r'.{2,8}小说网$'),
+    re.compile(r'.{2,8}阅读网$'),
+    re.compile(r'.{2,8}文学网$'),
+    # "XX最新章节" / "XXtxt下载" 等小说搜索标签
+    re.compile(r'.{2,15}最新章节$'),
+    re.compile(r'.{2,15}txt下载$'),
+    re.compile(r'.{2,15}全文阅读$'),
+    re.compile(r'.{2,15}无删减$'),
+    re.compile(r'.{2,15}完整版$'),
+]
+
+# 站点宣传语通用片段 (跨站点共用, 非具体书名; 仅对短行 <40 字检查)
+_AD_PHRASE_FRAGMENTS = (
+    '记住本站', '收藏本站', '本站域名', '本站网址', '网址:',
+    '请记住', '希望大家收藏', '手机用户', '电脑阅读', '手机阅读',
+    '扫描二维码', '手机浏览器扫描',
+    '发送任意邮件', '最新地址发送', '获取最新地址',
+    '无弹窗', 'txt下载', '全文下载', '无删减',
+    '最新章节列表', '刚刚更新', '猜你喜欢', '热门推荐',
+    '同类推荐', '相邻推荐', '相关推荐', '推荐阅读',
+    '加入书架', '存书签', '章节目录', '返回目录',
+    '上一章', '下一章', '上一页', '下一页',
+    '本章未完', '点击下一页', '继续阅读',
+    '请勿开启浏览器', '阅读模式',
+    '创作者：', '创作完成日',
+    'Copyright', '版权所有', 'All Rights Reserved',
+    # "找不到原站/被屏蔽后引导去新域名"类广告 (多站点模板, 如
+    # "最新找回4F4F4F,C〇M" / "网址被屏蔽 请访问 xxx,C0M" — 2026-09 实测某站移动版)
+    '最新找回', '地址找回', '网址找回', '原域名', '新域名',
+    'C〇M', ',C0M', ',C○M',
+)
+
+
+# ---- 正文清洗 (2026-10-14 阶段二批 3 追加) ----
+
+def _排版章节文本(标题: str, 正文: str, 缩进: bool = True) -> str:
+    """单章 TXT 写入格式化: '## 标题' + 段首两个全角空格缩进 + 段间空行。
+
+    中文排版规范: 每段首行缩进两个字符 (\u3000\u3000), 段落间空一行。
+    与 EPUB 的 text-indent: 2em (epub_exporter.py) 语义对齐。
+
+    段落切分: 单换行即段落边界 (clean_content 的"每行=每段"语义),
+    因此对修复前的旧正文 (单 \\n 分段) 同样能正确重排 —— 增量搬运的
+    旧内容经过本函数后与新抓取格式统一。
+
+    Args:
+        标题: 章节标题 (写成 '## 标题' 行, 不缩进)
+        正文: 清洗后的章节正文
+        缩进: False 时不加缩进 (仍保留段间空行)
+
+    Returns:
+        str: 直接 f.write 的整块文本
+    """
+    段落 = [ln.strip() for ln in (正文 or '').split('\n') if ln.strip()]
+    if 缩进:
+        段落 = ['\u3000\u3000' + p for p in 段落]
+    正文块 = '\n\n'.join(段落)
+    头 = f"## {标题}\n\n"
+    return 头 + (正文块 + '\n\n' if 正文块 else '')
+
+
+def _读txt缩进配置() -> bool:
+    """读 TXT 段首缩进开关 (captcha_config.json 的 'txt_indent' 键, 默认开)。
+
+    captcha_config.json 已兼作应用配置 (代理/浏览器引擎/备用源同此文件),
+    该键缺失/类型不符/文件不可读时一律回退 True (符合中文排版默认)。
+    """
+    try:
+        import json as _json
+        import _path_utils as _pu
+        p = _pu.resolve_data_file('captcha_config.json')
+        with open(p, 'r', encoding='utf-8') as f:
+            cfg = _json.load(f)
+        v = cfg.get('txt_indent')
+        return True if v is None else bool(v)
+    except Exception as e:
+        try:
+            _log.debug(f'txt_indent 配置读取失败, 默认开启: {type(e).__name__}: {e}')
+        except Exception:
+            pass  # 日志链路兜底 (模块初始化早期 _log 可能未就绪)
+        return True
+
+
+def _is_ad_line(line, 额外正则=None):
+    """通用广告行/无意义字符检测 (基于内容特征, 不依赖具体书名或站点名)
+
+    识别策略 (分两层, 避免误伤正文):
+    1. 结构特征 (对所有行): 连续空格分隔的推荐列表、纯符号行、域名行、纯数字行
+    2. 标签特征 (仅对短行 <40 字): 小说搜索标签、站点宣传语片段
+    3. 站点级增补正则 (对所有行): 站点配置.json 的 ad_rules.行正则 (2026-09-29)
+
+    正文段落通常 >40 字且含完整中文标点, 不会被误伤。
+
+    Args:
+        line: 单行文本 (已 strip)
+        额外正则: 站点级增补正则列表 (获取广告规则().正则), 可为 None
+
+    Returns:
+        True 表示该行是广告/无意义字符, 应过滤
+    """
+    if not line:
+        return False
+    # 1. 结构特征匹配 (对所有行生效)
+    for pat in _AD_LINE_STRUCT_PATTERNS:
+        if pat.search(line):
+            return True
+    # 2. 标签特征匹配 (仅对短行 <40 字, 避免误伤正文段落)
+    if len(line) < 40:
+        for pat in _AD_LINE_TAG_PATTERNS:
+            if pat.search(line):
+                return True
+        for frag in _AD_PHRASE_FRAGMENTS:
+            if frag in line:
+                return True
+    # 3. 站点级增补规则 (对所有行生效; 用户在 站点配置.json 里配置的正则
+    #    理应全行匹配, 不做短行限制)
+    for pat in (额外正则 or ()):
+        try:
+            if pat.search(line):
+                return True
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e} '
+                       f'(站点广告正则执行失败, 忽略该规则)')
+    return False
