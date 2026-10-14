@@ -27,11 +27,23 @@ _爬虫源码 = _PROJECT_ROOT / '源码' / '爬虫.py'
 
 # 修复覆盖的三个函数: 任一处重新硬编码 Host, 都是同一个 bug 复发
 # (第三个在 2026-10-10 由 get_novel_title 改名为 _提取书名原始, 见模块 docstring)
-_受查函数 = ('inspect_page', 'get_chapter_content', '_提取书名原始')
+# 2026-10-14 批 4: inspect_page 实现移至 页面抓取.检查页面 (薄壳委托)
+_受查函数 = ('检查页面', 'get_chapter_content', '_提取书名原始')
+
+
+_页面抓取源码 = _PROJECT_ROOT / '源码' / '页面抓取.py'
+
+
+def _合并源码() -> str:
+    # 2026-10-14 批 4: 爬虫.py + 页面抓取.py (inspect_page 实现已搬家)
+    t = _爬虫源码.read_text(encoding='utf-8')
+    if _页面抓取源码.is_file():
+        t += '\n' + _页面抓取源码.read_text(encoding='utf-8')
+    return t
 
 
 def _解析源码():
-    return ast.parse(_爬虫源码.read_text(encoding='utf-8'))
+    return ast.parse(_合并源码())
 
 
 def _函数节点(树, 名称):
@@ -109,7 +121,7 @@ class Test请求头不得硬编码Host(unittest.TestCase):
 
     def test_不得通过session固定Host(self):
         """K29 原始补丁里的兜底断言, 保留防回归"""
-        源码 = _爬虫源码.read_text(encoding='utf-8')
+        源码 = _合并源码()
         for 可疑 in ("session.headers['Host']", 'session.headers["Host"]',
                      "session.headers.update({'Host'", 'session.headers.update({"Host"'):
             self.assertNotIn(可疑, 源码, f'发现固定 Host 的写法: {可疑}')
