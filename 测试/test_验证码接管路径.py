@@ -31,7 +31,9 @@ sys.path.insert(0, str(_根 / '源码'))
 import 爬虫 as C                # noqa: E402
 import captcha_module as CM     # noqa: E402
 
-_源码 = (_根 / '源码' / '爬虫.py').read_text(encoding='utf-8')
+# 2026-10-14 批 4: inspect_page 实现移至 页面抓取.检查页面
+_源码 = ((_根 / '源码' / '爬虫.py').read_text(encoding='utf-8')
+         + '\n' + (_根 / '源码' / '页面抓取.py').read_text(encoding='utf-8'))
 
 
 class Test像验证码页(unittest.TestCase):
@@ -106,7 +108,7 @@ class Test接线到位(unittest.TestCase):
                          '旧的三个标记内联判定应已被替换')
 
     def test_通用请求路径接了接管口子(self):
-        段 = _方法源码('inspect_page')
+        段 = _方法源码('检查页面')
         self.assertIn('_尝试通用验证码接管(', 段,
                       '通用请求路径应调用 _尝试通用验证码接管()')
         self.assertIn('_应主动接管验证码(', 段, '接管前必须过闸门')

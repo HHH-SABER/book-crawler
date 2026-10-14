@@ -97,7 +97,9 @@ class Test高频预览日志级别契约(unittest.TestCase):
     """inspect_page 的原始 HTML 预览必须保持 debug 级 (日志洪流防护)"""
 
     def test_解码预览为debug级(self):
-        src = (_PROJECT_ROOT / '源码' / '爬虫.py').read_text(encoding='utf-8')
+        # 2026-10-14 批 4: 预览日志随 inspect_page 搬到 页面抓取.py
+        src = (_PROJECT_ROOT / '源码' / '爬虫.py').read_text(encoding='utf-8') \
+            + (_PROJECT_ROOT / '源码' / '页面抓取.py').read_text(encoding='utf-8')
         self.assertIn('_log.debug(f"解码后内容前500个字符', src,
                       'HTML 预览被改回 INFO 级会重建日志洪流 (66k 行/全本)')
         self.assertNotIn('_log.info(f"解码后内容前500个字符', src)

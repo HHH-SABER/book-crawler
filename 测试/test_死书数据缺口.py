@@ -33,7 +33,12 @@ for _p in (str(_ROOT), str(_SRC)):
 
 
 def _读(相对: str) -> str:
-    return (_SRC / 相对).read_text(encoding='utf-8')
+    # 2026-10-14 批 4: inspect_page 实现搬到 页面抓取.py —— 查爬虫.py 时附加
+    # 页面抓取.py, 静态契约不因实现搬家而失效 (防薄壳假通过)
+    t = (_SRC / 相对).read_text(encoding='utf-8')
+    if 相对 == '爬虫.py' and (_SRC / '页面抓取.py').is_file():
+        t += '\n' + (_SRC / '页面抓取.py').read_text(encoding='utf-8')
+    return t
 
 
 class Test链路_判定到落盘(unittest.TestCase):
@@ -127,14 +132,14 @@ class Test爬虫侧接线(unittest.TestCase):
                       '缺 last_status_code 初始化 → getattr 兜底恒 0, 字段永远为空')
 
     def test_状态码在请求路径被采集(self):
-        self.assertIn('self.last_status_code = int(', self._请求路径块(),
+        self.assertIn('last_status_code = int(', self._请求路径块(),
                       '请求路径未采集状态码 → 该字段恒 0')
 
     def test_采集点在5xx置空之前(self):
         """顺序是关键: 5xx 分支会把 response 置 None, 采集必须早于它 ——
         否则 502 这类"最该显示 HTTP 码"的场景反而记成"未知"。"""
         块 = self._请求路径块()
-        i采集 = 块.find('self.last_status_code = int(')
+        i采集 = 块.find('last_status_code = int(')
         i置空 = 块.find('response = None')
         self.assertGreater(i采集, -1, '未找到状态码采集点')
         self.assertGreater(i置空, -1, '未找到 5xx 置空点')
