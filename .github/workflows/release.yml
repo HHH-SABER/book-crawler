@@ -93,6 +93,11 @@ jobs:
           echo "VER=${VER}" >> "$GITHUB_OUTPUT"
 
       - name: Build EXE
+        env:
+          # CI 控制台是 cp1252: build_exe.py 及其子进程 (ensure_flet_cache.py 等)
+          # print 中文会 UnicodeEncodeError (v2.4.37 发布首发命中, 与上方 Rust
+          # 步骤 / test.yml 的 PYTHONUTF8 同款修复 —— 2026-10-01 补)
+          PYTHONUTF8: '1'
         run: |
           .venv\Scripts\python.exe 脚本\build_exe.py --version=${{ steps.ver.outputs.VER }}
           if ($LASTEXITCODE -ne 0) {
