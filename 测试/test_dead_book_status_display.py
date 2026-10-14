@@ -154,16 +154,16 @@ class Test远控推送含死书(unittest.TestCase):
 
 
 class Test状态栏死书分支(unittest.TestCase):
-    """gui_app._status_loop: 死书既非 running 也非 failed。
+    """gui_app._tick_loop 状态栏段: 死书既非 running 也非 failed。
 
     漏统计时状态栏显示"就绪", 而表里躺着一行待确认死书 —— 用户以为无事发生。
     """
 
     def test_状态栏不把死书当就绪(self):
         文本 = _读源码('gui_app.py')
-        块 = 文本.split('def _status_loop')[1][:2500]
+        块 = 文本.split('def _tick_loop')[1][:4000]
         self.assertIn('dead_pending', 块,
-                      '_status_loop 未统计 dead_pending -> 有待确认死书却显示"就绪"')
+                      '_tick_loop 未统计 dead_pending -> 有待确认死书却显示"就绪"')
         # 死书分支必须排在 failed 之前: 死书不该被红"失败 N 项"吞掉
         序 = 块.find('dead_pending')
         # 2026-10-04 (Phase 3): 失败分支的颜色已由 MORANDI_ERROR 常量改为
