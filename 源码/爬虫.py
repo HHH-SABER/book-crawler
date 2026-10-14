@@ -2114,7 +2114,39 @@ class NovelSpider:
                   f"{f', 新 {len(新)} 章' if 新 else ''}), 保持原结果")
         return 已有章节
 
-    def get_chapter_list(self, catalog_url, sort_chapters=False, _折叠自救层=0):
+    def _驱动渲染目录页(self, catalog_url, sort_chapters=False):
+        """阶段一 P1 (2026-10-14): 用浏览器驱动渲染目录页再解析一次。
+
+        触发场景: requests 各引擎"成功"拿到页面但 0 章节 (JS 渲染目录)。
+        实现: 复用 `_create_waf_driver` (Playwright 反检测引擎, 比裸 Selenium
+        显著降低被 WAF 拦截的概率) → 打开 URL → 取渲染后 HTML → 走
+        get_chapter_list 的**同一条解析链路** (_预渲染HTML 参数), 不复制解析逻辑。
+
+        Returns:
+            list[dict]: 渲染后解析到的章节 (仍为空则调用方继续原死书判定)
+        Raises:
+            Exception: 驱动不可用/启动失败等 (调用方吞掉, 不影响原行为)
+        """
+        driver = self._create_waf_driver()
+        try:
+            driver.get(catalog_url)
+            import time as _t
+            _t.sleep(2)                 # 给 JS 渲染留时间 (目录页无懒加载需求)
+            html = (driver.content() if hasattr(driver, 'content')
+                    else getattr(driver, 'page_source', ''))
+            if not html or not html.strip():
+                return []
+            # 走同一条解析链路 (含域名特判/链接收集/质询页判定)
+            return self.get_chapter_list(catalog_url, sort_chapters,
+                                         _预渲染HTML=html)
+        finally:
+            try:
+                driver.quit()
+            except Exception:
+                pass  # 刻意静默: 驱动关闭失败无后续影响
+
+    def get_chapter_list(self, catalog_url, sort_chapters=False, _折叠自救层=0,
+                         _预渲染HTML=None):
         """
         从小说目录页提取章节列表。
 
@@ -2127,6 +2159,9 @@ class NovelSpider:
         Args:
             catalog_url: 目录页 URL
             sort_chapters: 是否按数字序重新排序章节（部分站点目录为倒序或乱序）
+            _预渲染HTML: 阶段一 P1 (2026-10-14) 的 JS 渲染重试入口 ——
+                非 None 时跳过 inspect_page, 直接用调用方已用驱动渲染好的 HTML
+                (只设 soup 与 _目录页为空 信号, 其余链路与正常抓取完全一致)
 
         Returns:
             list[dict]: [{'title': str, 'url': str}, ...] 可能为空列表
@@ -2146,11 +2181,18 @@ class NovelSpider:
                     catalog_url = normalized_url
 
         # 先查看网页结构
-        soup = self.inspect_page(catalog_url)
+        if _预渲染HTML is not None:
+            # 阶段一 P1: JS 渲染重试 —— 调用方 (run_crawl) 已用驱动渲染过目录页,
+            # 这里直接用渲染后的 HTML 走**完全相同的**链接收集链路 (不复制解析逻辑)
+            soup = BeautifulSoup(_预渲染HTML, 'lxml')
+            self._目录页为空 = not str(soup).strip()
+        else:
+            soup = self.inspect_page(catalog_url)
         # 死书信号① (2026-10-02): 空 soup = 页面根本没拿到 ——
         # inspect_page 三次重试耗尽 (:1493) 与 Selenium 兜底失败 (:1533-1534)
         # 都 return BeautifulSoup('', 'lxml') 而不抛异常, 这是唯一可抓的信号。
-        self._目录页为空 = not str(soup).strip()
+        if _预渲染HTML is None:
+            self._目录页为空 = not str(soup).strip()
 
         # 死书信号② (2026-10-08): **WAF 质询页被当成目录页**。
         # 质询页里只有"自身链接 + 站点首页"这类导航, 通用链接选择会把它们当章节收下
@@ -6338,6 +6380,23 @@ class NovelSpider:
             _log.info(f"[章节范围] 第 {sr} ~ {er} 章，实际 {total} 章 (全书共 {total_all} 章)")
         else:
             total = len(chapters)
+
+        if total == 0 and not getattr(self, '_目录页为空', False) \
+                and not getattr(self, '_目录页被质询', False):
+            # 阶段一 P1 (2026-10-14): "页面可达 + 书名正常 + 0 章节" ⇒ 大概率是
+            # **JS 渲染目录** —— requests/cloudscraper/curl_cffi 各引擎都"成功"
+            # 拿到了页面 (故引擎升级链路不触发), 但章节链接是 JS 动态生成的。
+            # 实测根因 (EXE 2.5.23 收尾): ixdzs 目录页即此形态, 引擎只看"请求
+            # 失败"不看"章节为 0" ⇒ 直接判死书。这里用驱动渲染重试一次。
+            try:
+                _log.info("[JS渲染] 目录页可达但 0 章节, 尝试驱动渲染重试一次…")
+                chapters = self._驱动渲染目录页(catalog_url, sort_chapters)
+                total = len(chapters)
+                if total:
+                    _log.info(f"[JS渲染] 渲染后解析到 {total} 章, 继续抓取")
+            except Exception as _je:
+                _log.info(f"[JS渲染] 重试失败 (不影响原判定): "
+                          f"{type(_je).__name__}: {str(_je)[:120]}")
 
         if total == 0:
             # 死书判定 (2026-10-02): 0 章节时区分"站点不可达 / 书被删除 /
