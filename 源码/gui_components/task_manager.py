@@ -697,7 +697,7 @@ class TaskManager:
         self._历史写锁 = threading.Lock()
         self._counter = 0
         self._selected_task_id: str = ""       # 当前选中任务 (表格高亮/抽屉联动)
-        # 死书待弹队列 (2026-10-02): 工作线程只塞 task_id, 主线程 _refresh_loop
+        # 死书待弹队列 (2026-10-02): 工作线程只塞 task_id, 主线程 _tick_loop
         # 每 tick 排空至多一条 → page.run_task 弹窗 (跨线程只调度不碰控件)。
         # 纯内存: 重启后为空 → 不重弹 (与死书清单页状态一致)。
         self._死书待弹: list = []

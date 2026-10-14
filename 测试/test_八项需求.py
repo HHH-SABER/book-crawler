@@ -534,8 +534,8 @@ class Test静态契约(unittest.TestCase):
     def test_通知排空已挂刷新循环(self):
         文本 = _读('gui_app.py')
         self.assertIn('def _排空通知', 文本)
-        self.assertIn('_排空通知()', 文本.split('async def _refresh_loop')[1],
-                      '终态通知未接入 _refresh_loop → 通知永不展示')
+        self.assertIn('_排空通知()', 文本.split('async def _tick_loop')[1],
+                      '终态通知未接入 _tick_loop → 通知永不展示')
 
     def test_双失效弹窗分支存在(self):
         """八项需求 #3「双失效补址」—— 2026-10-06 起并入**统一两步补址流程**。
