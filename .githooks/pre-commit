@@ -20,20 +20,16 @@ PY=".runtime/python314/python.exe"
 echo "[pre-commit] 红线扫描 (暂存区)…"
 # ⚠️ 必须 -z: git 默认 core.quotepath=true 会把中文路径转义成 \350\204\232 这类
 # 八进制假路径 (本项目路径含中文), 拿它去扫等于扫不存在的文件 ⇒ **假通过**。
-# -z 输出 NUL 分隔且不做路径转义, 是中文路径下唯一正确用法 (2026-10-13 实测)。
-STAGED=$(git diff --cached --name-only -z --diff-filter=ACM)
-if [ -n "$STAGED" ]; then
-    # 逐文件扫 (扫描器支持传文件路径); 有命中即整体失败
-    HIT=$(printf '%s' "$STAGED" | xargs -0 "$PY" 脚本/红线扫描.py 2>&1)
-    if [ $? -ne 0 ]; then
+# ⚠️ 必须**直接管道**而非 `VAR=$(...)`: bash 的命令替换会**丢弃 NUL 字节**
+# ("ignored null byte" 警告), 多文件暂存时文件名会粘连成一个假路径 ⇒ 又是假通过。
+# -z 输出 NUL 分隔且不做路径转义, 直通 xargs -0 才能保住每个文件名。
+git diff --cached --name-only -z --diff-filter=ACM | xargs -0 "$PY" 脚本/红线扫描.py
+if [ $? -ne 0 ]; then
         echo "------------------------------------------------------------"
-        echo "$HIT" | tail -20
-        echo "------------------------------------------------------------"
-        echo "[pre-commit] ❌ 红线命中, 提交被阻止。"
+        echo "[pre-commit] ❌ 红线命中 (命中清单见上方 ⚠ 行), 提交被阻止。"
         echo "处置: ①改成代号/占位; ②确属误报 → 在 脚本/红线扫描.py 加排除项"
         echo "      并注明理由; ③紧急情况下 git commit --no-verify (留痕)。"
         exit 1
-    fi
 fi
 
 echo "[pre-commit] 静态引用检查…"
