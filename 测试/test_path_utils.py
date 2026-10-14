@@ -191,5 +191,102 @@ class Test只读基目录容错(unittest.TestCase):
                           f'{名} 的 makedirs 又变回裸调用了 (只读目录会崩在 import)')
 
 
+class Test模式解析与数据文件(unittest.TestCase):
+    """阶段一 #2 补齐: 模式解析 (frozen/源码) + 迁移语义 + 缓存 + 数据文件解析。
+
+    与上面几个类的关系: 上面守"状态根/便携/容错"的行为回归, 本类补
+    "双模式路径解析"与"读写配置入口"的契约 —— 后者此前无任何覆盖。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix='nsl_mode_')
+        self._旧exe = sys.executable
+        self._旧根 = _path_utils._STATE_ROOT
+        self._旧env = os.environ.get('LOCALAPPDATA')
+        _path_utils._STATE_ROOT = None
+        # frozen 模式: EXE 在 tmp/base, LOCALAPPDATA 指 tmp/local
+        os.makedirs(os.path.join(self._tmp, 'base'), exist_ok=True)
+        sys.executable = os.path.join(self._tmp, 'base', '小说爬虫.exe')
+        os.environ['LOCALAPPDATA'] = os.path.join(self._tmp, 'local')
+
+    def tearDown(self):
+        sys.executable = self._旧exe
+        if self._旧env is None:
+            os.environ.pop('LOCALAPPDATA', None)
+        else:
+            os.environ['LOCALAPPDATA'] = self._旧env
+        _path_utils._STATE_ROOT = self._旧根
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    # ---- 双模式解析 ----
+    def test_frozen_base取exe旁(self):
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True):
+            self.assertEqual(
+                _path_utils.get_app_base_dir(),
+                os.path.join(self._tmp, 'base'))
+
+    def test_frozen_resource取_MEIPASS(self):
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True), \
+             unittest.mock.patch.object(sys, '_MEIPASS',
+                                        os.path.join(self._tmp, 'mei'), create=True):
+            self.assertEqual(_path_utils.get_resource_dir(),
+                             os.path.join(self._tmp, 'mei'))
+
+    def test_frozen_默认输出目录在exe旁(self):
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True):
+            出 = _path_utils.get_default_output_dir()
+            self.assertEqual(出, os.path.join(self._tmp, 'base', '抓取结果'))
+            self.assertTrue(os.path.isdir(出))
+
+    # ---- 状态根 ----
+    def test_无LOCALAPPDATA回退base(self):
+        os.environ.pop('LOCALAPPDATA', None)
+        os.environ.pop('APPDATA', None)
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True):
+            self.assertEqual(_path_utils.get_state_root(),
+                             os.path.join(self._tmp, 'base'))
+
+    def test_迁移旧数据_复制非移动(self):
+        os.makedirs(os.path.join(self._tmp, 'base', '数据'), exist_ok=True)
+        Path(self._tmp, 'base', '数据', '爬取历史.json').write_text(
+            '{"urls": []}', encoding='utf-8')
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True):
+            root = _path_utils.get_state_root()
+        self.assertTrue(Path(root, '数据', '爬取历史.json').is_file(),
+                        '旧数据必须复制到新根')
+        self.assertTrue(Path(self._tmp, 'base', '数据', '爬取历史.json').is_file(),
+                        '迁移必须是复制不是移动 —— 旧位置数据仍可用 (U 盘/换目录场景)')
+
+    def test_状态根缓存(self):
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True):
+            a = _path_utils.get_state_root()
+            b = _path_utils.get_state_root()
+        self.assertEqual(a, b)
+        self.assertIsNotNone(_path_utils._STATE_ROOT, '第二次必须命中缓存')
+
+    # ---- resolve_data_file (读写配置入口) ----
+    def test_数据文件_BASE有则直接返回(self):
+        Path(self._tmp, 'base', '站点表.json').write_text('{}', encoding='utf-8')
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True):
+            p = _path_utils.resolve_data_file('站点表.json')
+        self.assertEqual(p, os.path.join(self._tmp, 'base', '站点表.json'))
+
+    def test_数据文件_从资源目录复制默认值(self):
+        res = os.path.join(self._tmp, 'res')
+        os.makedirs(res, exist_ok=True)
+        Path(res, '默认.txt').write_text('x', encoding='utf-8')
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True), \
+             unittest.mock.patch('_path_utils.get_resource_dir', return_value=res):
+            p = _path_utils.resolve_data_file('默认.txt')
+        self.assertTrue(Path(self._tmp, 'base', '默认.txt').is_file(),
+                        'RESOURCE_DIR 有默认值时应复制到 BASE_DIR')
+
+    def test_数据文件_两处都没有返回目标路径(self):
+        with unittest.mock.patch('_path_utils.is_frozen', return_value=True), \
+             unittest.mock.patch('_path_utils.get_resource_dir', return_value=self._tmp):
+            p = _path_utils.resolve_data_file('不存在.json')
+        self.assertEqual(p, os.path.join(self._tmp, 'base', '不存在.json'))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -35,6 +35,7 @@ from gui_components.task_manager import TaskManager
 from gui_components.icon_rail import (IconRail, NAV_PAGES, build_theme_toggle,
                                       build_top_bar, build_remote_toggle)
 from gui_components.ui_theme import page_header
+from gui_components import ui_motion   # 动效令牌 (页面进场过渡; 可用界面偏好关掉)
 from gui_components.input_bar import InputBar
 from gui_components.task_table import TaskTable
 from gui_components.detail_drawer import DetailDrawer
@@ -507,8 +508,16 @@ def main(page: ft.Page):
         if key not in pages_map:
             return
         rail.set_active(key)
+        # 页面进场动效 (2026-10-14): 目标是「淡入 + 轻微上移」。
+        # ⚠️ 只做目标页淡入、离开页直接隐藏 —— Stack 里正在淡出的页仍然
+        # 参与命中测试, 会挡住新页的点击, 反而比硬切更糟。
         for k, p in pages_map.items():
-            p.visible = (k == key)
+            if k == key:
+                p.visible = True
+                ui_motion.进场(p, ui_motion.MOTION_中)
+            else:
+                p.visible = False
+                ui_motion.复位(p)
         if key == "history":
             try:
                 history_page.refresh()
@@ -564,8 +573,14 @@ def main(page: ft.Page):
 
     # ---- 主刷新循环 (主线程 async, 1s 周期) ----
     # 抓取工作台的表格/日志条/抽屉统一在此刷新 (仅 crawl 页可见时刷新, 省资源)
-    async def _refresh_loop():
+    # 2026-10-14 (阶段一 #4): 原为 **_refresh_loop + _status_loop 两个并行协程**,
+    # 各起一个 1s 定时器 ⇒ ① 事件循环每秒被唤醒两次、两次全量 diff 控件树,
+    # 空闲时段双倍 UI 线程压力; ② 两个循环对同一任务列表各取一次快照,
+    # 表格与状态栏可能显示相差一秒的状态。合并为单一节拍, 两段异常仍**各自
+    # 隔离** (status 计算挂了不得拖垮表格刷新, 反之亦然)。
+    async def _tick_loop():
         import asyncio
+        last_status_label = ""
         while True:
             try:
                 if pages_map["crawl"].visible:
@@ -588,14 +603,9 @@ def main(page: ft.Page):
                 # 终态通知队列 (八项需求 #2): 成功/失败 SnackBar, 与音效配合
                 _排空通知()
             except Exception:
-                pass  # 刻意静默: 高频路径(_refresh_loop(), 逐行/每秒级), 补日志会刷屏
-            await asyncio.sleep(1)
-
-    # 状态栏动态刷新: 每秒汇总任务状态 (H4: 唯一状态刷新处; H6: 局部 update)
-    async def _status_loop():
-        import asyncio
-        last = ""
-        while True:
+                pass  # 刻意静默: 高频路径(每秒级), 补日志会刷屏
+            # 状态栏汇总 (原 _status_loop): 纯计算 + label 未变不 update;
+            # 独立 try —— 状态统计异常不得影响上面的表格/通知刷新
             try:
                 tasks = task_manager.get_all_tasks()
                 running = sum(1 for t in tasks if t.status == "running")
@@ -618,8 +628,8 @@ def main(page: ft.Page):
                     dot_color, label = 取色('status-success'), f"就绪 · 已完成 {done} 项"
                 else:
                     dot_color, label = 取色('status-success'), "就绪"
-                if label != last:
-                    last = label
+                if label != last_status_label:
+                    last_status_label = label
                     status_dot.color = dot_color
                     status_text.value = label
                     status_dot.update()
@@ -628,11 +638,10 @@ def main(page: ft.Page):
                     rail.设置状态摘要(label, dot_color)
                     rail.刷新状态摘要()
             except Exception:
-                pass  # 刻意静默: 高频路径(_status_loop(), 逐行/每秒级), 补日志会刷屏
+                pass  # 刻意静默: 高频路径(每秒级), 补日志会刷屏
             await asyncio.sleep(1)
 
-    page.run_task(_refresh_loop)
-    page.run_task(_status_loop)
+    page.run_task(_tick_loop)
 
     # ---- 首次启动引导 (八项需求 #5): 询问创建桌面快捷方式 ----
     # flag 落 状态根/数据/首次启动.flag —— 问过一次就不再打扰;

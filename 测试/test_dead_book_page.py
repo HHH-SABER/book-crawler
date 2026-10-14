@@ -98,7 +98,7 @@ class Test页面挂载完整性(unittest.TestCase):
         self.assertIn('dead_page.refresh()', 块)
 
     def test_可见时轮询已接线(self):
-        块 = self.gui.split('def _refresh_loop')[1][:1200]
+        块 = self.gui.split('def _tick_loop')[1][:1200]
         self.assertIn('pages_map["deadbook"].visible', 块,
                       '死书页未接可见时轮询 → 其他会话改清单本页不更新')
         self.assertIn('dead_page.refresh()', 块)
