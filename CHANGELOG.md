@@ -6,6 +6,88 @@
 
 ***
 
+## \[2.5.24] - 2026-10-14（未发布）
+
+### 新增 — 远控手机面板动效（零依赖）
+
+- **首屏进场**：标题栏 + 三张卡片依次淡入上移（70ms stagger，380ms，`cubic-bezier(.22,.61,.36,1)`）。
+  动画只挂在**不会被重建的容器**（卡片外框）上 —— 任务列表每 2s、书架每 10s 全量重建
+  DOM，动效挂到行/条目上会每 2 秒闪一次。
+- **登录层**：遮罩淡入 + 面板 `scale(.965)→1` 轻弹。
+- **按压反馈**：按钮/链接 `scale(.955)`，140ms；触屏与鼠标通用。
+- **提示消息 / 日志展开**：改用 Web Animations API 播放（`提示()`、`展开日志()`），
+  同一元素反复触发时先 `cancel()` 旧动画，不叠加。
+- **加载态呼吸**：「加载中…」1.4s 循环淡入淡出，区分"在途"与"卡死"。
+- **可访问性**：全部动效包在 `@media (prefers-reduced-motion: no-preference)` 内，
+  系统开启「减弱动态效果」时**整体降级为无动画**（已实测 `animation-name: none` 且
+  `opacity: 1`，内容不会因为禁用动画而不可见）；键盘焦点环 `:focus-visible` 任何模式下都保留。
+
+### 新增 — 桌面端（Flet）页面切换进场动效
+
+- **新增 `源码/gui_components/ui_motion.py`**：动效令牌与统一出口，独立于
+  `ui_tokens.py`（后者是纯数据零依赖，不该被拖进 flet 运行时）。
+  - 时长**只用三档**：快 120ms（按压/hover）/ 中 200ms（页面进场）/ 慢 320ms
+    （大块内容），全应用节奏一致。
+  - 曲线统一 `AnimationCurve.FAST_OUT_SLOWIN`。
+  - 进场 = `opacity 0→1` + `offset` 从下方 1.5% 升上来（**克制**，不做大幅滑入）。
+- **页面切换进场**：`gui_app._switch_page` 目标页淡入上移，离开页隐藏并复位。
+  **只做淡入、不做淡出** —— Stack 里正在淡出的页仍参与命中测试，会挡住新页点击。
+- **右栏视图切换进场**（`detail_drawer.open`）：任务详情 ↔ 文件预览切换时淡入，
+  比硬切更容易看清"内容换了"；同样只做淡入（两视图同在 Column 里，淡出的仍占位）。
+- **用户可关**：界面偏好新增「动效」键（默认开），关掉时 `动画()` 返回 None、
+  完全不碰控件，行为与改动前一致。
+- **降级安全**：动效挂载失败（如控件不支持动画属性）一律把 `opacity` 复位成 1，
+  **绝不让界面少一块**；复位再失败也只留 debug 日志，不冒泡。
+
+### ⚠️ Flet 0.86.5 动画 API 实测结论（与旧文档/记忆不符）
+
+写动效前按实测核对，别照老教程：
+
+| 状态 | API |
+|---|---|
+| ✅ 可用 | `animate_opacity` / `animate_scale` / `animate_offset` + `animate=ft.Animation(duration, curve)` |
+| ✅ 可用 | `AnimatedSwitcher(content, duration, transition=…)`、`on_animation_end` |
+| ⚠️ 改名 | 曲线是 **`FAST_OUT_SLOWIN`**；Flutter 原名 `FAST_OUT_SLOW_IN` 在 0.86 **不存在，写错静默不生效** |
+| ❌ 已删 | `Curves` / `ScaleTransition` / `AnimatedOpacity` / `AnimatedScale` / `AnimatedContainer` / `AnimatedPositioned` |
+
+### 修复 — 远控面板手机窄屏表格不可用（实测暴露）
+
+- **状态/操作列逐字竖排**：390px 视口下中文按字换行，「已完成」竖成「已 完 成」、
+  「日志」按钮竖成两行，几乎无法点击 ⇒ `table th/td { white-space:nowrap }`。
+- **表格撑破布局**：`nowrap` 后总宽超过屏宽，`td` 覆盖到上方输入框
+  （Playwright 实测 `intercepts pointer events`，点击被吞）⇒ 新增 `.tablewrap`
+  横向滚动容器，任务列 `max-width` 200→170px。
+- **操作列被推出可视区**：`table th/td:last-child` 加 `position:sticky; right:0`，
+  「停 / 续传 / 忽略 / 日志」按钮**常驻右侧可见**，不必横向滑动。
+
+### 为什么不引入 GSAP
+
+远控是**局域网场景**（手机与电脑同一 Wi-Fi），`grep cdn|jsdelivr|unpkg` 全项目
+**0 命中**（零外部依赖是既定风格）。走 CDN 引 GSAP 会让手机在没有外网时
+**整页动效静默失效**，且为 18 KB 的页面引入约 70 KB 依赖不划算；所需动效
+（淡入/位移/按压/展开）CSS + WAAPI 已完全覆盖。需要 GSAP 时应把 `gsap.min.js`
+**本地化**随程序分发，而不是走 CDN。
+
+### 验证
+
+- **1201 tests OK**（skipped=8，约 82s）。其中动效相关
+  `测试/test_ui_motion.py` **17 项**：时长三档、曲线名护栏（含"`FAST_OUT_SLOW_IN`
+  不存在"反向断言）、动效开关、进场属性、**失败必须复位为可见**、两处接线护栏
+  （`_switch_page` 与 `detail_drawer` 都不得手写 `animate_opacity`、禁 `page.update`）。
+  （同批另含阶段一 P1「JS 渲染重试」9 项，见其独立条目。）
+- **静态自检**：`脚本/check_undefined_refs.py` 全部干净，可以打包。
+- **真机尺寸渲染验证**（Playwright + 系统 Edge，390×844 手机视口）：
+  运行时 `document.getAnimations()` 实测 **入场×4 + 呼吸×1**，`c1/c2/c3` 的
+  `animation-delay` = `0.07s/0.14s/0.21s`，动画结束后 `opacity: 1`（无残留透明）。
+- **减弱动态效果对照组**：同页面在 `reduced_motion='reduce'` 下
+  `window.减弱动效 === true`、卡片 `animation-name: none`、`opacity: 1` ⇒ 降级正确。
+- **静态自检**：CSS 花括号 54/54 平衡、4 个 `@keyframes` 全部被引用且无悬空引用、
+  `<div>/<style>/<script>/<table>/<body>/<html>` 标签全平衡、JS 经 `node --check` 通过。
+- 服务端返回 HTTP 200（19,028 B），无 JS 报错；唯一 404 为浏览器自动请求的
+  `favicon.ico`，属既有行为。
+
+***
+
 ## \[2.5.23] - 2026-10-13
 
 > 2.5.21–2.5.22 的版本号被构建流程消耗但未发布，内容并入本版。
