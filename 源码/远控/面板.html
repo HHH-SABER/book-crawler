@@ -20,6 +20,17 @@
   button.danger { background:var(--err); color:#fff; }
   button:disabled { opacity:.4; cursor:default; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
+  /* 手机窄屏 (390px) 下中文会逐字换行 → 状态/操作列竖成"已 完 成"、按钮难点。
+     全表 nowrap; 任务列靠已有的 max-width + ellipsis 截断。
+     容器必须能横向滚动: nowrap 后表格总宽可能超过屏宽, 直接让它撑破
+     布局会把 <td> 盖到上面的输入框上 (Playwright 实测 intercepts pointer events)。*/
+  .tablewrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table th, table td { white-space:nowrap; }
+  /* 操作列常驻右侧 (sticky): 窄屏下表格可横向滚动, 但"停/续传/日志"
+     按钮不能被推出可视区, 否则用户不知道要滑才能操作。 */
+  table th:last-child, table td:last-child {
+      position:sticky; right:0; background:var(--card);
+      box-shadow:-1px 0 0 #232b36; padding-left:10px; }
   th,td { text-align:left; padding:5px 6px; border-bottom:1px solid #232b36; }
   .st-running{color:var(--acc)} .st-completed{color:var(--ok)}
   .st-failed{color:var(--err)} .st-stopped{color:var(--warn)}
@@ -31,6 +42,62 @@
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .book { display:flex; justify-content:space-between; gap:8px; padding:6px 0;
           border-bottom:1px solid #232b36; align-items:center; }
+
+  /* ===== 动效 (2026-10-14) ============================================
+     三条硬约束, 决定了这里为什么不用 GSAP:
+       ① 远控跑在局域网 (手机与电脑同一 Wi-Fi), 手机可能没有外网 ——
+          走 CDN 引 GSAP 会让整页动效静默失效, 故零外部依赖;
+       ② 任务列表每 2s、书架每 10s 全量重建 DOM —— 入场动画只能挂在
+          **不会被重建的容器** (卡片外框) 上, 绝不挂行/条目, 否则每 2s 闪一次;
+       ③ 全部包在 prefers-reduced-motion: no-preference 内, 系统关掉动态
+          效果时自动降级为无动画 (可访问性)。
+     ================================================================ */
+  :root { --dur-1:140ms; --dur-2:220ms; --dur-3:380ms;
+          --ease:cubic-bezier(.22,.61,.36,1); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes 入场 { from { opacity:0; transform:translateY(10px); }
+                      to   { opacity:1; transform:none; } }
+    @keyframes 淡入 { from { opacity:0; } to { opacity:1; } }
+    @keyframes 弹入 { from { opacity:0; transform:scale(.965); }
+                      to   { opacity:1; transform:none; } }
+    @keyframes 呼吸 { 0%,100% { opacity:.4; } 50% { opacity:.85; } }
+
+    /* 首屏: 标题栏 → 三张卡片依次进场。卡片外框只渲染一次, 动画不会重播。 */
+    body > div:first-of-type { animation: 入场 var(--dur-3) var(--ease) both; }
+    .card { animation: 入场 var(--dur-3) var(--ease) both; }
+    .card.c1 { animation-delay: 70ms; }
+    .card.c2 { animation-delay: 140ms; }
+    .card.c3 { animation-delay: 210ms; }
+
+    /* 登录层: 遮罩淡入 + 面板轻弹 */
+    #login      { animation: 淡入 var(--dur-2) var(--ease) both; }
+    #login >div { animation: 弹入 var(--dur-3) var(--ease) both; }
+
+    /* 「加载中…」: 呼吸, 提示数据在途而不是卡死 */
+    #books > .dim { animation: 呼吸 1.4s ease-in-out infinite; }
+
+    /* 按压反馈 (瞬时, 不打断操作) */
+    button, a[href] { transition: transform var(--dur-1) var(--ease),
+                                 opacity   var(--dur-1) linear; }
+    button:active, a[href]:active { transform: scale(.955); }
+    button:disabled:active { transform: none; }
+
+    /* 桌面浏览器调试时的 hover 反馈 (触屏无 hover, 单独开) */
+    @media (hover:hover) and (pointer:fine) {
+      button:hover:not(:disabled) { transform: translateY(-1px); }
+      .book { transition: background var(--dur-1) linear; }
+      .book:hover { background:#1e2530; }
+    }
+  }
+
+  /* 减弱动态效果: 位移改为透明度变化, 保留"有反馈"但无运动 */
+  @media (prefers-reduced-motion: reduce) {
+    button:active, a[href]:active { transform:none; opacity:.8; }
+  }
+
+  /* 键盘可达性: 任何动效设置下都保留焦点环 */
+  :focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
 </style>
 </head>
 <body>
@@ -57,7 +124,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card c1">
   <div class="row"><input type="text" id="url" placeholder="小说目录页 URL"></div>
   <div class="row" style="margin-top:8px">
     <select id="mode">
@@ -72,15 +139,15 @@
 </div>
 
 <h2>任务列表</h2>
-<div class="card">
-  <table><thead><tr>
+<div class="card c2">
+  <div class="tablewrap"><table><thead><tr>
     <th>任务</th><th>状态</th><th>进度</th><th>耗时</th><th>操作</th>
-  </tr></thead><tbody id="tasks"></tbody></table>
+  </tr></thead><tbody id="tasks"></tbody></table></div>
   <div id="log" class="log" style="margin-top:10px; display:none"></div>
 </div>
 
 <h2>书架 (抓取结果)</h2>
-<div class="card" id="books"><span class="dim">加载中…</span></div>
+<div class="card c3" id="books"><span class="dim">加载中…</span></div>
 <p class="dim">token 存于电脑本机（数据/远控配置.json）。服务默认监听全部网卡（0.0.0.0），手机与电脑连同一 Wi-Fi 即可访问；外网访问可选用 Tailscale。</p>
 
 <script>
@@ -89,6 +156,20 @@ var token = localStorage.getItem('远控token') || '';
 var 日志目标 = null;   // 当前展开日志的任务 id
 var 日志指针 = 0;
 var 日志轮次 = null;
+
+// ---- 动效辅助 (2026-10-14) ------------------------------------------------
+// 用 Web Animations API 而非外部库: 远控是局域网场景, 手机未必有外网,
+// 走 CDN 引 GSAP 会让动效静默失效 (约束说明见页面样式表顶部注释)。
+// 系统开启「减弱动态效果」时一律跳过; 老浏览器无 .animate 时也跳过。
+var 减弱动效 = !!(window.matchMedia &&
+                  window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function 播放(el, frames, opts) {
+  if (减弱动效 || !el || !el.animate) return;
+  try {
+    if (el._anim) el._anim.cancel();   // 快速反复触发时不让动画叠加
+    el._anim = el.animate(frames, opts);
+  } catch (e) { /* 不支持时静默: 直接呈现最终状态, 不影响功能 */ }
+}
 
 // 服务端 2026-10-07 起 /tutorial 也需鉴权。锚点 (<a target="_blank">) 无法携带
 // Authorization 头, 只能走 ?k= —— 与 /reader、/epub 同一套路。
@@ -131,7 +212,13 @@ function api(path, opt) {
     return r;
   });
 }
-function 提示(s) { document.getElementById('msg').textContent = s; }
+function 提示(s) {
+  var el = document.getElementById('msg');
+  el.textContent = s;
+  播放(el, [{opacity:0, transform:'translateY(-4px)'},
+            {opacity:1, transform:'none'}],
+             {duration:200, easing:'cubic-bezier(.22,.61,.36,1)'});
+}
 
 // 所有动态内容一律 textContent, 杜绝站点内容进日志引发的 XSS
 function 发任务() {
@@ -166,7 +253,12 @@ function 展开日志(id) {
   var box = document.getElementById('log');
   box.textContent = '';
   box.style.display = 日志目标 ? 'block' : 'none';
-  if (日志目标) 拉日志();
+  if (日志目标) {
+    播放(box, [{opacity:0, transform:'translateY(-8px)'},
+               {opacity:1, transform:'none'}],
+                {duration:240, easing:'cubic-bezier(.22,.61,.36,1)'});
+    拉日志();
+  }
 }
 
 function 拉日志() {
@@ -210,7 +302,7 @@ function 刷新任务() {
         var tr = document.createElement('tr');
         var td1 = document.createElement('td');
         td1.appendChild(document.createTextNode(t.标题 || t.url));
-        td1.style.maxWidth = '200px'; td1.style.overflow = 'hidden';
+        td1.style.maxWidth = '170px'; td1.style.overflow = 'hidden';
         td1.style.textOverflow = 'ellipsis'; td1.style.whiteSpace = 'nowrap';
         var td2 = document.createElement('td');
         td2.className = 'st-' + t.状态;

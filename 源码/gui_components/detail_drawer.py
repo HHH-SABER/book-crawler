@@ -33,6 +33,7 @@ from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
 from .ui_tokens import 取色, 登记重刷
 from . import states
 from . import 布局档位
+from . import ui_motion          # 2026-10-14: 右栏视图切换进场动效 (与页面切换同一套令牌)
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys as _sys; _sys.path.insert(0, _HERE)  # noqa: E402
@@ -278,6 +279,15 @@ class DetailDrawer:
         self._view = view if view in ("detail", "preview") else "detail"
         self._detail_view.visible = (self._view == "detail")
         self._preview_view.visible = (self._view == "preview")
+        # 视图切换进场动效 (2026-10-14): 右栏内容整体换掉, 淡入 + 轻微上移,
+        # 比硬切更容易看清"内容换了"。用与页面切换同一套令牌 (ui_motion),
+        # 关掉「动效」偏好时自动降级为硬切, 行为与改动前一致。
+        # 注意: 这里不做淡出 —— 两个视图同在 Column 里, 淡出的那个仍占位。
+        进场目标 = self._detail_view if self._view == "detail" else self._preview_view
+        try:
+            ui_motion.进场(进场目标, ui_motion.MOTION_中)
+        except Exception as _e:
+            _dbg("详情面板", f'视图切换动效失败(已降级): {type(_e).__name__}')
         self._title_text.value = {"detail": "任务详情", "preview": "文件预览"}[self._view]
         self._toggle_btn.icon = (ft.Icons.CLOSE if self._view == "preview"
                                  else ft.Icons.FOLDER_OPEN_OUTLINED)
