@@ -397,3 +397,27 @@ def _is_ad_line(line, 额外正则=None):
             _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e} '
                        f'(站点广告正则执行失败, 忽略该规则)')
     return False
+
+
+# ---- 链接绝对化 (2026-10-14 阶段二批 5 追加) ----
+
+def 绝对化链接(宿主, href: str) -> str:
+        """把页面里的 href 补成可直接请求的绝对 URL。
+
+        ⚠️ 必须处理**协议相对**写法 `//host/path` —— 实网取证:
+        页面里有 `//ft.example.com/<书号>/1.html` (镜像站)。旧写法
+        `宿主.base_url + href` 会拼成 `https://<站点>//ft.example.com/...`
+        这种**根本不存在的地址**: 抓它必然失败, 却会被当成一个"章节"占位
+        (章节标题/编号都可能是错的)。
+        顺带修掉"相对路径缺前导斜杠"的同类拼接错误 (`base_url + 'a/1.html'`)。
+        """
+        href = (href or '').strip()
+        if not href:
+            return ''
+        if href.startswith('//'):
+            return 'https:' + href
+        if href.startswith(('http://', 'https://')):
+            return href
+        if href.startswith('/'):
+            return 宿主.base_url + href
+        return 宿主.base_url + '/' + href

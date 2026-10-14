@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from 页面抓取 import 检查页面 as _检查页面, RESP_CACHE_MAX
+from 目录链接工具 import 绝对化链接 as _绝对化链接实现
 from 目录链接工具 import (_非章节页名, _是非章节链接, _章节链接合正则,
                             完整目录_文本, 完整目录_href, _找完整目录链接,
                             _目录列表可疑, _剔除非章节单条, _目录折叠提示,
@@ -1538,23 +1539,10 @@ class NovelSpider:
     def _绝对化链接(self, href: str) -> str:
         """把页面里的 href 补成可直接请求的绝对 URL。
 
-        ⚠️ 必须处理**协议相对**写法 `//host/path` —— 实网取证:
-        页面里有 `//ft.example.com/<书号>/1.html` (镜像站)。旧写法
-        `self.base_url + href` 会拼成 `https://<站点>//ft.example.com/...`
-        这种**根本不存在的地址**: 抓它必然失败, 却会被当成一个"章节"占位
-        (章节标题/编号都可能是错的)。
-        顺带修掉"相对路径缺前导斜杠"的同类拼接错误 (`base_url + 'a/1.html'`)。
+        2026-10-14 (阶段二批 5): 实现移至 `目录链接工具.绝对化链接`, 此处仅委托
+        (契约与实网取证注记见模块内 docstring)。
         """
-        href = (href or '').strip()
-        if not href:
-            return ''
-        if href.startswith('//'):
-            return 'https:' + href
-        if href.startswith(('http://', 'https://')):
-            return href
-        if href.startswith('/'):
-            return self.base_url + href
-        return self.base_url + '/' + href
+        return _绝对化链接实现(self, href)
 
     def _折叠自救(self, soup, catalog_url, 已有章节, sort_chapters):
         """折叠目录自救 (2026-10-12): 找到"全部章节"入口就跳过去重新解析。
