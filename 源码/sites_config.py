@@ -269,6 +269,14 @@ def _apply_runtime_config():
 def _执行重放():
     """(须持 _重载锁) 重放本体: 记账/复位/upsert 全部在此 (竞态说明见 _重载锁)"""
     global _RUNTIME_APPLIED, _RUNTIME_APPENDED
+    # 广告规则编译缓存**重放前**先失效 (须在持锁内)。
+    # 2026-10-15 修 (CI 抓到的真 bug): 原先只在函数**末尾**清一次, 而 try 内
+    # "无 站点配置.json" / "JSON 非 list" 两条提前 return 会**跳过它** ⇒
+    # 全新安装(尚无配置文件)/CI 环境下重载永不失效, 站点广告规则改动不生效。
+    # 本机一直有配置文件所以每次都走到末尾, 这个漏洞肉眼不可见 —— 是
+    # test_sites_config.test_热重载清广告缓存 在 CI 上首次报出 (阶段一新增)。
+    # 末尾保留那次清理 (幂等, 兼顾"读配置失败也要清"的语义) —— 此处是提前兜底。
+    _广告规则缓存.clear()
     # 重放前先移除上次由 JSON 追加的域名条目 (覆盖型条目会被再次覆盖, 无需移除)
     if _RUNTIME_APPENDED:
         SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
