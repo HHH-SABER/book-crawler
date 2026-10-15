@@ -29,7 +29,11 @@ from pathlib import Path
 
 _根 = Path(__file__).resolve().parent.parent
 _扫描器 = _根 / '脚本' / '红线扫描.py'
-_PY = _根 / '.runtime' / 'python314' / 'python.exe'
+# 2026-10-15 修 CI 红: 原硬编码 .runtime/python314/python.exe (本机便携运行时,
+# gitignored) ⇒ CI 干净环境 FileNotFoundError ⇒ **红线扫描器上线以来 CI 一直
+# 是红的** (门禁失效而没人发现: 10-13 上线当天起三个 run 全 failure)。
+# 改用当前解释器: CI/本地各自用自己的 python, 都通。
+_PY = Path(sys.executable)
 
 
 def _跑(args) -> subprocess.CompletedProcess:
