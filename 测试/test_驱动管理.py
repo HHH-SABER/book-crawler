@@ -188,5 +188,66 @@ class Test编排分支(unittest.TestCase):
                         f'下载前必须给用户提示, 实际: {提示}')
 
 
+class TestChrome版本检测_安装目录优先(unittest.TestCase):
+    """版本检测优先级: 安装目录 (权威) > 注册表 (可能滞后) > 命令行。
+
+    2026-10-15 实测踩坑: Chrome 自动更新到 155 后, 注册表 BLBeacon 仍报 154
+    ⇒ 按旧版本装驱动 ⇒ selenium "unhandled request" (驱动/浏览器主版本不匹配)。
+    本类用临时目录模拟三种安装位置, 钉死"安装目录优先于注册表"的行为。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self._旧env = {k: os.environ.get(k) for k in
+                       ('PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA')}
+
+    def tearDown(self):
+        for k, v in self._旧env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._tmp.cleanup()
+
+    def _造安装目录(self, 版本='155.0.8059.40', 根名='pf'):
+        根 = self.tmp / 根名
+        应用 = 根 / 'Google' / 'Chrome' / 'Application'
+        (应用 / 版本).mkdir(parents=True)
+        (应用 / '155.0.8059.40' / 'chrome.exe').write_bytes(b'x')   # 防同名目录误判
+        os.environ['PROGRAMFILES'] = str(根)
+        return 版本
+
+    def test_安装目录优先于注册表旧值(self):
+        版本 = self._造安装目录()
+        实得 = D.取Chrome版本(读注册表=lambda: '154.0.8037.99')
+        self.assertEqual(实得, 版本,
+                         '注册表滞后时必须以安装目录为准 (否则装错版本驱动)')
+
+    def test_安装目录无版本目录时回落注册表(self):
+        os.environ['PROGRAMFILES'] = str(self.tmp / '空')
+        os.environ['PROGRAMFILES(X86)'] = str(self.tmp / '空2')
+        os.environ['LOCALAPPDATA'] = str(self.tmp / '空3')
+        self.assertEqual(D.取Chrome版本(读注册表=lambda: '154.0.8037.99'),
+                         '154.0.8037.99')
+
+    def test_非版本目录不被误认(self):
+        根 = self.tmp / 'pf'
+        应用 = 根 / 'Google' / 'Chrome' / 'Application'
+        (应用 / 'SetupMetrics').mkdir(parents=True)
+        (应用 / '155.0.8059.40').mkdir()
+        os.environ['PROGRAMFILES'] = str(根)
+        self.assertEqual(D.取Chrome版本(读注册表=lambda: ''), '155.0.8059.40',
+                         'SetupMetrics 之类目录不得被当成版本')
+
+    def test_三处都无时回落命令行(self):
+        os.environ['PROGRAMFILES'] = str(self.tmp / '空')
+        os.environ['PROGRAMFILES(X86)'] = str(self.tmp / '空2')
+        os.environ['LOCALAPPDATA'] = str(self.tmp / '空3')
+        实得 = D.取Chrome版本(读注册表=lambda: '',
+                             跑命令=lambda argv: 'Google Chrome 153.0.1')
+        self.assertIn('153.0.1', 实得)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

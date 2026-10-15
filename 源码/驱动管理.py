@@ -152,9 +152,46 @@ def 找本地驱动(目录: str, 路径们=()) -> str:
     return ''
 
 
-def 取Chrome版本(读注册表=None, 跑命令=None) -> str:
-    """双路取 Chrome 版本: 注册表 (快) → `chrome --version` (兜底)。
+def _从安装目录读版本() -> str:
+    """从 Chrome 安装目录的**版本子目录**读版本 (权威来源, 2026-10-15 加)。
 
+    为什么必须加这条路 (实测踩坑): 注册表 BLBeacon 的值**可能是旧的** ——
+    Chrome 自动更新后安装目录已换成新版本目录 (如 155.0.8059.40), 而
+    BLBeacon 仍报上一版 (154.0.8037.99)。`取Chrome版本` 原实现"注册表拿到就
+    直接返回", 于是**按旧版本去匹配驱动** ⇒ chromedriver 154 配 Chrome 155
+    ⇒ selenium 报 "unhandled request" (驱动与浏览器主版本不一致的典型症状)。
+    版本子目录名 (Application/<主>.<次>.<修>.<构建>) 始终反映真实安装的版本。
+
+    覆盖三种安装位置: Program Files / Program Files (x86) / 用户级 (LocalAppData)。
+    """
+    import re
+    import tempfile
+    候选根 = [
+        os.path.join(os.environ.get('PROGRAMFILES') or '', 'Google', 'Chrome'),
+        os.path.join(os.environ.get('PROGRAMFILES(X86)') or '', 'Google', 'Chrome'),
+        os.path.join(os.environ.get('LOCALAPPDATA') or '', 'Google', 'Chrome'),
+    ]
+    目录名正则 = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
+    for 根 in 候选根:
+        应用 = os.path.join(根, 'Application')
+        try:
+            if not os.path.isdir(应用):
+                continue
+            for 项 in os.listdir(应用):
+                if 目录名正则.match(项) and os.path.isdir(os.path.join(应用, 项)):
+                    return 项
+        except OSError:
+            continue    # 无权限/竞态 → 试下一个根
+    return ''
+
+
+def 取Chrome版本(读注册表=None, 跑命令=None) -> str:
+    """三路取 Chrome 版本: 安装目录 (权威) → 注册表 (快但可能旧) → 命令行兜底。
+
+    优先级说明 (2026-10-15 实测修正): 原实现只信注册表, 而 Chrome 自动更新后
+    BLBeacon 可能滞后于真实安装版本 ⇒ 按旧版本装驱动 ⇒ 驱动与浏览器主版本不匹配
+    (selenium "unhandled request")。安装目录的版本子目录名才是权威, 故提到最前。
+    注册表降为第二路 (它在 Chrome 从未启动过时反而更准), 命令行兜底不变。
     Args:
         读注册表: () -> str 替身 (返回版本串或 '');
         跑命令: (argv) -> str 替身。
@@ -174,7 +211,10 @@ def 取Chrome版本(读注册表=None, 跑命令=None) -> str:
                             continue
             except Exception:
                 pass  # 刻意静默: 注册表整体读取失败(非Windows/无权限)时走返回值 ''
-    v = 读注册表() or ''
+    # 第一路: 安装目录版本子目录 (权威; 见 _从安装目录读版本 的踩坑说明)
+    v = _从安装目录读版本()
+    if not v:
+        v = 读注册表() or ''
     if not v and 跑命令 is None:
         def 跑命令(argv):
             try:
