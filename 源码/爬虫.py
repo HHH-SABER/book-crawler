@@ -454,132 +454,105 @@ _最近清洗统计 = contextvars.ContextVar('最近清洗统计', default=None)
 
 
 def _resolve_novel_paths(catalog_url):
-    r"""按站点规则计算小说路径前缀 (第 4 批重构: 从 get_chapter_list 抽出)。
+    r"""按规则计算小说路径前缀 (第 4 批重构抽出; Wave 2 ③ 已外置站分支)。
 
-    各站点章节链接的路径格式不同 (/books/{id}/、/xiaoshuo/{id}/、
-    /book/{id}/、/infos/{id}/、/\d+_\d+/ ...), 这里统一规约出两个候选
-    前缀供链接过滤使用。纯函数, 不依赖实例状态, 可离线单测。
+    计算顺序 (2026-10-15 站点脱钩 Wave 2 批次1):
+      1. **外部适配器钩子** `novel_paths(catalog_url)` —— 站点专属路径格式一律
+         放 `站点适配_本地/<站点>.py` (不入库), 公开侧不含任何站点分支;
+      2. 未命中则走**通用多模式推断** (下面 8 个模式, 覆盖 /97_97855/、
+         /books/{id}.html、/infos/{id}.html、/<书号>/index_N.html 等形态)。
+
+    纯函数, 不依赖实例状态, 可离线单测。
 
     Returns:
         (novel_path, novel_path_alt): 两个候选路径前缀
     """
-    if 站点匹配(catalog_url, 'siteR'):
-        _log.info("检测到siteR网站，使用专门的处理逻辑")
-        # 提取小说ID
-        novel_id_pattern = re.search(r'/books/(\d+)', catalog_url)
-        novel_id = novel_id_pattern.group(1) if novel_id_pattern else ''
-        _log.info(f"当前小说ID: {novel_id}")
-        # 构建两种可能的路径格式
-        novel_path = f'/books/{novel_id}/'
-        novel_path_alt = f'/books/{novel_id}'  # 用于匹配194971_1.html这种格式
-    # 特殊处理siteO网站
-    elif 站点匹配(catalog_url, 'siteO'):
-        _log.info("检测到siteO网站，使用专门的处理逻辑")
-        # 提取小说路径
-        novel_path_pattern = re.search(r'(/xiaoshuo/\d+/)', catalog_url)
-        novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
-        novel_path_alt = novel_path  # 对于siteO，两种路径格式相同
-    # 特殊处理siteP网站
-    elif 站点匹配(catalog_url, 'siteP'):
-        _log.info("检测到siteP网站，使用专门的处理逻辑")
-        # 提取小说ID路径，如 /book/143259/
-        novel_path_pattern = re.search(r'(/book/\d+/)', catalog_url)
-        novel_path = novel_path_pattern.group(1) if novel_path_pattern else ''
-        # siteP的章节链接格式为 /read/143/143259/xxx.html
-        # 提取/read/路径部分用于匹配
-        read_path_pattern = re.search(r'(/read/\d+/\d+/)', catalog_url)
-        novel_path_alt = read_path_pattern.group(1) if read_path_pattern else '/read/'
-        _log.info(f"当前小说路径: {novel_path}, 读取路径: {novel_path_alt}")
-    elif 站点匹配(catalog_url, 'siteQ'):
-        _log.info("检测到siteQ网站，使用专门的处理逻辑")
-        # 提取小说ID路径，如 /books/539.html → /books/539/
-        novel_path_pattern = re.search(r'(/books/\d+)\.html', catalog_url)
-        novel_path = (novel_path_pattern.group(1) + '/') if novel_path_pattern else ''
-        novel_path_alt = novel_path
-        _log.info(f"当前小说路径: {novel_path}")
-    elif 站点匹配(catalog_url, 'siteS'):
-        _log.info("检测到siteS网站，使用专门的处理逻辑")
-        book_id_match = re.search(r'/infos/(\d+)', catalog_url)
-        book_id = book_id_match.group(1) if book_id_match else ''
-        novel_path = f"/infos/{book_id}/" if book_id_match else ''
-        novel_path_alt = novel_path
-        _log.info(f"当前小说路径: {novel_path}")
-    else:
-        # 通用逻辑：尝试多种URL模式提取小说路径
-        novel_path = ''
-        novel_path_alt = ''
+    # ===== ① 站点专属规则: 走外部适配器插件 (公开侧无站点分支) =====
+    try:
+        from sites_config import get_adapter
+        _适配器 = get_adapter(catalog_url)
+        _钩子 = (_适配器 or {}).get('novel_paths')
+        if _钩子:
+            _结果 = _钩子(catalog_url)
+            if _结果:
+                return str(_结果[0]), str(_结果[1])
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.info(f'[路径提取] 适配器路径规则不可用, 回退通用模式: {type(e).__name__}: {e}')
 
-        # 模式1: /97_97855/ (siteV格式)
-        novel_path_pattern = re.search(r'(/\d+_\d+/)', catalog_url)
+    # ===== ② 通用逻辑: 尝试多种 URL 模式提取小说路径 =====
+    novel_path = ''
+    novel_path_alt = ''
+
+    # 模式1: /97_97855/ (siteV格式)
+    novel_path_pattern = re.search(r'(/\d+_\d+/)', catalog_url)
+    if novel_path_pattern:
+        novel_path = novel_path_pattern.group(1)
+    else:
+        # 模式2: /books/301597.html → /books/301597/ (siteX格式)
+        novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)\.html?', catalog_url)
         if novel_path_pattern:
-            novel_path = novel_path_pattern.group(1)
+            prefix = novel_path_pattern.group(1)
+            book_id = novel_path_pattern.group(2)
+            novel_path = f"{prefix}{book_id}/"
+            _log.info(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
         else:
-            # 模式2: /books/301597.html → /books/301597/ (siteX格式)
-            novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)\.html?', catalog_url)
+            # 模式3: /infos/5523629.html → /infos/5523629/ (siteW格式)
+            novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)(?:\.html?|/)', catalog_url)
             if novel_path_pattern:
                 prefix = novel_path_pattern.group(1)
                 book_id = novel_path_pattern.group(2)
                 novel_path = f"{prefix}{book_id}/"
-                _log.info(f"[路径提取] 模式2: 从URL提取小说路径 {novel_path}")
+                _log.info(f"[路径提取] 模式3: 从URL提取小说路径 {novel_path}")
             else:
-                # 模式3: /infos/5523629.html → /infos/5523629/ (siteW格式)
-                novel_path_pattern = re.search(r'(/[a-z]+/)(\d+)(?:\.html?|/)', catalog_url)
-                if novel_path_pattern:
-                    prefix = novel_path_pattern.group(1)
-                    book_id = novel_path_pattern.group(2)
-                    novel_path = f"{prefix}{book_id}/"
-                    _log.info(f"[路径提取] 模式3: 从URL提取小说路径 {novel_path}")
+                # 模式4: 提取URL中的数字ID作为关键词
+                id_match = re.search(r'/(\d{4,})', catalog_url)
+                if id_match:
+                    novel_path = id_match.group(1)
+                    _log.info(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
                 else:
-                    # 模式4: 提取URL中的数字ID作为关键词
-                    id_match = re.search(r'/(\d{4,})', catalog_url)
-                    if id_match:
-                        novel_path = id_match.group(1)
-                        _log.info(f"[路径提取] 模式4: 从URL提取小说ID {novel_path}")
+                    # 模式5: /<书号>/index_1.html → /<书号>/ (某站等:
+                    # 字母数字书ID + index_分页目录)
+                    # 2026-10-03 扩: 允许大写书ID与 indexlist.html 文件名
+                    # (siteK /<书号>/indexlist.html → /<书号>/, 章节链接
+                    #  /<书号>/{N}.html; 旧正则「小写」与「index/index_N」两道
+                    #  限制都匹配不上 → novel_path 空 → 通用提取全过滤,
+                    #  即使分页重取到真页面也判 0 章节)
+                    alt_match = re.search(
+                        r'/([A-Za-z0-9]{2,12})/index(?:list)?(?:_\d+)?\.html?',
+                        catalog_url)
+                    if alt_match:
+                        novel_path = f"/{alt_match.group(1)}/"
+                        _log.info(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
                     else:
-                        # 模式5: /<书号>/index_1.html → /<书号>/ (某站等:
-                        # 字母数字书ID + index_分页目录)
-                        # 2026-10-03 扩: 允许大写书ID与 indexlist.html 文件名
-                        # (siteK /<书号>/indexlist.html → /<书号>/, 章节链接
-                        #  /<书号>/{N}.html; 旧正则「小写」与「index/index_N」两道
-                        #  限制都匹配不上 → novel_path 空 → 通用提取全过滤,
-                        #  即使分页重取到真页面也判 0 章节)
-                        alt_match = re.search(
-                            r'/([A-Za-z0-9]{2,12})/index(?:list)?(?:_\d+)?\.html?',
-                            catalog_url)
-                        if alt_match:
-                            novel_path = f"/{alt_match.group(1)}/"
-                            _log.info(f"[路径提取] 模式5: 从URL提取小说路径 {novel_path}")
+                        # 模式6: /shu/OqWe.html → /shu/OqWe/ (siteAG等字母数字书ID
+                        # 目录页, 章节链接 /shu/OqWe/{N}.html)
+                        path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
+                        if path6:
+                            novel_path = f"{path6.group(1)}/"
+                            _log.info(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
                         else:
-                            # 模式6: /shu/OqWe.html → /shu/OqWe/ (siteAG等字母数字书ID
-                            # 目录页, 章节链接 /shu/OqWe/{N}.html)
-                            path6 = re.search(r'(/[a-z]+/[a-z0-9]{2,12})\.html?$', catalog_url)
-                            if path6:
-                                novel_path = f"{path6.group(1)}/"
-                                _log.info(f"[路径提取] 模式6: 从URL提取小说路径 {novel_path}")
+                            # 模式7: /163/163654/index.html → /163/163654/ (siteW等
+                            # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
+                            path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
+                            if path7:
+                                novel_path = f"{path7.group(1)}/"
+                                _log.info(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
                             else:
-                                # 模式7: /163/163654/index.html → /163/163654/ (siteW等
-                                # 分类/书ID 目录页, 章节链接 /163/163654/{N}.html)
-                                path7 = re.search(r'((?:/\d+){2,})/index(?:_\d+)?\.html?$', catalog_url)
-                                if path7:
-                                    novel_path = f"{path7.group(1)}/"
-                                    _log.info(f"[路径提取] 模式7: 从URL提取小说路径 {novel_path}")
-                                else:
-                                    # 模式8: /<书号>/1.html → /<书号>/ (2026-10-08 新增, 实网取证)
-                                    # 「字母数字书ID + 纯数字章节页, 且 URL 里没有 index」——
-                                    # 这一形态此前**没有任何模式命中** (模式2/3 要求前缀纯字母;
-                                    # 模式5 要求 URL 带 index; 模式6 要求末段 ≥2 位字母数字且无扩展名)
-                                    # → novel_path 为空 → 通用提取按 `novel_path in href` 一条都接不住
-                                    # → 判 0 章。实网: <站点> 的 /<书号>/1.html, 页面**真有**
-                                    # 本书 24 个分页链接与「返回目录 /<书号>/index.html」。
-                                    # `(?!\d+/)` 排除纯数字段 (那类由模式4按"数字ID"处理, 不抢它)。
-                                    path8 = re.search(
-                                        r'/((?!\d+/)[A-Za-z0-9]{2,12})/\d+\.html?$', catalog_url)
-                                    if path8:
-                                        novel_path = f"/{path8.group(1)}/"
-                                        _log.info(f"[路径提取] 模式8: 从URL提取小说路径 {novel_path}")
+                                # 模式8: /<书号>/1.html → /<书号>/ (2026-10-08 新增, 实网取证)
+                                # 「字母数字书ID + 纯数字章节页, 且 URL 里没有 index」——
+                                # 这一形态此前**没有任何模式命中** (模式2/3 要求前缀纯字母;
+                                # 模式5 要求 URL 带 index; 模式6 要求末段 ≥2 位字母数字且无扩展名)
+                                # → novel_path 为空 → 通用提取按 `novel_path in href` 一条都接不住
+                                # → 判 0 章。实网: <站点> 的 /<书号>/1.html, 页面**真有**
+                                # 本书 24 个分页链接与「返回目录 /<书号>/index.html」。
+                                # `(?!\d+/)` 排除纯数字段 (那类由模式4按"数字ID"处理, 不抢它)。
+                                path8 = re.search(
+                                    r'/((?!\d+/)[A-Za-z0-9]{2,12})/\d+\.html?$', catalog_url)
+                                if path8:
+                                    novel_path = f"/{path8.group(1)}/"
+                                    _log.info(f"[路径提取] 模式8: 从URL提取小说路径 {novel_path}")
 
-        novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
-
+    novel_path_alt = novel_path  # 对于其他网站，两种路径格式相同
 
     return novel_path, novel_path_alt
 
