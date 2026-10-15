@@ -77,7 +77,8 @@ _基建白名单 = ('99988866.xyz',   # flet 客户端缓存镜像 (构建用, �
              'registry.npmmirror.com',    # npmmirror 公共镜像 (驱动下载兜底)
              'googlechromelabs.github.io',  # Chrome for Testing 官方 API (GitHub Pages)
              'alidns.com', 'dnspod.com', 'cloudflare.com', 'cloudflareinsights.com',
-             'dns.google', '114dns.com')
+             'dns.google', '114dns.com',
+             'shields.io')           # README 徽章服务 (CI/Release/License 徽章, 非站点)
 
 # 工具链/依赖缓存目录: **不是项目内容**, 扫它们只会产出噪音
 # (rust_core_poc/.toolchain 下 1.8 万个 rust-lang 文档文件曾让门禁完全失效)

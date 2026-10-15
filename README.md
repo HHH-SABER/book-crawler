@@ -1,13 +1,19 @@
-> **v2.4.34 本地交付（2026-09-30）**：保留原项目和原依赖版本。直接运行 `dist/小说爬虫.exe`；源码入口 `启动GUI.bat` / `启动爬虫.bat` / `启动远控.bat` 优先使用随包 `.runtime/python314` 和原 `.venv/Lib/site-packages`，无需依赖原作者的 `F:/Python` 或本轮工作目录。GUI 源码优先使用同包 Flet 客户端，避免首启下载。
-> 开发/测试：`.runtime\python314\python.exe -m unittest discover -s 测试 -v`；构建：`.runtime\python314\python.exe 脚本\build_exe.py --version=2.4.34`（设置 `FLET_CACHE_DIR` 指向 `.runtime/flet_client`）。若自行重建环境，Python 3.14 + `requirements.txt` 与 `requirements-lock.txt`；Rust 可选并保留 Python 回退。
-> 便携运行时为官方 CPython 3.14.0 Windows x64 嵌入版；第三方库复用附件原件，无新增 Python 包。Chrome/Playwright 浏览器程序仍按原项目要求由目标机提供。
-
 # 小说爬虫 (Book Crawler)
+
+[![CI](https://github.com/HHH-SABER/book-crawler/actions/workflows/test.yml/badge.svg)](https://github.com/HHH-SABER/book-crawler/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/HHH-SABER/book-crawler?label=Release)](https://github.com/HHH-SABER/book-crawler/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
 
 多站点小说爬虫，支持 Flet 桌面 GUI 和 Windows EXE 打包。
 自动识别反爬机制（验证码 / 频率限制 / UA 校验 / JS 质询等），
 多引擎自动降级（requests → cloudscraper → curl_cffi），
 内容语义质检过滤无意义数据，按 URL 维度记录爬取历史并支持增量爬取。
+
+> **快速上手**：直接下载 [Releases](https://github.com/HHH-SABER/book-crawler/releases/latest)
+> 里的 `novel-crawler-*.exe`（免安装，含运行时）；源码运行见下方
+> [快速开始](#快速开始)。手机远控见 [手机远控](#手机远控)。
+> chromedriver **无需手动下载** —— 程序自动检测 Chrome 版本并匹配（见 `源码/驱动管理.py`）。
 
 > ## ⚠️ 合规声明
 >
@@ -211,12 +217,16 @@ pip install -r requirements.txt
 │  │  ├─ 首次引导.py         # 首次启动 flag + 桌面快捷方式 (可单测)
 │  │  ├─ 补址弹窗.py         # 死书补址两步流程 + 场景分流 (选场景 纯函数)
 │  │  └─ ui_fluent.py       # 主题 (含全局 scrollbar_theme 滚动条兜底)
+│  │  ├─ ui_motion.py        # 动效令牌与统一出口 (三档时长 + 一键降级)
 │  ├─ 爬虫.py                # 抓取引擎 (多引擎降级/分页/去重/质检)
+│  ├─ 页面抓取.py            # 引擎降级实现 (缓存/重试/解码/Selenium 兜底)
+│  ├─ 目录链接工具.py        # 目录链接判定 + 目录质量 + 正文清洗 (纯函数)
 │  ├─ 驱动管理.py            # chromedriver 自动检测/匹配/下载 (需求 #7)
 │  ├─ 死书处理.py            # 死书判定 (结构化字段, 无 IO 纯函数)
+│  ├─ 界面偏好.py            # 界面开关持久化 (提示音/动效)
 │  ├─ 远控/                  # 内嵌远控服务 (自研, 已进 EXE)
 │  └─ _path_utils.py        # 路径/状态根 (跨环境: 源码/EXE)
-├─ 测试/                    # 公开侧单测 (1100+ 例, CI 跑这套)
+├─ 测试/                    # 公开侧单测 (1200+ 例, CI 跑这套)
 │  └─ 样本/                  # 真实页面形态样本 (脱敏, 7 份: 折叠/验证/分页…)
 ├─ 测试_本地/                # 本地测试 (依赖本机站点适配器, 不入库)
 ├─ 脚本/                    # 工程脚本
