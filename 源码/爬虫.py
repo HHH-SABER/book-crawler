@@ -3394,8 +3394,10 @@ class NovelSpider:
                         nav.decompose()
                     # siteX: word_read 内剔除标题(h3)/导航/广告元素,
                     # 避免 "第X部分（第1页）" 等标题混入正文
-                    if 站点匹配(chapter_url, 'siteX'):
-                        for el in content_div(['h1', 'h2', 'h3', 'h4', 'div', 'a']):
+                    # Wave 2 批次3: 站点专属"容器预处理"(踢掉标题/导航元素)走适配器
+                    _剔除 = _站点策略(chapter_url, '正文容器预处理', 轮次='剔除元素')
+                    if _剔除:
+                        for el in content_div(list(_剔除)):
                             el.decompose()
                     # 获取文本
                     text = content_div.get_text(separator='\n\n', strip=True)
@@ -3656,16 +3658,11 @@ class NovelSpider:
                 content = re.sub(r'([.!?,;])\1+', r'\1', content)
                             
                 # 对于siteO网站，进行额外的清理
-                if 站点匹配(current_url, 'siteO'):
-                    _log.info("对siteO网站进行额外的内容清理")
-                    # 移除可能的乱码和特殊符号
-                    # 注意: 字符类必须排除 \n (U+000A) 与 \t/\r (由下一步行内压缩处理),
-                    # 否则换行被杀, 后续 4463 的空白压缩把整章压成一行 (分段丢失根因⑤)
-                    content = re.sub(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u00ff]', '', content)
-                    # 移除多余的空白字符 (仅行内空白, 保留换行的段落边界)
-                    content = re.sub(r'[ \t\r\f\v]+', ' ', content)
-                    # 移除行首行尾的空白
-                    content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
+                # Wave 2 批次3: 站点专属"额外清理"走适配器 (阶段 '正文清理')
+                _清理后 = _站点策略(current_url, '正文清理', 轮次='额外清理', content=content)
+                if _清理后 is not None:
+                    _log.info("对本站点进行额外的内容清理")
+                    content = _清理后
                     _log.info(f"清理后内容长度: {len(content)} 字符")
                     
         _log.info(f"最终提取内容长度: {len(content) if content else 0} 字符")
