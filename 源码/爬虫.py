@@ -453,6 +453,40 @@ _行内URL_RE = re.compile(
 _最近清洗统计 = contextvars.ContextVar('最近清洗统计', default=None)
 
 
+def _站点策略(catalog_url, 阶段, **上下文):
+    """站点专属策略的**通用分派入口** (站点脱钩 Wave 2 批次2, 2026-10-15)。
+
+    **为什么需要它**: 章节收集/解析里原有一批"按站点代号分支"的硬编码
+    (`if 站点匹配(url,'siteX'): …`), 使公开仓库含站点专属逻辑。这些分支一律改为
+    **问适配器**: 适配器暴露 `站点策略(catalog_url, 阶段, **上下文)`,
+    返回值语义:
+      - `True`  / `False`  → 明确接受 / 拒绝 (覆盖通用规则)
+      - `None`             → 交回通用规则
+      - 其它值             → 该阶段的专用结果 (如规范化的 URL、章节列表), 由调用点解释
+
+    阶段名 (公开侧通用词汇, 不含站点信息):
+      '章节链接接受'   上下文: 轮次 / href / text / novel_path / novel_path_alt
+      '目录规范化'     上下文: base_url            → 规范化后的目录 URL
+      '目录兜底解析'   上下文: soup / base_url / 轮次 → 章节列表或 None
+      '目录附加URL'    上下文: base_url            → 需额外抓取的目录页 URL
+      '专属选择器'     上下文: soup                → 选择器列表
+      '文本提链'       上下文: page_soup / base_url / novel_path → 章节列表或 None
+
+    适配器缺失 / 未实现该阶段 / 抛异常 ⇒ 一律返回 None (走通用规则), 并留痕。
+    """
+    try:
+        from sites_config import get_adapter
+        适配器 = get_adapter(catalog_url)
+        钩子 = (适配器 or {}).get('站点策略')
+        if not 钩子:
+            return None
+        return 钩子(catalog_url, 阶段, **上下文)
+    except Exception as e:  # noqa: BLE001 — 必须留痕
+        _log.info(f'[站点策略] 适配器策略不可用 ({阶段}), 走通用规则: '
+                  f'{type(e).__name__}: {e}')
+        return None
+
+
 def _resolve_novel_paths(catalog_url):
     r"""按规则计算小说路径前缀 (第 4 批重构抽出; Wave 2 ③ 已外置站分支)。
 
@@ -2036,23 +2070,15 @@ class NovelSpider:
                     relevant_links = []
                     for link in links:
                         href = link.get('href', '')
-                        # 对于siteR网站，同时检查两种路径格式
-                        if 站点匹配(catalog_url, 'siteR'):
-                            if novel_path in href or novel_path_alt in href:
-                                relevant_links.append(link)
-                        elif 站点匹配(catalog_url, 'siteO'):
-                            # 对于siteO网站，检查是否包含小说路径或章节路径
-                            if novel_path in href and href.endswith('.html') and link.get_text().strip():
-                                relevant_links.append(link)
-                        elif 站点匹配(catalog_url, 'siteP'):
-                            # 对于siteP网站，检查是否包含/read/路径
-                            if '/read/' in href and href.endswith('.html') and link.get_text().strip():
-                                relevant_links.append(link)
-                        else:
-                            # novel_path 为空时 (路径提取失败) 不启用路径过滤,
-                            # 避免 '' in href 恒为 True 导致全页链接都被当章节
-                            if novel_path and novel_path in href:
-                                relevant_links.append(link)
+                        # Wave 2 批次2: 站点专属接受规则走适配器 `站点策略` 钩子;
+                        # 返回 None 时用通用规则 (novel_path 为空则不启用路径过滤,
+                        # 避免 '' in href 恒为 True 导致全页链接都被当章节)。
+                        _决 = _站点策略(catalog_url, '章节链接接受',
+                                    轮次='chapter_selectors', href=href,
+                                    text=link.get_text().strip(),
+                                    novel_path=novel_path, novel_path_alt=novel_path_alt)
+                        if _决 is True or (_决 is None and novel_path and novel_path in href):
+                            relevant_links.append(link)
                     
                     if relevant_links:
                         _log.info(f"找到章节列表，使用选择器: {selector}")
@@ -2083,15 +2109,13 @@ class NovelSpider:
                         relevant_links = []
                         for link in links:
                             href = link.get('href', '')
-                            # 对于siteO网站，检查是否包含小说路径或章节路径
-                            if 站点匹配(catalog_url, 'siteO'):
-                                if novel_path in href or '/chapter/' in href:
-                                    relevant_links.append(link)
-                            else:
-                                # novel_path 为空时 (路径提取失败) 不启用路径过滤,
-                                # 避免 '' in href 恒为 True 导致全页链接都被当章节
-                                if novel_path and novel_path in href:
-                                    relevant_links.append(link)
+                            # Wave 2 批次2: 同上, 一律问适配器; None = 通用规则
+                            _决 = _站点策略(catalog_url, '章节链接接受',
+                                        轮次='simple_selectors', href=href,
+                                        text=link.get_text().strip(),
+                                        novel_path=novel_path, novel_path_alt=novel_path_alt)
+                            if _决 is True or (_决 is None and novel_path and novel_path in href):
+                                relevant_links.append(link)
                         
                         if relevant_links:
                             _log.info(f"找到章节列表，使用简单选择器: {selector}")
