@@ -3617,12 +3617,10 @@ class NovelSpider:
         # None.get() 抛 TypeError 被 _fetch_with_qc 吞成 "抓取异常" → 全章瞬时空正文。
         if site_pattern and isinstance(site_pattern.get('content_pagination'), dict):
             site_max_pages = site_pattern['content_pagination'].get('max_pages', 30)
-        elif 站点匹配(chapter_url, 'siteP'):
-            site_max_pages = 30
-        elif 站点匹配(chapter_url, 'siteX', 'siteW', 'siteY', 'siteZ'):
-            site_max_pages = 30
         else:
-            site_max_pages = 20  # 未知站点默认 20 页 (原 5 页导致多页章节抓不全)
+            # Wave 2 批次4: 站点专属分页上限走适配器 (阶段 '分页上限'); 未命中 ⇒ 默认 20
+            _上限 = _站点策略(chapter_url, '分页上限')
+            site_max_pages = _上限 if isinstance(_上限, int) else 20  # 未知站点默认 20 页
         # 如果调用方显式指定了 max_pages(例如测试模式只取前2页)，取较小值
         if max_pages is not None:
             max_pages = min(max_pages, site_max_pages)
@@ -3663,10 +3661,10 @@ class NovelSpider:
                         break
                 elif '.html' in chapter_url:
                     # siteZ分页: 第2页是_2.html, 第3页是_3.html (page_index+1)
-                    if 站点匹配(chapter_url, 'siteZ'):
-                        current_url = chapter_url.replace('.html', f'_{page_index+1}.html')
-                    else:
-                        current_url = chapter_url.replace('.html', f'_{page_index}.html')
+                    # Wave 2 批次4: 站点专属分页 URL 构造走适配器 (阶段 '分页URL')
+                    _分页URL = _站点策略(chapter_url, '分页URL', page_index=page_index)
+                    current_url = (_分页URL if _分页URL
+                                   else chapter_url.replace('.html', f'_{page_index}.html'))
                 else:
                     break
             
@@ -3855,7 +3853,8 @@ class NovelSpider:
             if site_pattern and site_pattern.get('pattern') == 'datafile':
                 # 站点配置已处理，跳过通用检测
                 pass
-            elif 站点匹配(current_url, 'siteT'):
+            elif _站点策略(current_url, '跳过通用检测') is True:
+                # Wave 2 批次4: 站点专属"跳过通用检测"走适配器
                 self._detected_pattern = None
             elif page_index == 0:
                 self._detected_pattern = None  # 清除上一章节的缓存, 强制重新检测
@@ -4071,7 +4070,8 @@ class NovelSpider:
             success = False
             for i in range(max_retries):  # 重试机制
                 # WAF 站点: requests必然401, 跳过重试 (已由上方Selenium分支处理)
-                if 站点匹配(current_url, 'siteT'):
+                if _站点策略(current_url, '重试策略') is True:
+                    # Wave 2 批次4: 站点专属"不重试"走适配器 (WAF 站 requests 必然 401)
                     break
                 try:
                     # 随机延迟 + 档位间隔: 取较大值而非相加 (见 _单页等待秒 注释)。
@@ -4160,8 +4160,9 @@ class NovelSpider:
                         soup, response, current_url, chapter_url, text=text)
 
                     # siteX: 站点占位提示("内容正在更新，请稍后查看")视为章节未发布
-                    if content and 站点匹配(current_url, 'siteX') and \
-                            any(m in content for m in ['内容正在更新', '请稍后查看']):
+                    _占位标记 = _站点策略(current_url, '占位提示')
+                    if content and _占位标记 and \
+                            any(m in content for m in _占位标记):
                         _log.info("⚠️ 该章节在网站端暂无内容(站点占位提示)，跳过")
                         content = ''
 
