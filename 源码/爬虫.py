@@ -1636,14 +1636,11 @@ class NovelSpider:
         # 提取当前小说的URL路径部分，用于过滤章节链接
 
         # siteS: URL规范化 (在fetch之前), /infos/5556990/1/ → /infos/5556990.html
-        if 站点匹配(catalog_url, 'siteS'):
-            book_id_match = re.search(r'/infos/(\d+)', catalog_url)
-            if book_id_match:
-                book_id = book_id_match.group(1)
-                normalized_url = f"{self.base_url}/infos/{book_id}.html"
-                if normalized_url != catalog_url:
-                    _log.info(f"[siteS] 规范化目录URL: {catalog_url} → {normalized_url}")
-                    catalog_url = normalized_url
+        # Wave 2 批次2: 站点专属目录URL规范化走适配器 (阶段 '目录规范化')
+        _规范化 = _站点策略(catalog_url, '目录规范化', base_url=self.base_url)
+        if _规范化 and _规范化 != catalog_url:
+            _log.info(f"[目录规范化] {catalog_url} → {_规范化}")
+            catalog_url = _规范化
 
         # 先查看网页结构
         if _预渲染HTML is not None:
@@ -2037,9 +2034,10 @@ class NovelSpider:
             simple_selectors = ['a', 'a[href]', 'div a', 'span a', 'li a', 'ul a', 'ol a']
             
             # 对于siteP网站，优先使用#list a选择器
-            if 站点匹配(catalog_url, 'siteP') and not found_chapters:
-                ahxsw_selectors = ['#list a', 'dd a[href*="/read/"]', 'dd a', 'li a[href*="/read/"]']
-                for selector in ahxsw_selectors:
+            # Wave 2 批次2: 站点专属选择器表走适配器 (阶段 '专属选择器'), 体内逐字保留
+            _专属选择器 = _站点策略(catalog_url, '专属选择器', soup=page_soup)
+            if _专属选择器 and not found_chapters:
+                for selector in _专属选择器:
                     links = page_soup.select(selector)
                     if links:
                         relevant_links = []
@@ -2210,7 +2208,9 @@ class NovelSpider:
                                 chapters.append({'title': text, 'url': url})
                 
                 # 对于siteO网站，尝试直接从文本中提取链接
-                if 站点匹配(catalog_url, 'siteO') and not chapters:
+                # Wave 2 批次2: 是否启用"文本提链"由适配器决定 (体为通用提链逻辑)
+                if not chapters and _站点策略(catalog_url, '文本提链',
+                                             page_soup=page_soup) is True:
                     _log.info("尝试直接从文本中提取链接")
                     # 获取原始文本
                     text = str(page_soup)
