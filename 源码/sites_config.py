@@ -383,6 +383,9 @@ def load_adapters():
           表示走通用多模式推断 (爬虫.py 的 8 个模式)。
           Wave 2 批次1 (2026-10-15): 站点专属的路径格式规则**一律放本钩子**，
           公开侧只保留通用推断，不再含任何站点分支。
+      - 站点策略(catalog_url, 阶段, **上下文) -> True | False | None | 其它
+          站点专属策略的通用分派入口 (批次2)。阶段名与上下文见 爬虫.py::_站点策略
+          文档; 返回 True/False 覆盖通用判定, None 交回通用规则。
 
     安全提示: 这些 .py 文件会被 import 执行，等同直接运行代码，
     请只放入可信来源的适配器（信任级别与修改主程序代码一致）。
@@ -441,9 +444,11 @@ def load_adapters():
                     'get_title': None, 'catalog_from_chapter': None,
                     # Wave 2 批次1 (2026-10-15): 站点专属"小说路径前缀"规则
                     'novel_paths': None,
+                    # Wave 2 批次2: 站点专属策略通用分派
+                    '站点策略': None,
                 }
                 for attr in ('parse_catalog', 'extract_content', 'paginate',
-                             'get_title', 'catalog_from_chapter', 'novel_paths'):
+                             'get_title', 'catalog_from_chapter', 'novel_paths', '站点策略'):
                     fn = getattr(mod, attr, None)
                     if callable(fn):
                         entry[attr] = fn
