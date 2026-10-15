@@ -2151,7 +2151,12 @@ class NovelSpider:
                     # 过滤掉太短的文本
                     if len(text) > 1:
                         # 对于siteO网站，使用更宽松的条件
-                        if 站点匹配(catalog_url, 'siteO'):
+                        # Wave 2 批次2: 站点形态判定走适配器钩子 (两阶段)。
+                        # 严格形态命中但不满足 ⇒ 与原 elif 链一致, 不进入通用判定。
+                        _严格 = _站点策略(catalog_url, '章节链接接受·严格',
+                                      轮次='all_anchors', href=href, text=text,
+                                      novel_path=novel_path, novel_path_alt=novel_path_alt)
+                        if _严格 is True:
                             # 检查是否包含小说路径、章节路径或小说ID
                             if novel_path and novel_path in href and href.endswith('.html') and text:
                                 # 过滤掉JavaScript代码
@@ -2170,16 +2175,19 @@ class NovelSpider:
                                 url = self._绝对化链接(href)
                                 chapters.append({'title': text, 'url': url})
                                 _log.info(f"添加链接: {text} -> {url}")
+                        elif _严格 is False:
+                            # 站点严格形态命中但规则不满足 ⇒ 不进入通用判定 (同原臂)
+                            pass
                         else:
-                            # 对于其他网站，使用原来的条件
+                            # 通用判定: 站点策略 True ⇒ 命中; None ⇒ 用通用规则
                             path_match = False
-                            if 站点匹配(catalog_url, 'siteR'):
-                                if (novel_path and novel_path in href) or \
-                                   (novel_path_alt and novel_path_alt in href):
-                                    path_match = True
-                            else:
-                                if novel_path and novel_path in href:
-                                    path_match = True
+                            _决 = _站点策略(catalog_url, '章节链接接受',
+                                        轮次='all_anchors', href=href, text=text,
+                                        novel_path=novel_path, novel_path_alt=novel_path_alt)
+                            if _决 is True:
+                                path_match = True
+                            elif _决 is None and novel_path and novel_path in href:
+                                path_match = True
                             
                             if path_match:
                                 # 过滤掉JavaScript代码
