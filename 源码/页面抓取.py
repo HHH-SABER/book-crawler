@@ -26,7 +26,7 @@ except Exception:
     import logging
     _log = logging.getLogger('页面抓取')
 
-from sites_config import 站点匹配, validate_public_url
+from sites_config import 站点匹配, validate_public_url, 适配器策略
 
 # 响应缓存条目上限 (防长书运行期内存无界增长; 爬虫.py 经 import 桥接使用)
 RESP_CACHE_MAX = 64
@@ -85,7 +85,9 @@ def 检查页面(宿主, url, polite_delay=True):
         
     # WAF 站点: 使用持久化 Selenium driver, 验证码解决后复用同一浏览器实例
     # 避免每次创建新driver都触发WAF验证码
-    if 站点匹配(url, 'siteT') and selenium_available:
+    # Wave 2 批次6: 站点专属"抓取路径"走适配器 (阶段 '抓取路径')
+    _优先路径 = 适配器策略(url, '抓取路径', 轮次='优先')
+    if _优先路径 == 'waf驱动' and selenium_available:
         _log.info("[WAF驱动] 使用持久化Selenium driver抓取")
         try:
             driver = 宿主._get_waf_driver(visible=False)
@@ -109,7 +111,7 @@ def 检查页面(宿主, url, polite_delay=True):
     # 对于siteU、siteV网站，直接使用Selenium
     # (siteW也使用JS cookie校验反爬ge_js_validator，但经测试用requests提取cookie重试即可绕过，
     #  无需Selenium，因此siteW走下方requests路径；仅当requests失败时才回退到末尾的Selenium)
-    if (站点匹配(url, 'siteU', 'siteV')) and selenium_available:
+    if _优先路径 == 'selenium' and selenium_available:
         _log.info(f"直接使用Selenium抓取{url.split('/')[2]}网站")
         soup = 宿主._selenium_get_soup(url, headers)
         if soup:
@@ -203,7 +205,7 @@ def 检查页面(宿主, url, polite_delay=True):
         _log.info(f"请求失败: {e}")
         
     # requests 失败后的 Selenium 兜底 (复用 _selenium_get_soup 方法)
-    if (站点匹配(url, 'siteU', 'siteV', 'siteW', 'siteT')) and selenium_available:
+    if 适配器策略(url, '抓取路径', 轮次='兜底') == 'selenium' and selenium_available:
         soup = 宿主._selenium_get_soup(url, headers)
         if soup:
             return soup

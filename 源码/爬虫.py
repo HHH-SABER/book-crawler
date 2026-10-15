@@ -474,17 +474,9 @@ def _站点策略(catalog_url, 阶段, **上下文):
 
     适配器缺失 / 未实现该阶段 / 抛异常 ⇒ 一律返回 None (走通用规则), 并留痕。
     """
-    try:
-        from sites_config import get_adapter
-        适配器 = get_adapter(catalog_url)
-        钩子 = (适配器 or {}).get('站点策略')
-        if not 钩子:
-            return None
-        return 钩子(catalog_url, 阶段, **上下文)
-    except Exception as e:  # noqa: BLE001 — 必须留痕
-        _log.info(f'[站点策略] 适配器策略不可用 ({阶段}), 走通用规则: '
-                  f'{type(e).__name__}: {e}')
-        return None
+    # 机制已下沉到配置层 (2026-10-16), 供 页面抓取.py 共用; 此处仅委托。
+    from sites_config import 适配器策略
+    return 适配器策略(catalog_url, 阶段, **上下文)
 
 
 def _resolve_novel_paths(catalog_url):
