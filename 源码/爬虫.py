@@ -4391,54 +4391,20 @@ class NovelSpider:
                         pass  # 站名映射不可用 (公开形态) → 跳过站名后缀清理
 
                 # 对于siteP网站，清理标题格式"小说名无防盗_小说名全文阅读_作者_站名"
-                if 站点匹配(catalog_url, 'siteP'):
-                    # 取第一个下划线前的部分作为小说名
-                    if '_' in title:
-                        title = title.split('_')[0]
-                    # 移除"无防盗"后缀
-                    title = title.replace('无防盗', '').strip()
+                # Wave 2 批次5: 站点专属书名清理走适配器 (阶段 '书名清理')
+                _清理名 = _站点策略(catalog_url, '书名清理', title=title)
+                if _清理名 is not None:
+                    title = _清理名
 
                 # siteAA/siteAB 详情页 <title> 格式:
                 # "书名最新章节列表_书名刚刚更新(作者)_站名" 或
                 # "书名最新章节_txt全文阅读_作者_站名"
                 # 优先用 <h1> 或详情页书名容器提取; 失败则从 <title> 中正则提取纯书名
-                if 站点匹配(catalog_url, 'siteAA', 'siteAB'):
-                    # 优先从详情页的书名容器提取 (最准确)
-                    yq_selectors = [
-                        'div.info h1', 'div.book-info h1', 'div.bookname h1',
-                        'div.btitle h1', 'h1.bookTitle', 'h1.title',
-                        'div#info h1', 'div.info_title', 'div.bookTitle',
-                        'div.novel_title', 'div.book-title',
-                    ]
-                    yq_title = None
-                    for sel in yq_selectors:
-                        el = soup.select_one(sel)
-                        if el:
-                            t = el.get_text(strip=True)
-                            if t and len(t) < 60 and '最新章节' not in t:
-                                yq_title = t
-                                break
-                    if not yq_title:
-                        h1 = soup.find('h1')
-                        if h1:
-                            t = h1.get_text(strip=True)
-                            # 排除章节页 H1 (如 "楔子（第1页）")
-                            if t and len(t) < 30 and '第' not in t and '页' not in t:
-                                yq_title = t
-                    if not yq_title:
-                        # 从 <title> 正则提取纯书名:
-                        # "示例书名最新章节列表_..." -> "示例书名"
-                        m = re.match(r'^(.+?)最新章节', title)
-                        if m and m.group(1):
-                            yq_title = m.group(1).strip()
-                    if yq_title:
-                        # 移除残留的"txt"/"全文阅读"等
-                        for kw in ['txt', 'TXT', '全文阅读', '免费阅读', '无弹窗', '最新章节']:
-                            yq_title = yq_title.replace(kw, '').strip()
-                        if yq_title:
-                            _log.info(f"[siteAA/siteAB] 从详情页提取到小说名称: {yq_title}")
-                            return yq_title
-
+                # Wave 2 批次5: 站点专属书名提取走适配器 (阶段 '书名提取')
+                _站点书名 = _站点策略(catalog_url, '书名提取', soup=soup, title=title)
+                if _站点书名:
+                    _log.info(f"[书名] 从详情页提取到小说名称: {_站点书名}")
+                    return _站点书名
                 # 清理标题中的乱码和特殊字符
                 title = re.sub(r'[\x00-\x1f\x7f-\xff]', '', title)
                 title = re.sub(r'\s+', ' ', title)
@@ -4500,9 +4466,10 @@ class NovelSpider:
                     _log.info(f"从meta标签提取到小说名称: {title}")
                     return title
             
-            # 对于特定网站，使用默认名称
-            if 站点匹配(catalog_url, 'siteO', 'siteU'):
-                return "小说"
+            # Wave 2 批次5: 站点专属默认书名走适配器 (阶段 '书名默认值')
+            _默认名 = _站点策略(catalog_url, '书名默认值')
+            if _默认名:
+                return _默认名
 
             # 首次请求可能命中反爬挑战页 (标题为 loading/验证码占位), 等待后重试一次
             try:
@@ -4527,9 +4494,10 @@ class NovelSpider:
             return "novel"
         except Exception as e:
             _log.info(f"提取小说名称失败: {e}")
-            # 对于特定网站，使用默认名称
-            if 站点匹配(catalog_url, 'siteO', 'siteU'):
-                return "小说"
+            # Wave 2 批次5: 站点专属默认书名走适配器 (阶段 '书名默认值')
+            _默认名 = _站点策略(catalog_url, '书名默认值')
+            if _默认名:
+                return _默认名
             return "novel"
 
     # ================== 断点续传 (检查点) ==================
@@ -5567,7 +5535,8 @@ class NovelSpider:
         # 该站 WAF 按 IP 限流: 多浏览器并发会更容易触发验证码(实测并发3线程反而更慢)
         # 强制串行 + 持久化 driver 复用是最优策略
         # (速度自适应站点约束已把该站压到标准档, 此处兜底)
-        if 站点匹配(catalog_url, 'siteT') and (threads or 0) > 1:
+        # Wave 2 批次5: 站点专属并发约束走适配器 (阶段 '并发策略')
+        if (threads or 0) > 1 and _站点策略(catalog_url, '并发策略') == '强制串行':
             _log.info("[并发] ⚠️ 该站 WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
             threads = 1
 
@@ -5776,7 +5745,9 @@ def _站点冷却秒(域名: str) -> float:
     站点可覆写: siteAC 软限频恢复极慢 (2026-09-12 实测静默 24 分钟
     仍未解除), 默认 300s 不足以冷却 → 900s, 防封后立刻重撞。
     """
-    return 900 if 站点匹配(域名, 'siteAC') else 300
+    # Wave 2 批次5: 站点专属冷却时长走适配器 (阶段 '站点冷却秒'); 未命中 ⇒ 300
+    _冷却 = _站点策略(域名, '站点冷却秒')
+    return _冷却 if isinstance(_冷却, int) else 300
 
 
 def get_base_url(url):
