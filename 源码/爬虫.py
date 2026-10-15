@@ -3187,30 +3187,13 @@ class NovelSpider:
 
                                 if text and len(text) > 80:
                                     # 对于siteV网站，使用更严格的过滤
-                                    if 站点匹配(chapter_url, 'siteV'):
-                                        # 过滤广告和无关内容
-                                        # (站点广告词/推荐书名已外置站点表 ad_rules,
-                                        #  输出经 clean_content(site_url) 按域名合并过滤 — D层)
-                                        filter_keywords = ['上一章', '下一章', '章节目录', '保存书签', '请勿开启浏览器阅读模式',
-                                                           '相邻推荐', '加入书架', '返回顶部', '首页', '末页', '登录', '注册',
-                                                           '搜索', 'Copyright', '版权所有', '本站所有内容', '一秒记住新域名',
-                                                           '番外+大结局', '最新章节', '全文阅读', '免费阅读']
-
-                                        # 按行过滤
-                                        filtered_lines = []
-                                        for line in text.split('\n'):
-                                            stripped_line = line.strip()
-                                            if stripped_line:
-                                                # 检查是否包含过滤关键词
-                                                if not any(keyword in stripped_line for keyword in filter_keywords):
-                                                    # 检查是否为有效的小说内容
-                                                    if len(stripped_line) > 15 or any(char in stripped_line for char in ['，', '。', '！', '？', '；', '：', '“', '”', '‘', '’']):
-                                                        filtered_lines.append(stripped_line)
-
-                                        filtered_text = '\n\n'.join(filtered_lines)
-                                        if len(filtered_text) > 100:
-                                            content += filtered_text + '\n\n'
-                                            _log.info(f"  成功提取到内容，长度: {len(filtered_text)} 字符")
+                                    # Wave 2 批次3: 站点专属"行过滤"走适配器 (阶段 '正文清理')
+                                    _过滤文本 = _站点策略(chapter_url, '正文清理',
+                                                     轮次='行过滤', text=text)
+                                    if _过滤文本 is not None:
+                                        if len(_过滤文本) > 100:
+                                            content += _过滤文本 + '\n\n'
+                                            _log.info(f"  成功提取到内容，长度: {len(_过滤文本)} 字符")
                                             encoding_found = True
                                             # 找到足够的内容后停止
                                             if len(content) > 500:
@@ -3403,48 +3386,11 @@ class NovelSpider:
                     text = content_div.get_text(separator='\n\n', strip=True)
                                 
                     # 针对siteR网站的特殊处理
-                    if 站点匹配(chapter_url, 'siteR'):
-                        # 对siteR网站使用更严格的过滤条件
-                        _log.info(f"原始内容长度: {len(text)} 字符")
-                        # 移除导航、版权、推荐等无关信息
-                        lines = text.split('\n')
-                        filtered_lines = []
-                                    
-                        # 定义更全面的过滤关键词
-                        nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
-                        copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
-                        recommend_keywords = ['《示例书名》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
-                        nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
-                                    
-                        # 标记是否进入小说正文
-                        in_content = False
-                                    
-                        for line in lines:
-                            stripped_line = line.strip()
-                            if stripped_line:
-                                # 检查是否为导航部分
-                                if any(keyword in stripped_line for keyword in nav_section_keywords):
-                                    continue
-                                            
-                                # 检查是否为其他无关信息
-                                if any(keyword in stripped_line for keyword in nav_keywords + copy_keywords + recommend_keywords):
-                                    continue
-                                            
-                                # 检查是否为章节标题
-                                if '第' in stripped_line and ('章' in stripped_line or '节' in stripped_line):
-                                    filtered_lines.append(stripped_line)
-                                    in_content = True
-                                    continue
-                                            
-                                # 检查是否为小说正文内容（长度大于50字符，且不包含网站相关信息）
-                                if len(stripped_line) > 50 and 'http' not in stripped_line and '.com' not in stripped_line:
-                                    filtered_lines.append(stripped_line)
-                                    in_content = True
-                                elif in_content and len(stripped_line) > 20:
-                                    # 如果已经进入正文，保留较短的段落
-                                    filtered_lines.append(stripped_line)
-                                    
-                        content = '\n\n'.join(filtered_lines)
+                    # Wave 2 批次3: 站点专属"严格行过滤"走适配器 (阶段 '正文清理')
+                    _严格结果 = _站点策略(chapter_url, '正文清理',
+                                       轮次='严格行过滤', text=text)
+                    if _严格结果 is not None:
+                        content = _严格结果
                         _log.info(f"过滤后内容长度: {len(content)} 字符")
                     else:
                         # 其他网站使用更宽松的过滤条件
