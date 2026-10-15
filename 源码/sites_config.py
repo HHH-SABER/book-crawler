@@ -378,6 +378,11 @@ def load_adapters():
           章节页 URL → 目录页 URL 的纯字符串推导（不发请求）；返回 None
           表示无法推导。供通用层在目录解析前把用户误当任务 URL 的章节页
           规范化到目录页 (resolve_catalog_from_chapter)。
+      - novel_paths(catalog_url) -> tuple[str, str] | None
+          返回 (小说路径前缀, 备选前缀)，供通用层的链接过滤使用；返回 None
+          表示走通用多模式推断 (爬虫.py 的 8 个模式)。
+          Wave 2 批次1 (2026-10-15): 站点专属的路径格式规则**一律放本钩子**，
+          公开侧只保留通用推断，不再含任何站点分支。
 
     安全提示: 这些 .py 文件会被 import 执行，等同直接运行代码，
     请只放入可信来源的适配器（信任级别与修改主程序代码一致）。
@@ -434,9 +439,11 @@ def load_adapters():
                     'source': path, 'parse_catalog': None,
                     'extract_content': None, 'paginate': None,
                     'get_title': None, 'catalog_from_chapter': None,
+                    # Wave 2 批次1 (2026-10-15): 站点专属"小说路径前缀"规则
+                    'novel_paths': None,
                 }
                 for attr in ('parse_catalog', 'extract_content', 'paginate',
-                             'get_title', 'catalog_from_chapter'):
+                             'get_title', 'catalog_from_chapter', 'novel_paths'):
                     fn = getattr(mod, attr, None)
                     if callable(fn):
                         entry[attr] = fn
