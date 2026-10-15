@@ -3438,81 +3438,21 @@ class NovelSpider:
                         content = '\n\n'.join(filtered_lines)
                                     
                         # 对于siteV网站，进行额外的过滤
-                        if 站点匹配(chapter_url, 'siteV'):
-                            # 移除重复的空行
-                            content = re.sub(r'\n{3,}', '\n\n', content)
-                            # 移除行首行尾的空白
-                            content = '\n'.join([line.strip() for line in content.split('\n') if line.strip()])
-                            # 移除明显的广告段落
-                            paragraphs = content.split('\n\n')
-                            filtered_paragraphs = []
-                            for para in paragraphs:
-                                if para and len(para) > 50 and not any(keyword in para for keyword in filter_keywords):
-                                    # 检查段落是否主要由广告组成
-                                    ad_count = sum(1 for keyword in filter_keywords if keyword in para)
-                                    if ad_count < 3:
-                                        filtered_paragraphs.append(para)
-                            content = '\n\n'.join(filtered_paragraphs)
-                                
+                        # Wave 2 批次3: 站点专属"段落清理"走适配器 (阶段 '正文清理')
+                        _段落 = _站点策略(chapter_url, '正文清理', 轮次='段落清理',
+                                         content=content, 过滤词=filter_keywords)
+                        if _段落 is not None:
+                            content = _段落
                     if content:
                         _log.info(f"从容器提取到内容，长度: {len(content)} 字符")
                         break
                         
             # 如果仍然没有找到内容，对siteR网站尝试直接从整个页面提取
-            if not content and 站点匹配(chapter_url, 'siteR'):
-                _log.info("尝试直接从整个页面提取内容")
-                # 移除脚本和样式
-                for script in soup(['script', 'style']):
-                    script.decompose()
-                # 移除导航元素
-                for nav in soup(['nav', 'footer', 'aside']):
-                    nav.decompose()
-                # 获取整个页面的文本
-                full_text = soup.get_text(separator='\n\n', strip=True)
-                _log.info(f"整个页面原始内容长度: {len(full_text)} 字符")
-                            
-                # 对siteR网站使用更严格的过滤条件
-                lines = full_text.split('\n')
-                filtered_lines = []
-                            
-                # 定义更全面的过滤关键词
-                nav_keywords = ['上一章', '下一章', '章节目录', '保存书签', '加入书架', '返回顶部', '首页', '末页', '登录', '注册', '搜索', '立即阅读', '手机访问', '更新时间', '作者：']
-                copy_keywords = ['Copyright', '版权所有', '本站所有内容', '哈哈电子书']
-                recommend_keywords = ['《示例书名》最新章节', '主角', '小说海棠文无删节', '翠微居全集免费阅读', '番外+大结局', '最新章节']
-                nav_section_keywords = ['首  页', '玄幻修真', '重生穿越', '都市小说', '军史小说', '网游小说', '科幻小说', '灵异小说', '言情小说', '其他小说', '阅读记录', '会员书架']
-                            
-                # 标记是否进入小说正文
-                in_content = False
-                            
-                for line in lines:
-                    stripped_line = line.strip()
-                    if stripped_line:
-                        # 检查是否为导航部分
-                        if any(keyword in stripped_line for keyword in nav_section_keywords):
-                            continue
-                                    
-                        # 检查是否为其他无关信息
-                        if any(keyword in stripped_line for keyword in nav_keywords + copy_keywords + recommend_keywords):
-                            continue
-                                    
-                        # 检查是否为章节标题
-                        if '第' in stripped_line and ('章' in stripped_line or '节' in stripped_line):
-                            filtered_lines.append(stripped_line)
-                            in_content = True
-                            continue
-                                    
-                        # 检查是否为小说正文内容（长度大于50字符，且不包含网站相关信息）
-                        if len(stripped_line) > 50 and 'http' not in stripped_line and '.com' not in stripped_line:
-                            filtered_lines.append(stripped_line)
-                            in_content = True
-                        elif in_content and len(stripped_line) > 20:
-                            # 如果已经进入正文，保留较短的段落
-                            filtered_lines.append(stripped_line)
-                content = '\n\n'.join(filtered_lines)
-                _log.info(f"整个页面过滤后内容长度: {len(content)} 字符")
-                if content:
-                    _log.info("成功从整个页面提取到内容")
-                    
+            # Wave 2 批次3: 站点专属"全页兜底"走适配器 (阶段 '正文兜底')
+            if not content:
+                _兜底 = _站点策略(chapter_url, '正文兜底', soup=soup)
+                if _兜底:
+                    content = _兜底
         # 方法3: 尝试使用正则表达式提取长段落
         if not content or len(content) < 500:
             # 移除HTML标签
