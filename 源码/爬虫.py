@@ -1709,125 +1709,35 @@ class NovelSpider:
             _log.debug(f'裸 except 吞异常: {type(e).__name__} (章节链接正则读取)')
 
         # siteQ: 专用章节提取 (路径 + 正则双重验证)
-        if 站点匹配(catalog_url, 'siteQ') and not chapters:
-            _log.info("[siteQ] 使用专用章节提取逻辑")
-            book_id_match = re.search(r'/books/(\d+)', catalog_url)
-            book_id = book_id_match.group(1) if book_id_match else ''
-            if book_id:
-                chapter_pattern = re.compile(r'/books/' + book_id + r'/(\d+)\.html$')
-                seen_ids = set()
-                for a in soup.find_all('a', href=True):
-                    href = a.get('href', '')
-                    text = a.get_text(strip=True)
-                    if not text or len(text) < 2:
-                        continue
-                    if 'javascript:' in href.lower():
-                        continue
-                    m = chapter_pattern.search(href)
-                    if not m:
-                        continue
-                    chap_id = m.group(1)
-                    if chap_id in seen_ids:
-                        continue
-                    # 过滤特殊非章节链接
-                    if text in ('完本感言', '开始阅读'):
-                        continue
-                    if any(kw in text for kw in ['正序', '倒序', '切换']):
-                        continue
-                    seen_ids.add(chap_id)
-                    url = href if href.startswith('http') else self.base_url + href
-                    chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                _log.info(f"[siteQ] 专用提取: {len(chapters)} 个章节 (去重后)")
-                if sort_chapters and chapters:
-                    chapters.sort(key=_chapter_sort_key)
-                    _log.info("[siteQ] 已按章节号排序")
-                for i, chap in enumerate(chapters[:5]):
-                    _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
-                if len(chapters) > 5:
-                    _log.info(f"  ... 共 {len(chapters)} 章")
-                return chapters
-
+        # Wave 2 批次2: 站点专属"目录兜底解析"走适配器 (阶段 '目录兜底解析')
+        if not chapters:
+            _兜底 = _站点策略(catalog_url, '目录兜底解析', 轮次='books_id', soup=soup,
+                            base_url=self.base_url, sort_chapters=sort_chapters,
+                            clean_title=self.clean_chapter_title, sort_key=_chapter_sort_key)
+            if _兜底:
+                return _兜底
         # siteS: 专用章节提取 (.yanqing_list ul 结构)
-        if 站点匹配(catalog_url, 'siteS') and not chapters:
-            _log.info("[siteS] 使用专用章节提取逻辑")
-            book_id_match = re.search(r'/infos/(\d+)', catalog_url)
-            book_id = book_id_match.group(1) if book_id_match else ''
-            if book_id:
-                seen_ids = set()
-                # 优先从 .yanqing_list 提取
-                yanqing_list = soup.select('.yanqing_list')
-                for ul in yanqing_list:
-                    for a in ul.find_all('a', href=True):
-                        href = a.get('href', '')
-                        text = a.get_text(strip=True)
-                        if not text or len(text) < 2:
-                            continue
-                        if 'javascript:' in href.lower():
-                            continue
-                        m = re.search(r'/infos/' + book_id + r'/(\d+)\.html', href)
-                        if not m:
-                            continue
-                        chap_id = m.group(1)
-                        if chap_id in seen_ids:
-                            continue
-                        if text in ('完本感言', '开始阅读'):
-                            continue
-                        if any(kw in text for kw in ['正序', '倒序', '切换', '立即阅读']):
-                            continue
-                        seen_ids.add(chap_id)
-                        url = href if href.startswith('http') else self.base_url + href
-                        chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                # 备用: 从全页提取
-                if not chapters:
-                    for a in soup.find_all('a', href=True):
-                        href = a.get('href', '')
-                        text = a.get_text(strip=True)
-                        if not text or len(text) < 2:
-                            continue
-                        if 'javascript:' in href.lower():
-                            continue
-                        m = re.search(r'/infos/' + book_id + r'/(\d+)\.html', href)
-                        if not m:
-                            continue
-                        chap_id = m.group(1)
-                        if chap_id in seen_ids:
-                            continue
-                        if any(kw in text for kw in ['正序', '倒序', '切换', '立即阅读', '加入书架']):
-                            continue
-                        seen_ids.add(chap_id)
-                        url = href if href.startswith('http') else self.base_url + href
-                        chapters.append({'title': self.clean_chapter_title(text), 'url': url})
-                _log.info(f"[siteS] 专用提取: {len(chapters)} 个章节 (去重后)")
-                if sort_chapters and chapters:
-                    chapters.sort(key=_chapter_sort_key)
-                    _log.info("[siteS] 已按章节号排序")
-                for i, chap in enumerate(chapters[:5]):
-                    _log.info(f"  {i+1}. {chap['title']} -> {chap['url']}")
-                if len(chapters) > 5:
-                    _log.info(f"  ... 共 {len(chapters)} 章")
-                return chapters
-
+        # Wave 2 批次2: 同上 (siteS 的 .yanqing_list 兜底)
+        if not chapters:
+            _兜底 = _站点策略(catalog_url, '目录兜底解析', 轮次='infos_yanqing', soup=soup,
+                            base_url=self.base_url, sort_chapters=sort_chapters,
+                            clean_title=self.clean_chapter_title, sort_key=_chapter_sort_key)
+            if _兜底:
+                return _兜底
         # 首先检查是否有章节目录链接
         catalog_link = None
         # 对于siteP网站，构建章节目录URL并跳转
-        if 站点匹配(catalog_url, 'siteP'):
-            _log.info("siteP网站，跳转到章节目录页面提取完整章节列表")
-            # 从/book/143259/构建/mulu/143/143259/1.html
-            book_id_match = re.search(r'/book/(\d+)/', catalog_url)
-            if book_id_match:
-                book_id = book_id_match.group(1)
-                # siteP的mulu URL格式: /mulu/{前3位数字}/{完整ID}/1.html
-                mulu_url = f"{self.base_url}/mulu/{book_id[:3]}/{book_id}/1.html"
-                _log.info(f"构建章节目录URL: {mulu_url}")
-                catalog_soup = self.inspect_page(mulu_url)
-                if catalog_soup and catalog_soup.find('a', href=True):
-                    soup = catalog_soup
-                    catalog_link = mulu_url
-                    _log.info("成功访问章节目录页面")
-                else:
-                    _log.info("章节目录页面访问失败，尝试从当前页面提取")
+        # Wave 2 批次2: 站点专属"目录附加URL"(跳到更完整的目录页)走适配器
+        _附加URL = _站点策略(catalog_url, '目录附加URL', base_url=self.base_url)
+        if _附加URL:
+            _log.info(f"构建章节目录URL: {_附加URL}")
+            catalog_soup = self.inspect_page(_附加URL)
+            if catalog_soup and catalog_soup.find('a', href=True):
+                soup = catalog_soup
+                catalog_link = _附加URL
+                _log.info("成功访问章节目录页面")
             else:
-                _log.info("无法从URL提取小说ID，尝试从当前页面提取")
+                _log.info("章节目录页面访问失败，尝试从当前页面提取")
         else:
             # 查找章节目录链接（验证链接URL包含小说ID，避免匹配到推荐链接）
             # 从catalog_url提取小说ID用于验证
@@ -1862,66 +1772,11 @@ class NovelSpider:
         
         # 处理分页（特别针对siteAJ等有分页的网站）
         # 对于siteP网站，使用/mulu/分页URL格式
-        if 站点匹配(catalog_url, 'siteP') and catalog_link:
-            _log.info("\n[分页检测] siteP网站，使用/mulu/分页URL格式")
-            _log.info(f"[分页检测] 起始目录页: {catalog_link}")
-            page_urls = [catalog_link]
-            # siteP的mulu分页格式: /mulu/{前3位}/{完整ID}/{页码}.html
-            # 尝试获取后续分页页面（最多10页）
-            book_id_match = re.search(r'/mulu/\d+/(\d+)/', catalog_link)
-            if book_id_match:
-                book_id = book_id_match.group(1)
-                prefix = book_id[:3]
-                _log.info(f"[分页检测] 提取小说ID: {book_id}, 前缀: {prefix}")
-
-                # 先收集第一页的章节URL，用于后续比较
-                first_page_links = set()
-                try:
-                    first_soup = self.inspect_page(catalog_link)
-                    first_links = first_soup.select('#list a, dd a[href*="/read/"]')
-                    for a in first_links:
-                        href = a.get('href', '')
-                        if '/read/' in href and href.endswith('.html'):
-                            first_page_links.add(href)
-                    _log.info(f"[分页检测] 第1页章节链接集合 ({len(first_page_links)}个):")
-                    for link in first_page_links:
-                        _log.info(f"[分页检测]   - {link}")
-                except Exception as e:
-                    _log.info(f"[分页检测] 第1页章节链接收集失败: {e}")
-
-                for page_num in range(2, 11):
-                    mulu_page_url = f"{self.base_url}/mulu/{prefix}/{book_id}/{page_num}.html"
-                    _log.info(f"\n[分页检测] 检查分页 {page_num}: {mulu_page_url}")
-                    try:
-                        check_soup = self.inspect_page(mulu_page_url)
-                        check_links = check_soup.select('#list a, dd a[href*="/read/"]')
-                        read_links = [a for a in check_links if '/read/' in a.get('href', '') and a.get('href', '').endswith('.html')]
-                        _log.info(f"[分页检测] 分页{page_num}: 找到 {len(read_links)} 个章节链接")
-
-                        if read_links:
-                            # 检查新页面的章节URL是否与第一页相同
-                            new_page_links = set(a.get('href') for a in read_links)
-                            _log.info(f"[分页检测] 分页{page_num} 链接集合 ({len(new_page_links)}个):")
-                            for link in new_page_links:
-                                _log.info(f"[分页检测]   - {link}")
-
-                            if new_page_links == first_page_links:
-                                _log.info(f"[分页检测] ⚠️ 分页{page_num} 章节链接与第一页完全相同，停止查找")
-                                break
-                            # 检查部分重叠
-                            overlap = new_page_links & first_page_links
-                            if overlap:
-                                _log.info(f"[分页检测] ⚠️ 分页{page_num} 与第一页有 {len(overlap)} 个重叠链接")
-
-                            _log.info(f"[分页检测] ✅ 找到分页页面 {page_num}: {mulu_page_url} ({len(read_links)}个章节)")
-                            page_urls.append(mulu_page_url)
-                        else:
-                            _log.info(f"[分页检测] 分页{page_num} 无章节内容，停止查找")
-                            break
-                    except Exception as e:
-                        _log.info(f"[分页检测] 分页{page_num} 访问失败: {e}，停止查找")
-                        break
-                _log.info(f"[分页检测] 共找到 {len(page_urls)} 个分页页面")
+        # Wave 2 批次2: 站点专属"目录分页URL"(探测后续目录页)走适配器
+        _附加页 = _站点策略(catalog_url, '目录分页URL', base_url=self.base_url,
+                         起始URL=catalog_link, fetch=self.inspect_page)
+        if _附加页:
+            page_urls = list(_附加页)
         else:
             page_urls = [catalog_url]
 
