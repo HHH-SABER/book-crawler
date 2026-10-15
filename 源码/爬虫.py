@@ -3938,7 +3938,11 @@ class NovelSpider:
             # 段落中混有内联base64表情图, 需剔除; 首段为章节标题, 次段为元信息 (作者/字数/日期)
             # 分页: ?page=N 查询参数, 末页的下一页链接指向下一章 (无 ?page=)
             # 验证码: 使用 _solve_waf_captcha 自动检测处理, 解决后复用同一driver
-            if 站点匹配(current_url, 'siteT') and selenium_available:
+            # Wave 2 批次4: 站点专属"抓取方式"走适配器 (阶段 '抓取方式')
+            _站点抓取 = _站点策略(current_url, '抓取方式', selenium_available=selenium_available)
+            if _站点抓取 and _站点抓取.get('方式') == 'waf驱动' and selenium_available:
+                _元信息正则 = _站点抓取.get('元信息正则')
+                _日期正则 = _站点抓取.get('日期正则')
                 _log.info("[WAF驱动] 使用持久化Selenium driver抓取章节内容")
                 try:
                     driver = self._get_waf_driver(visible=False)
@@ -3951,13 +3955,14 @@ class NovelSpider:
 
                     soup = BeautifulSoup(page_source, 'lxml')
                     # 提取 div#chapter-content
-                    content_div = soup.select_one('div#chapter-content')
+                    content_div = soup.select_one(_站点抓取.get('内容选择器', 'div#chapter-content'))
                     if not content_div:
-                        _log.info("[WAF驱动] 未找到 div#chapter-content")
+                        _log.info("[WAF驱动] 未找到内容容器")
                         page_text = ''
                     else:
                         paragraphs = []
-                        for p in content_div.find_all('p', class_='chapter-line'):
+                        for p in content_div.find_all(
+                                'p', class_=_站点抓取.get('段落类', 'chapter-line')):
                             # 移除内联base64表情图
                             for img in p.find_all('img'):
                                 img.decompose()
@@ -3965,9 +3970,9 @@ class NovelSpider:
                             if not txt:
                                 continue
                             # 过滤元信息行 (作者, 字数, 日期等)
-                            if re.search(r'^(作者[:：]|字数[:：]|更新|简介[:：]|类型[:：])', txt):
+                            if _元信息正则 and re.search(_元信息正则, txt):
                                 continue
-                            if re.search(r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}', txt):  # 纯日期行
+                            if _日期正则 and re.search(_日期正则, txt):  # 纯日期行
                                 continue
                             if _is_ad_line(txt):
                                 continue
@@ -4030,7 +4035,7 @@ class NovelSpider:
 
             # 对于siteO、siteU、siteV、siteT网站，尝试使用Selenium
             # (siteW改用上方Base64解码分支，无需Selenium)
-            if (站点匹配(current_url, 'siteO', 'siteU', 'siteV')) and selenium_available:
+            if _站点抓取 and _站点抓取.get('方式') == 'selenium' and selenium_available:
                 _log.info("[Selenium] 尝试使用Selenium抓取内容")
                 soup = self._selenium_get_soup(current_url, headers)
                 if soup:
