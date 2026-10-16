@@ -118,6 +118,12 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
         *([
             _kv("清洗", _清洗摘要文本(mt.clean_summary))
         ] if getattr(mt, 'clean_summary', None) else []),
+        # 过度清洗告警 (2026-10-17 C6/P1): 删除行占比异常 ⇒ 可能是站点改版或
+        # 清洗规则误杀正文。**只告警**: 独立一行警示色, 不影响质检结论展示。
+        *([
+            _kv("⚠ 清洗异常", getattr(mt, 'over_clean_warning', ''),
+                色键='status-warning')
+        ] if getattr(mt, 'over_clean_warning', '') else []),
     ], spacing=2)
 
     # 错误区 (有错才显示)
@@ -138,8 +144,16 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
     )
 
 
+# 清洗摘要里可展示的键 (删除维度 + 水印)。**原始行数是分母不是删除量**
+# (2026-10-17 C6/P1 加入统计), 展示出来是噪声 ("原始行数20" 不像删除计数)。
+_清洗可展示键 = ('关键词行', '推广行', '过短行', '符号行', '广告行', '水印')
+
+
 def _清洗摘要文本(summary: dict) -> str:
-    """清洗统计 dict → 一行摘要 (如 '广告3 推广2 水印1'), 空统计返回 '无删除'"""
-    parts = [f"{k}{int(v)}" for k, v in summary.items()
-             if isinstance(v, (int, float)) and v]
+    """清洗统计 dict → 一行摘要 (如 '广告3 推广2 水印1'), 空统计返回 '无删除'
+
+    只展示删除维度 (_清洗可展示键); 原始行数等非删除键一律过滤。
+    """
+    parts = [f"{k}{int(v)}" for k, v in (summary or {}).items()
+             if k in _清洗可展示键 and isinstance(v, (int, float)) and v]
     return ' '.join(parts) if parts else '无删除'

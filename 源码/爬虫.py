@@ -4737,6 +4737,8 @@ class NovelSpider:
                     if 报告.疑似过度清洗:
                         _log.info(f"[质检] {chap.get('title', '')} "
                                   f"{报告.疑似过度清洗}")
+                        # C6/P1: 发给 GUI 任务卡 (只告警不扣分; 无订阅方零成本)
+                        _任务事件.发布('过度清洗', 告警=报告.疑似过度清洗)
                 except Exception as _oe:
                     _log.debug(f'裸 except 吞异常: {type(_oe).__name__}: {_oe}')
             if 报告.有效:
