@@ -74,8 +74,12 @@ class TaskMetrics:
     start_time: float = 0.0       # 任务启动时间戳 (计算耗时用)
     end_time: float = 0.0         # 任务结束时间戳 (完成后冻结耗时; 0=仍在运行)
     # 最近一章的清洗统计 ('清洗' 事件, 2026-09-29 可观测性):
-    # {关键词行, 推广行, 过短行, 符号行, 广告行, 水印} — 全为 int
+    # {关键词行, 推广行, 过短行, 符号行, 广告行, 水印, 原始行数} — 全为 int
+    # (原始行数是 C6/P1 加的分母, 展示时由 row_detail 过滤, 见 _清洗可展示键)
     clean_summary: dict = dataclasses.field(default_factory=dict)
+    # 过度清洗告警 (2026-10-17 C6/P1): 删除行占比 >30% 时爬虫发 '过度清洗'
+    # 事件带回文案; '' = 无异常。**只告警不扣分** (不影响 quality_*)。
+    over_clean_warning: str = ""
     # 自动去重 (2026-10-10): 抓取收尾自动查重的动作统计 ('自动去重' 事件回填)
     auto_dedup_cleaned: int = 0   # 已移入 _已去重/ 的重复副本数
     auto_dedup_pending: int = 0   # 疑似重复待人工确认数
@@ -451,6 +455,13 @@ class TaskLogRedirector:
                     k: int(v) for k, v in 数据.items() if isinstance(v, (int, float))}
             except (TypeError, ValueError):
                 pass        # 字段异常 → 保持上次统计 (与质检得分缺失同语义)
+            return
+        if 类型 == '过度清洗':
+            # 2026-10-17 C6/P1: 删除行占比异常告警 (爬虫 _fetch_with_qc 发)。
+            # 只告警不扣分: 仅存文案供任务卡展示, 不动 quality_* 字段。
+            告警 = 数据.get('告警') or 数据.get('警告') or ''
+            if isinstance(告警, str):
+                self.task.metrics.over_clean_warning = 告警.strip()
             return
         if 类型 == '自动去重':
             # 2026-10-10: 抓取收尾自动查重的动作统计 (爬虫 _收尾汇总 发布)。

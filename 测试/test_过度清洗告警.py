@@ -135,5 +135,30 @@ class Test不扣分铁律(unittest.TestCase):
         self.assertEqual(r1.有效, r2.有效, '告警不得影响有效')
 
 
+class Test任务卡展示(unittest.TestCase):
+    """GUI 侧: 摘要过滤分母键 + 告警字段默认值 (C6/P1 半程 A 收尾)"""
+
+    def test_清洗摘要过滤原始行数(self):
+        """'原始行数' 是分母不是删除量 —— 展示出来是噪声 (如 '原始行数20')"""
+        from gui_components.row_detail import _清洗摘要文本
+        出 = _清洗摘要文本({'关键词行': 2, '水印': 1, '原始行数': 20})
+        self.assertEqual(出, '关键词行2 水印1')
+        self.assertNotIn('原始行数', 出)
+
+    def test_清洗摘要空与None(self):
+        from gui_components.row_detail import _清洗摘要文本
+        self.assertEqual(_清洗摘要文本({}), '无删除')
+        self.assertEqual(_清洗摘要文本(None), '无删除')
+        self.assertEqual(_清洗摘要文本({'原始行数': 20}), '无删除',
+                         '只有分母键时等价于无删除')
+
+    def test_任务指标有告警字段且默认空(self):
+        """TaskMetrics.over_clean_warning 默认 '' (老任务/未接线时不炸)"""
+        from gui_components.task_manager import TaskMetrics
+        mt = TaskMetrics()
+        self.assertEqual(mt.over_clean_warning, '')
+        self.assertEqual(mt.clean_summary, {}, 'clean_summary 默认空 dict')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

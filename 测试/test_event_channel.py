@@ -145,6 +145,22 @@ class Test双通道等价(unittest.TestCase):
         self.assertNotIn('坏字段', t.metrics.clean_summary)
 
 
+    def test_过度清洗事件写入告警字段(self):
+        """'过度清洗' 事件 (2026-10-17 C6/P1): 告警文案写入
+        over_clean_warning; 坏数据 (非字符串/缺失) 不抛异常。"""
+        t = _新任务()
+        r = _重定向器(t)
+        self.assertEqual(t.metrics.over_clean_warning, '', '默认无告警')
+        r.处理任务事件('过度清洗', {'告警': '疑似过度清洗: 删除 8/20 行 (40% > 30%)'})
+        self.assertIn('40%', t.metrics.over_clean_warning)
+        # 坏数据容错: 非字符串告警不炸 (保持原值)
+        r.处理任务事件('过度清洗', {'告警': 123})
+        self.assertIn('40%', t.metrics.over_clean_warning)
+        # 空告警 = 复位 (站点恢复正常后清掉警示)
+        r.处理任务事件('过度清洗', {'告警': ''})
+        self.assertEqual(t.metrics.over_clean_warning, '')
+
+
 class Test通道自身健壮(unittest.TestCase):
 
     def tearDown(self):
