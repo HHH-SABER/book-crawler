@@ -322,6 +322,8 @@ def 清洗(content, site_url=None) -> tuple:
     # C6/P1: 分母 = 非空行数 (删除判定只对非空行生效, 空行计入会稀释占比)
     清洗统计['原始行数'] = sum(1 for _l in lines if _l.strip())
     filtered_lines = []
+    # C6/P2: 删除行采样 (供 广告词自学习 聚合; 方案A 只产待审不自动生效)
+    _删除样本 = []
 
     for line in lines:
         stripped_line = line.strip()
@@ -331,6 +333,7 @@ def 清洗(content, site_url=None) -> tuple:
         # 跳过包含过滤关键词的行
         if any(keyword in stripped_line for keyword in filter_keywords):
             清洗统计['关键词行'] += 1
+            _删除样本.append((stripped_line, '关键词行'))
             continue
 
         # URL/邮箱处理 (2026-09-29 改为行内剥离): 旧行为整行删除会误杀
@@ -345,23 +348,27 @@ def 清洗(content, site_url=None) -> tuple:
             _url_cn = sum('\u4e00' <= c <= '\u9fff' for c in _url_residual)
             if _url_cn < 10:
                 清洗统计['推广行'] += 1
+                _删除样本.append((stripped_line, '推广行'))
                 continue
             stripped_line = _url_residual.strip()   # 只剥空白, 句尾标点不动
 
         # 跳过过短的行（可能是导航或广告）
         if len(stripped_line) < 5:
             清洗统计['过短行'] += 1
+            _删除样本.append((stripped_line, '过短行'))
             continue
 
         # 跳过主要是符号的行
         symbol_count = sum(1 for c in stripped_line if not c.isalnum() and not c.isspace() and not '\u4e00' <= c <= '\u9fff')
         if symbol_count > len(stripped_line) * 0.5:
             清洗统计['符号行'] += 1
+            _删除样本.append((stripped_line, '符号行'))
             continue
 
         # 通用广告行特征检测 (基于内容特征, 不依赖具体书名/站点名)
         if _is_ad_line(stripped_line, _额外广告正则):
             清洗统计['广告行'] += 1
+            _删除样本.append((stripped_line, '广告行'))
             continue
 
         filtered_lines.append(stripped_line)
@@ -434,6 +441,16 @@ def 清洗(content, site_url=None) -> tuple:
     #     章节标题由调用方以 "## {title}" 写出(不经过本函数), 故此处去前缀
     #     可保证输出文件中 "## " 开头行必然 == 真实章节标题。
     cleaned_content = re.sub(r'^##\s+', '', cleaned_content, flags=re.M)
+
+    # C6/P2: 删除行样本上报 (本地自学习聚合, 一章一次; 失败/关闭零影响)
+    # ⚠️ 本函数唯一的副作用出口: 被动观察, 不影响返回值/统计, 可经
+    # 广告词自学习.启用=False 一键关断; P3 的"纯计算"指**返回值确定性**。
+    if site_url and _删除样本:
+        try:
+            from 广告词自学习 import 记录删除批次
+            记录删除批次(site_url, _删除样本)
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e} (广告词学习上报失败, 不影响清洗)')
 
     # P3: 统计随返回值交回爬虫壳层 (contextvar 设置 + '清洗' 事件发布
     # 留在 爬虫.clean_content —— 编排职责; 本函数保持纯计算)
