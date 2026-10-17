@@ -7,6 +7,12 @@
   每次任务收尾更新 (指数移动平均), 偏差超阈值 -> 写 风控事件(content_issue) +
   日志告警, 提示用 probe_adapter.py 重探该站。
 - 旁路静默, 不影响抓取主流程。
+
+P1-B (C6 Roadmap, 2026-10-17): 漂移告增补**清洗诊断分流** —— 告警时附带本次
+任务的清洗统计汇总 (删除行占比/过度清洗章数), 据此外推"站点改版"还是"清洗
+规则误杀": 删除占比高 ⇒ 优先怀疑清洗误杀 (看任务卡警示/广告词候选); 占比
+正常 ⇒ 更像站点改版 (重探适配器)。数据来自 爬虫._收尾汇总 从 _质检记录 汇总,
+按域存 站点基线.json 的 "最近清洗" (只存计数, 无文本)。
 """
 import json
 import os
@@ -79,7 +85,41 @@ def _ema(old, new):
     return round(old * (1 - _ALPHA) + new * _ALPHA, 4)
 
 
-def report_task(domain: str, total: int, empty: int, short: int, failed: int) -> list:
+def _清洗诊断(清洗汇总) -> str:
+    """据本次任务的清洗统计给分流提示 (P1-B)。
+
+    删除行占比 = 5 个行级删除计数之和 / 原始行数 (水印是字符级替换, 不计入,
+    与 内容质检器.判定过度清洗 同口径); 原始行数缺失/为 0 时返回 '' (向后兼容)。
+    """
+    if not isinstance(清洗汇总, dict):
+        return ''
+    try:
+        原行 = int(清洗汇总.get('原始行数', 0) or 0)
+    except (TypeError, ValueError):
+        return ''
+    if 原行 <= 0:
+        return ''
+    删行 = 0
+    for 键 in ('关键词行', '推广行', '过短行', '符号行', '广告行'):
+        try:
+            删行 += int(清洗汇总.get(键, 0) or 0)
+        except (TypeError, ValueError) as _e:
+            _dbg('漂移检测', f'清洗诊断跳过非数字计数 {键}: {_e}')
+    占比 = 删行 / 原行
+    try:
+        过度章 = int(清洗汇总.get('过度清洗章数', 0) or 0)
+    except (TypeError, ValueError) as _e:
+        _dbg('漂移检测', f'清洗诊断的 过度清洗章数 非数字, 按 0: {_e}')
+        过度章 = 0
+    if 占比 > 0.30 or 过度章 > 0:
+        return (f' 本次删除行占比 {占比:.0%}'
+                + (f'、过度清洗告警 {过度章} 章' if 过度章 else '')
+                + ' — 优先怀疑清洗规则误杀 (看任务卡「⚠ 清洗异常」/ 站点管理页广告词候选)')
+    return f' 本次删除行占比 {占比:.0%} (清洗无异常) — 更像站点改版, 建议重探适配器'
+
+
+def report_task(domain: str, total: int, empty: int, short: int, failed: int,
+                清洗汇总=None) -> list:
     """任务收尾上报并检测漂移。
 
     Args:
@@ -88,6 +128,9 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int) ->
         empty: 提取为空的章数
         short: 质检"过短/未通过"章数
         failed: 失败章数
+        清洗汇总: (P1-B, 可选) 本次任务清洗统计汇总 dict —— {关键词行…广告行,
+            原始行数, 过度清洗章数}; 用于漂移告警的成因分流。缺省/None 时
+            行为与本函数加参数前完全一致 (向后兼容)。
     Returns:
         告警列表 (空 = 无漂移)
     """
@@ -106,7 +149,8 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int) ->
                     if bv is not None and v > bv + ALARM[k]:
                         alarms.append(
                             f"⚠ {domain}: {k} 本次 {v:.0%} vs 基线 {bv:.0%} — 疑似站点改版, "
-                            f"建议用 脚本/probe_adapter.py 重探")
+                            f"建议用 脚本/probe_adapter.py 重探"
+                            + _清洗诊断(清洗汇总))
                         drifted = True
             if drifted:
                 # M9 修复: 告警时跳过 EMA 更新 —— 旧实现无条件吸收, 站点真改版
@@ -117,6 +161,13 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int) ->
                 # 更新基线 (EMA)
                 new = {k: _ema((base or {}).get(k), v) for k, v in cur.items()}
                 new["样本数"] = (base or {}).get("样本数", 0) + 1
+            # P1-B: 记录本次任务的清洗统计 (只存计数无文本; 供下次告警时对比/诊断)
+            if isinstance(清洗汇总, dict):
+                new["最近清洗"] = {
+                    k: (int(v) if isinstance(v, (int, float)) else v)
+                    for k, v in 清洗汇总.items()
+                    if k in ('关键词行', '推广行', '过短行', '符号行', '广告行',
+                             '水印', '原始行数', '过度清洗章数')}
             st[domain] = new
             _save(st)
     except Exception as _e:
