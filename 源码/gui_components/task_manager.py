@@ -80,6 +80,9 @@ class TaskMetrics:
     # 过度清洗告警 (2026-10-17 C6/P1): 删除行占比 >30% 时爬虫发 '过度清洗'
     # 事件带回文案; '' = 无异常。**只告警不扣分** (不影响 quality_*)。
     over_clean_warning: str = ""
+    # LLM 复核建议 (2026-10-17 C6/P4): 最近一章的 LLM 判定文案 (质检事件负载);
+    # '' = 未送/未启用。**只告警不改判** (不影响 quality_*; 默认关闭)。
+    llm_suggestion: str = ""
     # 自动去重 (2026-10-10): 抓取收尾自动查重的动作统计 ('自动去重' 事件回填)
     auto_dedup_cleaned: int = 0   # 已移入 _已去重/ 的重复副本数
     auto_dedup_pending: int = 0   # 疑似重复待人工确认数
@@ -447,6 +450,10 @@ class TaskLogRedirector:
             except (TypeError, ValueError):
                 pass        # 得分缺失/非数字 → 保持原值 (与正则不匹配时同语义)
             self.task.metrics.quality_passed = bool(数据.get('通过'))
+            # C6/P4: LLM 复核建议 (可选负载; 缺失保持原值 —— 与得分缺失同语义)
+            _llm = 数据.get('LLM建议')
+            if isinstance(_llm, str):
+                self.task.metrics.llm_suggestion = _llm.strip()
             return
         if 类型 == '清洗':
             # 2026-09-29 可观测性: 最近一章的清洗删除计数 (clean_content 发布)
