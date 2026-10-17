@@ -405,6 +405,17 @@ class TestCleanContent(unittest.TestCase):
         self.assertGreaterEqual(total, 1, '删除行未被计数')
         self.assertNotIn('记住本站', cleaned, '宣传行未被删除')
 
+    def test_空输入不碰清洗统计(self):
+        """P3 零行为变化: 旧实现 `if not content: return ""` 在函数最前面,
+        **不写 contextvar** —— 失败抓取的章节不会用空统计覆盖上一章的统计。
+        拆模块后该早退留在爬虫壳里, 本用例钉住它 (防将来"顺手"把壳里早退删了)。"""
+        from 爬虫 import _最近清洗统计
+        哨兵 = {'哨兵': 1}
+        _最近清洗统计.set(哨兵)
+        self.assertEqual(self.spider.clean_content(''), '')
+        self.assertIs(_最近清洗统计.get(), 哨兵,
+                      '空输入不得覆盖 contextvar (旧实现同路径)')
+
     def test_排版章节文本_indent_and_blank_lines(self):
         """_排版章节文本: 段首两全角空格 + 段间空行 + 标题行不缩进 (中文排版规范)。"""
         from 爬虫 import _排版章节文本
@@ -604,12 +615,16 @@ class TestSessionThreadIsolation(unittest.TestCase):
 
 
 class TestPinyinNoiseCleaning(unittest.TestCase):
-    """拼音替代串 / 无意义字符清洗 (_clean_pinyin_and_noise) 各分支"""
+    """拼音替代串 / 无意义字符清洗 (内容清洗._clean_pinyin_and_noise) 各分支
+
+    P3 (2026-10-17): 实现从 爬虫.NovelSpider 拆到 内容清洗 模块 (纯重构,
+    逐字搬移); 测试指向新家。
+    """
 
     @classmethod
     def setUpClass(cls):
-        from 爬虫 import NovelSpider
-        cls.clean = staticmethod(NovelSpider._clean_pinyin_and_noise)
+        from 内容清洗 import _clean_pinyin_and_noise
+        cls.clean = staticmethod(_clean_pinyin_and_noise)
 
     def test_toned_pinyin_removed(self):
         # 纯声调段 (āáǎà): 曾因 translate 后检查声调字符而漏删
