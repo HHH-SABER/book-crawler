@@ -124,6 +124,12 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
             _kv("⚠ 清洗异常", getattr(mt, 'over_clean_warning', ''),
                 色键='status-warning')
         ] if getattr(mt, 'over_clean_warning', '') else []),
+        # LLM 复核建议 (2026-10-17 C6/P4): 默认关闭, 启用且送了才有;
+        # 只告警不改判 (独立行,  accent 色)
+        *([
+            _kv("LLM 复核", getattr(mt, 'llm_suggestion', ''),
+                色键='accent-fg')
+        ] if getattr(mt, 'llm_suggestion', '') else []),
     ], spacing=2)
 
     # 错误区 (有错才显示)

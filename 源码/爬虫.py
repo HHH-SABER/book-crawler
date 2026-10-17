@@ -165,6 +165,14 @@ try:
 except Exception:
     _内容质检器可用 = False
 
+# C6/P4: LLM 增强质检 (默认关闭, 见 LLM质检.py; 导入失败=整体不可用)
+try:
+    import LLM质检 as _llm
+    _LLM质检可用 = True
+except Exception:
+    _llm = None
+    _LLM质检可用 = False
+
 # ===== 站点抓取历史记录 (跨会话持久化, 数据/站点历史.json) =====
 try:
     from 站点历史 import 取站点历史
@@ -4360,7 +4368,8 @@ class NovelSpider:
                 self._质检记录.append(报告)
                 return content
             _log.info(f"[质检] {报告.摘要()}")
-            _任务事件.发布('质检', 得分=报告.得分, 通过=报告.有效)   # U19 结构化事件
+            _任务事件.发布('质检', 得分=报告.得分, 通过=报告.有效,   # U19 结构化事件
+                           LLM建议=getattr(报告, 'LLM建议', ''))
             if attempt < max_retries:
                 _log.info(f"[质检] 未通过, 清除模式缓存并轮换UA后重试 ({attempt+1}/{max_retries})...")
                 self._detected_pattern = None  # 强制下次重新检测内容模式
@@ -4368,6 +4377,15 @@ class NovelSpider:
                 self._轮换UA()
         # 全部重试仍未通过
         if 报告 is not None:
+            # C6/P4: LLM 复核 (默认关闭; 仅启用且端点已配时才送; 只告警不改判)
+            try:
+                if _LLM质检可用 and _llm.启用中() and 报告.得分 < _llm.取配置()['触发分数线']:
+                    _判决 = _llm.判定章节(chap.get('title', ''), content)
+                    if _判决:
+                        报告.LLM建议 = _llm.生成建议(_判决, 报告.得分)
+                        _log.info(f"[质检] {报告.LLM建议}")
+            except Exception as _le:
+                _log.debug(f'裸 except 吞异常: {type(_le).__name__}: {_le} (LLM 复核失败, 不影响抓取)')
             self._质检记录.append(报告)
             # 软性未达标 (仅长度/重复率/标点) 且有实际内容: 保留但记录警告
             if content and len(content) >= 100 and not self._是硬伤(报告):
@@ -4478,6 +4496,9 @@ class NovelSpider:
                 lines.append(f'未通过章节 ({len(未过)}):')
                 for r in 未过[:20]:
                     lines.append(f'  - {r.摘要()}')
+                    # C6/P4: LLM 复核建议 (默认关闭; 启用且送到了才有)
+                    if getattr(r, 'LLM建议', ''):
+                        lines.append(f'    ↳ {r.LLM建议}')
                 if len(未过) > 20:
                     lines.append(f'  ... 其余 {len(未过) - 20} 章详见日志')
         else:
