@@ -4806,6 +4806,12 @@ class NovelSpider:
                 self._爬取历史.flush()
             except Exception as e:
                 _log.debug(f'裸 except 吞异常: {type(e).__name__}')
+        # C6/P2: 广告词自学习候选落盘 (被动观察聚合 → 待审清单; 方案A 不自动生效)
+        try:
+            import 广告词自学习 as _广告词学习
+            _广告词学习.flush()
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__} (广告词学习落盘失败)')
         # 验证码监控报告 (类型/耗时/成功率/成本) 与告警
         if self._captcha_manager is not None:
             try:
