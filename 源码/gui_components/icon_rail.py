@@ -31,6 +31,8 @@ IconRail.toggle_theme_icon() 是**本轮唯一不需要改 gui_app.py 就能挂�
 ⚠️ 硬契约: NAV_PAGES 的顺序与内容**不得改动** —— gui_app.pages_map
    依赖 dict 插入序 == 本列表序, 两处不同序会导致首屏静默显示错页。
 """
+import threading
+
 import flet as ft
 
 from .ui_fluent import (
@@ -236,6 +238,9 @@ class IconRail:
         self.page = None            # 由 gui_app 注入 (GitHub 卡要打开浏览器)
         self._状态点 = None          # 侧栏底部状态块 (设置状态摘要 驱动)
         self._状态文本 = None
+        self._版本行 = None          # 侧栏底部版本/检查更新行 (C7)
+        self._版本文本 = None
+        self._待打开发布页 = None    # 查到新版后暂存 Release 页 (再点一次才打开)
         self.page = None
         # 状态摘要同时在窗口底部状态条与侧栏底部块显示 (同一数据源)
 
@@ -383,7 +388,27 @@ class IconRail:
         登记重刷(标题行.controls[0], lambda c: setattr(c, 'color', 取色('github-link')))
         登记重刷(标题行.controls[1], lambda c: setattr(c, 'color', 取色('github-link')))
         登记重刷(提示行, lambda c: setattr(c, 'color', 取色('text-tertiary')))
-        return ft.Column([状态块, github卡], spacing=6, tight=True)
+
+        # ---- 版本/检查更新行 (C7: 便携分发 + 轻量更新检查, 不引入安装器) ----
+        # 只读 GitHub API 告知有无新版, 不下载不静默替换; 点了才查 (零网络意外)
+        self._版本文本 = txt('检查更新', size=ui_tokens.FS_MICRO,
+                            weight=WEIGHT_BODY, color=取色('text-tertiary'))
+        版本行 = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.UPDATE_OUTLINED, size=13,
+                        color=取色('text-tertiary')),
+                self._版本文本,
+            ], spacing=6, tight=True),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            border_radius=半径,
+            on_click=self._检查更新,
+            tooltip='检查是否有新版本 (只读 GitHub, 不自动下载)',
+            ink=True,
+        )
+        登记重刷(版本行.content.controls[0], lambda c: setattr(c, 'color', 取色('text-tertiary')))
+        登记重刷(self._版本文本, lambda c: setattr(c, 'color', 取色('text-tertiary')))
+        self._版本行 = 版本行
+        return ft.Column([状态块, github卡, 版本行], spacing=6, tight=True)
 
     def _打开仓库(self, _e=None):
         """点 GitHub 卡 → 系统浏览器打开项目仓库 (页面未就绪时静默降级)。"""
@@ -393,6 +418,71 @@ class IconRail:
             self.page.launch_url(_仓库地址)
         except Exception as _e2:
             _dbg('导航栏', f'打开仓库失败: {type(_e2).__name__}: {_e2}')
+
+    def _dispatch(self, fn):
+        """提交 UI 更新到主线程 (与站点管理页同范式)。"""
+        if self.page is None:
+            return
+        try:
+            async def _runner():
+                fn()
+                try:
+                    self.page.update()
+                except Exception as _e:
+                    _dbg('导航栏', f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            self.page.run_task(_runner)
+        except Exception as _e:
+            _dbg('导航栏', f'dispatch 失败: {type(_e).__name__}: {_e}')
+
+    def _检查更新(self, _e=None):
+        """点版本行 (C7) —— **两态行**, 不自动开浏览器 (网络副作用要用户点头):
+
+        · 常态 "检查更新": 后台线程查 GitHub 最新版; 有新版 → 行文变
+          "⬆ vX.Y.Z 可用" 并暂存 Release 页 (SnackBar 告知);
+        · 待打开态 "⬆ vX.Y.Z 可用": **再点一次**才用系统浏览器打开发布页
+          (下载与否由用户在页面上决定)。
+        """
+        if self.page is None:
+            return
+        # 态②: 已查到新版, 这次点击 = 打开发布页
+        if self._待打开发布页:
+            try:
+                self.page.launch_url(self._待打开发布页)
+            except Exception as _e:
+                _dbg('导航栏', f'打开发布页失败: {type(_e).__name__}: {_e}')
+            return
+        if self._版本文本 is not None:
+            self._版本文本.value = '检查中…'
+        self._dispatch(lambda: None)
+
+        def _干活():
+            结果 = None
+            try:
+                import 更新检查
+                结果 = 更新检查.检查更新()
+            except Exception as _e:
+                _dbg('导航栏', f'更新检查异常: {type(_e).__name__}: {_e}')
+
+            def _完():
+                if self._版本文本 is not None:
+                    self._版本文本.value = '检查更新'
+                if 结果 is None:
+                    文案 = '检查更新失败 (网络或 GitHub 限流), 稍后再试'
+                elif 结果.get('有新版'):
+                    文案 = f"发现新版本 v{结果['最新版']} (当前 {结果['当前版']}) — 再点一次本行打开发布页"
+                    self._待打开发布页 = 结果.get('发布页') or ''
+                    if self._版本文本 is not None:
+                        self._版本文本.value = f"⬆ v{结果['最新版']} 可用"
+                else:
+                    文案 = f"已是最新版本 ({结果['当前版']})"
+                try:
+                    from ui_fluent import 提示条, open_dialog
+                    open_dialog(self.page, 提示条(文案, 时长=5000))
+                except Exception as _e2:
+                    _dbg('导航栏', f'更新提示失败: {type(_e2).__name__}: {_e2}')
+            self._dispatch(_完)
+
+        threading.Thread(target=_干活, name='update-check', daemon=True).start()
 
     def 设置状态摘要(self, 文案: str, 颜色: str):
         """侧栏底部状态块 (与窗口底部状态条**同一数据源**)。
