@@ -74,6 +74,48 @@ class _版本快照(str):
         return obj
 
 
+# 可重试的替换错误: Windows 上目标文件被其他句柄打开 (默认不带
+# FILE_SHARE_DELETE) 时 os.replace 报 ERROR_ACCESS_DENIED(5) /
+# ERROR_SHARING_VIOLATION(32); POSIX 对应 EACCES/EBUSY。
+_可重试错误号 = frozenset({5, 32, 13, 16})
+
+
+def _可重试(exc: OSError) -> bool:
+    """该 OSError 是否值得退避重试 (句柄竞争类, 稍后自愈)。"""
+    号 = getattr(exc, 'winerror', None) or exc.errno
+    return 号 in _可重试错误号
+
+
+def _原子替换(源, 目标) -> None:
+    """os.replace 的有界重试版 (2026-10-17, 实测倒逼)。
+
+    为什么需要: `_合并磁盘新数据` (U16 决策) 每次落盘前都 open() 读一遍目标
+    文件吸收别的进程的新记录, 读句柄在 Windows 上**默认不带 FILE_SHARE_DELETE**
+    ⇒ 锁外执行的 os.replace (U17 拆锁的性能修复) 与并发读重叠时被拒绝
+    (WinError 5)。9.5MB 文件的读+json.load 要几百毫秒, 窗口很大 ⇒ 抓取期间
+    每天都命中几次 (10-14 六次/10-15 两次, 日志 "[历史] 保存失败")。
+    读句柄很快会关, 退避重试即可自愈; **不回退 U17 的锁拆分** (那是性能修复)。
+
+    重试预算: 立即 + 50ms + 150ms + 400ms (共 4 次, ≤0.6s)。仍失败则抛最后一次
+    异常, 由调用方走既有的"脏标记+日志"优雅降级 (不丢数据, 下次 flush 再试)。
+    """
+    import time as _time
+    退避表 = (0, 0.05, 0.15, 0.4)
+    最后一次 = None
+    for 次, 退避 in enumerate(退避表):
+        if 退避:
+            _time.sleep(退避)
+        try:
+            os.replace(源, 目标)
+            return
+        except OSError as e:
+            if not _可重试(e):
+                raise
+            最后一次 = e
+    raise 最后一次
+
+
+
 class 爬取历史:
     """爬取历史记录管理器 (单例, 线程安全)"""
 
@@ -212,7 +254,9 @@ class 爬取历史:
                 fobj = Path(self._file).resolve()
                 tmp = fobj.with_name(fobj.name + f'.tmp.{os.getpid()}.{threading.get_ident()}')
                 tmp.write_text(快照, encoding='utf-8')
-                os.replace(tmp, fobj)
+                # 2026-10-17: 改用有界重试版 (并发读句柄挡 replace 的竞态,
+                # 见 _原子替换 docstring; 失败仍抛给下面的 OSError 兜底)
+                _原子替换(tmp, fobj)
                 with self._io_lock:
                     self._上次落盘 = time.time()
                     self._已落盘版本 = version
