@@ -243,6 +243,10 @@ class SiteManagePage:
         self._heal_card = None
         self._heal_sig = None
         self._heal_busy = set()   # 采纳/处理中的域名 (防双击重复并入)
+        # 广告词自学习候选区 UI (C6/P2)
+        self._adword_view = None
+        self._adword_info = None
+        self._adword_busy = set()   # 处理中的 (域名, 词) (防双击)
         # 编辑表单字段
         self._domain_field = None
         self._pattern_field = None
@@ -650,23 +654,41 @@ class SiteManagePage:
 
     # ---------------------------------------------------- 自愈建议审核卡 (批3 PoC-C)
     def _build_heal_card(self) -> ft.Control:
-        """自愈建议审核卡: 规则选择器落空时自动产出的容器建议, 一键采纳/忽略。"""
+        """自愈建议审核卡: 选择器自愈建议 + 广告词自学习候选, 一键采纳/忽略。
+
+        两个数据源 (同卡片两个区, 共用刷新): 选择器自愈 (站点改版容器) 与
+        广告词自学习 (C6/P2, 高频删除行) —— 都是"机器产建议, 人工拍板"
+        (方案 A), 合并一卡少占一处版面。
+        """
         self._heal_view = ft.ListView(spacing=4, scroll=ft.ScrollMode.ALWAYS)
         self._heal_info = ft.Text("", size=SIZE_TINY,
                                   color=ft.Colors.ON_SURFACE_VARIANT,
                                   font_family=FONT_STACK)
+        self._adword_view = ft.ListView(spacing=4, scroll=ft.ScrollMode.ALWAYS)
+        self._adword_info = ft.Text("", size=SIZE_TINY,
+                                    color=ft.Colors.ON_SURFACE_VARIANT,
+                                    font_family=FONT_STACK)
         refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self._dispatch(self._render_heal_suggestions))
         card = make_card(
             ft.Column([
                 ft.Row([
                     _色图标(ft.Icons.AUTO_FIX_HIGH, 'accent-fg', size=18),
-                    ft.Text("选择器自愈建议 (站点改版自动发现)", size=SIZE_SUBTITLE,
+                    ft.Text("自愈建议审核 (机器产建议 · 人工拍板)", size=SIZE_SUBTITLE,
                             weight=WEIGHT_TITLE, font_family=FONT_STACK),
                 ], spacing=6),
                 ft.Row([refresh_btn], spacing=6),
                 self._heal_info,
                 ft.Container(self._heal_view, height=150),
+                # ---- 广告词自学习候选 (C6/P2) ----
+                ft.Row([
+                    _色图标(ft.Icons.CLEANING_SERVICES_OUTLINED, 'accent-fg', size=14),
+                    ft.Text("广告词候选 (高频删除行, 采纳后并入该站广告规则)",
+                            size=SIZE_TINY, weight=WEIGHT_SUBTITLE,
+                            font_family=FONT_STACK),
+                ], spacing=6),
+                self._adword_info,
+                ft.Container(self._adword_view, height=110),
             ], spacing=8),
             padding=10,
         )
@@ -675,14 +697,25 @@ class SiteManagePage:
         return card
 
     def _heal_文件签名(self):
-        """(mtime, size) 轻量签名: refresh 每秒调用, 未变则不读文件。"""
+        """(mtime, size) 轻量签名: refresh 每秒调用, 未变则不读文件。
+
+        C6/P2: 两个数据源 (选择器建议 + 广告词候选) 的签名合并 —— 任一变化
+        都触发整体重绘 (两个区一起刷新, 逻辑简单优先)。
+        """
+        签名 = []
         try:
             import 选择器自愈 as _heal
-            p = _heal._建议文件()
-            st = os.stat(p)
-            return (round(st.st_mtime, 3), st.st_size)
+            st = os.stat(_heal._建议文件())
+            签名.append(('sel', round(st.st_mtime, 3), st.st_size))
         except OSError:
-            return None   # 文件不存在 = 空签名
+            签名.append(('sel', None))
+        try:
+            import 广告词自学习 as _ad
+            st = os.stat(_ad._待审文件())
+            签名.append(('ad', round(st.st_mtime, 3), st.st_size))
+        except OSError:
+            签名.append(('ad', None))
+        return tuple(签名)
 
     def _render_heal_suggestions(self):
         """重建建议列表 (签名比对跳过无变化重建; 采纳/忽略后由回调强制刷新)。"""
@@ -783,6 +816,132 @@ class SiteManagePage:
                 border_radius=6,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
             ))
+
+        self._render_adword_suggestions()
+
+    # ---------------------------------------------------- 广告词自学习候选区 (C6/P2)
+    def _render_adword_suggestions(self):
+        """重建广告词候选列表 (与选择器建议同卡片, 同刷新节奏)。
+
+        数据源: 广告词自学习.待审词条(域) —— 每域一组, 组内每词一行
+        (词/次数/类别), 行末 采纳(并入 ad_rules)/忽略(仅移除候选)。
+        """
+        if self._adword_view is None:
+            return
+        self._adword_view.controls.clear()
+        try:
+            import 广告词自学习 as _ad
+            全部 = _ad.列出待审广告词() or {}
+        except Exception as ex:
+            self._adword_info.value = f"读取广告词候选失败: {ex}"
+            return
+        if not 全部:
+            self._adword_info.value = ""
+            self._adword_view.controls.append(states.空态(
+                图标=ft.Icons.CLEANING_SERVICES_OUTLINED, 标题='暂无广告词候选',
+                说明='抓取中同一站点的高频删除行会在这里累计, 人工采纳后并入该站广告规则。',
+                填满=False))
+            return
+        总词数 = 0
+        for domain in sorted(全部):
+            词条 = _ad.待审词条(domain)
+            if not 词条:
+                continue
+            总词数 += len(词条)
+            self._adword_view.controls.append(ft.Container(
+                content=ft.Row([
+                    _色文本(domain, 'status-success', size=SIZE_TINY,
+                            weight=WEIGHT_SUBTITLE, font_family=FONT_STACK),
+                    _色文本(f"{len(词条)} 个候选", 'text-tertiary',
+                            size=SIZE_TINY, font_family=FONT_STACK),
+                ], spacing=6),
+                padding=ft.Padding.only(left=6, top=4),
+            ))
+            for 条 in 词条:
+                词 = 条.get('词', '')
+                忙 = (domain, 词) in self._adword_busy
+                采纳钮 = ft.IconButton(
+                    icon=ft.Icons.CHECK, icon_size=14,
+                    tooltip=f"把 {词!r} 并入 {domain} 的广告规则 (热重载生效)",
+                    disabled=忙,
+                    on_click=lambda e, dm=domain, w=词: self._on_adword_adopt(dm, w),
+                    style=ft.ButtonStyle(
+                        padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                        bgcolor=取色('status-success'), color=ft.Colors.WHITE))
+                _登记按钮底(采纳钮, 'status-success')
+                忽略钮 = ft.IconButton(
+                    icon=ft.Icons.CLOSE, icon_size=14,
+                    tooltip=f"忽略候选 {词!r} (配置不动)",
+                    disabled=忙,
+                    on_click=lambda e, dm=domain, w=词: self._on_adword_reject(dm, w),
+                    style=ft.ButtonStyle(
+                        padding=2, shape=ft.RoundedRectangleBorder(radius=6),
+                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+                        color=ft.Colors.ON_SURFACE))
+                self._adword_view.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Text(f"「{词}」", size=SIZE_TINY,
+                                color=ft.Colors.ON_SURFACE,
+                                font_family=FONT_STACK, expand=True,
+                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                        _色文本(f"×{条.get('次数', 0)}", 'status-warning',
+                                size=SIZE_TINY, font_family=FONT_STACK),
+                        _色文本(str(条.get('类别', '')), 'text-tertiary',
+                                size=SIZE_TINY, font_family=FONT_STACK),
+                        采纳钮, 忽略钮,
+                    ], spacing=6),
+                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                    border_radius=6, bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+                ))
+        self._adword_info.value = f"共 {len(全部)} 域 {总词数} 个候选 (采纳后才生效)"
+
+    def _on_adword_adopt(self, domain: str, 词: str):
+        """采纳广告词候选: 并入该域 ad_rules.关键词 + 热重载 (核心在 广告词自学习)"""
+        键 = (domain, 词)
+        if 键 in self._adword_busy:
+            return
+        self._adword_busy.add(键)
+
+        def _do():
+            try:
+                import 广告词自学习 as _ad
+                ok, msg = _ad.采纳广告词(domain, 词)
+            except Exception as ex:
+                ok, msg = False, f"采纳异常: {ex}"
+
+            def _done():
+                self._adword_busy.discard(键)
+                self._heal_sig = None   # 强制重绘 (采纳会改待审文件与配置)
+                self._adword_info.value = ("✔ " if ok else "✘ ") + msg
+                if ok:
+                    # 配置已变: 重读并重建站点表格 (ad_rules 改动立即可见)
+                    self.configs = self._load_configs()
+                    self._refresh_table()
+                self._render_adword_suggestions()
+            self._dispatch(_done)
+        threading.Thread(target=_do, name=f'adword-adopt-{domain}', daemon=True).start()
+
+    def _on_adword_reject(self, domain: str, 词: str):
+        """忽略广告词候选: 仅移除候选条目, 配置零触碰"""
+        键 = (domain, 词)
+        if 键 in self._adword_busy:
+            return
+        self._adword_busy.add(键)
+
+        def _do():
+            try:
+                import 广告词自学习 as _ad
+                ok, msg = _ad.拒绝广告词(domain, 词)
+            except Exception as ex:
+                ok, msg = False, f"忽略异常: {ex}"
+
+            def _done():
+                self._adword_busy.discard(键)
+                self._heal_sig = None
+                self._adword_info.value = ("✔ " if ok else "✘ ") + msg
+                self._render_adword_suggestions()
+            self._dispatch(_done)
+        threading.Thread(target=_do, name=f'adword-reject-{domain}', daemon=True).start()
 
     def _on_heal_adopt(self, domain: str):
         """采纳建议: 前插进该域 content_selectors 并热重载 (核心逻辑在 选择器自愈.采纳建议)"""
