@@ -4870,8 +4870,23 @@ class NovelSpider:
                 import 站点漂移检测 as _drift
                 _empty = len(failed)   # failed 即未提取到内容的章
                 _short = (质检摘要 or {}).get('未通过', 0) if 质检摘要 else 0
+                # P1-B: 任务级清洗统计汇总 (从各章质检报告的 清洗统计 求和;
+                # 只传计数, 供漂移告警做"站点改版 vs 清洗误杀"分流)
+                _清洗汇总 = None
+                if self._质检记录:
+                    _清洗汇总 = {k: 0 for k in (
+                        '关键词行', '推广行', '过短行', '符号行', '广告行',
+                        '水印', '原始行数')}
+                    _清洗汇总['过度清洗章数'] = 0
+                    for _r in self._质检记录:
+                        for k, v in (getattr(_r, '清洗统计', None) or {}).items():
+                            if k in _清洗汇总 and isinstance(v, (int, float)):
+                                _清洗汇总[k] += v
+                        if getattr(_r, '疑似过度清洗', ''):
+                            _清洗汇总['过度清洗章数'] += 1
                 _drift.report_task(_m.group(1) if _m else '', total,
-                                   empty=_empty, short=_short, failed=len(failed))
+                                   empty=_empty, short=_short, failed=len(failed),
+                                   清洗汇总=_清洗汇总)
             except Exception as e:
                 _log.debug(f'[漂移检测] 上报异常: {type(e).__name__}: {e}')
         except Exception as e:
