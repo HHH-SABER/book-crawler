@@ -64,10 +64,11 @@ def 设置(键: str, 值) -> bool:
     """原子写回并同步缓存; 失败返回 False (调用方自行留痕)"""
     global _缓存
     try:
-        with _锁:
+        from 文件锁 import 写锁
+        path = _路径()
+        with _锁, 写锁(path):       # R03: 读-改-写全程跨进程原子
             cfg = dict(_载入())
             cfg[键] = 值
-            path = _路径()
             os.makedirs(os.path.dirname(path), exist_ok=True)
             tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
             with open(tmp, "w", encoding="utf-8") as f:

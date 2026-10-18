@@ -52,7 +52,9 @@ def 保存(items) -> bool:
         tmp = p.with_name(p.name + '.tmp')
         tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2),
                        encoding='utf-8')
-        os.replace(tmp, p)
+        from 文件锁 import 写锁
+        with 写锁(str(p)):      # R03: 跨进程串行写
+            os.replace(tmp, p)
         return True
     except Exception:
         return False

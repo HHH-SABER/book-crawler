@@ -160,10 +160,12 @@ class 爬取历史:
         dumps + write_text + os.replace, 451KB 的整文件写会把所有并发 worker
         的 记录() 一起阻塞。
         """
-        with self._io_lock:
-            快照 = self._快照(force=True) if self._脏 else None
-        if 快照:
-            self._落盘(快照)
+        from 文件锁 import 写锁
+        with 写锁(self._file):        # R03: 读-合并-写全程跨进程原子
+            with self._io_lock:
+                快照 = self._快照(force=True) if self._脏 else None
+            if 快照:
+                self._落盘(快照)
 
     # ------------------------------------------------------------------
     # 存储层
@@ -278,9 +280,11 @@ class 爬取历史:
         非强制时若距上次落盘不足 _最小落盘间隔 则仅标脏;
         任务收尾/进程退出时 flush(force=True) 兜底。
         """
-        with self._io_lock:
-            快照 = self._快照(force)
-        self._落盘(快照)
+        from 文件锁 import 写锁
+        with 写锁(self._file):        # R03: 读-合并-写全程跨进程原子
+            with self._io_lock:
+                快照 = self._快照(force)
+            self._落盘(快照)
 
     # ------------------------------------------------------------------
     # 工具方法

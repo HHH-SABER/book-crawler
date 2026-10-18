@@ -117,9 +117,11 @@ def _读(严格: bool = False) -> dict:
 def _原子写(数据: dict) -> None:
     """原子写（tmp + os.replace，tmp 带 pid 防多进程互截）。范式同 captcha_module.Config.save。"""
     目标 = Path(配置路径()).resolve()
-    临时 = 目标.with_name(目标.name + f'.tmp.{os.getpid()}')
-    临时.write_text(json.dumps(数据, ensure_ascii=False, indent=2), encoding='utf-8')
-    os.replace(临时, 目标)
+    from 文件锁 import 写锁
+    with 写锁(str(目标)):      # R03: 跨进程串行写
+        临时 = 目标.with_name(目标.name + f'.tmp.{os.getpid()}')
+        临时.write_text(json.dumps(数据, ensure_ascii=False, indent=2), encoding='utf-8')
+        os.replace(临时, 目标)
 
 
 def 全部() -> dict:

@@ -174,12 +174,14 @@ def flush() -> int:
             for 文本, _次, _类, _末 in 词表:
                 _计数.pop((域, 文本), None)
     p = Path(_待审文件())
-    try:
-        data = json.loads(p.read_text(encoding='utf-8'))
-        if not isinstance(data, dict):
+    from 文件锁 import 写锁
+    with 写锁(str(p)):        # R03: 读-合并-写全程跨进程原子
+        try:
+            data = json.loads(p.read_text(encoding='utf-8'))
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
             data = {}
-    except Exception:
-        data = {}
     变动 = 0
     for 域, 词表 in 候选.items():
         条目 = data.get(域)

@@ -134,10 +134,12 @@ class 站点历史:
 
     def flush(self):
         """对外强制刷盘入口 (任务收尾调用; U17: 锁外落盘)"""
-        with self._io_lock:
-            快照 = self._快照(force=True) if self._脏 else None
-        if 快照:
-            self._落盘(快照)
+        from 文件锁 import 写锁
+        with 写锁(self._file):        # R03: 读-合并-写全程跨进程原子
+            with self._io_lock:
+                快照 = self._快照(force=True) if self._脏 else None
+            if 快照:
+                self._落盘(快照)
 
     _最小落盘间隔 = 5.0   # 秒 (M1 防抖窗口)
 
@@ -277,8 +279,10 @@ class 站点历史:
             站点['书籍'].append(记录)
             if len(站点['书籍']) > _MAX_BOOKS_PER_SITE:
                 站点['书籍'] = 站点['书籍'][-_MAX_BOOKS_PER_SITE:]
-            快照 = self._快照()          # 防抖判定 + 一致快照 (锁内)
-        self._落盘(快照)                 # U17: 锁外原子落盘, 不阻塞其他 worker
+            from 文件锁 import 写锁
+            with 写锁(self._file):        # R03: 读-合并-写全程跨进程原子
+                快照 = self._快照()          # 防抖判定 + 一致快照 (锁内)
+                self._落盘(快照)             # U17: 锁外原子落盘 (进程内仍互斥)
 
     def 查站点(self, url) -> dict:
         """查询某站点的历史信息 (返回副本, 无记录返回 {})"""
