@@ -38,6 +38,7 @@ import flet as ft
 from .ui_fluent import (
     txt, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
     WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
+    提示条, open_dialog,
 )
 from . import ui_tokens
 from .ui_tokens import 取色, 登记重刷
@@ -476,7 +477,6 @@ class IconRail:
                 else:
                     文案 = f"已是最新版本 ({结果['当前版']})"
                 try:
-                    from ui_fluent import 提示条, open_dialog
                     open_dialog(self.page, 提示条(文案, 时长=5000))
                 except Exception as _e2:
                     _dbg('导航栏', f'更新提示失败: {type(_e2).__name__}: {_e2}')

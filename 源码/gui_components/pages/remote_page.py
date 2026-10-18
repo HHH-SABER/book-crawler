@@ -24,6 +24,17 @@ def _dbg(source: str, message: str):
         except Exception:
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
+
+def _可更新(控件) -> bool:
+    """控件是否已挂到页面 (Flet 0.86: 直接访问未挂载控件的 .page 会抛
+    RuntimeError "Control must be added to the page first" —— 不能写
+    `if 控件.page is not None`, 必须 try)。"""
+    try:
+        控件.page
+        return True
+    except Exception:
+        return False
+
 from ..ui_fluent import (txt, FONT_STACK, SIZE_SMALL, SIZE_BODY, SIZE_TITLE,
                          SIZE_TINY,
                          WEIGHT_TITLE, WEIGHT_SUBTITLE, WEIGHT_BODY,
@@ -454,7 +465,7 @@ class RemotePage:
                         border_radius=6,
                         bgcolor=ft.Colors.SURFACE_CONTAINER,
                     ))
-            if self.page is not None:
+            if _可更新(self._rows):
                 self._rows.update()
         except Exception as _e:
             # 批 4: 旧实现纯静默 → 列表保持空白或陈旧, 且**空态分支永远到不了**
@@ -465,7 +476,7 @@ class RemotePage:
                 self._rows.controls.append(states.错误态(
                     '记录读取失败', f'{type(_e).__name__}: {_e}',
                     重试回调=lambda e=None: self.refresh(), 填满=False))
-                if self.page is not None:
+                if _可更新(self._rows):
                     self._rows.update()
             except Exception as _e2:
                 _dbg("远控页", f'错误态渲染失败: {type(_e2).__name__}: {_e2}')
