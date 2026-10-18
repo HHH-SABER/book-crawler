@@ -24,7 +24,7 @@ _log = _app_log.get('请求引擎')
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 import json
 import os
@@ -129,6 +129,7 @@ class 引擎响应:
     content: bytes = b''
     url: str = ''
     引擎: str = 'requests'
+    历史URL: List[str] = field(default_factory=list)   # R05: 重定向链每一跳
 
     def __post_init__(self):
         self._编码: Optional[str] = None
@@ -234,6 +235,12 @@ class 请求引擎管理器:
         Returns:
             引擎响应; 引擎不可用或请求失败返回 None (调用方应保留原响应走现有流程)
         """
+        # R05 地址安全预检: 目标 URL 私网/保留段/协议拦截 (fail-closed)
+        from 地址安全 import 校验URL, 校验响应
+        _安全, _理由 = 校验URL(url)
+        if not _安全:
+            _log.info(f"[地址安全] 拦截请求: {_理由} ({str(url)[:80]})")
+            return None
         # 按域 Cookie 注入 (站点脱钩: 登录态外置; 调用方显式 Cookie 优先)
         headers = 注入COOKIE(headers, url)
         if 引擎 == 'auto':
@@ -251,6 +258,12 @@ class 请求引擎管理器:
             self._失败计数[引擎] = self._失败计数.get(引擎, 0) + 1
             _log.info(f"[引擎] {引擎} 请求未成功(连接级), 连续失败 "
                       f"{self._失败计数[引擎]}/{self._降级阈值}")
+            return None
+        # R05 地址安全终检: 最终 URL + 重定向链每一跳 (浏览器引擎无法逐跳, 终检兜底)
+        _安全, _理由 = 校验响应(响应)
+        if not _安全:
+            _log.info(f"[地址安全] 拦截响应: {_理由} ({str(响应.url)[:80]})")
+            self._失败计数[引擎] = self._失败计数.get(引擎, 0) + 1
             return None
         if 响应.成功:
             self._统计[引擎] = self._统计.get(引擎, 0) + 1
@@ -309,7 +322,8 @@ class 请求引擎管理器:
                                 proxies=proxies, allow_redirects=支持重定向)
             return 引擎响应(
                 status_code=resp.status_code, headers=dict(resp.headers),
-                text=resp.text, content=resp.content, url=resp.url, 引擎='requests')
+                text=resp.text, content=resp.content, url=resp.url, 引擎='requests',
+                历史URL=[h.url for h in (getattr(resp, 'history', None) or [])])
         except Exception as e:
             _log.info(f"[引擎] requests 请求异常: {e}")
             return None
