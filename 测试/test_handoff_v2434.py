@@ -256,6 +256,59 @@ class 接手回归(unittest.TestCase):
                 text=output.read_text(encoding='utf-8')
                 self.assertEqual(text.count('## '),3);self.assertEqual(text.count('新正文'),2)
 
+    def test_R04_重抓停止不损坏旧完整书(self):
+        """R04 事务写: 重抓中途停止 ⇒ 旧完整书原样保留, 进度在 .抓取中.tmp"""
+        spider=self._造蜘蛛();stop=threading.Event()
+        原fetch=spider._fetch_with_retry
+        def fetch(url):
+            r=原fetch(url);stop.set();return r
+        spider._fetch_with_retry=fetch
+        spider._fetch_chapter_worker=mock.Mock(return_value='新正文')
+        output=self.root/'r04stop.txt'
+        output.write_text('## 旧书第1章\n旧内容\n',encoding='utf-8')
+        with mock.patch('风控事件.add'),mock.patch('风控事件.flush'),mock.patch('网站清单.记录'):
+            spider.run('https://example.com/book',output_file=str(output),output_dir=str(self.root),resume=False,show_progress=False,threads=1,delay=0,stop_event=stop)
+        self.assertTrue(spider.last_aborted)
+        # 旧完整书原样保留 (未被截断)
+        self.assertIn('旧书第1章',output.read_text(encoding='utf-8'))
+        # 进度在 tmp 里 (可断点续传)
+        self.assertTrue(Path(str(output)+'.抓取中.tmp').exists())
+
+    def test_R04_全部成功替换正式文件(self):
+        """R04 事务写: 全部章节完成 ⇒ 正式文件=新内容, tmp 无残留"""
+        spider=self._造蜘蛛();spider._fetch_with_retry=mock.Mock(return_value='新正文')
+        spider._fetch_chapter_worker=mock.Mock(return_value='新正文')
+        output=self.root/'r04ok.txt'
+        output.write_text('## 旧书第1章\n旧内容\n',encoding='utf-8')
+        with mock.patch('风控事件.add'),mock.patch('风控事件.flush'),mock.patch('网站清单.记录'):
+            spider.run('https://example.com/book',output_file=str(output),output_dir=str(self.root),resume=False,show_progress=False,threads=1,delay=0)
+        self.assertFalse(spider.last_aborted)
+        text=output.read_text(encoding='utf-8')
+        self.assertEqual(text.count('## '),3)
+        self.assertNotIn('旧内容',text)
+        self.assertFalse(Path(str(output)+'.抓取中.tmp').exists(),'成功后 tmp 应已被替换消费')
+
+    def test_R04_停止后续传至完整(self):
+        """R04 事务写: 停止后的 tmp 续传至完成 ⇒ 正式文件完整"""
+        spider=self._造蜘蛛();stop=threading.Event()
+        原fetch=spider._fetch_with_retry
+        def fetch(url):
+            r=原fetch(url);stop.set();return r
+        spider._fetch_with_retry=fetch
+        spider._fetch_chapter_worker=mock.Mock(return_value='新正文')
+        output=self.root/'r04resume.txt'
+        with mock.patch('风控事件.add'),mock.patch('风控事件.flush'),mock.patch('网站清单.记录'):
+            spider.run('https://example.com/book',output_file=str(output),output_dir=str(self.root),resume=False,show_progress=False,threads=1,delay=0,stop_event=stop)
+        self.assertTrue(spider.last_aborted)
+        # 续传: 不再停止
+        spider2=self._造蜘蛛();spider2._fetch_with_retry=mock.Mock(return_value='续传正文')
+        spider2._fetch_chapter_worker=mock.Mock(return_value='续传正文')
+        with mock.patch('风控事件.add'),mock.patch('风控事件.flush'),mock.patch('网站清单.记录'):
+            spider2.run('https://example.com/book',output_file=str(output),output_dir=str(self.root),resume=True,show_progress=False,threads=1,delay=0)
+        text=output.read_text(encoding='utf-8')
+        self.assertEqual(text.count('## '),3,f'停止+续传后应 3 章: {text[:120]!r}')
+        self.assertFalse(Path(str(output)+'.抓取中.tmp').exists())
+
     def test_缺少TXT不按旧检查点跳章(self):
         spider=self._造蜘蛛();spider._fetch_with_retry=mock.Mock(return_value='正文')
         output=self.root/'missing.txt'
