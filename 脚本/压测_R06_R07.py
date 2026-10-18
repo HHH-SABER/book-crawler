@@ -32,34 +32,6 @@ from unittest import mock   # noqa: E402
 import 爬虫 as c   # noqa: E402
 
 
-def _峰值内存字节() -> int:
-    """当前进程峰值工作集 (Windows; 其他平台返回 0 表示不适用)。"""
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        class PMC(ctypes.Structure):
-            _fields_ = [('cb', wintypes.DWORD),
-                        ('PageFaultCount', wintypes.DWORD),
-                        ('PeakWorkingSetSize', ctypes.c_size_t),
-                        ('WorkingSetSize', ctypes.c_size_t),
-                        ('QuotaPeakPagedPoolUsage', ctypes.c_size_t),
-                        ('QuotaPagedPoolUsage', ctypes.c_size_t),
-                        ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
-                        ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
-                        ('PagefileUsage', ctypes.c_size_t),
-                        ('PeakPagefileUsage', ctypes.c_size_t)]
-
-        pmc = PMC()
-        pmc.cb = ctypes.sizeof(PMC)
-        h = ctypes.windll.kernel32.GetCurrentProcess()
-        if ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(pmc), pmc.cb):
-            return pmc.PeakWorkingSetSize
-    except Exception:
-        pass
-    return 0
-
-
 def _造蜘蛛(目录数=1):
     spider = c.NovelSpider('https://example.com/book')
     spider.get_novel_title = lambda *a: '压测书'
