@@ -168,6 +168,38 @@ def main(page: ft.Page):
     page.theme = make_morandi_theme()
     page.dark_theme = make_morandi_dark_theme()
 
+    # ---- 客户端界面错误捕获 (2026-10-18 灰页排查) ----
+    # 背景: 内容区偶发整块 #C4C4C4 —— 该色不是任何 Flet/Material 令牌;
+    # 按 Flutter 的 ErrorWidget(约 0xC0C0C0 叠白 ≈ #C4C4C4)判定, 是**客户端
+    # 建树抛错**。此前 Python 侧完全无感(日志干净、窗口 Responding=True),
+    # 导致这类灰页长期无法定位。Flet 0.86 的 page.on_error 是客户端错误的
+    # 唯一可观测通道 ⇒ 在此落盘 + 尝试自愈刷新 + 给用户一句可行动的提示。
+    from gui_components.ui_error import 界面错误文本, 自愈提示
+
+    def _on_ui_error(e):
+        文本 = ''
+        try:
+            文本 = 界面错误文本(e)
+            app_log.error("GUI", f'客户端界面错误: {文本 or "(事件无可用文本)"}')
+        except Exception as _e1:       # noqa: BLE001
+            try:
+                app_log.debug("GUI", f'界面错误记录失败: {type(_e1).__name__}: {_e1}')
+            except Exception:          # noqa: BLE001
+                pass  # 刻意静默: 写日志本身失败时再记录会无限递归
+        try:
+            page.update()            # 自愈: 客户端树失步时整页重刷常能恢复显示
+        except Exception as _e2:
+            app_log.debug("GUI", f'界面错误后自愈刷新失败: {type(_e2).__name__}: {_e2}')
+        try:
+            page.show_dialog(提示条(自愈提示(文本)))
+        except Exception as _e3:
+            app_log.debug("GUI", f'界面错误提示展示失败: {type(_e3).__name__}: {_e3}')
+
+    try:
+        page.on_error = _on_ui_error
+    except Exception as _e:
+        app_log.debug("GUI", f'page.on_error 挂载失败: {type(_e).__name__}: {_e}')
+
     # 启动日志: 记录系统信息 (便于事后排查版本/环境问题)
     try:
         import platform
