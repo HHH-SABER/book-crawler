@@ -222,15 +222,17 @@ def _建议文件():
 
 def 记录建议(suggestion: dict):
     """按域 upsert 到待审清单 (原子写 tmp+os.replace, 仿 站点漂移检测._save)。"""
+    from 文件锁 import 写锁
     with _LOCK:
         p = Path(_建议文件())
-        try:
-            data = json.loads(p.read_text(encoding='utf-8'))
-            if not isinstance(data, dict):
+        with 写锁(str(p)):      # R03: 读-改-写全程跨进程原子
+            try:
+                data = json.loads(p.read_text(encoding='utf-8'))
+                if not isinstance(data, dict):
+                    data = {}
+            except Exception:
                 data = {}
-        except Exception:
-            data = {}
-        data[suggestion["域名"]] = suggestion
+            data[suggestion["域名"]] = suggestion
         # 防膨胀: 最多保留 50 域 (超出时淘汰最旧置信度条目按插入序)
         if len(data) > 50:
             for k in list(data)[:len(data) - 50]:

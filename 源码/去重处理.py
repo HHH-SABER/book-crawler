@@ -434,9 +434,11 @@ def 保存(记录列表: list) -> bool:
                               ensure_ascii=False, indent=1)
         锚定 = Path(path).resolve()
         锚定.parent.mkdir(parents=True, exist_ok=True)
-        tmp = 锚定.with_name(f"{锚定.name}.tmp.{os.getpid()}.{threading.get_ident()}")
-        tmp.write_text(快照, encoding='utf-8')
-        os.replace(tmp, 锚定)
+        from 文件锁 import 写锁
+        with 写锁(str(锚定)):      # R03: 跨进程串行写
+            tmp = 锚定.with_name(f"{锚定.name}.tmp.{os.getpid()}.{threading.get_ident()}")
+            tmp.write_text(快照, encoding='utf-8')
+            os.replace(tmp, 锚定)
         return True
     except Exception as e:
         _log.debug(f'裸 except 吞异常: {type(e).__name__}: {e} (去重清单落盘失败)')

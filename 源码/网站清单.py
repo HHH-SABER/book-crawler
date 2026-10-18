@@ -346,6 +346,8 @@ def _原子写(path: str, 内容: str) -> None:
     import os as _os
     from pathlib import Path as _P
     fobj = _P(path).resolve()
-    tmp = fobj.with_name(fobj.name + f'.tmp.{_os.getpid()}')
-    tmp.write_text(内容, encoding='utf-8')
-    _os.replace(tmp, fobj)
+    from 文件锁 import 写锁
+    with 写锁(str(fobj)):      # R03: 跨进程串行写
+        tmp = fobj.with_name(fobj.name + f'.tmp.{_os.getpid()}')
+        tmp.write_text(内容, encoding='utf-8')
+        _os.replace(tmp, fobj)

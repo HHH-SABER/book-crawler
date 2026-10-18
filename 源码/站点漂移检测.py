@@ -140,7 +140,8 @@ def report_task(domain: str, total: int, empty: int, short: int, failed: int,
     alarms = []
     drifted = False   # M9: 本次触发漂移告警时, 基线不被 EMA 吸收坏值
     try:
-        with _LOCK:
+        from 文件锁 import 写锁
+        with _LOCK, 写锁(_path()):     # R03: 读-改-写全程跨进程原子
             st = _load()
             base = st.get(domain)
             if base and base.get("样本数", 0) >= ALARM["最小样本"]:

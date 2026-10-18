@@ -170,9 +170,11 @@ def _save_state(st):
     """写域状态 (pathlib 锚定数据目录 + tmp 原子替换, 防路径穿越与写坏文件)"""
     p = Path(_log_dir()).resolve() / "域状态.json"
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + '.tmp')
-    tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(tmp, p)
+    from 文件锁 import 写锁
+    with 写锁(str(p)):       # R03: 跨进程串行写
+        tmp = p.with_name(p.name + '.tmp')
+        tmp.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, p)
     try:   # 回写缓存: 保存后无需再 parse (mtime 同步, 防自身写入被误判失效)
         _状态缓存["数据"], _状态缓存["mtime"] = dict(st), os.path.getmtime(p)
     except OSError:
