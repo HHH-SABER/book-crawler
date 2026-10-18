@@ -5109,7 +5109,7 @@ class NovelSpider:
                 # 这正是用户决定"该不该删这本书"最有用的一个数, 故取自实际文件
                 # 而不是想当然填 0 (复用断点续传同一计数器, 口径一致)。
                 try:
-                    _已抓 = self._count_written_chapters(output_file)
+                    _已抓 = self._count_written_chapters(_续读文件(output_file))
                 except Exception as _ce:
                     _已抓 = 0
                     _log.debug(f'裸 except 吞异常: {type(_ce).__name__}: {_ce}')
@@ -5132,7 +5132,7 @@ class NovelSpider:
         if resume:
             ck = self._load_checkpoint(output_file, catalog_url)
             if ck:
-                done = min(int(ck.get('completed', 0)), self._count_written_chapters(output_file))
+                done = min(int(ck.get('completed', 0)), self._count_written_chapters(_续读文件(output_file)))
                 if done >= total:
                     _log.info(f"[断点续传] 检查点显示上次已全部完成 ({done}/{total} 章)，从头重新抓取")
                     self._remove_checkpoint(output_file)
@@ -5172,6 +5172,21 @@ class NovelSpider:
         if start > 0:
             _log.info(f"[断点续传] 以追加模式写入: {output_file}")
 
+        # R04: start>0 (续传/无检查点回退) 且本轮 tmp 还没建 ⇒ 先把旧文件原样
+        # 搬进 tmp 再追加 —— 否则追加到空 tmp 后替换, 旧文件的前 start 章会丢
+        # (实测: 增量追加回归测试抓到旧第 1 章丢失)。搬入失败则退回直写正式文件
+        # (旧行为, 保留其已知风险) 并大声留痕。
+        _写入目标 = _抓取中tmp(output_file)
+        if start > 0 and not os.path.isfile(_写入目标) and os.path.isfile(output_file):
+            try:
+                import shutil
+                shutil.copyfile(output_file, _写入目标)
+                _log.info(f"[事务写] 续传: 旧文件已搬入临时写入目标, 从第 {start + 1} 章后继续追加")
+            except OSError as e:
+                _写入目标 = output_file
+                _log.info(f"[事务写] ⚠️ 旧文件搬入失败 ({e}), 本次退回直写正式文件 "
+                          f"(旧版截断风险仍在, 请留意): {output_file}")
+
         # 增量模式 + 从头重抓: open_mode='w' 会截断旧文件, 被增量跳过的章节
         # 必须把旧正文搬运进新文件, 否则 "截断 + 跳过不写入" = 旧正文全部丢失
         增量旧内容 = {}
@@ -5205,7 +5220,7 @@ class NovelSpider:
 
         failed = []
         try:
-            with Path(output_file).open(open_mode, encoding='utf-8') as f:
+            with Path(_写入目标).open(open_mode, encoding='utf-8') as f:
                 if threads > 1 and (total - start) > 1:
                     # ===== 并发抓取: 并行请求章节, 按章节顺序写入 =====
                     # 保证文件顺序和断点续传正确性; 抓取完成顺序无关紧要
@@ -5396,10 +5411,36 @@ class NovelSpider:
                                   total, failed, export_epub, 正常完成=False)
 
         self._remove_checkpoint(output_file)
+        # R04 事务写收口: 全部章节写完 → 原子替换正式文件
+        # (替换前旧完整书一直原样保留; 替换后 质检/一致性/epub/书架 路径全部照旧)
+        try:
+            if os.path.isfile(_抓取中tmp(output_file)):
+                from 爬取历史 import _原子替换
+                _原子替换(_抓取中tmp(output_file), output_file)
+                _log.info(f"[事务写] 全部章节完成, 已替换正式文件: {output_file}")
+        except OSError as e:
+            _log.info(f"[事务写] ⚠️ 替换正式文件失败 (tmp 保留, 可手动改名): "
+                      f"{e} → {_抓取中tmp(output_file)}")
         # M7: 收尾统计抽成 _收尾汇总 — 与提前返回路径 (用户停止/中断/解释器退出)
         # 共用同一份收尾逻辑, 保证健康度监控/风控聚合/历史刷盘全路径覆盖
         return self._收尾汇总(output_file, catalog_url, novel_title,
                               total, failed, export_epub, 正常完成=True)
+
+
+def _抓取中tmp(output_file: str) -> str:
+    """R04 事务写: 抓取期间的写入目标 = 正式名 + .抓取中.tmp。
+
+    全程写 tmp, 全部章节成功后 os.replace 回正式名 —— 重抓/续抓期间旧完整书
+    原样保留, 停止/失败旧文件不被截断 (进度在 tmp 里由检查点续传)。
+    """
+    return output_file + '.抓取中.tmp'
+
+
+def _续读文件(output_file: str) -> str:
+    """R04: 续传计数/断点判定应读的文件 —— 抓取中 tmp 优先 (存在即在读它),
+    否则正式名 (上一轮的完整书)。"""
+    t = _抓取中tmp(output_file)
+    return t if os.path.isfile(t) else output_file
 
 
 def _站点冷却秒(域名: str) -> float:
