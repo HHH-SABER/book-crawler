@@ -241,5 +241,81 @@ class Test流程逻辑(_隔离配置, unittest.TestCase):
         self.assertFalse(流程.确认删除(), '删除回调抛异常应返回 False 而不是冒泡')
 
 
+class Test网站重复提示(_隔离配置, unittest.TestCase):
+    """「添加新网站增加网站重复提示」回归 (2026-10-19 需求)。
+
+    纯逻辑 `检查网站重复` + 流程带出 '重复提示' + 弹窗常驻提示位。
+    """
+
+    def setUp(self):
+        super().setUp()
+        # 网站清单同样隔离 (NC_LEDGER_PATH → 临时文件), 绝不动真实清单
+        import 网站清单 as W
+        self._清单路径 = Path(tempfile.mkdtemp(prefix='重复提示_')) / '网站清单.txt'
+        os.environ[W._环境覆盖变量] = str(self._清单路径)
+        self.addCleanup(lambda: os.environ.pop(W._环境覆盖变量, None))
+
+    def _写清单(self, 行s):
+        self._清单路径.write_text('\n'.join(行s) + '\n', encoding='utf-8')
+
+    def test_域名已登记判重复并给说明(self):
+        import 网站清单 as W
+        from gui_components import 补址弹窗 as C
+        self._写清单([
+            'https://site-a.example.com/book/123/\tsite-a.example.com\t测试书甲',
+            'https://other.example.com/x/\tother.example.com\t别的书',
+        ])
+        检 = C.检查网站重复('https://site-a.example.com/book/123/index.html')
+        self.assertTrue(检['重复'], '已登记域名应判重复')
+        self.assertEqual(检['域名'], 'site-a.example.com')
+        self.assertIn('site-a.example.com', 检['说明'])
+        self.assertIn('测试书甲', 检['说明'])
+
+    def test_全新域名不重复(self):
+        from gui_components import 补址弹窗 as C
+        self._写清单(['https://site-a.example.com/book/123/\tsite-a.example.com\t测试书甲'])
+        检 = C.检查网站重复('https://brand-new.example.com/book/9/')
+        self.assertFalse(检['重复'])
+        self.assertEqual(检['说明'], '')
+
+    def test_空输入与坏网址不误报(self):
+        from gui_components import 补址弹窗 as C
+        for 值 in ('', '   ', 'not-a-url', 'http://'):
+            self.assertFalse(C.检查网站重复(值)['重复'], f'{值!r} 不应误报重复')
+
+    def test_大小写与www不敏感(self):
+        from gui_components import 补址弹窗 as C
+        self._写清单(['https://site-b.example.com/read/588165/\tsite-b.example.com\t示例书A'])
+        检 = C.检查网站重复('https://WWW.SITE-B.EXAMPLE.COM/read/999/')
+        self.assertTrue(检['重复'], '域名比较应大小写不敏感')
+
+    def test_尝试添加带出重复提示(self):
+        from gui_components import 补址弹窗 as C
+        self._写清单(['https://known.example.com/book/1/\tknown.example.com\t老书'])
+        流程 = C.补址流程('https://dead.com/book/1/', C.补址动作())
+        结果 = 流程.尝试添加('https://known.example.com/book/1/')
+        self.assertTrue(结果['可以'])
+        self.assertTrue(结果.get('重复提示'), '域名重复时结果应带人话提示')
+        self.assertIn('known.example.com', 结果['重复提示'])
+
+    def test_不重复时无提示(self):
+        from gui_components import 补址弹窗 as C
+        self._写清单(['https://known.example.com/book/1/\tknown.example.com\t老书'])
+        流程 = C.补址流程('https://dead.com/book/1/', C.补址动作())
+        结果 = 流程.尝试添加('https://fresh.example.com/book/2/')
+        self.assertTrue(结果['可以'])
+        self.assertEqual(结果.get('重复提示', ''), '')
+
+    def test_弹窗含重复提示位(self):
+        """结构契约: 对话框内容里必须有一个常驻的重复提示 Text (视图接线)。"""
+        import flet as ft
+        from gui_components import 补址弹窗 as C
+        import inspect
+        C.打开补址弹窗(_假页(), 目录URL='https://dead.com/book/1/', 标题='测试书')
+        源码 = inspect.getsource(C.打开补址弹窗)
+        self.assertIn('重复行', 源码, '弹窗应挂重复提示行')
+        self.assertIn('_刷新重复提示', 源码, '输入变化应触发重复检查')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

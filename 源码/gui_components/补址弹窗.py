@@ -23,6 +23,7 @@
 - `打开补址弹窗()` 只是视图，负责把流程挂到按钮上。
 """
 import logging
+from urllib.parse import urlsplit
 
 import flet as ft
 
@@ -35,6 +36,71 @@ _log = logging.getLogger('补址弹窗')
 场景_其他 = '其他'              # 目录无章节 / 站点临时不可达等"疑似"
 
 _文字色 = ft.Colors.ON_SURFACE
+
+
+def 检查网站重复(新网址: str) -> dict:
+    """新网址的**域名**是否已登记过 (纯逻辑, 不碰 Flet, 离线可测)。
+
+    需求 (2026-10-19): "添加新网站这里增加一个网站重复的提示" —— 死书补址
+    登记新网址时, 若该网站早已在 网站清单.txt / 站点配置.json 里登记过, 给
+    用户一句人话提示, 避免静默登记出重复站点。
+
+    Returns:
+        {'重复': bool, '域名': str, '说明': str}
+        说明只在重复时非空 (含该站已登记的用途, 给人看的);
+        输入为空/无法解析域名时 重复=False (不误报)。
+    """
+    网 = (新网址 or '').strip()
+    if not 网:
+        return {'重复': False, '域名': '', '说明': ''}
+    try:
+        域名 = (urlsplit(网).hostname or '').lower()
+    except Exception:
+        return {'重复': False, '域名': '', '说明': ''}
+    if not 域名:
+        return {'重复': False, '域名': '', '说明': ''}
+    if 域名.startswith('www.'):     # www 与非 www 视为同一网站 (同爬虫 取域名 规则)
+        域名 = 域名[4:]
+    已有 = []
+
+    # 查网站清单 (条目: 网址/网站名/小说名)
+    try:
+        import 网站清单
+        for 条目 in 网站清单.读取():
+            网址 = str(条目.get('网址', ''))
+            try:
+                条域名 = (urlsplit(网址).hostname or '').lower()
+            except Exception:
+                条域名 = ''
+            if 条域名.startswith('www.'):
+                条域名 = 条域名[4:]
+            if 条域名 == 域名:
+                书 = str(条目.get('小说名', '') or '').strip()
+                已有.append(书 or 网址)
+    except Exception:
+        pass    # 刻意静默: 清单读失败不该让补址流程崩, 只是少了重复提示
+
+    # 查站点配置 (已登记解析规则的站点)
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+        from _path_utils import resolve_data_file
+        配置路径 = resolve_data_file('站点配置.json',
+                                     copy_default_from_resource_if_missing=True)
+        配置 = _json.loads(_Path(配置路径).read_text(encoding='utf-8'))
+        if isinstance(配置, list):
+            for 站点 in 配置:
+                if isinstance(站点, dict) and str(站点.get('domain', '')).lower().removeprefix('www.') == 域名:
+                    已有.append('站点解析规则')
+    except Exception:
+        pass    # 刻意静默: 同上
+
+    if not 已有:
+        return {'重复': False, '域名': 域名, '说明': ''}
+    去重 = list(dict.fromkeys(x for x in 已有 if x))
+    摘要 = '、'.join(去重[:3]) + (f' 等 {len(去重)} 处' if len(去重) > 3 else '')
+    return {'重复': True, '域名': 域名,
+            '说明': f'该网站（{域名}）已登记过：{摘要} —— 仍可添加, 不会覆盖已有记录'}
 
 
 def 场景文案(场景: str, 标题: str, 类型: str = '', 原因: str = '') -> dict:
@@ -136,6 +202,7 @@ class 补址流程:
         self.场景 = 场景
         self.文案 = 场景文案(场景, 标题, 类型, 原因)
         self.已添加 = None          # 登记成功的网址
+        self.重复提示 = ''          # 域名重复时的人话提示 (空=不重复)
         self.已追问 = False         # 是否已进入"删除追问"阶段
         self.已删除 = False
         self.已忽略 = False
@@ -148,10 +215,13 @@ class 补址流程:
             {'可以': bool, '原因': str}
         """
         import 备用源
+        # 网站重复提示 (2026-10-19 需求): 域名早已登记过也放行, 但告知
+        _重复 = 检查网站重复(新网址)
         结果 = 备用源.添加备用源(self.目录URL, 新网址)
         if not 结果.get('可以'):
             _log.info(f"登记备用源被拒: {结果.get('原因')}")
             return {'可以': False, '原因': 结果.get('原因') or '登记失败'}
+        self.重复提示 = _重复.get('说明', '') if _重复.get('重复') else ''
         self.已添加 = (新网址 or '').strip()
         if self.动作.添加并重抓:
             try:
@@ -159,8 +229,9 @@ class 补址流程:
             except Exception as e:
                 _log.info(f"用新网址发起抓取失败: {type(e).__name__}: {e}")
                 return {'可以': True,
-                        '原因': f'备用源已登记, 但发起抓取失败: {type(e).__name__}'}
-        return {'可以': True, '原因': ''}
+                        '原因': f'备用源已登记, 但发起抓取失败: {type(e).__name__}',
+                        '重复提示': self.重复提示}
+        return {'可以': True, '原因': '', '重复提示': self.重复提示}
 
     # ---- 第一步 → 第二步 ----
     def 没有新网站(self) -> dict:
@@ -243,11 +314,30 @@ def 打开补址弹窗(page, *, 目录URL: str, 标题: str = '', 场景: str = 
         text_style=ft.TextStyle(size=SIZE_SMALL, font_family=FONT_STACK, color=_文字色),
         dense=True, autofocus=True,
     )
+    # 网站重复提示位 (2026-10-19 需求): 边输边判, 命中即显示, 不拦截添加
+    重复行 = ft.Text('', size=SIZE_LABEL, font_family=FONT_STACK,
+                   color=ft.Colors.ORANGE, visible=False)
+
+    def _刷新重复提示(_e=None):
+        try:
+            检 = 检查网站重复(地址框.value or '')
+        except Exception as e:
+            _log.debug(f"重复检查失败: {type(e).__name__}: {e}")
+            return
+        重复行.value = f'⚠️ {检["说明"]}' if 检.get('重复') else ''
+        重复行.visible = bool(检.get('重复'))
+        try:
+            重复行.update()
+        except Exception as e:
+            _log.debug(f"重复提示行刷新失败: {type(e).__name__}: {e}")
+
+    地址框.on_change = _刷新重复提示
     对话框 = ft.AlertDialog(modal=True)
     对话框.title = ft.Text(流程.文案['标题'], color=_文字色, font_family=FONT_STACK)
     对话框.content = ft.Column([
         ft.Text(流程.文案['正文'], size=SIZE_SMALL, font_family=FONT_STACK, color=_文字色),
         地址框,
+        重复行,
         ft.Text("提示: 登记后主源失败会自动切换到备用源；不填则进入删除确认。",
                 size=SIZE_LABEL, font_family=FONT_STACK, color=_文字色),
     ], tight=True, spacing=10)
@@ -258,7 +348,8 @@ def 打开补址弹窗(page, *, 目录URL: str, 标题: str = '', 场景: str = 
             _提示栏(f"⚠️ {结果['原因']}")
             return          # 保持弹窗, 让用户改网址
         _关(对话框)
-        _提示栏(f"✅ 已登记备用源, 正在用新网址抓取:\n{流程.已添加}")
+        _提示栏(f"✅ 已登记备用源, 正在用新网址抓取:\n{流程.已添加}"
+                + (f"\n⚠️ {结果.get('重复提示', '')}" if 结果.get('重复提示') else ''))
         if 结果['原因']:
             _提示栏(f"⚠️ {结果['原因']}")
 
