@@ -152,6 +152,15 @@ def _要求token(k: Optional[str] = None,
         raise HTTPException(status_code=403, detail='token 无效')
 
 
+def _记心跳(request: Request) -> None:
+    """插件每次调接口都留下在线证据 (GUI 状态行走它判断已连接)。"""
+    try:
+        from 插件安装 import 记心跳
+        记心跳(来源=str(getattr(getattr(request, 'client', None), 'host', '') or ''))
+    except Exception:
+        pass    # 刻意静默: 心跳失败不影响接口本身
+
+
 def _要求本机(request: Request) -> None:
     """仅 127.0.0.1/::1 可调用 (手机远控不受影响: 它走的是 /api/v1/tasks)。"""
     客户端 = getattr(getattr(request, 'client', None), 'host', '') or ''
@@ -163,6 +172,7 @@ def _要求本机(request: Request) -> None:
 def ext_ping(request: Request, k: Optional[str] = None,
              authorization: Optional[str] = Header(default=None)):
     _要求token(k, authorization)
+    _记心跳(request)
     _要求本机(request)
     return {'ok': True, 'service': '小说爬虫·凭据中继', 'version': 1,
             'cookies_path': 库路径(), 'whitelist': 取白名单()}
@@ -172,6 +182,7 @@ def ext_ping(request: Request, k: Optional[str] = None,
 def ext_get_whitelist(request: Request, k: Optional[str] = None,
                       authorization: Optional[str] = Header(default=None)):
     _要求token(k, authorization)
+    _记心跳(request)
     _要求本机(request)
     return {'domains': 取白名单()}
 
@@ -180,6 +191,7 @@ def ext_get_whitelist(request: Request, k: Optional[str] = None,
 def ext_set_whitelist(request: Request, payload: dict, k: Optional[str] = None,
                       authorization: Optional[str] = Header(default=None)):
     _要求token(k, authorization)
+    _记心跳(request)
     _要求本机(request)
     域s = payload.get('domains') if isinstance(payload, dict) else None
     if not isinstance(域s, list):
@@ -200,6 +212,7 @@ def ext_push_cookies(request: Request, payload: dict, k: Optional[str] = None,
      或   {'domain': ..., 'cookie_string': 'a=1; b=2'}
     """
     _要求token(k, authorization)
+    _记心跳(request)
     _要求本机(request)
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail='请求体必须是 JSON 对象')
