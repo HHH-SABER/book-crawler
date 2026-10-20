@@ -285,7 +285,7 @@ class DetailDrawer:
         # 注意: 这里不做淡出 —— 两个视图同在 Column 里, 淡出的那个仍占位。
         进场目标 = self._detail_view if self._view == "detail" else self._preview_view
         try:
-            ui_motion.进场(进场目标, ui_motion.MOTION_中)
+            ui_motion.进场(进场目标, ui_motion.MOTION_中, self.page)
         except Exception as _e:
             _dbg("详情面板", f'视图切换动效失败(已降级): {type(_e).__name__}')
         self._title_text.value = {"detail": "任务详情", "preview": "文件预览"}[self._view]

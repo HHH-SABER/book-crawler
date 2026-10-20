@@ -546,7 +546,7 @@ def main(page: ft.Page):
         for k, p in pages_map.items():
             if k == key:
                 p.visible = True
-                ui_motion.进场(p, ui_motion.MOTION_中)
+                ui_motion.进场(p, ui_motion.MOTION_中, page)
             else:
                 p.visible = False
                 ui_motion.复位(p)

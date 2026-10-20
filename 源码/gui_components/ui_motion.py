@@ -34,6 +34,8 @@ ui_tokens 是**纯数据 + 取色** (其 docstring 明写"设计稿的唯一真�
 3. **先改数据、再挂动画**: 控件若随后被 `visible=False`, 淡出会残留在
    Stack 里挡住点击 —— 本项目页面切换只做"目标页淡入", 不做淡出。
 """
+import asyncio
+
 import flet as ft
 
 # ---- 时长三档 (毫秒) ----
@@ -73,31 +75,65 @@ def 动画(时长: int = MOTION_中):
     return ft.Animation(duration=时长, curve=_曲线)
 
 
-def 进场(控件, 时长: int = MOTION_中) -> bool:
-    """给控件挂「淡入 + 轻微上移」进场动效 (原地改属性, **不触发 update**)。
+def 进场(控件, 时长: int = MOTION_中, page=None) -> bool:
+    """给控件挂「淡入 + 轻微上移」进场动效 (0.86 两段式, 不阻塞调用方)。
 
-    符合项目硬约定: 禁 page.update(), 由调用方决定刷不刷。
+    ⚠️ 0.86 语义 (2026-10-20 实测踩坑):
+    `animate_opacity` / `animate_offset` 接受的是 **AnimationValue**
+    (`True` | `int` 毫秒 | `Animation`) —— 表示"该属性**后续变化**时播放
+    动画", **不是目标值**。旧写法把 `1.0`(double) 和 `Offset` 对象直接塞给
+    它们, 客户端解析时对 double 取 `['duration']` 抛
+    `NoSuchMethodError: Class 'double' has no instance method '[]'`,
+    整个 patch 失败 —— 轻则面板空白 (抽屉/实时日志), 重则整页不可见
+    (控件停在 opacity=0, 即用户看到的"灰屏"; 2026-10-18 灰页同根因)。
 
-    返回 True=已挂上动效; False=未挂 (动效关闭 / 控件不支持)。
-    False 时控件保证是**完全可见**的, 不会停在 opacity=0。
+    正确做法分两步, 中间隔一次 update, 客户端才会补间:
+      ① 先落起点 (opacity=0, offset=起位) —— 随调用方那次 update 刷出;
+      ② 一帧后挂动画并改终点 (opacity=1, offset=归位) —— 变化触发补间。
+    任何一步失败都把 opacity 复位成 1 (硬约定: 绝不让控件停在不可见状态)。
+    page 缺失 / run_task 不可用 ⇒ 退回无动效直显 (可见性优先于动效)。
+
+    返回 True=已挂上动效; False=未挂 (动效关闭/降级), 此时控件保证完全可见。
     """
     动 = 动画(时长)
     if 动 is None:
         return False
     try:
+        # 先确保终点态干净 (清异常路径可能残留的隐形状态)
+        控件.opacity = 1.0
+        控件.offset = _终位
+        if page is None:
+            return False          # 无 page 无法二段式: 直显 (可见性优先)
+        # ① 起点 (随调用方的 update 刷出去)
         控件.opacity = 0.0
         控件.offset = _起位
-        控件.animate_opacity = 1.0
-        控件.animate_offset = _终位
-        控件.animate = 动
+
+        async def _二阶段():
+            try:
+                await asyncio.sleep(0.016)      # 等一帧, 让起点先渲染
+                控件.animate_opacity = 动       # AnimationValue: Animation 对象
+                控件.animate_offset = 动
+                控件.opacity = 1.0              # 终点: 本次变化触发补间
+                控件.offset = _终位
+                page.update()
+            except Exception as e:
+                _debug(f'进场二阶段失败, 复位为可见: {type(e).__name__}: {e}')
+                try:
+                    控件.opacity = 1.0
+                    控件.offset = _终位
+                    page.update()
+                except Exception:
+                    pass    # 刻意静默: 复位也失败只能等调用方下次 update 兜底
+
+        page.run_task(_二阶段)
         return True
     except Exception as e:
-        _debug(f'进场动效挂载失败, 已降级为直接可见: {type(e).__name__}')
+        _debug(f'进场动效挂载失败, 已降级为直接可见: {type(e).__name__}: {e}')
         try:
             控件.opacity = 1.0        # 复位: 绝不让控件停在不可见状态
-        except Exception as e2:
-            # 复位也失败 ⇒ 控件可能停在 opacity=0, 必须留痕 (这是真事故)
-            _debug(f'⚠️ 复位失败, 控件可能不可见: {type(e2).__name__}: {e2}')
+            控件.offset = _终位
+        except Exception:
+            pass    # 刻意静默: 复位失败无进一步补救, 由调用方 update 兜底
         return False
 
 
