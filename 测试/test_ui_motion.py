@@ -63,37 +63,83 @@ class Test动效令牌(unittest.TestCase):
             self.assertIsNone(M.动画(M.MOTION_慢))
 
 
+class _假页:
+    """最小 page 替身: 捕获 run_task 的协程供测试驱动二阶段。"""
+
+    def __init__(self):
+        self.协程 = None
+        self.更新次数 = 0
+
+    def run_task(self, handler, *args, **kwargs):
+        import asyncio
+        self.协程 = handler(*args, **kwargs)   # 拿协程对象 (未 await)
+        return None
+
+    def update(self):
+        self.更新次数 += 1
+
+    def 跑完二阶段(self):
+        import asyncio
+        assert self.协程 is not None, '二阶段协程未注册'
+        asyncio.run(self.协程)
+
+
 class Test进场(unittest.TestCase):
 
-    def test_进场挂上属性(self):
+    def test_二段式_起点与终点(self):
+        """0.86 两段式: 先落起点, 协程里挂动画改终点 (2026-10-20 修复)"""
         c = ft.Container(content=ft.Text('x'))
-        self.assertTrue(M.进场(c))
-        self.assertEqual(c.opacity, 0.0)            # 起点透明
-        self.assertEqual(c.animate_opacity, 1.0)    # 终点全不透明
+        页 = _假页()
+        self.assertTrue(M.进场(c, page=页))
+        # ① 起点 (随调用方 update 刷出)
+        self.assertEqual(c.opacity, 0.0)
         self.assertEqual(c.offset.y, M.MOTION_进场上移)
-        self.assertEqual(c.animate_offset.y, 0.0)   # 终点回到原位
-        self.assertIsNotNone(c.animate)
-        self.assertEqual(c.animate.duration, M.MOTION_中)
+        # ② 跑二阶段: 挂动画 + 终点
+        页.跑完二阶段()
+        self.assertEqual(c.opacity, 1.0, '二阶段必须回到全不透明 (可见性)')
+        self.assertEqual(c.offset.y, 0.0)
 
-    def test_进场_时长可指定(self):
+    def test_上线属性类型必须合法(self):
+        """🔴 今日 bug 的护栏: animate_opacity/animate_offset 上线类型。
+
+        0.86 的 AnimationValue = True | int 毫秒 | Animation —— 传 double 或
+        Offset 对象会让客户端解析抛 NoSuchMethodError, 整个 patch 失败
+        (2026-10-20 实测: 抽屉/日志面板空白 + 每秒客户端错误)。
+        """
         c = ft.Container(content=ft.Text('x'))
-        M.进场(c, M.MOTION_慢)
-        self.assertEqual(c.animate.duration, M.MOTION_慢)
+        页 = _假页()
+        M.进场(c, page=页)
+        页.跑完二阶段()
+        for 名 in ('animate_opacity', 'animate_offset'):
+            值 = getattr(c, 名)
+            self.assertIsInstance(值, ft.Animation,
+                                 f'{名} 必须是 Animation 对象, 实得 {type(值).__name__}')
+        self.assertEqual(c.animate_opacity.duration, M.MOTION_中)
+
+    def test_时长可指定(self):
+        c = ft.Container(content=ft.Text('x'))
+        页 = _假页()
+        M.进场(c, M.MOTION_慢, page=页)
+        页.跑完二阶段()
+        self.assertEqual(c.animate_opacity.duration, M.MOTION_慢)
+
+    def test_无page时直显不隐形(self):
+        """拿不到 page ⇒ 无法二段式 ⇒ 必须直显 (可见性优先于动效)"""
+        c = ft.Container(content=ft.Text('x'))
+        self.assertFalse(M.进场(c))
+        self.assertEqual(c.opacity, 1.0, '无 page 必须保持可见')
 
     def test_动效关闭时不碰控件(self):
         """关掉动效 ⇒ 完全不设 opacity (保持原样), 硬切行为与改动前一致"""
         c = ft.Container(content=ft.Text('x'))
         with _关动效():
-            self.assertFalse(M.进场(c))
+            self.assertFalse(M.进场(c, page=_假页()))
         self.assertEqual(c.opacity, 1.0)            # Container 默认全不透明
-        self.assertIsNone(c.animate)
 
-    def test_降级_控件不支持动画属性则复位为可见(self):
-        """🔴 最关键的一条: 动效失败绝不能让控件停在 opacity=0 (界面少一块)"""
+    def test_降级_控件完全不支持动画属性则保持可见(self):
+        """🔴 硬约定: 动效失败绝不能让控件停在 opacity=0 (界面少一块)"""
         class _只认内容:
-            # ⚠️ 必须带 __slots__ —— 否则 Python 允许动态赋值
-            # `坏.opacity = 0.0` 会静默成功, 根本走不到降级分支,
-            # 这条用例就失去意义了 (2026-10-14 踩过)
+            # ⚠️ 必须带 __slots__ —— 否则动态赋值会静默成功, 走不到降级分支
             __slots__ = ('content', 'visible')
 
             def __init__(self):
@@ -101,31 +147,49 @@ class Test进场(unittest.TestCase):
                 self.visible = True
 
         坏 = _只认内容()
-        self.assertFalse(M.进场(坏))                # 设 opacity 即抛 AttributeError
+        self.assertFalse(M.进场(坏, page=_假页()))   # 设 opacity 即抛 AttributeError
         self.assertFalse(hasattr(坏, 'opacity'), '本测试桩不该有 opacity 属性')
         self.assertTrue(坏.visible, '控件仍应可见')
 
-    def test_降级_半路失败也要复位(self):
-        """opacity 设成功、animate 属性抛错时, 必须把 opacity 拉回 1.0"""
-        class _半残:
+    def test_降级_一段失败即复位可见(self):
+        """起点设置炸了 ⇒ 外层兜底把 opacity 拉回 1.0 (绝不隐形)"""
+        class _offset炸:
             visible = True
-            offset = None
-            animate_opacity = None
+
+            @property
+            def offset(self):
+                return None
+
+            @offset.setter
+            def offset(self, v):
+                raise AttributeError('不支持 offset')
+
+        控件 = _offset炸()
+        self.assertFalse(M.进场(控件, page=_假页()))
+        self.assertEqual(控件.opacity, 1.0, '失败路径必须把 opacity 复位成 1')
+
+    def test_降级_二段失败也复位可见(self):
+        """协程里挂动画炸了 ⇒ 协程内兜底同样把 opacity 拉回 1.0"""
+        class _动画属性炸:
+            visible = True
 
             def __init__(self):
                 self.opacity = None
+                self.offset = None
 
             @property
-            def animate(self):
-                raise AttributeError('不支持 animate')
+            def animate_opacity(self):
+                return None
 
-            @animate.setter
-            def animate(self, v):
-                raise AttributeError('不支持 animate')
+            @animate_opacity.setter
+            def animate_opacity(self, v):
+                raise AttributeError('不支持 animate_opacity')
 
-        控件 = _半残()
-        self.assertFalse(M.进场(控件))
-        self.assertEqual(控件.opacity, 1.0, '必须在失败路径把 opacity 复位成 1')
+        控件 = _动画属性炸()
+        页 = _假页()
+        M.进场(控件, page=页)
+        页.跑完二阶段()                # 协程内抛错 → 兜底复位
+        self.assertEqual(控件.opacity, 1.0, '二段失败也必须复位可见')
 
     def test_复位幂等(self):
         c = ft.Container(content=ft.Text('x'))
