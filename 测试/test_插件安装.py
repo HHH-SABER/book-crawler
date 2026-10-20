@@ -83,6 +83,37 @@ class Test安装(unittest.TestCase):
         self.assertFalse(I.打开扩展页('firefox')['ok'])
 
 
+class Test打开扩展页(unittest.TestCase):
+    """2026-10-20 用户实测"点了没反应"的修复: 禁止命令行开 chrome:// (M76+),
+    改为 唤起浏览器 + 地址进剪贴板。"""
+
+    def test_返回粘贴提示且复制成功(self):
+        with mock.patch.object(I, '_浏览器exe', return_value='C:/fake/chrome.exe'), \
+                mock.patch.object(I, '_复制剪贴板', return_value=True), \
+                mock.patch.object(I.subprocess, 'Popen'):
+            r = I.打开扩展页('chrome')
+        self.assertTrue(r['ok'])
+        self.assertTrue(r['已复制'])
+        self.assertIn('chrome://extensions', r['提示'])
+        self.assertIn('Ctrl+V', r['提示'])
+
+    def test_剪贴板失败也给出手输地址(self):
+        with mock.patch.object(I, '_浏览器exe', return_value='C:/fake/msedge.exe'), \
+                mock.patch.object(I, '_复制剪贴板', return_value=False), \
+                mock.patch.object(I.subprocess, 'Popen'):
+            r = I.打开扩展页('edge')
+        self.assertFalse(r['已复制'])
+        self.assertIn('edge://extensions', r['提示'])
+
+    def test_浏览器未装时原因带地址(self):
+        with mock.patch.object(I, '_浏览器exe', return_value=None), \
+                mock.patch.object(I, '_复制剪贴板', return_value=True):
+            r = I.打开扩展页('chrome')
+        self.assertFalse(r['ok'])
+        self.assertIn('没找到', r['原因'])
+        self.assertIn('chrome://extensions', r['提示'])
+
+
 class Test心跳(unittest.TestCase):
 
     def setUp(self):
@@ -119,9 +150,11 @@ class Test扫描(unittest.TestCase):
         with mock.patch.object(I, '_浏览器exe', side_effect=假exe), \
                 mock.patch.object(I, '_文件版本', return_value='141.0.7390.55'):
             项s = I.扫描()
-        self.assertEqual([x['浏览器'] for x in 项s], ['chrome', 'edge', 'firefox'],
+        self.assertEqual([x['浏览器'] for x in 项s],
+                         ['chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'firefox'],
                          '已装且支持的排最前')
-        c, e, f = 项s
+        c, e = 项s[0], 项s[1]
+        f = 项s[-1]
         self.assertTrue(c['已安装'] and c['支持'])
         self.assertEqual(c['版本'], '141.0.7390.55')
         self.assertFalse(e['已安装'])
@@ -142,7 +175,7 @@ class Test扫描(unittest.TestCase):
         with mock.patch.object(I, '_浏览器exe', return_value=None):
             项s = I.扫描()
         self.assertTrue(all(not x['已安装'] for x in 项s))
-        self.assertEqual(len(项s), 3, '未装也要列出 (供明确提示)')
+        self.assertEqual(len(项s), 7, '未装也要列出 (供明确提示)')
 
 
 class Test双版本产物(unittest.TestCase):
