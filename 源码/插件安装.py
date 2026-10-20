@@ -23,14 +23,24 @@ import 日志 as _app_log
 
 _log = _app_log.get('插件安装')
 
-_支持 = ('chrome', 'edge')
-_浏览器名 = {'chrome': 'Chrome', 'edge': 'Edge'}
-_扩展页 = {'chrome': 'chrome://extensions', 'edge': 'edge://extensions'}
+# 支持集 = Chromium 内核浏览器 (MV3 插件通用); firefox 仅探测供"不支持"明示
+_支持 = ('chrome', 'edge', 'brave', 'vivaldi', '360', 'qq')
+_浏览器名 = {'chrome': 'Chrome', 'edge': 'Edge', 'brave': 'Brave',
+          'vivaldi': 'Vivaldi', '360': '360极速浏览器', 'qq': 'QQ浏览器'}
+_扩展页 = {'chrome': 'chrome://extensions', 'edge': 'edge://extensions',
+          'brave': 'brave://extensions', 'vivaldi': 'vivaldi://extensions',
+          '360': 'chrome://extensions', 'qq': 'chrome://extensions'}
 # 扫描探测表 (2026-10-20 需求: 先扫描本机浏览器再让用户选择)
-_探测键 = {'chrome': 'chrome.exe', 'edge': 'msedge.exe', 'firefox': 'firefox.exe'}
+_探测键 = {'chrome': 'chrome.exe', 'edge': 'msedge.exe', 'firefox': 'firefox.exe',
+          'brave': 'brave.exe', 'vivaldi': 'vivaldi.exe',
+          '360': '360chrome.exe', 'qq': 'QQBrowser.exe'}
 _展示名 = {'chrome': 'Google Chrome', 'edge': 'Microsoft Edge',
-          'firefox': 'Mozilla Firefox'}
-_不支持原因 = {'firefox': 'Firefox 非 Chromium 内核，本插件仅支持 Chrome / Edge'}
+          'firefox': 'Mozilla Firefox', 'brave': 'Brave',
+          'vivaldi': 'Vivaldi', '360': '360 极速浏览器', 'qq': 'QQ 浏览器'}
+_不支持原因 = {
+    'firefox': 'Firefox 非 Chromium 内核，本插件仅支持 Chromium 系浏览器',
+}
+_排序 = ('chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'firefox')
 
 _心跳新鲜秒 = 360          # 插件每 5 分钟自动同步一次, 6 分钟内算"已连接"
 
@@ -100,7 +110,7 @@ def 安装(浏览器: str) -> dict:
     return {
         'ok': True, '目录': str(目标), '浏览器': _浏览器名[浏览器], '原因': '',
         '步骤': [
-            f'1. 在打开的 {_浏览器名[浏览器]} 扩展页, 打开右上角「开发者模式」',
+            '1. 切到浏览器, 地址栏 Ctrl+V 粘贴扩展页地址后回车, 打开右上角「开发者模式」',
             '2. 点「加载已解压的扩展程序」',
             f'3. 粘贴并选择目录:  {目标}',
             '4. 点插件图标, 填入端口(8760)与 token (远控页可复制), 点「保存设置并测试连通」',
@@ -137,12 +147,27 @@ def _浏览器exe(浏览器: str) -> Optional[str]:
                        r'C://Program Files\Microsoft\Edge\Application\msedge.exe'],
         'firefox.exe': [r'C://Program Files\Mozilla Firefox\firefox.exe',
                         r'C://Program Files (x86)\Mozilla Firefox\firefox.exe'],
+        'brave.exe': [r'C://Program Files\BraveSoftware\Brave-Browser\Application\brave.exe'],
+        'vivaldi.exe': [r'C://Program Files\Vivaldi\Application\vivaldi.exe',
+                        r'C://Program Files (x86)\Vivaldi\Application\vivaldi.exe'],
+        '360chrome.exe': [r'C://Program Files (x86)\360\360Chrome\Chrome\Application\360chrome.exe',
+                          r'C://Program Files\360\360Chrome\Chrome\Application\360chrome.exe'],
+        'QQBrowser.exe': [r'C://Program Files (x86)\Tencent\QQBrowser\Application\QQBrowser.exe',
+                          r'C://Program Files\Tencent\QQBrowser\Application\QQBrowser.exe'],
     }
     常见 = list(_常见表.get(exe名, []))
     本地 = os.environ.get('LOCALAPPDATA', '')
-    if 本地 and exe名 in ('chrome.exe', 'msedge.exe'):
-        常见.append(os.path.join(本地, 'Google', 'Chrome', 'Application', 'chrome.exe'))
-        常见.append(os.path.join(本地, 'Microsoft', 'Edge', 'Application', 'msedge.exe'))
+    _用户级 = {
+        'chrome.exe': ['Google/Chrome/Application/chrome.exe'],
+        'msedge.exe': ['Microsoft/Edge/Application/msedge.exe'],
+        'brave.exe': ['BraveSoftware/Brave-Browser/Application/brave.exe'],
+        'vivaldi.exe': ['Vivaldi/Application/vivaldi.exe'],
+        '360chrome.exe': ['360Chrome/Chrome/Application/360chrome.exe'],
+        'QQBrowser.exe': ['Tencent/QQBrowser/Application/QQBrowser.exe'],
+    }
+    if 本地:
+        for 相对 in _用户级.get(exe名, []):
+            常见.append(os.path.join(本地, *相对.split('/')))
     for p in 常见:
         if p and os.path.isfile(p):
             return p
@@ -184,7 +209,7 @@ def 扫描() -> list:
     "扫描、列表、选择、安装" 四个环节的入口都靠这份数据。
     """
     结果 = []
-    for 键 in ('chrome', 'edge', 'firefox'):
+    for 键 in _排序:
         exe = _浏览器exe(键)
         支持 = 键 in _支持
         结果.append({
@@ -198,25 +223,62 @@ def 扫描() -> list:
         })
     结果.sort(key=lambda x: (not (x['已安装'] and x['支持']),      # 已装且支持优先
                              not x['支持'],                        # 支持优先于不支持
-                             ('chrome', 'edge', 'firefox').index(x['浏览器'])))
+                             _排序.index(x['浏览器'])))
     return 结果
 
 
+def _复制剪贴板(文本: str) -> bool:
+    """把文本放进系统剪贴板 (PowerShell → tkinter 双路兜底)。"""
+    try:
+        subprocess.run(
+            ['powershell', '-NoProfile', '-Command', 'Set-Clipboard -Value $env:NC_CLIP'],
+            env={**os.environ, 'NC_CLIP': 文本}, timeout=10,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return True
+    except Exception:
+        pass    # 刻意静默: 降级到 tkinter
+    try:
+        import tkinter
+        r = tkinter.Tk()
+        r.withdraw()
+        r.clipboard_clear()
+        r.clipboard_append(文本)
+        r.update()
+        r.destroy()
+        return True
+    except Exception:
+        return False
+
+
 def 打开扩展页(浏览器: str) -> dict:
-    """打开该浏览器的扩展管理页 (装完复制件后引导用户加载)。"""
+    """唤起浏览器 + 把**扩展页地址复制到剪贴板** (装完复制件后引导用户加载)。
+
+    ⚠️ 为什么不是直接用命令行打开扩展页 (2026-10-20 用户实测"点了没反应"):
+    Chromium 自 M76 起**禁止命令行传入 chrome:// 地址** (安全策略) —— 浏览器
+    已在运行时, 参数被转发给现有实例后直接忽略, 用户什么都看不到。可靠路径:
+    ① 启动/唤起浏览器; ② 地址已在剪贴板; ③ 用户 Ctrl+L → Ctrl+V → 回车,
+    一次粘贴就落在扩展页, 再点「加载已解压」。
+
+    Returns: {ok, 原因, 已复制, 提示}
+    """
     浏览器 = (浏览器 or '').lower()
     if 浏览器 not in _支持:
-        return {'ok': False, '原因': f'不支持的浏览器: {浏览器}'}
+        return {'ok': False, '原因': f'不支持的浏览器: {浏览器}', '已复制': False, '提示': ''}
+    名 = _浏览器名[浏览器]
+    网址 = _扩展页[浏览器]
+    已复制 = _复制剪贴板(网址)
+    粘贴提示 = (f'扩展页地址已复制到剪贴板：{网址}\n切到浏览器按 Ctrl+L 再 Ctrl+V 回车即可打开。'
+              if 已复制 else f'请在浏览器地址栏输入：{网址}')
     exe = _浏览器exe(浏览器)
     if not exe:
-        return {'ok': False,
-                '原因': f'没找到 {_浏览器名[浏览器]} 主程序 (未安装?) —— 可手动打开 {_扩展页[浏览器]}'}
+        return {'ok': False, '原因': f'没找到 {名} 主程序（未安装？）', '已复制': 已复制,
+                '提示': 粘贴提示}
     try:
-        subprocess.Popen([exe, _扩展页[浏览器]],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return {'ok': True, '原因': ''}
+        subprocess.Popen([exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError as e:
-        return {'ok': False, '原因': f'启动失败: {e}'}
+        return {'ok': False, '原因': f'启动 {名} 失败: {e}', '已复制': 已复制, '提示': 粘贴提示}
+    return {'ok': True, '原因': '', '已复制': 已复制, '提示': 粘贴提示}
 
 
 def 心跳路径() -> str:

@@ -100,7 +100,8 @@ def 打开插件安装弹窗(page) -> ft.AlertDialog:
         else:
             打开 = 插件安装.打开扩展页(浏览器)
             结果行.value = (f'✅ {结果["浏览器"]} 版已复制到本机'
-                          + ('' if 打开.get('ok') else f'（{打开.get("原因", "")}）'))
+                          + ('' if 打开.get('ok') else f'（{打开.get("原因", "")}）')
+                          + ('\n' + 打开.get('提示', '') if 打开.get('提示') else ''))
             步骤区.controls.extend(
                 ft.Text(s, size=SIZE_LABEL, font_family=FONT_STACK, color=_文字色)
                 for s in 结果.get('步骤', []))
