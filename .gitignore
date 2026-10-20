@@ -1,3 +1,7 @@
+# 跨进程文件锁 (R03) 的运行期锁文件 — 不是源码
+*.process.lock
+*.lock.tmp
+
 # ============ Python ============
 __pycache__/
 *.py[cod]
