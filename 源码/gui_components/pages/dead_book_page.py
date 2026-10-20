@@ -507,6 +507,7 @@ class DeadBookPage:
                 else 补址弹窗.场景_其他)
         动作 = 补址弹窗.补址动作(
             添加并重抓=lambda _新址: self._重新检测(键, 网址, 书名),
+            重新检测=lambda: self._重新检测(键, 网址, 书名),
             删除记录=lambda: self._执行删除(键, 网址, 书名),
             忽略记录=lambda: self._设状态(键, 死书处理.状态_已忽略),
         )
