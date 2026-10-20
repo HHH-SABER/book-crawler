@@ -31,6 +31,20 @@ class Test判定死书(unittest.TestCase):
         self.assertFalse(r['可询问删除'], '站点不可达不得询问删除 (删了可惜)')
         self.assertTrue(r['原因'])
 
+    def test_WAF拦截页标题判站点不可达(self):
+        """🔴 2026-10-20 用户实测回归: washai 风控页标题《WAF 安全防御系统》
+        被 0 章节判定当成书名, 误走"书已删除"删除流程 —— 本质是站点风控,
+        应判 站点不可达 (不可询问删除)。"""
+        for 书名 in ('WAF 安全防御系统', 'waf 安全防御系统'):
+            r = D.判定死书(页面为空=False, 书名=书名, 章节数=0)
+            self.assertEqual(r['类型'], D.类型_站点不可达, f'书名={书名!r}')
+            self.assertFalse(r['可询问删除'], 'WAF 拦截绝不诱导删书')
+
+    def test_书名含防火墙不误伤真实书名(self):
+        """特征短语收窄纪律: '防火墙' 可能是真实书名的一部分, 不得入表"""
+        r = D.判定死书(页面为空=False, 书名='穿墙防火墙', 章节数=0)
+        self.assertNotEqual(r['类型'], D.类型_站点不可达)
+
     def test_书名退化判书已删除(self):
         for 书名 in D.书名退化集合:
             r = D.判定死书(页面为空=False, 书名=书名, 章节数=0)

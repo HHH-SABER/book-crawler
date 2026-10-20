@@ -50,6 +50,10 @@ _log = _app_log.get('死书处理')
     'bad gateway', 'gateway time-out', 'gateway timeout',
     'service unavailable', 'temporarily unavailable',
     'internal server error', 'server error', 'web server is down',
+    # WAF 拦截页 (2026-10-20 用户实测: washai 风控页被当成书名《WAF 安全防御
+    # 系统》, 0 章节 → 误走死书删除流程。本质是站点风控临时拦截, 不是书死了。
+    # 短语收窄到完整 WAF 文案, 不收 '防火墙' 等可能撞真实书名的词)
+    'waf 安全防御', '安全防御系统',
 )
 
 
