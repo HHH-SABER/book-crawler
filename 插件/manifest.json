@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "小说爬虫 · 凭据中继",
+  "version": "1.0.0",
+  "description": "把当前网站的登录 Cookie 推送给本机小说爬虫（仅限你明确添加的白名单站点）",
+  "permissions": ["cookies", "storage", "tabs", "alarms"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "小说爬虫 · 凭据中继" }
+}

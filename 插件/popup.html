@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 320px; margin: 0; padding: 14px; font: 13px/1.6 -apple-system, "Segoe UI", sans-serif; color: #2c2c2a; background: #fff; }
+    h1 { font-size: 14px; font-weight: 500; margin: 0 0 2px; }
+    .sub { color: #888780; font-size: 11px; margin-bottom: 12px; }
+    .row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .row label { width: 52px; color: #5f5e5a; font-size: 12px; }
+    input { flex: 1; padding: 5px 8px; border: 1px solid #d3d1c7; border-radius: 6px; font: inherit; }
+    button { padding: 7px 10px; border: 1px solid #d3d1c7; border-radius: 6px; background: #f1efe8; font: inherit; cursor: pointer; }
+    button.primary { background: #1d9e75; border-color: #1d9e75; color: #fff; }
+    button.wide { width: 100%; margin-top: 2px; }
+    .domain { background: #f1efe8; border-radius: 6px; padding: 6px 8px; font-size: 12px; word-break: break-all; margin-bottom: 8px; }
+    .status { margin-top: 10px; font-size: 12px; min-height: 18px; }
+    .ok { color: #1d9e75; } .err { color: #a32d2d; }
+    .divider { border-top: 1px solid #e8e6df; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>小说爬虫 · 凭据中继</h1>
+  <div class="sub">把当前站点的登录 Cookie 推给本机爬虫（仅白名单站点）</div>
+
+  <div class="domain" id="domain">读取中…</div>
+  <button class="primary wide" id="push">推送当前站 Cookie</button>
+  <button class="wide" id="add" style="margin-top:6px">加入白名单并推送</button>
+
+  <div class="divider"></div>
+  <div class="row"><label>端口</label><input id="port" placeholder="8760"></div>
+  <div class="row"><label>token</label><input id="token" placeholder="从程序「远控」页复制"></div>
+  <button class="wide" id="save">保存设置并测试连通</button>
+
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
