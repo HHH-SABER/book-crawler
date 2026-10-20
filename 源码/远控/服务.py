@@ -54,6 +54,11 @@ def _dbg(source: str, message: str):
 
 app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
 
+# 浏览器插件协作接口 (P1 凭据中继, 2026-10-20): /api/v1/ext/*
+# 独立 router 模块 (按功能组织); 自带 token+仅本机+白名单三重护栏。
+from .插件接口 import router as _插件路由  # noqa: E402
+app.include_router(_插件路由)
+
 _面板路径 = Path(__file__).with_name("面板.html")
 
 # 远控使用教程 md (2026-09-29 教程入 UI): EXE 经 --add-data 与面板同目录;
