@@ -26,6 +26,11 @@ _log = _app_log.get('插件安装')
 _支持 = ('chrome', 'edge')
 _浏览器名 = {'chrome': 'Chrome', 'edge': 'Edge'}
 _扩展页 = {'chrome': 'chrome://extensions', 'edge': 'edge://extensions'}
+# 扫描探测表 (2026-10-20 需求: 先扫描本机浏览器再让用户选择)
+_探测键 = {'chrome': 'chrome.exe', 'edge': 'msedge.exe', 'firefox': 'firefox.exe'}
+_展示名 = {'chrome': 'Google Chrome', 'edge': 'Microsoft Edge',
+          'firefox': 'Mozilla Firefox'}
+_不支持原因 = {'firefox': 'Firefox 非 Chromium 内核，本插件仅支持 Chrome / Edge'}
 
 _心跳新鲜秒 = 360          # 插件每 5 分钟自动同步一次, 6 分钟内算"已连接"
 
@@ -69,6 +74,10 @@ def 安装(浏览器: str) -> dict:
     浏览器 = (浏览器 or '').lower()
     if 浏览器 not in _支持:
         return {'ok': False, '原因': f'不支持的浏览器: {浏览器}', '目录': '', '步骤': []}
+    if _浏览器exe(浏览器) is None:
+        return {'ok': False,
+                '原因': f'未检测到 {_浏览器名[浏览器]}（请先安装该浏览器，或点「重新扫描」）',
+                '目录': '', '步骤': []}
     源 = 安装源(浏览器)
     if 源 is None:
         return {'ok': False,
@@ -100,37 +109,97 @@ def 安装(浏览器: str) -> dict:
 
 
 def _浏览器exe(浏览器: str) -> Optional[str]:
-    """定位浏览器主程序 (注册表 App Paths → 常见安装路径)。"""
+    """定位浏览器主程序 (注册表 App Paths → 常见安装路径)。
+
+    支持 chrome/edge/firefox (后者仅用于"已装但不支持"的明确提示)。
+    """
+    exe名 = _探测键.get((浏览器 or '').lower())
+    if not exe名:
+        return None
     try:
         import winreg
-        键s = ([r'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe']
-               if 浏览器 == 'chrome' else
-               [r'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe'])
-        for 键 in 键s:
-            for 根 in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-                try:
-                    with winreg.OpenKey(根, 键) as k:
-                        p = winreg.QueryValue(k, None)
-                        if p and os.path.isfile(p):
-                            return p
-                except OSError:
-                    continue
+        键 = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\' + exe名
+        for 根 in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(根, 键) as k:
+                    p = winreg.QueryValue(k, None)
+                    if p and os.path.isfile(p):
+                        return p
+            except OSError:
+                continue
     except Exception:
         pass    # 刻意静默: winreg 不可用/键不存在时降级到常见路径探测, 无需留痕
-    常见 = ([
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-    ] if 浏览器 == 'chrome' else [
-        r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-    ])
-    本地 = Path(os.environ.get('LOCALAPPDATA', ''))
-    常见.append(str(本地 / ('Google/Chrome/Application/chrome.exe' if 浏览器 == 'chrome'
-                          else 'Microsoft/Edge/Application/msedge.exe')))
+
+    _常见表 = {
+        'chrome.exe': [r'C://Program Files\Google\Chrome\Application\chrome.exe',
+                       r'C://Program Files (x86)\Google\Chrome\Application\chrome.exe'],
+        'msedge.exe': [r'C://Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+                       r'C://Program Files\Microsoft\Edge\Application\msedge.exe'],
+        'firefox.exe': [r'C://Program Files\Mozilla Firefox\firefox.exe',
+                        r'C://Program Files (x86)\Mozilla Firefox\firefox.exe'],
+    }
+    常见 = list(_常见表.get(exe名, []))
+    本地 = os.environ.get('LOCALAPPDATA', '')
+    if 本地 and exe名 in ('chrome.exe', 'msedge.exe'):
+        常见.append(os.path.join(本地, 'Google', 'Chrome', 'Application', 'chrome.exe'))
+        常见.append(os.path.join(本地, 'Microsoft', 'Edge', 'Application', 'msedge.exe'))
     for p in 常见:
         if p and os.path.isfile(p):
             return p
     return None
+
+
+def _文件版本(exe: str) -> str:
+    """读 exe 的产品/文件版本 (供安装列表展示); 失败返回空串。"""
+    try:
+        import ctypes
+        size = ctypes.windll.version.GetFileVersionInfoSizeW(exe, None)
+        if not size:
+            return ''
+        data = ctypes.create_string_buffer(size)
+        if not ctypes.windll.version.GetFileVersionInfoW(exe, 0, size, data):
+            return ''
+        ptr = ctypes.c_void_p()
+        ln = ctypes.c_uint()
+        if not (ctypes.windll.version.VerQueryValueW(
+                data, '\\VarFileInfo\\Translation', ctypes.byref(ptr),
+                ctypes.byref(ln)) and ln.value >= 4):
+            return ''
+        pair = ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint16 * 2)).contents
+        键 = f'\\StringFileInfo\\{pair[0]:04x}{pair[1]:04x}\\FileVersion'
+        if not ctypes.windll.version.VerQueryValueW(
+                data, 键, ctypes.byref(ptr), ctypes.byref(ln)):
+            return ''
+        return ctypes.wstring_at(ptr.value).strip()
+    except Exception:
+        return ''
+
+
+def 扫描() -> list:
+    """扫描本机浏览器: 供安装弹窗列出目标 (2026-10-20 需求)。
+
+    返回按"已装且支持 → 已装不支持 → 未装支持"排序的列表:
+        [{浏览器, 名称, 支持, 已安装, 路径, 版本, 说明}]
+    不支持的浏览器也列出 (说明为什么不能装), 未装的给出明确提示 ——
+    "扫描、列表、选择、安装" 四个环节的入口都靠这份数据。
+    """
+    结果 = []
+    for 键 in ('chrome', 'edge', 'firefox'):
+        exe = _浏览器exe(键)
+        支持 = 键 in _支持
+        结果.append({
+            '浏览器': 键,
+            '名称': _展示名.get(键, 键),
+            '支持': 支持,
+            '已安装': bool(exe),
+            '路径': exe or '',
+            '版本': _文件版本(exe) if exe else '',
+            '说明': ('' if 支持 else _不支持原因.get(键, '不支持的浏览器')),
+        })
+    结果.sort(key=lambda x: (not (x['已安装'] and x['支持']),      # 已装且支持优先
+                             not x['支持'],                        # 支持优先于不支持
+                             ('chrome', 'edge', 'firefox').index(x['浏览器'])))
+    return 结果
 
 
 def 打开扩展页(浏览器: str) -> dict:

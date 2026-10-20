@@ -51,6 +51,7 @@ class Test安装(unittest.TestCase):
         _造源(self.根, 'edge')
         目标根 = self.根 / '状态'
         with mock.patch.object(I, '_基目录', return_value=self.根), \
+                mock.patch.object(I, '_浏览器exe', return_value='C:/fake/msedge.exe'), \
                 mock.patch.object(I, '_状态根', return_value=目标根):
             结果 = I.安装('edge')
         self.assertTrue(结果['ok'], 结果)
@@ -62,10 +63,20 @@ class Test安装(unittest.TestCase):
 
     def test_缺源时给人话原因(self):
         with mock.patch.object(I, '_基目录', return_value=self.根), \
+                mock.patch.object(I, '_浏览器exe', return_value='C:/fake/chrome.exe'), \
                 mock.patch.object(I, '_状态根', return_value=self.根 / '状态'):
             结果 = I.安装('chrome')
         self.assertFalse(结果['ok'])
         self.assertIn('找不到', 结果['原因'])
+
+    def test_未安装浏览器明确拒绝(self):
+        _造源(self.根, 'chrome')
+        with mock.patch.object(I, '_基目录', return_value=self.根), \
+                mock.patch.object(I, '_浏览器exe', return_value=None), \
+                mock.patch.object(I, '_状态根', return_value=self.根 / '状态'):
+            结果 = I.安装('chrome')
+        self.assertFalse(结果['ok'])
+        self.assertIn('未检测到', 结果['原因'])
 
     def test_非法浏览器名(self):
         self.assertFalse(I.安装('firefox')['ok'])
@@ -97,6 +108,41 @@ class Test心跳(unittest.TestCase):
     def test_无心跳判未安装(self):
         self.assertFalse(I.心跳状态()['已连接'])
         self.assertIn('未安装', I.状态文案())
+
+
+class Test扫描(unittest.TestCase):
+    """扫描 → 列表 → 选择 的数据层 (用户验收意见: 先扫描再选择)。"""
+
+    def test_只装Chrome时的列表(self):
+        def 假exe(名):
+            return 'C:/fake/chrome.exe' if 名 == 'chrome' else None
+        with mock.patch.object(I, '_浏览器exe', side_effect=假exe), \
+                mock.patch.object(I, '_文件版本', return_value='141.0.7390.55'):
+            项s = I.扫描()
+        self.assertEqual([x['浏览器'] for x in 项s], ['chrome', 'edge', 'firefox'],
+                         '已装且支持的排最前')
+        c, e, f = 项s
+        self.assertTrue(c['已安装'] and c['支持'])
+        self.assertEqual(c['版本'], '141.0.7390.55')
+        self.assertFalse(e['已安装'])
+        self.assertFalse(f['支持'])
+        self.assertIn('Chromium', f['说明'], '不支持的浏览器必须给出原因')
+
+    def test_Firefox已装也标不支持(self):
+        def 假exe(名):
+            return 'C:/fake/firefox.exe' if 名 == 'firefox' else None
+        with mock.patch.object(I, '_浏览器exe', side_effect=假exe):
+            项s = I.扫描()
+        f = next(x for x in 项s if x['浏览器'] == 'firefox')
+        self.assertTrue(f['已安装'])
+        self.assertFalse(f['支持'])
+        self.assertTrue(f['说明'])
+
+    def test_全未装时全部给出提示数据(self):
+        with mock.patch.object(I, '_浏览器exe', return_value=None):
+            项s = I.扫描()
+        self.assertTrue(all(not x['已安装'] for x in 项s))
+        self.assertEqual(len(项s), 3, '未装也要列出 (供明确提示)')
 
 
 class Test双版本产物(unittest.TestCase):
