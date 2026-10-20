@@ -58,10 +58,15 @@ def 打开插件安装弹窗(page) -> ft.AlertDialog:
         if not 支持:
             副文案 = 项.get('说明') or '不支持的浏览器'
 
-        左 = ft.Column([
+        行们 = [
             ft.Text(名, size=SIZE_SMALL, font_family=FONT_STACK, color=_文字色),
             ft.Text(副文案, size=SIZE_LABEL, font_family=FONT_STACK, color=_弱色),
-        ], spacing=2, tight=True)
+        ]
+        # 已支持但需额外步骤的浏览器 (如夸克的「扩展支持」开关) 明示提示
+        if 支持 and 项.get('说明'):
+            行们.append(ft.Text(f'⚠️ {项["说明"]}', size=SIZE_LABEL,
+                               font_family=FONT_STACK, color=ft.Colors.ORANGE))
+        左 = ft.Column(行们, spacing=2, tight=True)
 
         if 可安装:
             动作 = ft.FilledTonalButton(
