@@ -24,23 +24,33 @@ import 日志 as _app_log
 _log = _app_log.get('插件安装')
 
 # 支持集 = Chromium 内核浏览器 (MV3 插件通用); firefox 仅探测供"不支持"明示
-_支持 = ('chrome', 'edge', 'brave', 'vivaldi', '360', 'qq')
+_支持 = ('chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'quark')
 _浏览器名 = {'chrome': 'Chrome', 'edge': 'Edge', 'brave': 'Brave',
-          'vivaldi': 'Vivaldi', '360': '360极速浏览器', 'qq': 'QQ浏览器'}
+          'vivaldi': 'Vivaldi', '360': '360极速浏览器', 'qq': 'QQ浏览器',
+          'quark': '夸克浏览器'}
 _扩展页 = {'chrome': 'chrome://extensions', 'edge': 'edge://extensions',
           'brave': 'brave://extensions', 'vivaldi': 'vivaldi://extensions',
-          '360': 'chrome://extensions', 'qq': 'chrome://extensions'}
+          '360': 'chrome://extensions', 'qq': 'chrome://extensions',
+          'quark': 'quark://extensions'}
 # 扫描探测表 (2026-10-20 需求: 先扫描本机浏览器再让用户选择)
+# 值可为单个 exe 名或元组 (夸克 exe 名不唯一: QuarkBrowser.exe / Quark.exe)
 _探测键 = {'chrome': 'chrome.exe', 'edge': 'msedge.exe', 'firefox': 'firefox.exe',
           'brave': 'brave.exe', 'vivaldi': 'vivaldi.exe',
-          '360': '360chrome.exe', 'qq': 'QQBrowser.exe'}
+          '360': '360chrome.exe', 'qq': 'QQBrowser.exe',
+          'quark': ('QuarkBrowser.exe', 'Quark.exe')}
 _展示名 = {'chrome': 'Google Chrome', 'edge': 'Microsoft Edge',
           'firefox': 'Mozilla Firefox', 'brave': 'Brave',
-          'vivaldi': 'Vivaldi', '360': '360 极速浏览器', 'qq': 'QQ 浏览器'}
+          'vivaldi': 'Vivaldi', '360': '360 极速浏览器', 'qq': 'QQ 浏览器',
+          'quark': '夸克浏览器'}
 _不支持原因 = {
     'firefox': 'Firefox 非 Chromium 内核，本插件仅支持 Chromium 系浏览器',
 }
-_排序 = ('chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'firefox')
+# 已支持但需要额外步骤的浏览器 (扫描列表明示, 免得用户卡在"扩展页空白")
+_备注 = {
+    'quark': ('扩展支持默认关闭：先在「关于夸克」连点版本号 7 次 → 夸克实验室 → '
+              '开启「扩展支持」，否则 quark://extensions 会空白'),
+}
+_排序 = ('chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'quark', 'firefox')
 
 _心跳新鲜秒 = 360          # 插件每 5 分钟自动同步一次, 6 分钟内算"已连接"
 
@@ -121,22 +131,25 @@ def 安装(浏览器: str) -> dict:
 def _浏览器exe(浏览器: str) -> Optional[str]:
     """定位浏览器主程序 (注册表 App Paths → 常见安装路径)。
 
-    支持 chrome/edge/firefox (后者仅用于"已装但不支持"的明确提示)。
+    _探测键 的值可为单个 exe 名或元组 (夸克 exe 名不唯一); firefox 仅用于
+    "已装但不支持"的明确提示。
     """
-    exe名 = _探测键.get((浏览器 or '').lower())
-    if not exe名:
+    exe键 = _探测键.get((浏览器 or '').lower())
+    if not exe键:
         return None
+    exe名s = (exe键,) if isinstance(exe键, str) else tuple(exe键)
     try:
         import winreg
-        键 = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\' + exe名
-        for 根 in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-            try:
-                with winreg.OpenKey(根, 键) as k:
-                    p = winreg.QueryValue(k, None)
-                    if p and os.path.isfile(p):
-                        return p
-            except OSError:
-                continue
+        for exe名 in exe名s:
+            键 = 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\' + exe名
+            for 根 in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(根, 键) as k:
+                        p = winreg.QueryValue(k, None)
+                        if p and os.path.isfile(p):
+                            return p
+                except OSError:
+                    continue
     except Exception:
         pass    # 刻意静默: winreg 不可用/键不存在时降级到常见路径探测, 无需留痕
 
@@ -154,8 +167,15 @@ def _浏览器exe(浏览器: str) -> Optional[str]:
                           r'C://Program Files\360\360Chrome\Chrome\Application\360chrome.exe'],
         'QQBrowser.exe': [r'C://Program Files (x86)\Tencent\QQBrowser\Application\QQBrowser.exe',
                           r'C://Program Files\Tencent\QQBrowser\Application\QQBrowser.exe'],
+        'QuarkBrowser.exe': [r'C://Program Files\Quark\QuarkBrowser.exe',
+                             r'C://Program Files (x86)\Quark\QuarkBrowser.exe'],
+        'Quark.exe': [r'C://Program Files\Quark\Quark.exe',
+                      r'C://Program Files (x86)\Quark\Quark.exe'],
     }
-    常见 = list(_常见表.get(exe名, []))
+    常见 = []
+    for exe名 in exe名s:
+        常见.extend(_常见表.get(exe名, []))
+
     本地 = os.environ.get('LOCALAPPDATA', '')
     _用户级 = {
         'chrome.exe': ['Google/Chrome/Application/chrome.exe'],
@@ -164,10 +184,14 @@ def _浏览器exe(浏览器: str) -> Optional[str]:
         'vivaldi.exe': ['Vivaldi/Application/vivaldi.exe'],
         '360chrome.exe': ['360Chrome/Chrome/Application/360chrome.exe'],
         'QQBrowser.exe': ['Tencent/QQBrowser/Application/QQBrowser.exe'],
+        'QuarkBrowser.exe': ['Quark/Application/QuarkBrowser.exe',
+                             'Programs/Quark/QuarkBrowser.exe'],
+        'Quark.exe': ['Quark/Application/Quark.exe', 'Programs/Quark/Quark.exe'],
     }
     if 本地:
-        for 相对 in _用户级.get(exe名, []):
-            常见.append(os.path.join(本地, *相对.split('/')))
+        for exe名 in exe名s:
+            for 相对 in _用户级.get(exe名, []):
+                常见.append(os.path.join(本地, *相对.split('/')))
     for p in 常见:
         if p and os.path.isfile(p):
             return p
@@ -219,7 +243,8 @@ def 扫描() -> list:
             '已安装': bool(exe),
             '路径': exe or '',
             '版本': _文件版本(exe) if exe else '',
-            '说明': ('' if 支持 else _不支持原因.get(键, '不支持的浏览器')),
+            '说明': ('' if 支持 else _不支持原因.get(键, '不支持的浏览器'))
+                    or _备注.get(键, ''),
         })
     结果.sort(key=lambda x: (not (x['已安装'] and x['支持']),      # 已装且支持优先
                              not x['支持'],                        # 支持优先于不支持

@@ -151,7 +151,7 @@ class Test扫描(unittest.TestCase):
                 mock.patch.object(I, '_文件版本', return_value='141.0.7390.55'):
             项s = I.扫描()
         self.assertEqual([x['浏览器'] for x in 项s],
-                         ['chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'firefox'],
+                         ['chrome', 'edge', 'brave', 'vivaldi', '360', 'qq', 'quark', 'firefox'],
                          '已装且支持的排最前')
         c, e = 项s[0], 项s[1]
         f = 项s[-1]
@@ -171,11 +171,19 @@ class Test扫描(unittest.TestCase):
         self.assertFalse(f['支持'])
         self.assertTrue(f['说明'])
 
+    def test_夸克带扩展支持备注(self):
+        """夸克扩展支持默认关闭 —— 扫描数据必须带出该备注 (GUI 明示)。"""
+        项s = I.扫描()
+        夸 = next(x for x in 项s if x['浏览器'] == 'quark')
+        self.assertTrue(夸['支持'])
+        self.assertIn('扩展支持', 夸['说明'])
+        self.assertIn('quark://extensions', I._扩展页['quark'])
+
     def test_全未装时全部给出提示数据(self):
         with mock.patch.object(I, '_浏览器exe', return_value=None):
             项s = I.扫描()
         self.assertTrue(all(not x['已安装'] for x in 项s))
-        self.assertEqual(len(项s), 7, '未装也要列出 (供明确提示)')
+        self.assertEqual(len(项s), 8, '未装也要列出 (供明确提示)')
 
 
 class Test双版本产物(unittest.TestCase):
