@@ -703,8 +703,15 @@ def main():
         try:
             if os.path.isdir(local_adapter_dst):
                 shutil.rmtree(local_adapter_dst, ignore_errors=True)
-            shutil.copytree(local_adapter_src, local_adapter_dst)
-            log(f"[OK] Copied 站点适配_本地/ → {local_adapter_dst} (本机全功能交付; dist 勿外传)")
+            # 2026-10-24 审查 W5: browser_profile_* 是 selenium 跑出来的用户
+            # 浏览器 profile (含站点 Cookie/登录态/自动填充数据, 且数百 MB),
+            # 不属于"适配器资产" —— 不复制进 dist, 顺带避免把它随"本机交付物"
+            # 带出去。selenium 下次运行会在原工作区目录里重新生成/复用。
+            shutil.copytree(
+                local_adapter_src, local_adapter_dst,
+                ignore=shutil.ignore_patterns('browser_profile_*', '__pycache__'))
+            log(f"[OK] Copied 站点适配_本地/ → {local_adapter_dst} "
+                f"(本机全功能交付; 已排除 browser_profile_*; dist 勿外传)")
         except OSError as e:
             log(f"[WARN] 复制 站点适配_本地/ 失败: {e}")
     else:
