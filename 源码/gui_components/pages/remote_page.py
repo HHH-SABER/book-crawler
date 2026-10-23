@@ -372,21 +372,19 @@ class RemotePage:
         return "tailscale serve --bg 8760"
 
     def _复制(self, 值: str):
-        """写系统剪贴板 (flet Clipboard 服务, 异步; 轻提示反馈)"""
+        """写系统剪贴板 (2026-10-23 修复: 旧实现用 flet 异步 Clipboard 服务,
+        但新建实例没挂到 page → 协程内异常被吞 → 点复制毫无反应)。
+        现统一走 剪贴板.复制 (命令行 → clip → tkinter 三级降级, 同步返回)。"""
         if not 值 or 值 == "—":
             self._toast("没有可复制的内容")
             return
         try:
-            from flet.controls.services.clipboard import Clipboard
-            if self.page is None:
-                return
-            async def _run():
-                await Clipboard().set(值)
-                self._toast("已复制到剪贴板")
-            self.page.run_task(_run)
+            import 剪贴板
+            成功 = 剪贴板.复制(str(值))
         except Exception as _e:
-            _dbg("远控页", f'复制失败: {type(_e).__name__}: {_e}')
-            self._toast("复制失败")
+            _dbg("远控页", f'复制异常: {type(_e).__name__}: {_e}')
+            成功 = False
+        self._toast("已复制到剪贴板" if 成功 else "复制失败（剪贴板不可用）")
 
     def _toast(self, msg: str):
         """SnackBar 轻提示 (同 detail_drawer._toast 模式, 经 ui_fluent.open_dialog)"""
