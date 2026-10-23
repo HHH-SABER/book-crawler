@@ -24,13 +24,18 @@ class Test按域Cookie注入(unittest.TestCase):
 
     def setUp(self):
         # 备份真实域Cookie表, 用受控表隔离 (不读磁盘上的域名cookies.json)
-        self._旧表 = dict(re_mod._域COOKIE)
-        re_mod._域COOKIE.clear()
-        re_mod._域COOKIE.update({'sitead.example.net': 'uid=1; sid=abc'})
+        self._旧表 = re_mod._域COOKIE          # 记旧引用 (W2 后模块用换引用)
+        re_mod._域COOKIE = {'sitead.example.net': 'uid=1; sid=abc'}
+        # 2026-10-24 W2 暴露的顺序依赖: 全量套件里其他模块先把 _加载域COOKIE 的
+        # 30s 热检"热"过, 单独跑本文件时首调用会读真实 域名cookies.json 并覆盖
+        # 受控表 → 单独跑红、套件里绿。彻底隔离: 桩掉加载器 (本测试测的是注入
+        # 规则, 不是文件加载)。
+        self._loader = mock.patch.object(re_mod, '_加载域COOKIE', lambda: None)
+        self._loader.start()
 
     def tearDown(self):
-        re_mod._域COOKIE.clear()
-        re_mod._域COOKIE.update(self._旧表)
+        self._loader.stop()
+        re_mod._域COOKIE = self._旧表
 
     def test_后缀匹配注入(self):
         h = {'User-Agent': 'UA'}
@@ -57,7 +62,7 @@ class Test按域Cookie注入(unittest.TestCase):
         self.assertEqual(out, h)
 
     def test_空表恒等返回(self):
-        re_mod._域COOKIE.clear()
+        re_mod._域COOKIE = {}
         h = {'User-Agent': 'UA'}
         out = re_mod.注入COOKIE(h, 'https://www.sitead.example.net/a.html')
         self.assertEqual(out, h, '空表 (公开形态) 必须恒等返回原 headers')

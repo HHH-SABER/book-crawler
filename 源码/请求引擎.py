@@ -60,9 +60,13 @@ def _加载域COOKIE():
         with open(_p, 'r', encoding='utf-8') as f:
             _data = json.load(f)
         if isinstance(_data, dict):
-            _域COOKIE.clear()
-            _域COOKIE.update({str(k).strip().lower(): str(v)
-                              for k, v in _data.items() if k and v})
+            # 2026-10-24 审查 W2: **引用整体替换** (真正原子)。
+            # 旧写法 clear()+update() 两步之间, 并发请求会看到空表 → 漏注入
+            # Cookie (偶发一章 403)。改为先构造新表、再整体换引用: 读者
+            # (注入COOKIE) 每次从全局取名, 要么拿到旧表要么新表, 不会看到空表。
+            global _域COOKIE
+            _域COOKIE = {str(k).strip().lower(): str(v)
+                        for k, v in _data.items() if k and v}
         _COOKIE文件状态['mtime'] = _mtime
     except Exception as _e:
         try:
