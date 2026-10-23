@@ -59,7 +59,9 @@ class Test安装(unittest.TestCase):
         self.assertTrue((目标 / 'manifest.json').is_file())
         self.assertTrue((目标 / 'background.js').is_file())
         self.assertEqual(len(结果['步骤']), 4)
-        self.assertIn(str(目标), 结果['步骤'][2])
+        self.assertEqual(结果['目录'], str(目标), '目录单独返回 (供「复制目录」按钮)')
+        self.assertIn('Ctrl+V', 结果['步骤'][2], '第 3 步必须讲粘贴目录路径')
+        self.assertTrue(any('加载' in s for s in 结果['步骤']), '必须讲加载按钮')
 
     def test_缺源时给人话原因(self):
         with mock.patch.object(I, '_基目录', return_value=self.根), \
@@ -171,13 +173,17 @@ class Test扫描(unittest.TestCase):
         self.assertFalse(f['支持'])
         self.assertTrue(f['说明'])
 
-    def test_夸克带扩展支持备注(self):
-        """夸克扩展支持默认关闭 —— 扫描数据必须带出该备注 (GUI 明示)。"""
+    def test_夸克备注为真实入口文案(self):
+        """2026-10-23 用户纠错: 不存在"开启扩展支持"这步 (她机器扩展页已可用)。
+        备注只讲真实入口与按钮叫法。"""
         项s = I.扫描()
         夸 = next(x for x in 项s if x['浏览器'] == 'quark')
         self.assertTrue(夸['支持'])
-        self.assertIn('扩展支持', 夸['说明'])
-        self.assertIn('quark://extensions', I._扩展页['quark'])
+        self.assertNotIn('夸克实验室', 夸['说明'])
+        self.assertNotIn('扩展支持', 夸['说明'])
+        self.assertIn('quark://extensions', 夸['说明'])
+        self.assertIn('加载解压缩的插件', 夸['说明'])
+        self.assertEqual(I._扩展页['quark'], 'quark://extensions')
 
     def test_全未装时全部给出提示数据(self):
         with mock.patch.object(I, '_浏览器exe', return_value=None):
