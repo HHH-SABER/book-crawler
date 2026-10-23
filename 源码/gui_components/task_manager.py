@@ -1203,7 +1203,7 @@ class TaskManager:
         try:
             # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
             sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from 爬虫 import run_crawl
+            from 爬虫 import run_crawl, CrawlOptions
 
             if app_log is not None:
                 app_log.info(f"任务{task.task_id}",
@@ -1222,19 +1222,21 @@ class TaskManager:
             task.status = 'running'
             try:
                 run_crawl(
-                    catalog_url=url,
-                    mode=mode,
-                    sort_chapters=True,
-                    output_dir=output_dir,
-                    resume=resume,
-                    show_progress=True,
-                    chapter_range=chapter_range,
-                    threads=threads,
-                    delay=delay,
-                    stop_event=task.stop_flag,
-                    unique_title=unique_title,
-                    export_epub=task.export_epub,
-                    incremental=incremental or task.incremental,
+                    url,
+                    opt=CrawlOptions(
+                        mode=mode,
+                        sort_chapters=True,
+                        output_dir=output_dir,
+                        resume=resume,
+                        show_progress=True,
+                        chapter_range=chapter_range,
+                        threads=threads,
+                        delay=delay,
+                        stop_event=task.stop_flag,
+                        unique_title=unique_title,
+                        export_epub=task.export_epub,
+                        incremental=incremental or task.incremental,
+                    ),
                 )
             finally:
                 if 同域闸门 is not None:

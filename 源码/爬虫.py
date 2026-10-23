@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from dataclasses import dataclass
 from 页面抓取 import 检查页面 as _检查页面, RESP_CACHE_MAX
 from 目录链接工具 import 绝对化链接 as _绝对化链接实现
 from 目录链接工具 import (_非章节页名, _是非章节链接, _章节链接合正则,
@@ -5883,13 +5884,38 @@ def _规范化目录URL(catalog_url):
     return catalog_url
 
 
-def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
-              resume=True, show_progress=True, chapter_range=None, threads=None, delay=None,
-              stop_event=None, unique_title=False, export_epub=False, incremental=False,
-              txt_indent=None):
+@dataclass
+class CrawlOptions:
+    """一次抓取任务的全部可调参数 (2026-10-24 S2 修复: 原 run_crawl 13 个位置参数,
+    顺序写错不报错 → 静默行为错误)。新代码一律用本结构 + 关键字传参。
+
+    默认值与旧 run_crawl 的位置参数一一对应, 语义不变。
+    """
+    mode: str = "full"                      # list / full / test / range
+    sort_chapters: bool = True              # 是否按章节数字排序
+    output_dir: str = None                  # None = 默认 项目根/抓取结果
+    resume: bool = True                     # 断点续传
+    show_progress: bool = True              # 进度条
+    chapter_range: tuple = None             # (start, end) 1-based, 仅 range 模式
+    threads: int = None                     # None = 速度自适应选档; >0 = 固定
+    delay: float = None                     # None = 自适应档位决定; >0 = 固定间隔
+    stop_event: object = None               # threading.Event, GUI 停止按钮
+    unique_title: bool = False              # 同名小说自动加 (1)/(2)
+    export_epub: bool = False               # 完成后导出 EPUB
+    incremental: bool = False               # 24h 内已抓且未变化的章节跳过
+    txt_indent: bool = None                 # None = 读配置默认开
+
+
+_OPTION_字段 = tuple(f for f in CrawlOptions.__dataclass_fields__)
+
+
+def run_crawl(catalog_url, opt: CrawlOptions = None, **旧参数):
     """根据模式执行抓取任务，供命令行与交互式共用
 
     Args:
+        catalog_url: 小说目录页 URL
+        opt: CrawlOptions (推荐); 为 None 时用旧关键字参数构造 —— 过渡期兼容,
+             全部调用方迁移完成后下一 Wave 删除旧参数路径。
         catalog_url: 小说目录页 URL
         mode: list / full / test / range
         sort_chapters: 是否按章节数字排序
@@ -5906,6 +5932,29 @@ def run_crawl(catalog_url, mode="full", sort_chapters=True, output_dir=None,
         incremental: 为 True 时启用增量抓取 (24h 内已抓取且未变化的章节跳过)
         txt_indent: TXT 段首缩进开关 (None=读配置默认开; False=CLI --no-txt-indent)
     """
+    # ---- S2 参数绑定 (2026-10-24): opt 优先, 旧关键字合并; 未知关键字直接报错 ----
+    if opt is None:
+        opt = CrawlOptions()
+    if 旧参数:
+        未知 = set(旧参数) - set(_OPTION_字段)
+        if 未知:
+            raise TypeError(f'run_crawl 不支持的关键字参数: {sorted(未知)}')
+        for k, v in 旧参数.items():
+            setattr(opt, k, v)
+    mode = opt.mode
+    sort_chapters = opt.sort_chapters
+    output_dir = opt.output_dir
+    resume = opt.resume
+    show_progress = opt.show_progress
+    chapter_range = opt.chapter_range
+    threads = opt.threads
+    delay = opt.delay
+    stop_event = opt.stop_event
+    unique_title = opt.unique_title
+    export_epub = opt.export_epub
+    incremental = opt.incremental
+    txt_indent = opt.txt_indent
+
     if stop_event is not None and stop_event.is_set():
         return ""
     # v2.4.35: 清单留痕前置到"尝试抓取"这一步 —— 任务真正开跑即记一条
@@ -6186,11 +6235,12 @@ def run_batch(url_list, threads=None, sort_chapters=True, resume=True,
         try:
             # 输出到独立文件: 书级并发各自写文件, 无冲突
             # 章级 threads=None: 每本书内部再走速度自适应 (书级并发已按设备推导)
-            run_crawl(url, mode="full", sort_chapters=sort_chapters,
-                      output_dir=output_dir, resume=resume,
-                      show_progress=show_progress, threads=None, delay=delay,
-                      stop_event=stop_event, unique_title=unique_title,
-                      export_epub=export_epub, txt_indent=txt_indent)
+            run_crawl(url, opt=CrawlOptions(
+                mode="full", sort_chapters=sort_chapters,
+                output_dir=output_dir, resume=resume,
+                show_progress=show_progress, threads=None, delay=delay,
+                stop_event=stop_event, unique_title=unique_title,
+                export_epub=export_epub, txt_indent=txt_indent))
             return url, '✅ 完成', time.time() - t0, None
         except Exception as e:
             return url, f'❌ 失败: {str(e)[:80]}', time.time() - t0, None
@@ -6358,12 +6408,13 @@ if __name__ == "__main__":
                 if not _url:
                     continue
                 _log.info(f"\n===== 更新: {_title or _url} =====")
-                run_crawl(_url, mode="full", sort_chapters=True,
-                          output_dir=opts['output_dir'], resume=True,
-                          show_progress=opts['show_progress'],
-                          threads=opts['threads'], delay=opts['delay'],
-                          unique_title=False, export_epub=opts['export_epub'],
-                          incremental=True, txt_indent=opts['txt_indent'])
+                run_crawl(_url, opt=CrawlOptions(
+                    mode="full", sort_chapters=True,
+                    output_dir=opts['output_dir'], resume=True,
+                    show_progress=opts['show_progress'],
+                    threads=opts['threads'], delay=opts['delay'],
+                    unique_title=False, export_epub=opts['export_epub'],
+                    incremental=True, txt_indent=opts['txt_indent']))
             exit(0)
 
         # ===== 批量模式: --batch 清单文件 或 多个 URL 参数 =====
@@ -6517,12 +6568,13 @@ if __name__ == "__main__":
             i += 1
         if chapter_range_arg:
             mode = "range"
-        run_crawl(catalog_url, mode=mode, sort_chapters=sort_chapters,
-                  output_dir=output_dir_arg,
-                  resume=resume, show_progress=show_progress,
-                  chapter_range=chapter_range_arg,
-                  threads=threads_arg, delay=delay_arg,
-                  export_epub=export_epub, txt_indent=txt_indent_arg)
+        run_crawl(catalog_url, opt=CrawlOptions(
+            mode=mode, sort_chapters=sort_chapters,
+            output_dir=output_dir_arg,
+            resume=resume, show_progress=show_progress,
+            chapter_range=chapter_range_arg,
+            threads=threads_arg, delay=delay_arg,
+            export_epub=export_epub, txt_indent=txt_indent_arg))
     else:
         # 帮助信息
         if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
@@ -6547,8 +6599,9 @@ if __name__ == "__main__":
         # 交互式菜单
         catalog_url, mode, sort_chapters, resume, show_progress, chapter_range, threads, delay, export_epub = interactive_menu()
         if catalog_url:
-            run_crawl(catalog_url, mode=mode, sort_chapters=sort_chapters,
-                      resume=resume, show_progress=show_progress,
-                      chapter_range=chapter_range,
-                      threads=threads, delay=delay,
-                      export_epub=export_epub)   # txt_indent 走配置默认
+            run_crawl(catalog_url, opt=CrawlOptions(
+                mode=mode, sort_chapters=sort_chapters,
+                resume=resume, show_progress=show_progress,
+                chapter_range=chapter_range,
+                threads=threads, delay=delay,
+                export_epub=export_epub))   # txt_indent 走配置默认
