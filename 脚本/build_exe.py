@@ -483,6 +483,15 @@ def main():
     # 插件/构建两版.py 的产物 → 打包为 插件/dist/<浏览器>; EXE 里
     # 插件安装.安装源() 的第一候选即 BASE_DIR/插件/dist/<浏览器>。
     _插件dist = os.path.join(ROOT, '插件', 'dist')
+    # 插件 dist 是构建产物 (gitignored): CI/新机器上先就地生成两版, 避免漏打包
+    _插件构建脚本 = os.path.join(ROOT, '插件', '构建两版.py')
+    if not os.path.isdir(_插件dist) and os.path.isfile(_插件构建脚本):
+        log("[STEP] 插件/dist 不存在, 先构建 Chrome/Edge 两版…")
+        try:
+            rc = subprocess.call([sys.executable, _插件构建脚本], cwd=ROOT)
+            log(f"[{'OK' if rc == 0 else 'WARN'}] 插件构建 exit={rc}")
+        except OSError as e:
+            log(f"[WARN] 插件构建失败: {e}")
     if os.path.isdir(_插件dist):
         add_data_list.append(f"{_插件dist}:插件/dist")
         log("[OK] Bundling 浏览器插件 (插件/dist: chrome + edge)")
