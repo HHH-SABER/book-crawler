@@ -23,7 +23,7 @@ _log = logging.getLogger('插件安装弹窗')
 
 _文字色 = ft.Colors.ON_SURFACE
 _弱色 = ft.Colors.ON_SURFACE_VARIANT
-_按钮宽 = 132          # 右侧动作列固定宽 (对齐的关键)
+_按钮宽 = 160          # 右侧动作列固定宽 (对齐的关键; 放得下「安装到此浏览器」不折行)
 
 
 def 打开插件安装弹窗(page) -> ft.AlertDialog:
