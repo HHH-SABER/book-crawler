@@ -156,7 +156,11 @@ class 引擎响应:
 
     @property
     def apparent_encoding(self) -> str:
-        """基于 content 字节猜测编码 (chardet 可用时)"""
+        """基于 content 字节猜测编码 (P8-C13, 2026-10-24)。
+
+        判定链: chardet (装了就用) → 内置字符集探测 (零依赖统计法) → utf-8。
+        内置探测解决"声明 utf-8 实际 GBK/Big5"的谎报页面 —— 旧实现在无
+        chardet 时恒返回 utf-8, 谎报页解出乱码被质检误判降级。"""
         if self.content:
             try:
                 import chardet
@@ -165,6 +169,15 @@ class 引擎响应:
                     return 结果['encoding']
             except Exception as _e:
                 _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            try:
+                import 字符集探测
+                编码, 依据 = 字符集探测.探测(self.content)
+                if 依据 != 'default':
+                    _log.debug(f'[字符集] 探测: {编码} (依据={依据})')
+                return 编码
+            except Exception as _e:
+                _log.debug(f'[字符集] 探测失败回落 utf-8: '
+                           f'{type(_e).__name__}: {_e}')
         return 'utf-8'
 
     @property
