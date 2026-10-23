@@ -200,3 +200,30 @@ def resolve_data_file(filename: str, copy_default_from_resource_if_missing: bool
                     break
     return base_path
 
+
+def 托盘图标候选(资源根, 基根):
+    """托盘图标 .ico 的候选路径（按优先级，去重保序）。
+
+    2026-10-24 修「托盘图标显示为纯色块」：原实现把路径算成
+    ``<源码目录>/../脚本/图标.ico``（= ``源码/脚本/图标.ico``，不存在），
+    且 build_exe 的 add_data_list 未把 图标.ico 写进 EXE —— 两者叠加使
+    ``Image.open`` 必然失败，tray.py 只好退化成纯色占位方块。
+
+    参数:
+        资源根: 只读资源根（EXE 下为 sys._MEIPASS；开发态为源码目录）
+        基根:   程序基目录（EXE 所在目录 / 项目根）
+
+    返回: 候选路径列表（调用方取第一个存在的文件）
+    """
+    import os
+    候选 = []
+    for 根 in (资源根, 基根):
+        if not 根:
+            continue
+        for 子 in (os.path.join('脚本', '图标.ico'), '图标.ico'):
+            p = os.path.normpath(os.path.join(根, 子))
+            if p not in 候选:
+                候选.append(p)
+    if not 候选:                 # 极端兜底：调用方直接取 [0] 也不会 IndexError
+        候选.append('图标.ico')
+    return 候选

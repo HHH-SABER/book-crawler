@@ -459,6 +459,11 @@ def main():
     captcha_config_src = os.path.join(ROOT, "配置", "captcha_config.json")
 
     add_data_list = []
+    # 托盘图标（2026-10-24）：必须打进包，否则 EXE 里 trays 只能退化成纯色块
+    _托盘图标 = os.path.join(ROOT, "脚本", "图标.ico")
+    if os.path.isfile(_托盘图标):
+        add_data_list.append(f"{_托盘图标}:脚本")
+        log(f"[OK] Bundling tray icon: {_托盘图标}")
     # Flet client（必须）
     if os.path.isdir(flet_client_dir):
         add_data_list.append(f"{flet_client_dir}:flet_client")

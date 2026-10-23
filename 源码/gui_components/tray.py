@@ -21,6 +21,18 @@ def _dbg(source: str, message: str):
 
 
 
+def _内置占位图标():
+    """内置托盘占位图：浅蓝圆角底 + 白色书本轮廓（比纯色块可辨认）。"""
+    from PIL import Image, ImageDraw
+    图 = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    画 = ImageDraw.Draw(图)
+    画.rounded_rectangle((2, 2, 62, 62), radius=12, fill=(76, 194, 255, 255))
+    画.rounded_rectangle((14, 14, 30, 50), radius=3, fill=(255, 255, 255, 255))
+    画.rounded_rectangle((33, 14, 50, 50), radius=3, fill=(255, 255, 255, 255))
+    画.line((31, 18, 31, 47), fill=(76, 194, 255, 255), width=2)
+    return 图
+
+
 def 启动托盘(图标路径: str, 显示, 退出):
     """创建并启动托盘图标; 返回 pystray.Icon 实例。
 
@@ -32,8 +44,10 @@ def 启动托盘(图标路径: str, 显示, 退出):
     from PIL import Image
     try:
         img = Image.open(图标路径)
-    except Exception:
-        img = Image.new("RGBA", (64, 64), (76, 194, 255, 255))
+    except Exception as _e:
+        # 2026-10-24: 不再默默显示纯色块 —— 留痕 + 画一个"书本"占位图
+        _dbg("托盘", f'图标加载失败, 用内置占位图: {type(_e).__name__}: {_e}')
+        img = _内置占位图标()
     menu = pystray.Menu(
         pystray.MenuItem("显示主窗口", lambda *_: 显示(), default=True),
         pystray.MenuItem("退出", lambda *_: 退出()),

@@ -130,9 +130,9 @@ def 安装(page, task_manager) -> None:
         if _托盘["对象"] is None:
             try:
                 from gui_components.tray import 启动托盘
-                图标路径 = os.path.normpath(os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), "..",
-                    "脚本", "图标.ico"))
+                from _path_utils import get_app_base_dir, get_resource_dir, 托盘图标候选
+                _候选 = 托盘图标候选(get_resource_dir(), get_app_base_dir())
+                图标路径 = next((p for p in _候选 if os.path.isfile(p)), _候选[0])
                 _托盘["对象"] = 启动托盘(
                     图标路径,
                     显示=lambda: page.run_task(_显示主窗),
