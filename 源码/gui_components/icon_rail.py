@@ -173,6 +173,35 @@ def build_remote_toggle(on_click):
     return btn, _外观
 
 
+def build_plugin_toggle(on_click):
+    """顶栏「浏览器插件」胶囊 (2026-10-23 用户要求: 与远控/主题并列)。
+
+    形态与 build_remote_toggle 一致 (同高/同圆角/同内边距), 视觉上是一排。
+    """
+    按钮 = ft.Container(
+        content=ft.Row(
+            [ft.Icon(ft.Icons.EXTENSION_OUTLINED, size=14),
+             txt("浏览器插件", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE)],
+            spacing=6, tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=ui_tokens.CHIP_H,
+        padding=ft.Padding.symmetric(horizontal=ui_tokens.CHIP_PAD_X, vertical=0),
+        border_radius=ui_tokens.CHIP_RADIUS,
+        bgcolor=取色('bg-tertiary'),
+        on_click=on_click,
+        ink=True,
+        tooltip="安装 Chrome/Edge/夸克 等浏览器插件，把真实登录 Cookie 提供给爬虫",
+    )
+    登记重刷(按钮, lambda c: setattr(c, 'bgcolor', 取色('bg-tertiary')))
+    for 子 in 按钮.content.controls:
+        if isinstance(子, ft.Text):
+            登记重刷(子, lambda c: setattr(c, 'color', 取色('text-primary')))
+        elif isinstance(子, ft.Icon):
+            登记重刷(子, lambda c: setattr(c, 'color', 取色('text-secondary')))
+    return 按钮
+
+
 def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) -> ft.Container:
     """构建顶栏 (48px 高, 匹配设计稿 titlebar)
 

@@ -233,9 +233,6 @@ class RemotePage:
                             color=ft.Colors.ON_SURFACE_VARIANT),
                     ], spacing=4, tight=True),
                     ft.Container(expand=True),
-                    ft.TextButton("浏览器插件", icon=ft.Icons.EXTENSION_OUTLINED,
-                                  on_click=self._open_plugin_install,
-                                  tooltip="安装 Chrome/Edge 插件，把真实登录 Cookie 提供给爬虫"),
                     ft.TextButton("使用教程", icon=ft.Icons.BOOK_OUTLINED,
                                   on_click=self._open_tutorial),
                     self._btn,
@@ -299,25 +296,6 @@ class RemotePage:
         ], spacing=10, expand=True)
 
     # ---------------------------------------------------------------- 教程
-    def _open_plugin_install(self, e=None):
-        """打开浏览器插件安装弹窗 (Chrome/Edge 双版本)。
-
-        安装脚本在 插件安装.py (纯逻辑); 本页只负责入口。
-        插件用于把浏览器真实登录 Cookie 推给爬虫 (P1 凭据中继), 详见
-        文档/浏览器插件可行性方案.md。
-        """
-        try:
-            from .. import 插件安装弹窗
-        except Exception as _e:
-            _dbg("远控页", f'插件弹窗导入失败: {type(_e).__name__}: {_e}')
-            self._toast(f"❌ 无法打开插件安装: {type(_e).__name__}")
-            return
-        try:
-            插件安装弹窗.打开插件安装弹窗(self.page)
-        except Exception as _e:
-            _dbg("远控页", f'插件弹窗打开失败: {type(_e).__name__}: {_e}')
-            self._toast(f"❌ 插件安装弹窗异常: {type(_e).__name__}")
-
     def _open_tutorial(self, e=None):
         """打开使用教程 (系统浏览器 → 内嵌远控 /tutorial, 与手机端同一页面)
 

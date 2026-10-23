@@ -33,7 +33,8 @@ if getattr(sys, "frozen", False):
 from gui_components import 首次引导
 from gui_components.task_manager import TaskManager
 from gui_components.icon_rail import (IconRail, NAV_PAGES, build_theme_toggle,
-                                      build_top_bar, build_remote_toggle)
+                                      build_top_bar, build_remote_toggle,
+                                      build_plugin_toggle)
 from gui_components.ui_theme import page_header
 from gui_components import ui_motion   # 动效令牌 (页面进场过渡; 可用界面偏好关掉)
 from gui_components.input_bar import InputBar
@@ -794,6 +795,20 @@ def main(page: ft.Page):
         except Exception as _e_sw:
             app_log.info("远控", f"远控开关切换异常: {type(_e_sw).__name__}: {_e_sw}")
 
+    # ---- 浏览器插件 (顶栏胶囊, 2026-10-23: 与远控/主题并列) ----
+    def _开插件弹窗(_e=None):
+        try:
+            from gui_components import 插件安装弹窗
+            插件安装弹窗.打开插件安装弹窗(page)
+        except Exception as _ex:
+            app_log.info("插件", f'插件安装弹窗失败: {type(_ex).__name__}: {_ex}')
+            try:
+                page.show_dialog(提示条(f"❌ 插件安装弹窗异常: {type(_ex).__name__}"))
+            except Exception:
+                pass    # 刻意静默: 提示条本身失败时无进一步出口, 主日志已留痕
+
+    _插件按钮 = build_plugin_toggle(_开插件弹窗)
+
     _远控按钮, _远控按钮更新 = build_remote_toggle(_切远控)
     try:
         import 远控.服务 as _远控初
@@ -1073,7 +1088,7 @@ def main(page: ft.Page):
     # 页内标题不带版本号 (设计稿 titlebar 只写应用名); 窗口标题仍用 _应用名
     # 带版本, 便于支持与排查 —— 原先两处都带版本, 视觉上重复。
     top_bar = build_top_bar(page, "小说爬虫", _theme_toggle_btn[0],
-                            extra_controls=[_远控按钮])
+                            extra_controls=[_插件按钮, _远控按钮])
 
     # ---- 整体布局 (三段式: 顶栏 + 侧边导航 + 主内容) ----
     main_row = ft.Row([
