@@ -124,6 +124,17 @@ class Test插件产物(unittest.TestCase):
         if not (self.dist / 'chrome' / 'popup.html').is_file():
             self.skipTest('插件 dist 未构建')
 
+    def test_夸克兼容防御存在(self):
+        """2026-10-23 夸克报错 'Cannot read properties of undefined (reading id)':
+        popup 必须把 chrome.tabs 调用包在兜底函数里, 且初始化整体 try/catch。"""
+        for 版 in ('chrome', 'edge'):
+            js = (self.dist / 版 / 'popup.js').read_text(encoding='utf-8')
+            self.assertIn('取当前标签', js, 'tabs 查询必须有兜底函数')
+            self.assertIn('初始化异常', js, '初始化必须有 try/catch 提示')
+            self.assertIn('取元素', js, '元素访问必须有空值保护')
+            bg = (self.dist / 版 / 'background.js').read_text(encoding='utf-8')
+            self.assertIn('tabs.update', bg, '唤起失败要有第二兜底')
+
     def test_两版含抓取界面与协议(self):
         for 版 in ('chrome', 'edge'):
             html = (self.dist / 版 / 'popup.html').read_text(encoding='utf-8')

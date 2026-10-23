@@ -371,10 +371,21 @@ class RemotePage:
     def _取外网命令(self) -> str:
         return "tailscale serve --bg 8760"
 
-    def _复制(self, 值: str):
-        """写系统剪贴板 (2026-10-23 修复: 旧实现用 flet 异步 Clipboard 服务,
-        但新建实例没挂到 page → 协程内异常被吞 → 点复制毫无反应)。
-        现统一走 剪贴板.复制 (命令行 → clip → tkinter 三级降级, 同步返回)。"""
+    def _复制(self, 值):
+        """写系统剪贴板 (2026-10-23 两处修复)。
+
+        ① 旧实现用 flet 异步 Clipboard 服务, 实例没挂 page → 协程内异常被吞
+           → 点复制毫无反应; 现统一走 剪贴板.复制 (三级降级, 同步返回)。
+        ② 信息行的 `取值` 参数是**函数** (self._取当前token 等), 旧代码直接把
+           函数对象当文本复制 → 剪贴板里是 "<bound method ...>" (用户实测)。
+           此处统一: 可调用就先调用取返回值。
+        """
+        try:
+            if callable(值):
+                值 = 值()
+        except Exception as _e:
+            _dbg("远控页", f'取值函数失败: {type(_e).__name__}: {_e}')
+            值 = ''
         if not 值 or 值 == "—":
             self._toast("没有可复制的内容")
             return

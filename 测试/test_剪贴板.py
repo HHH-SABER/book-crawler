@@ -53,6 +53,47 @@ class Test复制(unittest.TestCase):
         self.assertIsInstance(C.读取(), str)
 
 
+class Test远控页复制取值(unittest.TestCase):
+    """2026-10-23 用户实测: 点复制 token, 剪贴板里是
+    "<bound method RemotePage._取当前token of ...>" —— 信息行的 `取值` 是函数,
+    旧代码直接把函数对象当文本复制。"""
+
+    def _页(self):
+        import gui_components.pages.remote_page as R
+        页 = object.__new__(R.RemotePage)
+        页._提示 = []
+        页._toast = lambda msg: 页._提示.append(msg)
+        return 页
+
+    def test_取值函数会被调用(self):
+        捕获 = []
+        页 = self._页()
+        with mock.patch('剪贴板.复制', side_effect=lambda t: 捕获.append(t) or True):
+            页._复制(lambda: 'token-abc-123')
+        self.assertEqual(捕获, ['token-abc-123'])
+        self.assertIn('已复制', 页._提示[-1])
+
+    def test_字符串照旧(self):
+        捕获 = []
+        页 = self._页()
+        with mock.patch('剪贴板.复制', side_effect=lambda t: 捕获.append(t) or True):
+            页._复制('http://127.0.0.1:8760/')
+        self.assertEqual(捕获, ['http://127.0.0.1:8760/'])
+
+    def test_空值与取值失败都不写剪贴板(self):
+        页 = self._页()
+
+        def 炸():
+            raise RuntimeError('boom')
+
+        捕获 = []
+        with mock.patch('剪贴板.复制', side_effect=lambda t: 捕获.append(t) or True):
+            页._复制('—')
+            页._复制(炸)
+        self.assertEqual(捕获, [], '空/异常值不应写剪贴板')
+        self.assertTrue(any('没有可复制' in m for m in 页._提示))
+
+
 class Test接线护栏(unittest.TestCase):
     """防止再回到"没挂 page 的 flet Clipboard 服务"。"""
 
