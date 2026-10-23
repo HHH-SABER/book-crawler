@@ -60,8 +60,18 @@ async function 唤起程序(参数) {
     end: String(参数.end || ''),
   });
   const 协议地址 = `novelcrawler://crawl?${q.toString()}`;
-  await chrome.tabs.create({ url: 协议地址, active: true });
-  return 协议地址;
+  // 夸克等浏览器对自定义协议的 tabs.create 支持不一 (会抛/无响应) —— 兜住
+  try {
+    await chrome.tabs.create({ url: 协议地址, active: true });
+    return 协议地址;
+  } catch (e) {
+    try {
+      await chrome.tabs.update({ url: 协议地址 });
+      return 协议地址;
+    } catch (e2) {
+      throw new Error('此浏览器不支持自动唤起，请先手动打开小说爬虫再点一次「开始抓取」');
+    }
+  }
 }
 
 async function 建抓取任务(参数) {
@@ -79,11 +89,16 @@ async function 建抓取任务(参数) {
     return { ok: true, data: { ...结果, 唤起: false } };
   } catch (e) {
     // 连接失败 (程序没开) → 走协议唤起; 其他错误 (如 URL 校验失败) 直接报
-    if (/Failed to fetch|NetworkError|ERR_CONNECTION|HTTP 5\d\d/i.test(String(e.message || e))) {
-      await 唤起程序(参数);
-      return { ok: true, data: { 唤起: true } };
+    const 文本 = String(e.message || e);
+    if (/Failed to fetch|NetworkError|ERR_CONNECTION|HTTP 5\d\d/i.test(文本)) {
+      try {
+        await 唤起程序(参数);
+        return { ok: true, data: { 唤起: true } };
+      } catch (e3) {
+        return { ok: false, error: String(e3.message || e3) };
+      }
     }
-    throw e;
+    return { ok: false, error: 文本 };
   }
 }
 
