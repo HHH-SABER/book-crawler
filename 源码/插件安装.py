@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -74,21 +75,55 @@ def _状态根() -> Path:
 
 
 def 安装源(浏览器: str) -> Optional[Path]:
-    """找到该版本插件的源目录 (源码运行 / 打包后 / EXE 旁 三种形态)。"""
+    """找到该版本插件的源目录。
+
+    ⚠️ 打包后最容易踩的坑 (2026-10-23 用户实测"找不到插件源"):
+    `get_app_base_dir()` 在 frozen 模式下返回 **EXE 所在目录**, 而 build_exe
+    用 `--add-data 插件/dist:插件/dist` 把插件压进了 PyInstaller 的**临时解包
+    目录 `sys._MEIPASS`** —— 两处不同, 必须两个都查。
+    """
     浏览器 = 浏览器.lower()
     if 浏览器 not in _支持:
         return None
     基 = _基目录()
+    _mei = str(getattr(sys, '_MEIPASS', '') or '').strip()
+    解包 = Path(_mei) if _mei else None
     候选 = [
-        基 / '插件' / 'dist' / 浏览器,      # 源码运行 (构建产物)
-        基 / '插件' / 浏览器,               # 打包内 (build 时收进去的形态)
-        基 / 'dist' / '插件' / 浏览器,      # EXE 旁 (便携发布形态)
+        基 / '插件' / 'dist' / 浏览器,        # 源码运行 (构建产物)
+        基 / '插件' / 浏览器,                 # EXE 旁 (便携发布形态)
+        基 / 'dist' / '插件' / 浏览器,
         基 / 'dist' / '插件' / 'dist' / 浏览器,
     ]
+    if 解包 is not None:
+        候选 += [
+            解包 / '插件' / 'dist' / 浏览器,   # 打包后 (--add-data 落点)
+            解包 / '插件' / 浏览器,
+        ]
     for p in 候选:
         if (p / 'manifest.json').is_file():
             return p
+    # 未单独构建的浏览器 (Brave/Vivaldi/360/QQ/夸克) 复用 Chrome 通用包 ——
+    # MV3 在各 Chromium 浏览器通用, 差别只有清单里的显示名 (安装时改写)。
+    if 浏览器 in _支持 and 浏览器 not in ('chrome', 'edge'):
+        for p in 候选:
+            if p.name == 浏览器:
+                通用 = p.with_name('chrome')
+                if (通用 / 'manifest.json').is_file():
+                    return 通用
     return None
+
+
+def 源候选路径(浏览器: str) -> list:
+    """诊断用: 返回所有查过的路径 (失败时拼进原因, 免得再猜)。"""
+    浏览器 = (浏览器 or '').lower()
+    基 = _基目录()
+    _mei = str(getattr(sys, '_MEIPASS', '') or '').strip()
+    解包 = Path(_mei) if _mei else None
+    候选 = [基 / '插件' / 'dist' / 浏览器, 基 / '插件' / 浏览器,
+            基 / 'dist' / '插件' / 浏览器]
+    if 解包 is not None:
+        候选.append(解包 / '插件' / 'dist' / 浏览器)
+    return [str(x) for x in 候选]
 
 
 def 安装(浏览器: str) -> dict:
@@ -102,8 +137,10 @@ def 安装(浏览器: str) -> dict:
                 '目录': '', '步骤': []}
     源 = 安装源(浏览器)
     if 源 is None:
+        查过 = '；'.join(源候选路径(浏览器))
         return {'ok': False,
-                '原因': f'找不到 {_浏览器名[浏览器]} 版插件源 (先运行 插件/构建两版.py 或重新构建 EXE)',
+                '原因': f'找不到 {_浏览器名[浏览器]} 版插件源。已查: {查过}'
+                        f'（源码运行请先执行 插件/构建两版.py；EXE 请重新构建）',
                 '目录': '', '步骤': []}
     基目标 = _状态根() / '插件' / 浏览器
 
@@ -135,6 +172,22 @@ def 安装(浏览器: str) -> dict:
                     '原因': f'复制失败（{type(e2).__name__}）。若插件已在浏览器中加载, '
                             f'请先在扩展页移除后重试；或手动复制目录 {源}'}
         回退说明 = '（原目录被浏览器占用，已改用新目录；扩展页里请移除旧的、加载新的）'
+    # 未单独构建的浏览器复用 Chrome 通用包: 改写清单里的显示名 (功能完全一致)
+    try:
+        import json as _json
+        清单 = 目标 / 'manifest.json'
+        if 清单.is_file():
+            m = _json.loads(清单.read_text(encoding='utf-8'))
+            名 = _浏览器名.get(浏览器, 浏览器)
+            if 浏览器 != 'chrome':
+                m['name'] = f'小说爬虫 · 凭据中继（{名} 版）'
+                m['description'] = (f'把当前网站的登录 Cookie 推送给本机小说爬虫'
+                                    f'（{名} 版，仅限白名单站点）')
+                清单.write_text(_json.dumps(m, ensure_ascii=False, indent=2) + '\n',
+                              encoding='utf-8')
+    except Exception as e:
+        _log.info(f'[插件安装] 清单改写失败 (不影响加载): {type(e).__name__}: {e}')
+
     _log.info(f'[插件安装] {_浏览器名[浏览器]} 版已复制到 {目标} {回退说明}')
     加载钮 = _加载按钮文案.get(浏览器, _扩展页级文案默认)
     return {
@@ -362,4 +415,4 @@ def 状态文案() -> str:
         return f'✅ 插件已连接（{s["秒前"] // 60} 分钟前同步）'
     if s['秒前'] >= 0:
         return f'⚠️ 插件最后活跃于 {s["时间"]}，可能已关闭或未安装'
-    return '⬜ 插件未安装（点下面按钮安装）'
+    return '插件未安装 —— 在下方列表选择浏览器安装'

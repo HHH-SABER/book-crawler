@@ -63,6 +63,33 @@ class Test安装(unittest.TestCase):
         self.assertIn('Ctrl+V', 结果['步骤'][2], '第 3 步必须讲粘贴目录路径')
         self.assertTrue(any('加载' in s for s in 结果['步骤']), '必须讲加载按钮')
 
+    def test_未单独构建的浏览器复用通用包并改清单名(self):
+        """Brave/Vivaldi/360/QQ/夸克 没有单独构建产物 —— 必须复用 chrome 包,
+        并在复制时把 manifest 名称改成对应浏览器 (否则点了仍是"找不到插件源")。"""
+        _造源(self.根, 'chrome')
+        目标根 = self.根 / '状态'
+        with mock.patch.object(I, '_基目录', return_value=self.根), \
+                mock.patch.object(I, '_浏览器exe', return_value='C:/fake/quark.exe'), \
+                mock.patch.object(I, '_状态根', return_value=目标根):
+            self.assertEqual(I.安装源('quark'), self.根 / '插件' / 'dist' / 'chrome')
+            结果 = I.安装('quark')
+        self.assertTrue(结果['ok'], 结果)
+        import json as _j
+        清单 = _j.loads((目标根 / '插件' / 'quark' / 'manifest.json').read_text(encoding='utf-8'))
+        self.assertIn('夸克', 清单['name'])
+        self.assertEqual(清单['manifest_version'], 3, '功能/权限必须与通用包一致')
+
+    def test_打包分支从_MEIPASS取源(self):
+        """打包后 get_app_base_dir=EXE旁, 插件在 _MEIPASS —— 必须查后者。"""
+        解包 = self.根 / 'meipass'
+        源 = 解包 / '插件' / 'dist' / 'chrome'
+        源.mkdir(parents=True)
+        (源 / 'manifest.json').write_text('{}', encoding='utf-8')
+        空基 = self.根 / 'exe旁'
+        with mock.patch.object(I, '_基目录', return_value=空基), \
+                mock.patch.object(I.sys, '_MEIPASS', str(解包), create=True):
+            self.assertEqual(I.安装源('chrome'), 源)
+
     def test_缺源时给人话原因(self):
         with mock.patch.object(I, '_基目录', return_value=self.根), \
                 mock.patch.object(I, '_浏览器exe', return_value='C:/fake/chrome.exe'), \
