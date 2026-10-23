@@ -150,6 +150,12 @@ class Test引擎接线(unittest.TestCase):
         m._curl_sessions = {}
         m._会话缓存锁 = __import__('threading').Lock()
         m._requests_lock = __import__('threading').Lock()
+        # P8-C2 统计字段 (2026-10-24): __new__ 绕过 __init__, 新增实例字段必须
+        # 在此镜像补齐, 否则成功路径的 _记域名命中 会 AttributeError
+        m._降级次数 = 0
+        m._域名统计 = {}
+        m._成功总数 = 0
+        m._汇总输出次数 = 0
         return m
 
     def test_预检拦截私网(self):

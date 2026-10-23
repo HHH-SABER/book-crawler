@@ -195,6 +195,23 @@ class 引擎响应:
         self._text = value or ''
 
 
+def _统计域名(url: str) -> str:
+    """取统计用域名 (小写、去 www 前缀); 失败返回 '(未知)'。"""
+    try:
+        from urllib.parse import urlparse
+        主机 = (urlparse(str(url)).hostname or '').lower()
+        if 主机.startswith('www.'):
+            主机 = 主机[4:]
+        return 主机 or '(未知)'
+    except Exception:
+        return '(未知)'
+
+
+# P8-C2 (2026-10-24): 层命中统计参数
+_域名统计上限 = 100        # 域名桶上限 (超出聚合到"(其他)", 防无界增长)
+_汇总间隔 = 50             # 每 N 次成功请求输出一行汇总 (不逐请求刷屏)
+
+
 class 请求引擎管理器:
     """多引擎管理器: 按反爬机制选择引擎, 支持连续失败自动降级"""
 
@@ -208,6 +225,11 @@ class 请求引擎管理器:
         self._cloudscraper = _cloudscraper
         self._失败计数: Dict[str, int] = {}       # {引擎: 连续失败次数}
         self._降级阈值 = 3                          # 连续失败 N 次 → 降级到更高一级引擎
+        # P8-C2 层命中统计 (2026-10-24)
+        self._降级次数 = 0                          # 降级实际发生次数 (非阈值触发)
+        self._域名统计: Dict[str, Dict[str, int]] = {}   # 域名 → {引擎: 成功次数}
+        self._成功总数 = 0
+        self._汇总输出次数 = 0
         self._curl_sessions: Dict[str, object] = {}        # host → curl_cffi.Session
         self._cloudscraper_sessions: Dict[str, object] = {}  # host → CloudScraper
         self._requests_sessions: Dict[str, object] = {}  # host → requests.Session
@@ -285,16 +307,45 @@ class 请求引擎管理器:
         if 响应.成功:
             self._统计[引擎] = self._统计.get(引擎, 0) + 1
             self._失败计数[引擎] = 0
+            self._记域名命中(url, 引擎)
         else:
             self._失败计数[引擎] = self._失败计数.get(引擎, 0) + 1
         return 响应
 
     def 报告(self) -> str:
-        """引擎使用统计 (供汇总报告展示)"""
-        if not self._统计:
-            return ''
-        return '引擎使用统计: ' + ', '.join(
-            f'{k}×{v}' for k, v in sorted(self._统计.items()))
+        """引擎使用统计 + 降级次数 (P8-C2 扩展, 供汇总报告展示)"""
+        行 = []
+        if self._统计:
+            行.append('引擎使用统计: ' + ', '.join(
+                f'{k}×{v}' for k, v in sorted(self._统计.items())))
+        if self._降级次数:
+            行.append(f'降级 {self._降级次数} 次')
+        return '; '.join(行)
+
+    def _记域名命中(self, url: str, 引擎: str) -> None:
+        """P8-C2: 记一次域名×引擎命中; 到间隔输出汇总行。"""
+        self._成功总数 += 1
+        域 = _统计域名(url)
+        if 域 not in self._域名统计 and len(self._域名统计) >= _域名统计上限:
+            域 = '(其他)'                # 上限保护: 长尾域名不再单独占桶
+        表 = self._域名统计.setdefault(域, {})
+        表[引擎] = 表.get(引擎, 0) + 1
+        if self._成功总数 % _汇总间隔 == 0:
+            self._输出汇总()
+
+    def _输出汇总(self) -> str:
+        """层命中统计汇总行 (每 _汇总间隔 次成功一次, INFO 级可检索)。"""
+        self._汇总输出次数 += 1
+        层 = ', '.join(f'{k}×{v}' for k, v in sorted(self._统计.items())) or '(无)'
+        top = sorted(self._域名统计.items(),
+                     key=lambda kv: -sum(kv[1].values()))[:3]
+        域名 = ', '.join(
+            f'{域}(' + '/'.join(f'{k}×{v}' for k, v in sorted(表.items())) + ')'
+            for 域, 表 in top) or '(无)'
+        行 = (f'[引擎] 层命中统计#{self._汇总输出次数}: {层}; '
+              f'降级 {self._降级次数} 次; 域名Top3: {域名}')
+        _log.info(行)
+        return 行
 
     # ------------------------------------------------------------------
     # 引擎选择与降级
@@ -309,6 +360,12 @@ class 请求引擎管理器:
         if 机制 in ('waf_js_challenge', 'js_cookie', 'dynamic_token'):
             if self.可用.get('cloudscraper'):
                 if self._失败计数.get('cloudscraper', 0) >= self._降级阈值:
+                    if self.可用.get('curl_cffi') or self.可用.get('requests'):
+                        self._降级次数 += 1
+                        _log.info(f'[引擎] cloudscraper 连续失败 '
+                                  f'≥{self._降级阈值} → 降级到 '
+                                  f'{"curl_cffi" if self.可用.get("curl_cffi") else "requests"}'
+                                  f' (第 {self._降级次数} 次)')
                     return 'curl_cffi' if self.可用.get('curl_cffi') else 'requests'
                 return 'cloudscraper'
             if self.可用.get('curl_cffi'):
