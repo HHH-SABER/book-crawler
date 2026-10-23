@@ -28,7 +28,7 @@ import dataclasses
 
 import flet as ft
 from . import ui_tokens
-from .ui_tokens import 取色, 状态色, 登记重刷, 设置主题, is_dark, 主题状态
+from .ui_tokens import 取色, 登记重刷, 设置主题
 try:
     import 日志 as _app_log          # 批2B: 统一留痕通道 (容错导入, 同 input_bar 桥模式)
 except Exception:

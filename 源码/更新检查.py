@@ -18,7 +18,6 @@
 import json
 import re
 import threading
-import time
 
 import 日志 as _app_log
 _log = _app_log.get('更新检查')

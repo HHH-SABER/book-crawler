@@ -164,7 +164,7 @@ def main(page: ft.Page):
     )
     # 2026-10-04 (Phase 3): 状态色改走 ui_tokens 令牌 + 登记重刷 ——
     # 绑 ui_fluent 的 MORANDI_* 字符串常量时, 切主题这些控件不会换色。
-    from gui_components.ui_tokens import 取色, 登记重刷
+    from gui_components.ui_tokens import 取色
 
     page.theme = make_morandi_theme()
     page.dark_theme = make_morandi_dark_theme()

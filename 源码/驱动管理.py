@@ -29,7 +29,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import zipfile
 
 try:
@@ -165,7 +164,6 @@ def _从安装目录读版本() -> str:
     覆盖三种安装位置: Program Files / Program Files (x86) / 用户级 (LocalAppData)。
     """
     import re
-    import tempfile
     候选根 = [
         os.path.join(os.environ.get('PROGRAMFILES') or '', 'Google', 'Chrome'),
         os.path.join(os.environ.get('PROGRAMFILES(X86)') or '', 'Google', 'Chrome'),

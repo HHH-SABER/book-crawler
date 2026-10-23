@@ -25,8 +25,7 @@ Phase 4 批 4 (2026-10-07): **接线完成** —— 六个页面的空态/加载
 import flet as ft
 
 from .ui_fluent import (
-    FONT_STACK, SIZE_BODY, SIZE_LABEL, SIZE_SMALL, WEIGHT_BODY,
-    WEIGHT_SUBTITLE, WEIGHT_EMPHASIS,
+    FONT_STACK, SIZE_BODY, SIZE_LABEL, SIZE_SMALL, WEIGHT_EMPHASIS,
 )
 from .ui_tokens import 取色, 状态色, 登记重刷
 from . import ui_tokens

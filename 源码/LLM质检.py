@@ -31,7 +31,6 @@ import json
 import os
 import re
 import threading
-import time
 
 import 日志 as _app_log
 _log = _app_log.get('LLM质检')
