@@ -163,7 +163,7 @@ class Test心跳(unittest.TestCase):
         Path(I.心跳路径()).write_text(
             json.dumps({'ts': time.time() - 3600, '来源': ''}), encoding='utf-8')
         self.assertFalse(I.心跳状态()['已连接'])
-        self.assertIn('最后活跃', I.状态文案())
+        self.assertIn('活跃过', I.状态文案())
 
     def test_无心跳判未安装(self):
         self.assertFalse(I.心跳状态()['已连接'])

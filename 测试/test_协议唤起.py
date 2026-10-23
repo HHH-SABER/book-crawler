@@ -133,7 +133,9 @@ class Test插件产物(unittest.TestCase):
             self.assertIn('初始化异常', js, '初始化必须有 try/catch 提示')
             self.assertIn('取元素', js, '元素访问必须有空值保护')
             bg = (self.dist / 版 / 'background.js').read_text(encoding='utf-8')
-            self.assertIn('tabs.update', bg, '唤起失败要有第二兜底')
+            self.assertIn('读存储', bg, 'storage 必须走回调式 (Promise 版在夸克不可靠)')
+            self.assertIn('此浏览器不支持自动唤起', bg, '唤起失败要给人话提示')
+            self.assertIn('不支持周期任务', bg, 'chrome.alarms 缺失不能拖垮整个 SW')
 
     def test_两版含抓取界面与协议(self):
         for 版 in ('chrome', 'edge'):

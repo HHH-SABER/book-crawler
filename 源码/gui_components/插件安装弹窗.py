@@ -43,6 +43,11 @@ def 打开插件安装弹窗(page) -> ft.AlertDialog:
 
     def _刷新状态(_e=None):
         try:
+            状态行.value = '刷新中…'
+            状态行.update()
+        except Exception:
+            pass    # 刻意静默: 局部刷新失败不影响后续取值
+        try:
             状态行.value = 插件安装.状态文案()
             状态行.update()
         except Exception as e:
@@ -67,6 +72,12 @@ def 打开插件安装弹窗(page) -> ft.AlertDialog:
             控件s.append(ft.Text(s, size=SIZE_LABEL, font_family=FONT_STACK,
                                 color=_文字色, max_lines=2))
         if 目录:
+            控件s.append(ft.Text(
+                '⚠️ 若浏览器里已装过本插件：请在扩展页点该插件的「刷新 ↻」按钮重新加载，'
+                '否则浏览器仍会用旧版本（会出现「未知消息」或报错）。',
+                size=SIZE_LABEL, font_family=FONT_STACK,
+                color=ft.Colors.ORANGE, max_lines=3))
+
             def _复制目录(_e=None):
                 try:
                     插件安装._复制剪贴板(目录)
