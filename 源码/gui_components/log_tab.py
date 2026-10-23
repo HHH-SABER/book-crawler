@@ -24,7 +24,7 @@ from .ui_theme import (make_card, tonal_btn,
                        page_header)
 
 # 统一字体规范
-from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
+from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_TINY,
                          SIZE_BODY, WEIGHT_BODY, open_dialog, 提示条)
 # Phase 3 (2026-10-04): 页面颜色一律走令牌, 且登记重刷 —— 直接 import MORANDI_*
 # 绑到的是**字符串对象**, 切主题不会变; 见 文档/审查报告汇总.md 的 Phase 3 结论。

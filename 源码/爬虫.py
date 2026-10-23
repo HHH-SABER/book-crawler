@@ -2,8 +2,9 @@
 from dataclasses import dataclass
 from 页面抓取 import 检查页面 as _检查页面, RESP_CACHE_MAX
 from 目录链接工具 import 绝对化链接 as _绝对化链接实现
-from 目录链接工具 import (_非章节页名, _是非章节链接, _章节链接合正则,
-                            完整目录_文本, 完整目录_href, _找完整目录链接,
+from 目录链接工具 import (_非章节页名,  # noqa: F401  (测试按 爬虫._非章节页名 引用, 显式再导出)
+                           _是非章节链接, _章节链接合正则,
+                            _找完整目录链接,
                             _目录列表可疑, _剔除非章节单条, _目录折叠提示,
                             _排版章节文本, _读txt缩进配置, _is_ad_line)
 from 内容清洗 import 清洗 as _内容清洗实现
@@ -3689,7 +3690,6 @@ class NovelSpider:
                     success = False
             
             # 传统方法：使用requests
-            import random
             max_retries = 3
             success = False
             for i in range(max_retries):  # 重试机制

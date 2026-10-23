@@ -26,7 +26,7 @@ except Exception:
     import logging
     _log = logging.getLogger('页面抓取')
 
-from sites_config import 站点匹配, validate_public_url, 适配器策略
+from sites_config import validate_public_url, 适配器策略
 
 # 响应缓存条目上限 (防长书运行期内存无界增长; 爬虫.py 经 import 桥接使用)
 RESP_CACHE_MAX = 64

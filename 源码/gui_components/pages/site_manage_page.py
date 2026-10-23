@@ -21,8 +21,7 @@ if _HERE not in sys.path:
 
 from ..ui_theme import make_card, filled_btn, tonal_btn, text_btn, page_header
 from ..ui_fluent import (open_dialog, close_dialog,
-                          FONT_STACK, SIZE_SUBTITLE, SIZE_LABEL,
-                          SIZE_SMALL, SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
+                          FONT_STACK, SIZE_SUBTITLE, SIZE_SMALL, SIZE_TINY, SIZE_BODY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY)
 # Phase 3 (2026-10-04) 页面令牌化: 颜色一律走 取色(令牌键) **并登记重刷**。
 # 为什么不能再用 `from ..ui_fluent import MORANDI_*`: 那是构建期求值一次的

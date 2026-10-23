@@ -13,7 +13,7 @@ from . import history_data
 from .. import states
 from .. import 布局档位
 from ..ui_theme import make_card, tonal_btn, page_header
-from ..ui_fluent import (FONT_STACK, SIZE_TITLE, SIZE_LABEL, SIZE_SMALL,
+from ..ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL,
                           SIZE_TINY, WEIGHT_TITLE,
                           WEIGHT_SUBTITLE, WEIGHT_BODY)
 # Phase 3 (2026-10-04): 页面颜色一律走令牌 + 登记重刷 —— 直接 import MORANDI_*

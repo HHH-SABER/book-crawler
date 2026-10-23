@@ -26,7 +26,6 @@
 import os
 import sys
 import threading
-import time
 from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))

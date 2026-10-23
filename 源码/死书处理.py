@@ -433,7 +433,6 @@ def 删除书记录(网址: str, 任务id: str = '', 范围: tuple = 范围_默�
     部分成功更危险 (用户看到"已删除"但数据半在)。部分成功由调用方如实呈现。
     任务项恒传 delete_file=False → 已抓产物文件绝不会被删。
     """
-    from urllib.parse import urlsplit as _sp
 
     def _删任务():
         if not 任务id:

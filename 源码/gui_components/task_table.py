@@ -12,8 +12,8 @@ import time
 
 from .task_manager import TaskManager
 from .ui_theme import make_card, status_chip, status_color
-from .ui_fluent import (FONT_STACK, SIZE_LABEL, SIZE_SMALL, SIZE_TINY,
-                         WEIGHT_TITLE, WEIGHT_SUBTITLE,
+from .ui_fluent import (FONT_STACK, SIZE_SMALL, SIZE_TINY,
+                         WEIGHT_SUBTITLE,
                          WEIGHT_BODY,
                          open_dialog, close_dialog, 提示条)
 # Phase 3 (2026-10-04): 颜色一律走令牌 —— 直接 import MORANDI_* 绑到的是
