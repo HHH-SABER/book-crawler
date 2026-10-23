@@ -427,13 +427,14 @@ class LogTab:
             self._notify("没有可复制的内容")
             return
         try:
-            import locale
-            enc = locale.getpreferredencoding(False)
-            proc = subprocess.Popen('clip', stdin=subprocess.PIPE, shell=False)
-            proc.communicate(text.encode(enc, errors='replace'))
-            self._notify(f"已复制 {len(self._visible_lines())} 行到剪贴板")
+            import 剪贴板
+            成功 = 剪贴板.复制(text)
         except Exception as ex:
-            self._notify(f"复制失败: {ex}")
+            成功 = False
+            self._notify(f"复制异常: {type(ex).__name__}")
+            return
+        self._notify(f"已复制 {len(self._visible_lines())} 行到剪贴板"
+                     if 成功 else "复制失败（剪贴板不可用）")
 
     def _on_export(self, e=None):
         """导出当前过滤结果为 txt (日志目录下, pathlib 写入)"""

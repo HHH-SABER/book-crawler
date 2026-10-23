@@ -327,27 +327,12 @@ def 扫描() -> list:
 
 
 def _复制剪贴板(文本: str) -> bool:
-    """把文本放进系统剪贴板 (PowerShell → tkinter 双路兜底)。"""
+    """把文本放进系统剪贴板 —— 统一实现见 剪贴板.py (2026-10-23 收敛三套写法)。"""
     try:
-        subprocess.run(
-            ['powershell', '-NoProfile', '-Command', 'Set-Clipboard -Value $env:NC_CLIP'],
-            env={**os.environ, 'NC_CLIP': 文本}, timeout=10,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        return True
+        import 剪贴板
+        return 剪贴板.复制(文本)
     except Exception:
-        pass    # 刻意静默: 降级到 tkinter
-    try:
-        import tkinter
-        r = tkinter.Tk()
-        r.withdraw()
-        r.clipboard_clear()
-        r.clipboard_append(文本)
-        r.update()
-        r.destroy()
-        return True
-    except Exception:
-        return False
+        return False    # 刻意静默: 复制失败由调用方给"手动输入"的退路
 
 
 def 打开扩展页(浏览器: str) -> dict:
