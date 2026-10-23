@@ -35,15 +35,42 @@ function 发消息(msg) {
   });
 }
 
-async function 取当前标签() {
-  // 夸克等浏览器可能: 返回非数组 / 元素缺 url / 直接 reject —— 全部兜住
-  try {
-    const 结果 = await chrome.tabs.query({ active: true, currentWindow: true });
-    const 列表 = Array.isArray(结果) ? 结果 : [];
-    return 列表[0] || null;
-  } catch (e) {
-    return null;
-  }
+function 取当前标签() {
+  // 2026-10-23: 夸克的 chrome.tabs.query **Promise 版**会在内部抛
+  // "Cannot read properties of undefined (reading 'id')" (未处理拒绝 →
+  // 扩展错误页)。改用**回调式** —— 夸克/Chrome/Edge 都支持, 且不会产生
+  // 未处理 Promise; 回调参数非数组/缺字段也一律兜住。
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        try { void chrome.runtime.lastError; } catch (e) { /* 忽略 */ }
+        resolve(Array.isArray(tabs) ? (tabs[0] || null) : null);
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+function 读写存储(取, 键s, 值) {
+  // 回调式存储 (避开部分浏览器 Promise 版返回 undefined)
+  return new Promise((resolve) => {
+    try {
+      if (取) {
+        chrome.storage.local.get(键s, (v) => {
+          try { void chrome.runtime.lastError; } catch (e) { /* 忽略 */ }
+          resolve((v && typeof v === 'object') ? v : {});
+        });
+      } else {
+        chrome.storage.local.set(值, () => {
+          try { void chrome.runtime.lastError; } catch (e) { /* 忽略 */ }
+          resolve(true);
+        });
+      }
+    } catch (e) {
+      resolve(取 ? {} : false);
+    }
+  });
 }
 
 async function 初始化() {
@@ -63,13 +90,8 @@ async function 初始化() {
       域框.textContent = 当前域 ? `${当前域}\n${当前网址}` : '当前标签不是普通网页';
     }
 
-    let s = {};
-    try {
-      s = (await chrome.storage.local.get(
-        ['port', 'token', 'lastMode', 'lastStart', 'lastEnd'])) || {};
-    } catch (e) {
-      s = {};
-    }
+    const s = await 读写存储(true,
+      ['port', 'token', 'lastMode', 'lastStart', 'lastEnd']);
     const 端口框 = 取元素('port');
     const token框 = 取元素('token');
     if (端口框) 端口框.value = s.port || 8760;
@@ -115,13 +137,9 @@ if (模式框) {
   if (模式 === 'range' && (!起 || !止 || 止 < 起)) {
     return 设状态('章节区间要填两个正整数，且结束 ≥ 开始', true);
   }
-  try {
-    await chrome.storage.local.set({
-      lastMode: 模式, lastStart: 起 || '', lastEnd: 止 || '',
-    });
-  } catch (e) {
-    /* 记不住偏好不影响本次抓取 */
-  }
+  await 读写存储(false, null, {
+    lastMode: 模式, lastStart: 起 || '', lastEnd: 止 || '',
+  });
 
   设状态('正在交给小说爬虫…');
   const r = await 发消息({ type: 'crawl', url: 当前网址, mode: 模式, start: 起, end: 止 });
@@ -156,11 +174,9 @@ if (模式框) {
 绑定('save', async () => {
   const port = parseInt((取元素('port') || {}).value, 10) || 8760;
   const token = (((取元素('token') || {}).value) || '').trim();
-  try {
-    await chrome.storage.local.set({ port, token });
-  } catch (e) {
-    设状态('⚠️ 设置没存上：' + String((e && e.message) || e), true);
-    return;
+  const 存上了 = await 读写存储(false, null, { port, token });
+  if (!存上了) {
+    设状态('⚠️ 设置没存上（此浏览器受限），本次仍可测试连通', true);
   }
   设状态('测试连通…');
   const r = await 发消息({ type: 'ping' });

@@ -8,8 +8,22 @@
 
 const 默认端口 = 8760;
 
+function 读存储(键s) {
+  // 回调式优先: 夸克等实现的 Promise 版本不完整, 会静默返回 undefined
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(键s, (v) => {
+        try { void chrome.runtime.lastError; } catch (e) { /* 忽略 */ }
+        resolve((v && typeof v === 'object') ? v : {});
+      });
+    } catch (e) {
+      resolve({});
+    }
+  });
+}
+
 async function 取配置() {
-  const s = await chrome.storage.local.get(['port', 'token']);
+  const s = await 读存储(['port', 'token']);
   return { port: s.port || 默认端口, token: s.token || '' };
 }
 
@@ -61,16 +75,23 @@ async function 唤起程序(参数) {
   });
   const 协议地址 = `novelcrawler://crawl?${q.toString()}`;
   // 夸克等浏览器对自定义协议的 tabs.create 支持不一 (会抛/无响应) —— 兜住
+  const 建标签 = () => new Promise((resolve, reject) => {
+    try {
+      chrome.tabs.create({ url: 协议地址, active: true }, (tab) => {
+        const 错 = chrome.runtime && chrome.runtime.lastError;
+        if (错) return reject(new Error(错.message || String(错)));
+        resolve(tab);
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
   try {
-    await chrome.tabs.create({ url: 协议地址, active: true });
+    await 建标签();
     return 协议地址;
   } catch (e) {
-    try {
-      await chrome.tabs.update({ url: 协议地址 });
-      return 协议地址;
-    } catch (e2) {
-      throw new Error('此浏览器不支持自动唤起，请先手动打开小说爬虫再点一次「开始抓取」');
-    }
+    throw new Error('此浏览器不支持自动唤起（' + String(e.message || e) +
+      '），请先手动打开小说爬虫再点一次「开始抓取」');
   }
 }
 
@@ -116,8 +137,17 @@ async function 推送域名(domain) {
 }
 
 // ---- 周期同步: 白名单以爬虫侧为准, 逐域推送 (失败静默, 不打扰用户) ----
-chrome.alarms.create('凭据同步', { periodInMinutes: 5 });
-chrome.alarms.onAlarm.addListener(async (alarm) => {
+// 同步周期 (2026-10-23: 5→2 分钟, 让"已连接"状态更实时; 同时兜住没有
+// chrome.alarms 的浏览器 —— 顶层抛错会让整个 service worker 失效)
+try {
+  if (chrome.alarms && chrome.alarms.create) {
+    chrome.alarms.create('凭据同步', { periodInMinutes: 2 });
+  }
+} catch (e) { /* 该浏览器不支持周期任务: 只保留手动推送 */ }
+
+try {
+  if (!chrome.alarms || !chrome.alarms.onAlarm) throw new Error('no alarms');
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== '凭据同步') return;
   try {
     const wl = await 调接口('/whitelist');
@@ -125,7 +155,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       try { await 推送域名(d); } catch (e) { /* 单域失败不影响其他域 */ }
     }
   } catch (e) { /* 爬虫没开 / token 未配置: 静默 */ }
-});
+  });
+} catch (e) { /* 不支持周期任务: 忽略 */ }
 
 // ---- popup 消息入口 ----
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
