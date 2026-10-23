@@ -1116,6 +1116,25 @@ def main(page: ft.Page):
         ),
     )
 
+    # ---- 协议唤起: 待建任务 (2026-10-23) ----
+    # 只在"程序本来没开、浏览器唤起它"这条路径上有值; 建完即清空。
+    try:
+        if _待建任务:
+            参数 = dict(_待建任务)
+            _待建任务.clear()
+            起 = int(参数.get('start') or 0)
+            终 = int(参数.get('end') or 0)
+            范围 = (起, 终) if (参数.get('mode') == 'range' and 起 >= 1 and 终 >= 起) else None
+            task_manager.create_task(参数['url'],
+                                     mode='range' if 范围 else 'full',
+                                     chapter_range=范围, resume=True,
+                                     unique_title=True)
+            task_table._refresh()
+            page.update()
+            app_log.info("系统", f"协议唤起已建任务: {参数['url']}")
+    except Exception as _e_待建:
+        app_log.info("系统", f'协议唤起建任务失败: {type(_e_待建).__name__}: {_e_待建}')
+
     # ---- 截图/自检钩子 (2026-10-06, 仅环境变量触发: 正常使用完全不受影响) ----
     #   用途: "设计稿 vs 程序"逐页对照 (6 页 × 日夜); 解析见 解析启动钩子()。
     #   放在 page.add 之后: 必须先有内容再切页, 否则 Stack 可见性判定拿不到索引。
@@ -1177,5 +1196,42 @@ def 解析启动钩子(页集, 环境: dict) -> dict:
     return {'页': 目标页, '夜间': 夜间, '警告': 警告}
 
 
+# ---- 协议唤起 (2026-10-23): 插件点「开始抓取」经 novelcrawler:// 拉起本程序 ----
+# 路径 A: 已有实例在跑 → 把任务转发过去, 本进程直接退出 (不弹第二个窗口);
+# 路径 B: 没在跑 → 记成待建任务, 界面挂载后自动建任务 (见 main 内 _待建任务 段)。
+_待建任务 = {}
+
+
+def _处理协议唤起() -> None:
+    global _待建任务
+    try:
+        import 协议唤起
+    except Exception as e:
+        app_log.debug("系统", f'协议模块导入失败: {type(e).__name__}: {e}')
+        return
+    try:
+        协议唤起.注册协议()          # 幂等: 每次启动刷新一次 (EXE 路径可能变)
+    except Exception as e:
+        app_log.debug("系统", f'协议注册失败(不影响使用): {type(e).__name__}: {e}')
+    try:
+        参数 = 协议唤起.取唤起参数(sys.argv)
+    except Exception as e:
+        app_log.info("系统", f'唤起参数解析失败: {type(e).__name__}: {e}')
+        return
+    if not 参数:
+        return
+    app_log.info("系统", f"收到协议唤起: mode={参数.get('mode')} url={参数.get('url')}")
+    try:
+        if 协议唤起.有已运行实例() and 协议唤起.转发到已运行实例(参数):
+            app_log.info("系统", "任务已转交给正在运行的实例, 本进程退出")
+            sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        app_log.info("系统", f'转发失败, 转为本地建任务: {type(e).__name__}: {e}')
+    _待建任务 = 参数
+
+
 if __name__ == "__main__":
+    _处理协议唤起()
     ft.run(main)
