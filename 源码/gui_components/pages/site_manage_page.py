@@ -58,15 +58,7 @@ except Exception:
     _app_log = None
 
 
-def _dbg(source: str, message: str):
-    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
-    if _app_log is not None:
-        try:
-            _app_log.debug(source, message)
-        except Exception:
-            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
-
-
+from _调试 import _dbg  # noqa: E402  统一实现 (G1)
 # ------------------------------------------------- Phase 3: 令牌取色小工具
 # 取色() 只在**构建期**求值, 所以每个用了令牌色的控件都必须 登记重刷,
 # 否则切主题时属性不会重算 —— 等于没迁移 (见 迁移规范 第二节)。

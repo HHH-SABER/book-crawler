@@ -32,15 +32,7 @@ except Exception:
     _app_log = None
 
 
-def _dbg(source: str, message: str):
-    """异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免高频刷屏)"""
-    if _app_log is not None:
-        try:
-            _app_log.debug(source, message)
-        except Exception:
-            pass  # 刻意静默: try 块本身在写日志会递归 (日志链路兜底)
-
-
+from _调试 import _dbg  # noqa: E402  统一实现 (G1)
 from ..ui_fluent import (txt, FONT_STACK, FONT_TERMINAL,
                           SIZE_MICRO, SIZE_TINY, SIZE_SMALL, SIZE_BODY,
                          WEIGHT_SUBTITLE, WEIGHT_BODY, WEIGHT_EMPHASIS,
