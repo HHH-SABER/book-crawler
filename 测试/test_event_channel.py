@@ -285,7 +285,10 @@ class Test接线存在(unittest.TestCase):
         self.assertTrue(callable(getattr(_重定向器(_新任务()), '处理任务事件', None)))
 
     def test_任务管理器在运行任务时订阅事件(self):
-        源码 = inspect.getsource(tm.TaskManager._run_task)
+        # P9 阶段4 拆分后退订移入 _线程输出注销 —— 合并两方法源码断言,
+        # 守护"运行任务时订阅 + finally 退订"的成对契约, 不绑死具体方法
+        源码 = (inspect.getsource(tm.TaskManager._run_task)
+                + inspect.getsource(tm.TaskManager._线程输出注销))
         self.assertIn('任务事件.订阅', 源码, '_run_task 未订阅事件通道')
         self.assertIn('任务事件.退订', 源码, '_run_task 未退订事件通道 (线程复用会串台)')
 

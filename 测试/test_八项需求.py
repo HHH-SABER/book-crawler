@@ -289,8 +289,10 @@ class Test异常路径顺序(unittest.TestCase):
     """
 
     def test_异常路径顺序(self):
+        # P9 阶段4: 异常收尾拆入 _任务异常收尾 —— 锚点从 'except' 字样改为
+        # 方法名, 守护意图不变 (error → 记死书 → 置终态 + dead_pending 传参)
         文本 = _读('gui_components/task_manager.py')
-        块 = 文本.split('except Exception as e:')[1][:2000]
+        块 = 文本.split('def _任务异常收尾')[1][:2000]
         i_err = 块.find('task.error = str(e)')
         i_记 = 块.find('self._记死书(task, e)')
         i_ter = 块.find('self._set_terminal(')

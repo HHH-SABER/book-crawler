@@ -1201,46 +1201,8 @@ class TaskManager:
                              f"任务事件通道订阅失败 (仅影响事件通道, 正则兜底仍在): "
                              f"{type(_e_ev).__name__}: {_e_ev}")
         try:
-            # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from 爬虫 import run_crawl, CrawlOptions
-
-            if app_log is not None:
-                app_log.info(f"任务{task.task_id}",
-                             f"任务启动: {url} 模式={mode} 线程={threads} 延迟={delay} 续传={resume}"
-                             + (" 增量=开" if incremental else ""))
-            # 同域闸门: 同一站点最多 1 个任务在抓 (对齐 run_batch 限流)。
-            # 同站并发事故 (2026-09-12): GUI 批量 11 URL 同站并发 → WAF 拦截;
-            # 排队期间任务状态为 pending「等待中」(2026-10-04 Phase 3 修正:
-            # 旧实现排队期间谎报 running), 日志可见, 可被停止打断。
-            同域闸门 = _取域闸门(url)
-            已获闸 = _获取域闸门(同域闸门, task.stop_flag,
-                                占用提示=lambda: _排队提示(task))
-            if not 已获闸:
-                return  # 排队等待中被停止 (stop_task 已置终态)
-            # 拿到闸门 = 真正开抓, 由「等待中」转「抓取中」
-            task.status = 'running'
-            try:
-                run_crawl(
-                    url,
-                    opt=CrawlOptions(
-                        mode=mode,
-                        sort_chapters=True,
-                        output_dir=output_dir,
-                        resume=resume,
-                        show_progress=True,
-                        chapter_range=chapter_range,
-                        threads=threads,
-                        delay=delay,
-                        stop_event=task.stop_flag,
-                        unique_title=unique_title,
-                        export_epub=task.export_epub,
-                        incremental=incremental or task.incremental,
-                    ),
-                )
-            finally:
-                if 同域闸门 is not None:
-                    同域闸门.release()
+            self._执行抓取(task, url, mode, chapter_range, threads, delay,
+                           resume, output_dir, unique_title, incremental)
             # 如果状态还是running且没有标记completed，标记为completed
             if self._is_task_thread_owner(task) and task.status == "running":
                 self._set_terminal(task, "completed")
@@ -1255,38 +1217,101 @@ class TaskManager:
             if self._该收尾成功(task):
                 self._收尾成功(task, url)
         except Exception as e:
-            if self._is_task_thread_owner(task) and not task.stop_flag.is_set():
-                # 八项需求 #2 顺序修正: 先填 error / 判死书, 再置终态 ——
-                # _set_terminal 里的终态通知要展示真实失败原因 (旧序 task.error
-                # 尚为空, 通知原因恒为 ''), 死书路径还能带上 dead 判定原因
-                task.error = str(e)
-                self._记死书(task, e)      # 死书失败落点 (非死书异常为一行 no-op)
-                self._set_terminal(
-                    task,
-                    task.status if task.status == 'dead_pending' else "failed")
-                task.logs.append({
-                    'time': time.strftime('%H:%M:%S'),
-                    'msg': f"[错误] {e}"
-                })
-            if app_log is not None:
-                app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
+            self._任务异常收尾(task, e)
         finally:
-            _THREAD_STDOUT.unregister()
-            重定向器._注销镜像()      # 线程复用必须注销, 否则回调悬空 (同 _THREAD_STDOUT)
-            try:
-                import 任务事件
-                任务事件.退订(重定向器)      # U19: 退订, 防线程复用/重复注册
-            except Exception as _e:
-                if app_log:
-                    app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
-            try:
-                # U19 诊断: 一轮任务的"事件 vs 正则兜底"统计, 供判断能否删除正则
-                if app_log is not None:
-                    app_log.info(f"任务{task.task_id}", 重定向器.覆盖率摘要())
-            except Exception:
-                pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
-            # 任务历史持久化: 每轮任务结束 (completed/failed/中断退出) 落一次盘
-            self._保存任务历史()
+            self._线程输出注销(重定向器, task)
+
+    def _执行抓取(self, task: TaskInfo, url: str, mode: str,
+                  chapter_range: tuple, threads: int, delay: float,
+                  resume: bool, output_dir: str, unique_title: bool,
+                  incremental: bool) -> None:
+        """动态导入爬虫 → 同域闸门排队 → run_crawl → 释放闸门。
+
+        动态 import 保持在**获闸之前** (原序): 爬虫模块导入失败时异常发生在
+        占用闸门之前, 不会泄漏闸门。同域闸门: 同一站点最多 1 个任务在抓
+        (对齐 run_batch 限流)。同站并发事故 (2026-09-12): GUI 批量 11 URL
+        同站并发 → WAF 拦截; 排队期间任务状态为 pending「等待中」(2026-10-04
+        Phase 3 修正: 旧实现排队期间谎报 running), 日志可见, 可被停止打断。
+        """
+        # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from 爬虫 import run_crawl, CrawlOptions
+
+        if app_log is not None:
+            app_log.info(f"任务{task.task_id}",
+                         f"任务启动: {url} 模式={mode} 线程={threads} 延迟={delay} 续传={resume}"
+                         + (" 增量=开" if incremental else ""))
+        同域闸门 = _取域闸门(url)
+        已获闸 = _获取域闸门(同域闸门, task.stop_flag,
+                            占用提示=lambda: _排队提示(task))
+        if not 已获闸:
+            return  # 排队等待中被停止 (stop_task 已置终态)
+        # 拿到闸门 = 真正开抓, 由「等待中」转「抓取中」
+        task.status = 'running'
+        try:
+            run_crawl(
+                url,
+                opt=CrawlOptions(
+                    mode=mode,
+                    sort_chapters=True,
+                    output_dir=output_dir,
+                    resume=resume,
+                    show_progress=True,
+                    chapter_range=chapter_range,
+                    threads=threads,
+                    delay=delay,
+                    stop_event=task.stop_flag,
+                    unique_title=unique_title,
+                    export_epub=task.export_epub,
+                    incremental=incremental or task.incremental,
+                ),
+            )
+        finally:
+            if 同域闸门 is not None:
+                同域闸门.release()
+
+    def _任务异常收尾(self, task: TaskInfo, e: Exception) -> None:
+        """任务线程 except 落点: 填 error / 判死书 / 置终态。
+
+        八项需求 #2 顺序修正 (不可变): 先填 error / 判死书, 再置终态 ——
+        _set_terminal 里的终态通知要展示真实失败原因 (旧序 task.error
+        尚为空, 通知原因恒为 ''), 死书路径还能带上 dead 判定原因。
+        """
+        if self._is_task_thread_owner(task) and not task.stop_flag.is_set():
+            task.error = str(e)
+            self._记死书(task, e)      # 死书失败落点 (非死书异常为一行 no-op)
+            self._set_terminal(
+                task,
+                task.status if task.status == 'dead_pending' else "failed")
+            task.logs.append({
+                'time': time.strftime('%H:%M:%S'),
+                'msg': f"[错误] {e}"
+            })
+        if app_log is not None:
+            app_log.error_exc(f"任务{task.task_id}", f"任务异常: {e}", e)
+
+    def _线程输出注销(self, 重定向器: "TaskLogRedirector",
+                     task: TaskInfo) -> None:
+        """任务线程 finally 落点: 注销 stdout/镜像/事件订阅 + 覆盖率诊断 + 历史落盘。
+
+        注销顺序与注册对称; 线程复用必须注销, 否则回调悬空 (同 _THREAD_STDOUT)。
+        """
+        _THREAD_STDOUT.unregister()
+        重定向器._注销镜像()
+        try:
+            import 任务事件
+            任务事件.退订(重定向器)      # U19: 退订, 防线程复用/重复注册
+        except Exception as _e:
+            if app_log:
+                app_log.debug("任务管理", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        try:
+            # U19 诊断: 一轮任务的"事件 vs 正则兜底"统计, 供判断能否删除正则
+            if app_log is not None:
+                app_log.info(f"任务{task.task_id}", 重定向器.覆盖率摘要())
+        except Exception:
+            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
+        # 任务历史持久化: 每轮任务结束 (completed/failed/中断退出) 落一次盘
+        self._保存任务历史()
 
     def stop_task(self, task_id: str) -> bool:
         """停止指定任务（通过设置停止标志，爬虫循环检查后退出）。
