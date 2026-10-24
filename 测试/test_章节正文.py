@@ -74,3 +74,64 @@ class 用适配器提取用例(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class 该用站点提取器用例(unittest.TestCase):
+    def test_无配置返回False(self):
+        self.assertFalse(章节正文.该用站点提取器(None))
+
+    def test_非html_selector返回False(self):
+        with mock.patch.object(sites_config, 'PATTERN_HTML_SELECTOR', 'html_selector'):
+            self.assertFalse(章节正文.该用站点提取器({'pattern': 'datafile'}))
+
+    def test_未注册提取器返回False(self):
+        with mock.patch.object(sites_config, 'PATTERN_HTML_SELECTOR', 'html_selector'), \
+             mock.patch.object(sites_config, '解析提取器名', lambda n: n), \
+             mock.patch.object(sites_config, '提取器已注册', lambda n: False):
+            self.assertFalse(章节正文.该用站点提取器(
+                {'pattern': 'html_selector', 'content_extractor': 'siteX'}))
+
+    def test_已注册返回True(self):
+        见过 = {}
+        with mock.patch.object(sites_config, 'PATTERN_HTML_SELECTOR', 'html_selector'), \
+             mock.patch.object(sites_config, '解析提取器名',
+                               lambda n: 见过.setdefault('名', n) or n), \
+             mock.patch.object(sites_config, '提取器已注册', lambda n: True):
+            self.assertTrue(章节正文.该用站点提取器(
+                {'pattern': 'html_selector', 'content_extractor': 'siteX'}))
+        self.assertEqual(见过['名'], 'siteX')
+
+    def test_注册判定抛异常按不可用处理(self):
+        def _炸(n):
+            raise RuntimeError('注册表坏')
+        with mock.patch.object(sites_config, 'PATTERN_HTML_SELECTOR', 'html_selector'), \
+             mock.patch.object(sites_config, '解析提取器名', lambda n: n), \
+             mock.patch.object(sites_config, '提取器已注册', _炸):
+            self.assertFalse(章节正文.该用站点提取器(
+                {'pattern': 'html_selector', 'content_extractor': 'x'}))
+
+
+class 用站点提取器用例(unittest.TestCase):
+    def test_透传结果与参数(self):
+        收到 = {}
+
+        def 抽(session, url, pattern, base, headers, 取JS):
+            收到.update(url=url, base=base, 取JS=取JS)
+            return '正文', True
+        with mock.patch.object(sites_config, 'extract_content', 抽):
+            正文, 成功 = 章节正文.用站点提取器(
+                'S', URL, {'pattern': 'html_selector'}, 'https://s.example.com',
+                {'h': 1}, 'JSFUNC')
+        self.assertEqual((正文, 成功), ('正文', True))
+        self.assertEqual(收到['url'], URL)
+        self.assertEqual(收到['取JS'], 'JSFUNC')
+
+    def test_异常时返回空且留痕(self):
+        def 炸(*a, **k):
+            raise RuntimeError('配置缺陷')
+        with mock.patch.object(sites_config, 'extract_content', 炸):
+            with self.assertLogs('小说爬虫', level='INFO') as 记录:
+                正文, 成功 = 章节正文.用站点提取器(
+                    'S', URL, {}, 'https://s.example.com', {}, 'JS')
+        self.assertEqual((正文, 成功), ('', False))
+        self.assertIn('回退通用检测', '\n'.join(记录.output))
