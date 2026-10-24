@@ -8,10 +8,13 @@
 用 `.runtime/*.py` 会把 `.runtime/python314/Lib/**/*.py` 也一起吞进来（实测 193MB）。
 另外缓存/字节码/浏览器 profile 属可再生成物，显式排除。
 """
+import os
 import pathlib
 
 根 = pathlib.Path(__file__).resolve().parent.parent
-私有仓 = 根.parent / '小说爬虫-私有资产.git'
+#: 允许用环境变量改私有仓位置（换机/测试/放到其它盘时用）
+_私有仓覆盖 = os.environ.get('NC_PRIVATE_GIT_DIR', '').strip()
+私有仓 = pathlib.Path(_私有仓覆盖) if _私有仓覆盖 else (根.parent / '小说爬虫-私有资产.git')
 
 #: 只收这些路径（相对项目根，glob 语义）
 白名单目录 = ('站点适配_本地', '测试样本_本地', '测试_本地', '数据')
