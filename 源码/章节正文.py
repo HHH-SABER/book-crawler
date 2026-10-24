@@ -43,3 +43,36 @@ def 用适配器提取(current_url, page_index, base_url, 取页面):
     except Exception as e:      # noqa: BLE001 — 插件缺陷降级到内置提取链
         _log.info(f"[适配器] 正文提取异常, 回退通用流程: {e}")
         return None
+
+
+def 该用站点提取器(site_pattern):
+    """站点配置是否走「专属提取器」路径：pattern=html_selector 且提取器**已注册**。
+
+    注册表在 gitignored 的 `站点适配_本地/_提取器.py`；公开形态未注册 ⇒ False，
+    保持原通用提取路径（避免行为退化）。站点名经 `解析提取器名` 归一为机制名。
+    """
+    try:
+        from sites_config import PATTERN_HTML_SELECTOR, 解析提取器名, 提取器已注册
+    except ImportError:
+        return False
+    if not site_pattern or site_pattern.get('pattern') != PATTERN_HTML_SELECTOR:
+        return False
+    try:
+        return bool(提取器已注册(解析提取器名(site_pattern.get('content_extractor') or '')))
+    except Exception as _e:      # noqa: BLE001 — 注册表异常按"不可用"处理
+        _log.debug(f'[sites_config] 提取器注册判定失败: {type(_e).__name__}: {_e}')
+        return False
+
+
+def 用站点提取器(session, current_url, site_pattern, base_url, headers, 取JS页面):
+    """调 `sites_config.extract_content` 抽一页正文。
+
+    Returns:
+        (正文, 是否成功)；异常时返回 ('', False) 并留 INFO 日志（与原实现一致）。
+    """
+    try:
+        from sites_config import extract_content
+        return extract_content(session, current_url, site_pattern, base_url, headers, 取JS页面)
+    except Exception as e:      # noqa: BLE001 — 站点配置缺陷降级到通用检测
+        _log.info(f"[sites_config] 站点配置提取异常, 回退通用检测: {e}")
+        return '', False

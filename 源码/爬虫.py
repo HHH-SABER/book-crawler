@@ -3237,7 +3237,7 @@ class NovelSpider:
         page_index = 0
         # ===== 页数上限（Wave2 拆分: 逻辑搬至 章节分页.分页上限）=====
         from 章节分页 import 分页上限, 下一页URL  # noqa: PLC0415 — 就近导入，避免顶层循环
-        from 章节正文 import 用适配器提取  # Wave2: 适配器正文提取调用
+        from 章节正文 import (用适配器提取, 该用站点提取器, 用站点提取器)  # Wave2: 适配器/站点配置正文提取
         max_pages = 分页上限(site_pattern, chapter_url, _站点策略, max_pages)
         
         while page_index < max_pages:
@@ -3353,16 +3353,11 @@ class NovelSpider:
             # 注意: 只对注册表已实现的提取器启用 (提取器实现在
             # 站点适配_本地/_提取器.py, 不入库; 公开形态未注册 → 保持原通用
             # 提取路径, 避免行为退化)。旧站点名经 解析提取器名 归一为机制名。
-            if (site_pattern and site_pattern.get('pattern') == PATTERN_HTML_SELECTOR
-                    and 提取器已注册(解析提取器名(site_pattern.get('content_extractor') or ''))):
-                try:
-                    site_content, site_ok = extract_content_by_pattern(
-                        self.session, current_url, site_pattern, self.base_url, headers,
-                        lambda u, h: self._get_with_js_challenge(u, h),
-                    )
-                except Exception as e:
-                    _log.info(f"[sites_config] 站点配置提取异常, 回退通用检测: {e}")
-                    site_content, site_ok = '', False
+            # Wave2: 判定与调用搬至 章节正文（该用站点提取器 / 用站点提取器）
+            if 该用站点提取器(site_pattern):
+                site_content, site_ok = 用站点提取器(
+                    self.session, current_url, site_pattern, self.base_url, headers,
+                    lambda u, h: self._get_with_js_challenge(u, h))
                 if site_ok and site_content:
                     _log.info(f"[sites_config] 站点配置提取成功: {len(site_content)} 字符 "
                           f"(extractor={site_pattern['content_extractor']})")
@@ -3393,13 +3388,7 @@ class NovelSpider:
                     page_html=getattr(self, '_datafile_page_html', None),
                     headers=headers)
                 if data_text and len(data_text) > 50:
-                    data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
-                    if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
-                                       or '☆' in data_lines[0] or '第' in data_lines[0]):
-                        data_lines = data_lines[1:]
-                    data_lines = [l for l in data_lines
-                                  if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
-                    data_content = '\n'.join(data_lines)
+                    data_content = 整理数据正文(data_text)  # Wave2: 复用纯函数
                     if len(data_content) > 50:
                         _log.info(f"[站点配置] 数据文件解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                         generic_content = data_content
