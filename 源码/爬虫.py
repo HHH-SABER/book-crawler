@@ -3441,13 +3441,7 @@ class NovelSpider:
                     page_html=getattr(self, '_datafile_page_html', None),
                     headers=headers)
                 if data_text and len(data_text) > 50:
-                    data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
-                    if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
-                                       or '☆' in data_lines[0] or '第' in data_lines[0]):
-                        data_lines = data_lines[1:]
-                    data_lines = [l for l in data_lines
-                                  if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
-                    data_content = '\n'.join(data_lines)
+                    data_content = 整理数据正文(data_text)  # Wave2: 复用纯函数
                     if len(data_content) > 50:
                         _log.info(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                         generic_content = data_content
