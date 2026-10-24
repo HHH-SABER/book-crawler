@@ -13,6 +13,8 @@
 """
 import logging
 
+from 章节数据文件 import 页指纹  # 纯函数, 无循环依赖
+
 _log = logging.getLogger('小说爬虫')
 
 
@@ -76,3 +78,25 @@ def 用站点提取器(session, current_url, site_pattern, base_url, headers, �
     except Exception as e:      # noqa: BLE001 — 站点配置缺陷降级到通用检测
         _log.info(f"[sites_config] 站点配置提取异常, 回退通用检测: {e}")
         return '', False
+
+
+def 结算一页(page_text, 上一页指纹):
+    """对"已清洗的一页正文"做合并前的结算：是否重复 + 新指纹 + 要追加的片段。
+
+    原实现把这段在 `get_chapter_content` 里**重复写了 4 遍**（数据文件 / 适配器 /
+    站点配置 / 通用检测四条路径各一份），且每份都夹着 `break` 与日志，无法单独验证。
+    抽出后"重复判定口径"与"追加格式"只有一处定义。
+
+    Args:
+        page_text: 已清洗的正文
+        上一页指纹: 上一页的复合指纹（`页指纹()` 的结果；首页传 None）
+
+    Returns:
+        (是否重复, 新指纹, 追加片段)
+        - 重复: True, 上一页指纹（保持不变）, ''
+        - 不重复: False, 本页指纹, `page_text + '\n\n'`
+    """
+    指纹 = 页指纹(page_text or '')
+    if 指纹 == 上一页指纹:
+        return True, 上一页指纹, ''
+    return False, 指纹, (page_text or '') + '\n\n'

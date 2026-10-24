@@ -135,3 +135,33 @@ class 用站点提取器用例(unittest.TestCase):
                     'S', URL, {}, 'https://s.example.com', {}, 'JS')
         self.assertEqual((正文, 成功), ('', False))
         self.assertIn('回退通用检测', '\n'.join(记录.output))
+
+
+class 结算一页用例(unittest.TestCase):
+    def test_首页不重复且带追加片段(self):
+        正文 = '第一页正文内容'
+        重复, 指纹, 追加 = 章节正文.结算一页(正文, None)
+        self.assertFalse(重复)
+        self.assertEqual(指纹, 章节正文.页指纹(正文))
+        self.assertEqual(追加, 正文 + '\n\n')
+
+    def test_与上一页相同则判重复且不追加(self):
+        正文 = '同一页内容'
+        上 = 章节正文.页指纹(正文)
+        重复, 指纹, 追加 = 章节正文.结算一页(正文, 上)
+        self.assertTrue(重复)
+        self.assertEqual(指纹, 上, '重复时指纹应保持不变')
+        self.assertEqual(追加, '')
+
+    def test_内容不同则判不重复(self):
+        上 = 章节正文.页指纹('上一页')
+        重复, 指纹, 追加 = 章节正文.结算一页('这一页', 上)
+        self.assertFalse(重复)
+        self.assertNotEqual(指纹, 上)
+        self.assertEqual(追加, '这一页\n\n')
+
+    def test_空文本也能安全结算(self):
+        重复, 指纹, 追加 = 章节正文.结算一页('', None)
+        self.assertFalse(重复)
+        self.assertEqual(len(指纹), 16)
+        self.assertEqual(追加, '\n\n')

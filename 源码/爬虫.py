@@ -3237,7 +3237,8 @@ class NovelSpider:
         page_index = 0
         # ===== 页数上限（Wave2 拆分: 逻辑搬至 章节分页.分页上限）=====
         from 章节分页 import 分页上限, 下一页URL  # noqa: PLC0415 — 就近导入，避免顶层循环
-        from 章节正文 import (用适配器提取, 该用站点提取器, 用站点提取器)  # Wave2: 适配器/站点配置正文提取
+        from 章节正文 import (用适配器提取, 该用站点提取器, 用站点提取器,
+                        结算一页)  # Wave2: 适配器/站点配置正文提取/合并结算
         max_pages = 分页上限(site_pattern, chapter_url, _站点策略, max_pages)
         
         while page_index < max_pages:
@@ -3305,12 +3306,12 @@ class NovelSpider:
                                 _log.info("[数据文件] 内容过短, 可能已到末页")
                                 break
                             # 复合指纹 (Wave2 拆分: 逻辑在 章节数据文件.页指纹)
-                            fingerprint = 页指纹(page_text)
-                            if fingerprint == self._last_page_fingerprint:
+                            重复, self._last_page_fingerprint, _追加 = 结算一页(
+                                page_text, self._last_page_fingerprint)
+                            if 重复:
                                 _log.info("[数据文件] 与上一页指纹相同, 停止抓取")
                                 break
-                            self._last_page_fingerprint = fingerprint
-                            total_content += page_text + '\n\n'
+                            total_content += _追加
                             _log.info(f"[数据文件] ✅ 合并, 累计 {len(total_content)} 字符")
                             success = True
                             page_index += 1
@@ -3333,12 +3334,12 @@ class NovelSpider:
                     if len(page_text) < 50:
                         _log.info("[适配器] 正文过短, 可能已到末页, 结束分页")
                         break
-                    fingerprint = 页指纹(page_text)
-                    if fingerprint == self._last_page_fingerprint:
+                    重复, self._last_page_fingerprint, _追加 = 结算一页(
+                        page_text, self._last_page_fingerprint)
+                    if 重复:
                         _log.info(f"[适配器] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                         break
-                    self._last_page_fingerprint = fingerprint
-                    total_content += page_text + '\n\n'
+                    total_content += _追加
                     _log.info(f"[适配器] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
                     success = True
                     page_index += 1
@@ -3366,12 +3367,12 @@ class NovelSpider:
                     if len(page_text) < 50:
                         _log.info("[sites_config] 正文过短, 可能已到末页, 结束分页")
                         break
-                    fingerprint = 页指纹(page_text)
-                    if fingerprint == self._last_page_fingerprint:
+                    重复, self._last_page_fingerprint, _追加 = 结算一页(
+                        page_text, self._last_page_fingerprint)
+                    if 重复:
                         _log.info(f"[sites_config] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                         break
-                    self._last_page_fingerprint = fingerprint
-                    total_content += page_text + '\n\n'
+                    total_content += _追加
                     _log.info(f"[sites_config] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
                     success = True
                     page_index += 1
@@ -3464,12 +3465,12 @@ class NovelSpider:
                         continue
                     _log.info("[通用提取] 正文过短, 可能已到末页, 结束分页")
                     break
-                fingerprint = 页指纹(page_text)
-                if fingerprint == self._last_page_fingerprint:
+                重复, self._last_page_fingerprint, _追加 = 结算一页(
+                    page_text, self._last_page_fingerprint)
+                if 重复:
                     _log.info(f"[通用提取] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                     break
-                self._last_page_fingerprint = fingerprint
-                total_content += page_text + '\n\n'
+                total_content += _追加
                 _log.info(f"[通用提取] 第{page_index+1}页: ✅ 合并, 累计 {len(total_content)} 字符")
                 success = True
                 page_index += 1
