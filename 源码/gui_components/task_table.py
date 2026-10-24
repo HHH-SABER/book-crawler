@@ -274,23 +274,26 @@ class TaskTable:
         for task in tasks:
             self._list_view.controls.append(self._build_row(task))
 
-    def _build_row(self, task) -> ft.Control:
-        """单行: 主行 + 可展开详情"""
-        is_expanded = (task.task_id == self._expanded_id)
-        is_selected = task.selected
+    # ------------------------------------------- 单元格构建 (P9 拆分 2026-10-24)
+    # 拆分动机: _build_row 原为 216 行单函数 (P9 #2)，一屏看不完、改一列要
+    # 通读全文。现按「一列一个构建器」拆开，主行只负责装配。控件树、属性、
+    # 回调闭包与拆分前逐字等价 —— 纯结构改动，无行为变化。
+    def _单元格壳(self, content, width=None, center=False) -> ft.Container:
+        """单元格容器工厂 (与表头共用 _COLUMNS 列宽)"""
+        return ft.Container(
+            content=content,
+            width=width,
+            expand=(width is None),
+            alignment=ft.Alignment(0, 0) if center
+            else ft.Alignment(-1, 0),
+        )
 
-        # ---- 单元格工厂 (与表头共用 _COLUMNS 列宽) ----
-        def _cell(content, width=None, center=False):
-            return ft.Container(
-                content=content,
-                width=width,
-                expand=(width is None),
-                alignment=ft.Alignment(0, 0) if center
-                else ft.Alignment(-1, 0),
-            )
-        _w = lambda idx: _COLUMNS[idx][1]
+    @staticmethod
+    def _列宽(idx: int):
+        return _COLUMNS[idx][1]
 
-        # 标题+URL 单元格
+    def _单元格_标题(self, task, is_selected: bool) -> ft.Container:
+        """列0: 标题 + 可点击原网址"""
         title_text = ft.Text((task.title[:24] + "…") if len(task.title) > 24 else task.title,
                              size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
                              max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
@@ -310,10 +313,11 @@ class TaskTable:
                            font_family=FONT_STACK,
                            style=ft.TextStyle(
                                decoration=ft.TextDecoration.UNDERLINE))
-        title_cell = _cell(ft.Column([title_text, url_text],
-                                     spacing=1, tight=True), width=_w(0))
+        return self._单元格壳(ft.Column([title_text, url_text],
+                                        spacing=1, tight=True), width=self._列宽(0))
 
-        # 进度单元格 (迷你条 + 数值)
+    def _单元格_进度(self, task) -> ft.Container:
+        """列1: 迷你进度环 + 数值"""
         if task.progress_total > 0:
             ratio = min(1.0, task.progress_current / task.progress_total)
             pct_text = f"{task.progress_current}/{task.progress_total}"
@@ -331,15 +335,18 @@ class TaskTable:
         # 不补登记的话进度环在切夜间后仍是日间灰 (与本次迁移同类缺陷)。
         登记重刷(ring, lambda c, s=task.status:
                  setattr(c, 'color', status_color(s)))
-        progress_cell = _cell(ft.Row([ring, ft.Text(pct_text, size=SIZE_TINY,
-                                                   font_family=FONT_STACK,
-                                                   color=ft.Colors.ON_SURFACE_VARIANT)],
-                                    spacing=4), width=_w(1))
+        return self._单元格壳(
+            ft.Row([ring, ft.Text(pct_text, size=SIZE_TINY,
+                                  font_family=FONT_STACK,
+                                  color=ft.Colors.ON_SURFACE_VARIANT)],
+                   spacing=4), width=self._列宽(1))
 
-        # 状态单元格
-        status_cell = _cell(status_chip(task.status), width=_w(2), center=True)
+    def _单元格_状态(self, task) -> ft.Container:
+        """列2: 状态胶囊"""
+        return self._单元格壳(status_chip(task.status), width=self._列宽(2), center=True)
 
-        # 引擎单元格
+    def _单元格_引擎(self, task) -> ft.Container:
+        """列3: 命中的请求引擎 (有值用成功色)"""
         engine = task.metrics.engine or "—"
         引擎文本 = ft.Text(engine, size=SIZE_TINY, weight=WEIGHT_BODY,
                           font_family=FONT_STACK,
@@ -350,9 +357,10 @@ class TaskTable:
         if task.metrics.engine:
             # Phase 3: 令牌色 + 登记重刷 (旧写法 import 的字符串常量切夜间不变色)
             _状态色文本(引擎文本, 'status-success')
-        engine_cell = _cell(引擎文本, width=_w(3))
+        return self._单元格壳(引擎文本, width=self._列宽(3))
 
-        # 反爬单元格 (命中显示标签色, 未命中灰)
+    def _单元格_反爬(self, task) -> ft.Container:
+        """列4: 反爬类型 (命中用警告色)"""
         anti = task.metrics.anti_spider_type
         反爬文本 = ft.Text(anti or "—", size=SIZE_TINY, weight=WEIGHT_BODY,
                          font_family=FONT_STACK,
@@ -362,14 +370,17 @@ class TaskTable:
         if anti:
             # Phase 3: 令牌色 + 登记重刷
             _状态色文本(反爬文本, 'status-warning')
-        anti_cell = _cell(反爬文本, width=_w(4))
+        return self._单元格壳(反爬文本, width=self._列宽(4))
 
-        # 耗时单元格
-        elapsed_cell = _cell(ft.Text(_fmt_elapsed(task), size=SIZE_TINY,
-                                     font_family=FONT_STACK,
-                                     color=ft.Colors.ON_SURFACE_VARIANT), width=_w(5))
+    def _单元格_耗时(self, task) -> ft.Container:
+        """列5: 已用时"""
+        return self._单元格壳(
+            ft.Text(_fmt_elapsed(task), size=SIZE_TINY,
+                    font_family=FONT_STACK,
+                    color=ft.Colors.ON_SURFACE_VARIANT), width=self._列宽(5))
 
-        # 质检单元格
+    def _单元格_质检(self, task) -> ft.Container:
+        """列6: 质检分 (通过成功色 / 未通过错误色)"""
         qs = task.metrics.quality_score
         if qs >= 0:
             q_text = f"{qs:.0f}分"
@@ -383,9 +394,10 @@ class TaskTable:
         if q_键:
             # Phase 3: 令牌色 + 登记重刷 (通过/未通过两色都由回调按主题重取)
             _状态色文本(质检文本, q_键)
-        quality_cell = _cell(质检文本, width=_w(6))
+        return self._单元格壳(质检文本, width=self._列宽(6))
 
-        # 操作单元格: 展开 / 预览 / 重下 / 删除
+    def _单元格_操作(self, task, is_expanded: bool) -> ft.Container:
+        """列7: 展开 / 预览 / EPUB(死书时为忽略) / 重下 / 删除, 恒 5 个按钮"""
         expand_btn = ft.IconButton(
             icon=(ft.Icons.EXPAND_LESS if is_expanded else ft.Icons.EXPAND_MORE),
             icon_size=14, tooltip="展开/收起详情",
@@ -466,14 +478,28 @@ class TaskTable:
                 color=ft.Colors.ON_ERROR_CONTAINER,
             ),
         )
-        ops_cell = _cell(ft.Row([expand_btn, preview_btn, epub_btn, redl_btn, del_btn],
-                                spacing=2,
-                                alignment=ft.MainAxisAlignment.CENTER),
-                         width=_w(7), center=True)
+        return self._单元格壳(
+            ft.Row([expand_btn, preview_btn, epub_btn, redl_btn, del_btn],
+                   spacing=2,
+                   alignment=ft.MainAxisAlignment.CENTER),
+            width=self._列宽(7), center=True)
+
+    def _build_row(self, task) -> ft.Control:
+        """单行: 主行 + 可展开详情（各列构建见 _单元格_*）"""
+        is_expanded = (task.task_id == self._expanded_id)
+        is_selected = task.selected
 
         # 窄档(≤1200px): 次级列不参与布局; 同时记下单元引用, 供 设置窄档 后续切换
-        单元列表 = [title_cell, progress_cell, status_cell, engine_cell,
-                    anti_cell, elapsed_cell, quality_cell, ops_cell]
+        单元列表 = [
+            self._单元格_标题(task, is_selected),
+            self._单元格_进度(task),
+            self._单元格_状态(task),
+            self._单元格_引擎(task),
+            self._单元格_反爬(task),
+            self._单元格_耗时(task),
+            self._单元格_质检(task),
+            self._单元格_操作(task, is_expanded),
+        ]
         for 列号, 单元 in enumerate(单元列表):
             self._应用列可见(单元, 列号)
             self._行单元[列号].append(单元)

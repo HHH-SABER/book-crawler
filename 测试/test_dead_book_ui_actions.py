@@ -267,13 +267,36 @@ class Test按钮布局不变(unittest.TestCase):
     """操作列宽度不变: 死书态只是换按钮, 不是加按钮。"""
 
     def test_列宽仍为200且按钮数不变(self):
-        文本 = _读源码('gui_components/task_table.py')
-        self.assertIn('("操作", 200, True),', 文本,
-                      '操作列宽度被改动 (应为 200px, 死书态换按钮不改列宽)')
-        ops = 文本.split('ops_cell = _cell(ft.Row([')[1][:200]
-        # 末位 del_btn 无逗号, 故 count('btn,') 只能数到 4 → +1 补末位
-        self.assertEqual(ops.count('btn,') + 1, 5,
-                         '操作按钮数应恒为 5 (死书态替换而非追加)')
+        # 2026-10-24 (P9 #2): 原实现按源码字符串 split('ops_cell = _cell(ft.Row([')
+        # 数按钮，重构把单元格构建抽成 _单元格_操作 后即失效 —— 断言对象从
+        # "代码长什么样" 改为 "控件树长什么样"，行为相同但不再绑死变量名。
+        import flet as ft
+        from gui_components import task_table as TT
+        from gui_components.task_manager import TaskInfo, TaskManager
+
+        self.assertEqual(TT._COLUMNS[7], ("操作", 200, True),
+                         '操作列宽度被改动 (应为 200px, 死书态换按钮不改列宽)')
+
+        def 取操作单元(任务):
+            表 = TT.TaskTable(TaskManager(page=None))
+            行 = 表._build_row(任务)
+            主行 = 行.content.controls[0]
+            return 主行.controls[7]
+
+        def 按钮(任务):
+            单元 = 取操作单元(任务)
+            return 单元, [c for c in 单元.content.controls
+                         if isinstance(c, ft.IconButton)]
+
+        普通单元, 普通按钮 = 按钮(TaskInfo(task_id='t1', url='https://example.com/b/1',
+                                          title='普通书'))
+        死书单元, 死书按钮 = 按钮(TaskInfo(task_id='t2', url='https://example.com/b/2',
+                                          title='死书',
+                                          dead={'类型': '站点停摆'}))
+        self.assertEqual(len(普通按钮), 5, '操作按钮数应恒为 5 (死书态替换而非追加)')
+        self.assertEqual(len(死书按钮), 5, '死书态也必须 5 个按钮')
+        self.assertEqual(普通单元.width, 200, '操作列宽应恒为 200px')
+        self.assertEqual(死书单元.width, 200, '死书态不得改列宽')
 
     def test_死书态判定用isinstance防御(self):
         文本 = _读源码('gui_components/task_table.py')
