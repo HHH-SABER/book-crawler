@@ -28,7 +28,21 @@ import sys
 根 = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(根 / '脚本'))
 from _多机共用 import 私有仓, 收集pathspec  # noqa: E402
-py = 根 / '.runtime' / 'python314' / 'python.exe'
+
+
+def 取解释器():
+    """优先用项目自带运行时；新机器还没复制 .runtime 时回退到当前解释器。
+
+    这样"刚 clone 下来、环境还没备齐"的机器也能先拉代码，而不是一上来就报错。
+    """
+    for 候选 in (根 / '.runtime' / 'python314' / 'python.exe',
+                根 / '.venv' / 'Scripts' / 'python.exe'):
+        if 候选.is_file():
+            return 候选
+    return sys.executable or 'python'
+
+
+py = 取解释器()
 
 
 def 跑(命令, cwd=根, timeout=1800):
@@ -122,10 +136,14 @@ def main(argv=None) -> int:
         return 0
 
     print('\n=== 3/4 一致性校验 ===')
-    if not py.exists():
-        print(f'  [失败] 找不到解释器 {py}（环境未就绪，见 HANDOFF 的"环境"一节）')
+    解释器 = str(py)
+    探测 = 跑([解释器, '-c', 'import sys; print(sys.version.split()[0])'])
+    if 探测.returncode != 0:
+        print(f'  [失败] 解释器不可用: {解释器}')
+        print('        新机器请先备好环境（见 脚本/环境自检.py 的建议）')
         return 1
-    if not 段('静态引用检查', 跑([str(py), '脚本/check_undefined_refs.py'])):
+    print(f'  解释器: {解释器}（Python {(探测.stdout or '').strip()}）')
+    if not 段('静态引用检查', 跑([解释器, '脚本/check_undefined_refs.py'])):
         return 1
     if not 段('阶段覆盖检查', 跑([str(py), '脚本/检查阶段覆盖.py', '--严格'])):
         return 1
