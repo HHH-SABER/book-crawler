@@ -95,7 +95,28 @@ class LogTab:
 
     # ---------------------------------------------------------------- UI
     def build(self) -> ft.Control:
-        """构建日志页 UI"""
+        """构建日志页 UI（过滤器区/日志视图见 _构建*，顺序与原实现一致）"""
+        toolbar = self._构建过滤器区()
+        viewer = self._构建日志视图()
+
+        self._built = True
+        # 初始加载（首次构建即刷新下拉与内容）—— 必须在 log_list / status_text 建好之后
+        try:
+            self._reload()
+        except Exception as _e:
+            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+
+        header = page_header(
+            "运行日志", "查看系统运行日志，便于排查问题与追踪状态")
+        return ft.Column([
+            header,
+            toolbar,
+            ft.Container(content=viewer, expand=True,
+                         padding=ft.Padding(left=10, top=0, right=10, bottom=10)),
+        ], expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+
+    def _构建过滤器区(self) -> ft.Control:
+        """来源/级别/关键词 + 复制/导出/清空 + 日期/刷新/打开目录 的两行工具卡"""
         # 来源下拉 (选项随日志文件动态生成)
         self.source_dd = ft.Dropdown(
             label="来源", width=180, dense=True,
@@ -151,7 +172,7 @@ class LogTab:
                                    color=ft.Colors.ON_SURFACE_VARIANT,
                                    font_family=FONT_STACK)
 
-        toolbar = make_card(
+        return make_card(
             ft.Column([
                 ft.Row([self.source_dd, self.level_dd, self.keyword_field,
                         copy_btn, export_btn, clear_btn],
@@ -163,14 +184,15 @@ class LogTab:
             padding=10,
         )
 
+    def _构建日志视图(self) -> ft.Container:
+        """深色终端风日志列表"""
         self.log_list = ft.ListView(
             expand=True,
             spacing=1,
             auto_scroll=False,
             scroll=ft.ScrollMode.ALWAYS,   # 常显滚动条 (2026-09-29 二轮反馈)
         )
-
-        viewer = ft.Container(
+        return ft.Container(
             content=self.log_list,
             expand=True,
             padding=10,
@@ -178,22 +200,6 @@ class LogTab:
             bgcolor=LOG_TERMINAL_BG,
             border_radius=8,
         )
-
-        self._built = True
-        # 初始加载（首次构建即刷新下拉与内容）
-        try:
-            self._reload()
-        except Exception as _e:
-            _dbg("运行日志", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
-
-        header = page_header(
-            "运行日志", "查看系统运行日志，便于排查问题与追踪状态")
-        return ft.Column([
-            header,
-            toolbar,
-            ft.Container(content=viewer, expand=True,
-                         padding=ft.Padding(left=10, top=0, right=10, bottom=10)),
-        ], expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     # ---------------------------------------------------------------- 逻辑
     def _open_log_dir(self):
