@@ -155,6 +155,25 @@ class RemotePage:
             self._复位开关进行态()
 
     def build(self):
+        """页面骨架：标题 + 状态卡 + 手机端记录卡（分段构建见 _构建*）"""
+        self._status_card = self._构建状态卡()
+        # 记录卡必须先建（refresh 依赖 self._rows / self._empty 已存在）
+        记录卡 = self._构建记录卡()
+
+        # 批 4 (2026-10-07): build() 末尾补一次 refresh —— 旧实现要等切页或
+        # 1s 轮询才有内容, 首帧是"地址/token = —、记录区纯空白"的空壳。
+        try:
+            self.refresh()
+        except Exception as _e:
+            _dbg("远控页", f'首帧刷新失败: {type(_e).__name__}: {_e}')
+        return ft.Column([
+            page_header('远控', '远程控制开关、手机访问方式与手机端任务记录'),
+            self._status_card,
+            记录卡,
+        ], spacing=10, expand=True)
+
+    def _构建状态卡(self) -> ft.Container:
+        """开关卡：状态点 + 粗标题 + 教程/主开关 + 三行访问信息 + 可用性提示"""
         # 批 3(5): 设计稿状态卡左侧的 状态点 + 粗标题 (与 _btn 内的点同步取色)
         self._card_dot = ft.Icon(ft.Icons.CIRCLE, size=9,
                                  color=取色('status-success'))
@@ -211,7 +230,7 @@ class RemotePage:
         登记重刷(self._divider, lambda c: setattr(c, 'color',
                                               取色('border-subtle')))
 
-        self._status_card = ft.Container(
+        return ft.Container(
             content=ft.Column([
                 # 批 3(5) 对齐设计稿: 左侧 状态点+粗标题+描述, 右侧 教程+主开关
                 ft.Row([
@@ -246,6 +265,8 @@ class RemotePage:
             border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
         )
 
+    def _构建记录卡(self) -> ft.Container:
+        """手机端任务记录卡：卡头(标题/计数/刷新) + 可滚动记录列表"""
         # 批 4 (2026-10-07): 手写一行小字 → 统一空态 (设计稿这张卡就是 .empty-state:
         # 图标 + 标题 + 说明, 文案与设计稿样卡一致)。
         # 填满=False: _rows 是 ListView, 无界高度里 expand 会被算成 0 高。
@@ -259,33 +280,22 @@ class RemotePage:
         # 批 3(5): 设计稿记录卡头右侧 "共 0 条" 计数
         self._rows_count = txt("共 0 条", size=SIZE_SMALL, weight=WEIGHT_BODY,
                                color=ft.Colors.ON_SURFACE_VARIANT)
-
-        # 批 4 (2026-10-07): build() 末尾补一次 refresh —— 旧实现要等切页或
-        # 1s 轮询才有内容, 首帧是"地址/token = —、记录区纯空白"的空壳。
-        try:
-            self.refresh()
-        except Exception as _e:
-            _dbg("远控页", f'首帧刷新失败: {type(_e).__name__}: {_e}')
-        return ft.Column([
-            page_header('远控', '远程控制开关、手机访问方式与手机端任务记录'),
-            self._status_card,
-            ft.Container(
-                content=ft.Column([
-                    ft.Row([txt("手机端记录", size=SIZE_TITLE,
-                                weight=WEIGHT_TITLE),
-                            ft.Container(expand=True),
-                            self._rows_count,
-                            ft.IconButton(ft.Icons.REFRESH, icon_size=16,
-                                          tooltip="刷新",
-                                          on_click=lambda e: self.refresh())],
-                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    self._rows,
-                ], spacing=8, expand=True),
-                padding=14, border_radius=8,
-                bgcolor=ft.Colors.SURFACE, expand=True,
-                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-            ),
-        ], spacing=10, expand=True)
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([txt("手机端记录", size=SIZE_TITLE,
+                            weight=WEIGHT_TITLE),
+                        ft.Container(expand=True),
+                        self._rows_count,
+                        ft.IconButton(ft.Icons.REFRESH, icon_size=16,
+                                      tooltip="刷新",
+                                      on_click=lambda e: self.refresh())],
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                self._rows,
+            ], spacing=8, expand=True),
+            padding=14, border_radius=8,
+            bgcolor=ft.Colors.SURFACE, expand=True,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+        )
 
     # ---------------------------------------------------------------- 教程
     def _open_tutorial(self, e=None):

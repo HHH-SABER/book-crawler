@@ -81,7 +81,24 @@ class InputBar:
 
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
-        """构建输入条"""
+        """构建输入条（分段构建见 _构建*，装配顺序与原实现一致）"""
+        self._构建输入字段()
+        主操作行 = self._构建主操作行()
+        次操作行 = self._构建次操作行()
+        self._构建批量面板()
+        return make_card(
+            ft.Column([
+                # 第一行: 主操作 (URL 拉伸填充; 速度由程序自适应, 无手动选项)
+                主操作行,
+                # 第二行: 次操作 (自动换行)
+                次操作行,
+                self.batch_panel,
+            ], spacing=6),
+            padding=10,
+        )
+
+    def _构建输入字段(self):
+        """URL / 模式 / 章节区间 三个输入控件"""
         self.url_input = ft.TextField(
             label="小说目录页URL",
             hint_text="如: https://m.example.com/book/123/ml.html",
@@ -116,13 +133,18 @@ class InputBar:
             input_filter=ft.NumbersOnlyInputFilter(),
         )
 
+    def _构建主操作行(self) -> ft.Row:
+        """第一行：URL + 模式 + 开始/停止"""
         start_btn = filled_btn("开始", icon=ft.Icons.PLAY_ARROW,
                                on_click=self.on_start_click,
                                tooltip="按所选模式开始抓取 (URL框内回车也可)")
         self.stop_btn = danger_btn("停止", icon=ft.Icons.STOP,
                                    on_click=self.on_stop_click, disabled=True,
                                    tooltip="停止当前选中任务")
-
+        return ft.Row([self.url_input, self.mode_dropdown,
+                       start_btn, self.stop_btn], spacing=6)
+    def _构建次操作行(self) -> ft.Row:
+        """第二行：导入/粘贴 + 章节区间 + 三个开关 + 输出目录"""
         import_btn = tonal_btn("导入网址", icon=ft.Icons.UPLOAD_FILE,
                               on_click=self.on_import_click,
                               tooltip="从 txt 清单文件导入网址批量抓取")
@@ -168,7 +190,16 @@ class InputBar:
                                       on_click=self.on_open_folder_click,
                                       tooltip="打开结果输出文件夹")
 
-        # 批量导入内嵌面板 (粘贴/导入网址确认区, 默认隐藏)
+        return ft.Row([import_btn, paste_btn, self.start_chapter,
+                       self.end_chapter, self.resume_switch, self.epub_switch,
+                       self.提示音_switch,
+                       self.output_dir_input, open_folder_btn],
+                      # 批 2 密度对齐: spacing 6→4, 使该行在 1265 逻辑宽下一行排完
+                      # (设计稿这行 CSS 允许 wrap, 但画布宽度下是一行)
+                      wrap=True, spacing=4)
+
+    def _构建批量面板(self):
+        """批量导入内嵌面板 (粘贴/导入网址确认区, 默认隐藏)"""
         self.batch_input = ft.TextField(
             multiline=True, min_lines=4, max_lines=10,
             hint_text="每行一个小说目录页URL，# 开头的行为注释",
@@ -198,25 +229,7 @@ class InputBar:
             bgcolor=ft.Colors.SECONDARY_CONTAINER,
             visible=False,
         )
-
-        return make_card(
-            ft.Column([
-                # 第一行: 主操作 (URL 拉伸填充; 速度由程序自适应, 无手动选项)
-                ft.Row([self.url_input, self.mode_dropdown,
-                        start_btn, self.stop_btn],
-                       spacing=6),
-                # 第二行: 次操作 (自动换行)
-                ft.Row([import_btn, paste_btn, self.start_chapter,
-                        self.end_chapter, self.resume_switch, self.epub_switch,
-                        self.提示音_switch,
-                        self.output_dir_input, open_folder_btn],
-                       # 批 2 密度对齐: spacing 6→4, 使该行在 1265 逻辑宽下一行排完
-                       # (设计稿这行 CSS 允许 wrap, 但画布宽度下是一行)
-                       wrap=True, spacing=4),
-                self.batch_panel,
-            ], spacing=6),
-            padding=10,
-        )
+        return self.batch_panel
 
     # --------------------------------------------------------------- 回调
     def _on_提示音切换(self, e):
