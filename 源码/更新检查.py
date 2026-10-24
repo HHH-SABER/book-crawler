@@ -15,9 +15,12 @@
 
 依赖: requests (既有)。本模块 **不 import flet** (CLI/测试可直接用)。
 """
+import ipaddress
 import json
 import re
+import socket
 import threading
+from urllib.parse import urlparse
 
 import 日志 as _app_log
 _log = _app_log.get('更新检查')
@@ -93,7 +96,25 @@ def 检查更新(超时秒: int = 10) -> dict | None:
     """
     try:
         import requests
+        # 内联校验 (Mimosa 要求 URL 验证在函数内): 端点钉死本仓库 GitHub API;
+        # 解析后 IP 落在私网/环回/链路本地即放弃 (防 DNS rebinding/内网指向);
+        # 禁重定向 (releases/latest 本就 200 直回, 无需跟随)
+        _u = urlparse(_API)
+        if _u.scheme != 'https' or _u.hostname != 'api.github.com':
+            _log.debug(f'更新检查端点异常, 放弃: {_API}')
+            return None
+        try:
+            for _inf in socket.getaddrinfo(_u.hostname, 443):
+                _a = ipaddress.ip_address(_inf[4][0])
+                if (_a.is_private or _a.is_loopback or _a.is_link_local
+                        or _a.is_reserved or _a.is_multicast):
+                    _log.debug(f'更新检查端点解析到非公网 IP, 放弃: {_a}')
+                    return None
+        except OSError as _e:
+            _log.debug(f'更新检查端点解析失败: {type(_e).__name__}')
+            return None
         resp = requests.get(_API, timeout=(5, 超时秒),
+                            allow_redirects=False,
                             headers={'Accept': 'application/vnd.github+json',
                                      'User-Agent': 'novel-crawler-update-check'})
         resp.raise_for_status()

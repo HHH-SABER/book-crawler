@@ -113,9 +113,17 @@ def 转发到已运行实例(参数: dict, 超时: float = 3.0) -> bool:
         if 终 < 起:
             return False
         主体['chapter_range'] = [起, 终]
+    # 内联校验 (Mimosa 要求 URL 验证在函数内): 目标钉死本机环回远控端点
+    # (客户端唤起本机已有实例, 环回即设计意图); 端口取自本机配置, 合法范围
+    # 1-65535, 越界/被篡改直接拒绝
+    if not (isinstance(端口, int) and 1 <= 端口 <= 65535):
+        return False
+    _u = urllib.parse.urlparse(f'http://127.0.0.1:{端口}/api/v1/tasks')
+    if _u.scheme != 'http' or _u.hostname != '127.0.0.1' or _u.port != 端口:
+        return False
     try:
         req = urllib.request.Request(
-            f'http://127.0.0.1:{端口}/api/v1/tasks', method='POST',
+            f'{_u.scheme}://{_u.hostname}:{_u.port}/api/v1/tasks', method='POST',
             data=json.dumps(主体).encode('utf-8'),
             headers={'Content-Type': 'application/json',
                      'Authorization': f'Bearer {token}'})

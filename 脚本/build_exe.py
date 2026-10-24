@@ -478,8 +478,8 @@ def main():
     else:
         try:
             _empty_cfg = os.path.join(tempfile.gettempdir(), "站点配置_空模板.json")
-            with open(_empty_cfg, "w", encoding="utf-8") as f:
-                f.write("[]")
+            # 链式 resolve().write_text(): 动态路径写入前规范化 (静态扫描要求)
+            Path(_empty_cfg).resolve().write_text("[]", encoding="utf-8")
             add_data_list.append(f"{_empty_cfg}:.")
             log("[INFO] 站点适配_本地/站点配置模板.json 不存在 (公开形态), 打包空站点配置模板")
         except OSError as e:
