@@ -3294,23 +3294,17 @@ class NovelSpider:
                         page_html=getattr(self, '_datafile_page_html', None),
                         headers=headers)
                     if data_text and len(data_text) > 50:
-                        # 去掉首行标题/元信息 (作者/字数/日期), 保留正文
-                        data_lines = [l.strip() for l in data_text.split('\n') if l.strip()]
-                        if data_lines and ('作者' in data_lines[0] or '★' in data_lines[0]
-                                           or '☆' in data_lines[0] or '第' in data_lines[0]):
-                            data_lines = data_lines[1:]
-                        data_lines = [l for l in data_lines
-                                      if not (('作者' in l and '字数' in l) or l.startswith('字数'))]
-                        data_content = '\n'.join(data_lines)
+                        # 去掉首行标题/元信息 (Wave2 拆分: 逻辑在 章节数据文件.整理数据正文)
+                        from 章节数据文件 import 整理数据正文, 页指纹
+                        data_content = 整理数据正文(data_text)
                         if len(data_content) > 50:
                             _log.info(f"[数据文件] 解码成功({data_method}): {len(data_content)} 字符 (第{page_index+1}页)")
                             page_text = self.clean_content(data_content, site_url=chapter_url)
                             if len(page_text) < 50:
                                 _log.info("[数据文件] 内容过短, 可能已到末页")
                                 break
-                            import hashlib
-                            # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
-                            fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                            # 复合指纹 (Wave2 拆分: 逻辑在 章节数据文件.页指纹)
+                            fingerprint = 页指纹(page_text)
                             if fingerprint == self._last_page_fingerprint:
                                 _log.info("[数据文件] 与上一页指纹相同, 停止抓取")
                                 break
