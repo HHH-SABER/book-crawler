@@ -55,6 +55,17 @@ def git(*参数, 私有=False):
     return 跑([*前缀, *参数])
 
 
+def 推私有(私有仓路径, 根路径):
+    """推送私有仓：**显式写 origin 与目标分支**。
+
+    裸克隆（`多机初始化.py` 的第二台机路径）不会建立 upstream，`git push` 无参会
+    报 "no upstream branch" —— 2026-10-24 K 机 `--上传` 实测踩到，私有资产已提交
+    但推不出去。故这里固定 `origin HEAD:refs/heads/main`，不依赖本地配置。
+    """
+    return 跑(['git', f'--git-dir={私有仓路径}', f'--work-tree={根路径}',
+              'push', 'origin', 'HEAD:refs/heads/main'])
+
+
 def 段(名, r, 成功提示=''):
     尾 = [x for x in ((r.stdout or '') + (r.stderr or '')).splitlines() if x.strip()]
     摘要 = 尾[-1] if 尾 else '(无输出)'
@@ -142,7 +153,7 @@ def main(argv=None) -> int:
             if 提.returncode != 0:
                 print(f'  [失败] 提交失败: {(提.stderr or 提.stdout)[:300]}')
                 return 1
-            推 = 跑(['git', f'--git-dir={私有仓}', f'--work-tree={根}', 'push'])
+            推 = 推私有(私有仓, 根)
             print(f'  [{"OK" if 推.returncode == 0 else "失败"}] 推送私有仓'
                   f'  {(推.stderr or 推.stdout).strip().splitlines()[-1][:100] if (推.stdout or 推.stderr).strip() else ""}')
             if 推.returncode != 0:
