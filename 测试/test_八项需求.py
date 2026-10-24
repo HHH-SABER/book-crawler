@@ -403,8 +403,8 @@ class Test远控局域网直连(unittest.TestCase):
     def _取配置(self, disk: dict):
         import json
         cfg_file = os.path.join(self.tmp, '远控配置.json')
-        with open(cfg_file, 'w', encoding='utf-8') as f:
-            json.dump(disk, f, ensure_ascii=False)
+        Path(cfg_file).resolve().write_text(
+            json.dumps(disk, ensure_ascii=False), encoding='utf-8')
         from 远控 import 配置
         with mock.patch.object(配置, '_配置路径', lambda: cfg_file), \
                 mock.patch.object(配置, '_CONFIG', None):

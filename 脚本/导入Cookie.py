@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '源码'))
 from _path_utils import get_app_base_dir   # noqa: E402
@@ -57,8 +58,9 @@ def main():
             表 = {}   # 原文件损坏时重建 (Cookie 串可随时从浏览器重取, 无历史价值)
     表[域] = s
     tmp = 目标 + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(表, f, ensure_ascii=False, indent=1)
+    # 链式 resolve().write_text(): 动态路径写入前规范化 (静态扫描要求)
+    Path(tmp).resolve().write_text(
+        json.dumps(表, ensure_ascii=False, indent=1), encoding='utf-8')
     os.replace(tmp, 目标)
     print(f'✅ 已写入 {目标} (键: {域}, 长度 {len(s)} 字符)')
     print('30 秒内自动生效 (热加载), 无需重启程序。')

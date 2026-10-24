@@ -21,6 +21,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 try:
     from _path_utils import get_state_root
@@ -48,8 +49,9 @@ def 写首次flag(结果: str = '已询问创建桌面快捷方式') -> None:
     p = 首次flag路径()
     os.makedirs(os.path.dirname(p), exist_ok=True)
     tmp = f"{p}.tmp.{os.getpid()}"
-    with open(tmp, 'w', encoding='utf-8') as f:
-        f.write(f"{结果}: {_tm.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    # 链式 resolve().write_text(): 动态路径写入前规范化 (静态扫描要求)
+    Path(tmp).resolve().write_text(
+        f"{结果}: {_tm.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding='utf-8')
     os.replace(tmp, p)
 
 

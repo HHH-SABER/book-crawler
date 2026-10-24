@@ -43,6 +43,15 @@ class Test版本比较(unittest.TestCase):
 class Test检查更新(unittest.TestCase):
     """检查更新: 全 mock requests, 零真实网络。"""
 
+    def setUp(self):
+        # 源码内联 IP 边界校验会真实调 socket.getaddrinfo —— 测试环境可能
+        # 无 DNS, 统一桩成公网 IP, 保住"零真实网络"承诺
+        self._dns = mock.patch.object(
+            U.socket, 'getaddrinfo',
+            return_value=[(2, 1, 6, '', ('140.82.112.6', 443))])
+        self._dns.start()
+        self.addCleanup(self._dns.stop)
+
     def _打桩(self, get):
         return mock.patch('requests.get', get)
 
@@ -87,6 +96,16 @@ class Test检查更新(unittest.TestCase):
         import requests as _rq
         with mock.patch('requests.get', side_effect=_rq.ConnectionError('offline')):
             self.assertIsNone(U.检查更新())
+
+    def test_端点解析到私网IP放弃且不发请求(self):
+        """内联 IP 边界校验: DNS rebinding/ hosts 污染到私网 → 请求前短路。"""
+        响应 = mock.Mock()
+        响应.json.return_value = {'tag_name': 'v2.5.99'}
+        with mock.patch.object(U.socket, 'getaddrinfo',
+                               return_value=[(2, 1, 6, '', ('192.168.1.1', 443))]), \
+                mock.patch('requests.get', return_value=响应) as g:
+            self.assertIsNone(U.检查更新())
+        g.assert_not_called()
 
     def test_超时返回None(self):
         import requests as _rq

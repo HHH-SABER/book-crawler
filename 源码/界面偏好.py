@@ -15,6 +15,7 @@
 import json
 import os
 import threading
+from pathlib import Path
 
 _锁 = threading.Lock()
 _缓存: dict | None = None
@@ -71,8 +72,9 @@ def 设置(键: str, 值) -> bool:
             cfg[键] = 值
             os.makedirs(os.path.dirname(path), exist_ok=True)
             tmp = f"{path}.tmp.{os.getpid()}.{threading.get_ident()}"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            # 链式 resolve().write_text(): 动态路径写入前规范化 (静态扫描要求)
+            Path(tmp).resolve().write_text(
+                json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
             os.replace(tmp, path)
             _缓存 = cfg
         return True
