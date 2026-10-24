@@ -3237,6 +3237,7 @@ class NovelSpider:
         page_index = 0
         # ===== 页数上限（Wave2 拆分: 逻辑搬至 章节分页.分页上限）=====
         from 章节分页 import 分页上限, 下一页URL  # noqa: PLC0415 — 就近导入，避免顶层循环
+        from 章节正文 import 用适配器提取  # Wave2: 适配器正文提取调用
         max_pages = 分页上限(site_pattern, chapter_url, _站点策略, max_pages)
         
         while page_index < max_pages:
@@ -3320,21 +3321,11 @@ class NovelSpider:
                     _log.info(f"[数据文件] 解码失败, 走常规流程: {e}")
                     self._datafile_mode = False
 
-            # ===== 外部适配器插件正文提取 (站点适配/, 优先于内置提取器/通用检测) =====
-            try:
-                from sites_config import get_adapter
-                _adapter = get_adapter(current_url)
-            except Exception:
-                _adapter = None
-            if _adapter and _adapter.get('extract_content'):
-                try:
-                    _log.info(f"[适配器] {_adapter['source']} 自定义正文提取 (第{page_index+1}页)")
-                    _adapter_soup = self.inspect_page(current_url, polite_delay=False)
-                    _adapter_content = _adapter['extract_content'](
-                        _adapter_soup, current_url, self.base_url, page_index=page_index)
-                except Exception as e:
-                    _log.info(f"[适配器] 正文提取异常, 回退通用流程: {e}")
-                    _adapter_content = None
+            # ===== 外部适配器插件正文提取 (Wave2: 调用搬至 章节正文.用适配器提取) =====
+            _adapter_content = 用适配器提取(
+                current_url, page_index, self.base_url,
+                lambda: self.inspect_page(current_url, polite_delay=False))
+            if _adapter_content:
                 if _adapter_content:
                     _log.info(f"[适配器] 提取成功: {len(_adapter_content)} 字符")
                     page_text = self.clean_content(_adapter_content, site_url=chapter_url)
@@ -3342,9 +3333,7 @@ class NovelSpider:
                     if len(page_text) < 50:
                         _log.info("[适配器] 正文过短, 可能已到末页, 结束分页")
                         break
-                    # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
-                    import hashlib
-                    fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                    fingerprint = 页指纹(page_text)
                     if fingerprint == self._last_page_fingerprint:
                         _log.info(f"[适配器] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                         break
@@ -3382,9 +3371,7 @@ class NovelSpider:
                     if len(page_text) < 50:
                         _log.info("[sites_config] 正文过短, 可能已到末页, 结束分页")
                         break
-                    # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
-                    import hashlib
-                    fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                    fingerprint = 页指纹(page_text)
                     if fingerprint == self._last_page_fingerprint:
                         _log.info(f"[sites_config] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                         break
@@ -3494,8 +3481,7 @@ class NovelSpider:
                         continue
                     _log.info("[通用提取] 正文过短, 可能已到末页, 结束分页")
                     break
-                # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
-                fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                fingerprint = 页指纹(page_text)
                 if fingerprint == self._last_page_fingerprint:
                     _log.info(f"[通用提取] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                     break
@@ -3561,9 +3547,7 @@ class NovelSpider:
                         _log.info(f"[WAF驱动] 第{page_index+1}页正文过短 ({len(page_text)}字符), 结束分页")
                         success = False
                     else:
-                        import hashlib
-                        # 复合指纹: 前200字符 + 总长度 (避免分页开头固定模板导致误判重复)
-                        fingerprint = hashlib.sha256((page_text[:200] + f"|{len(page_text)}").encode('utf-8')).hexdigest()[:16]
+                        fingerprint = 页指纹(page_text)
                         if fingerprint == self._last_page_fingerprint:
                             _log.info(f"[WAF驱动] 第{page_index+1}页与上一页指纹相同, 停止抓取")
                             success = False
