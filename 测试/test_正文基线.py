@@ -67,12 +67,20 @@ class 跑全部用例(unittest.TestCase):
         self.assertEqual(正文基线.跑全部(临时.name), {})
 
     def test_只跑存在的样本(self):
+        """样本清单来自 gitignored 的 正文基线样本.json；无清单 ⇒ 空结果（公开形态正常）。"""
         临时 = tempfile.TemporaryDirectory()
         self.addCleanup(临时.cleanup)
         根 = pathlib.Path(临时.name)
-        (根 / 正文基线.正文样本[0][0]).write_text(_内联样本, encoding='utf-8')
+        (根 / 'S1.html').write_text(_内联样本, encoding='utf-8')
+        (根 / '正文基线样本.json').write_text(
+            '[["S1.html", "https://x.example.com/1.html"]]', encoding='utf-8')
         结果 = 正文基线.跑全部(根)
-        self.assertIn(正文基线.正文样本[0][0], 结果)
+        self.assertIn('样本1', 结果)
+
+    def test_无清单时安全返回空(self):
+        临时 = tempfile.TemporaryDirectory()
+        self.addCleanup(临时.cleanup)
+        self.assertEqual(正文基线.跑全部(临时.name), {})
 
 
 class 库内基线用例(unittest.TestCase):
