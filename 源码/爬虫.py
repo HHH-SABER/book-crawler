@@ -3235,61 +3235,20 @@ class NovelSpider:
 
         # 处理分页
         page_index = 0
-        # ===== 优先使用 sites_config 中的分页配置 =====
-        # K35: isinstance 守卫 —— 适配器可声明 content_pagination: None (单页直出,
-        # siteK 2026-10-03 实测)。旧守卫 'content_pagination' in 只查键存在,
-        # None.get() 抛 TypeError 被 _fetch_with_qc 吞成 "抓取异常" → 全章瞬时空正文。
-        if site_pattern and isinstance(site_pattern.get('content_pagination'), dict):
-            site_max_pages = site_pattern['content_pagination'].get('max_pages', 30)
-        else:
-            # Wave 2 批次4: 站点专属分页上限走适配器 (阶段 '分页上限'); 未命中 ⇒ 默认 20
-            _上限 = _站点策略(chapter_url, '分页上限')
-            site_max_pages = _上限 if isinstance(_上限, int) else 20  # 未知站点默认 20 页
-        # 如果调用方显式指定了 max_pages(例如测试模式只取前2页)，取较小值
-        if max_pages is not None:
-            max_pages = min(max_pages, site_max_pages)
-        else:
-            max_pages = site_max_pages
+        # ===== 页数上限（Wave2 拆分: 逻辑搬至 章节分页.分页上限）=====
+        from 章节分页 import 分页上限, 下一页URL  # noqa: PLC0415 — 就近导入，避免顶层循环
+        max_pages = 分页上限(site_pattern, chapter_url, _站点策略, max_pages)
         
         while page_index < max_pages:
             # 构建当前页的URL
             if page_index == 0:
                 current_url = chapter_url
             else:
-                # ===== 外部适配器插件分页 (站点适配/, 优先) =====
-                try:
-                    from sites_config import get_adapter
-                    _adapter = get_adapter(chapter_url)
-                except Exception:
-                    _adapter = None
-                if _adapter and _adapter.get('paginate'):
-                    try:
-                        next_url = _adapter['paginate'](current_url, page_index, base_url=self.base_url)
-                    except Exception as e:
-                        _log.info(f"[分页] 适配器分页异常, 回退内置规则: {e}")
-                        next_url = None
-                    if next_url:
-                        current_url = next_url if next_url.startswith('http') else self.base_url.rstrip('/') + next_url
-                    else:
-                        _log.info("[分页] 适配器返回 None, 停止")
-                        break
-                elif site_pattern and 'content_pagination' in site_pattern:
-                    # ===== 优先使用 sites_config 生成分页 URL =====
-                    # K35: None = 适配器声明"单页直出", 第 1 页抓完即停, 不构造 _1.html
-                    if not isinstance(site_pattern['content_pagination'], dict):
-                        _log.info("[分页] 站点配置声明单页直出 (content_pagination=None), 停止")
-                        break
-                    current_url = build_paged_url(chapter_url, page_index, site_pattern['content_pagination'])
-                    if current_url is None:
-                        _log.info("[分页] 已达到最大页数限制，停止")
-                        break
-                elif '.html' in chapter_url:
-                    # siteZ分页: 第2页是_2.html, 第3页是_3.html (page_index+1)
-                    # Wave 2 批次4: 站点专属分页 URL 构造走适配器 (阶段 '分页URL')
-                    _分页URL = _站点策略(chapter_url, '分页URL', page_index=page_index)
-                    current_url = (_分页URL if _分页URL
-                                   else chapter_url.replace('.html', f'_{page_index}.html'))
-                else:
+                # ===== 下一页 URL（Wave2 拆分: 逻辑搬至 章节分页.下一页URL）=====
+                current_url = 下一页URL(chapter_url, page_index, site_pattern,
+                                        self.base_url, _站点策略,
+                                        当前URL=current_url)
+                if current_url is None:
                     break
             
             validate_public_url(current_url)  # 安全校验: 仅允许公网 http/https
