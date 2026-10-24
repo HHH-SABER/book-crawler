@@ -60,31 +60,10 @@ def probe_site(url: str, timeout: int = 15) -> dict:
                'Accept-Encoding': 'gzip, deflate'}
 
     # ---- 第一步: requests 探测 ----
-    resp = None
-    s = None
-    try:
-        import requests
-        s = requests.Session()
-        s.trust_env = False
-        resp = s.get(url, headers=headers, timeout=timeout,
-                     allow_redirects=True)
-        result['status_code'] = int(resp.status_code)
-        result['engine'] = 'requests'
-    except Exception as e:
-        result['error'] = str(e)[:200]
-    result['engine_chain'].append('requests')
+    resp, s = _requests探测(url, headers, timeout, result)
 
     # ---- 第二步: 反爬识别 ----
-    机制 = 'none'
-    if resp is not None:
-        try:
-            from 反爬检测器 import 取检测器
-            r = 取检测器().识别(resp)
-            机制 = getattr(r, '机制', 'none')
-            result['anti_spider'] = 机制
-            result['anti_evidence'] = (getattr(r, '证据', '') or '')[:120]
-        except Exception as _e:
-            _dbg("站点探测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+    机制 = _反爬识别(resp, result)
 
     # ---- 第三步: 命中反爬 → 请求引擎重试 ----
     if resp is not None and 200 <= result['status_code'] < 400 \
@@ -92,32 +71,7 @@ def probe_site(url: str, timeout: int = 15) -> dict:
         result['ok'] = True
     elif 机制 not in ('none', '') or resp is None or \
             not (200 <= result['status_code'] < 400):
-        # 用成熟引擎再试一次 (机制驱动引擎选择)
-        try:
-            # 修复(U11): 复用模块级单例。旧实现每次探测都 new 一个请求引擎管理器
-            # (各自持有会话池) 且从不 close —— 反复点"测试连接"会持续累积
-            # 未释放的 Session/HTTPAdapter。单例由模块统一管理生命周期。
-            from 请求引擎 import 获取引擎管理器
-            mgr = 获取引擎管理器()
-            eng_resp = mgr.请求(url, headers=headers, timeout=timeout,
-                                机制=机制)
-            # 记录降级链 (按可用引擎推断)
-            if 机制 in ('waf_js_challenge', 'js_cookie', 'dynamic_token'):
-                chain = ['cloudscraper', 'curl_cffi']
-            else:
-                chain = ['requests']
-            for c in chain:
-                if c not in result['engine_chain']:
-                    result['engine_chain'].append(c)
-            if eng_resp is not None:
-                sc = int(getattr(eng_resp, 'status_code', 0) or 0)
-                if 200 <= sc < 400:
-                    result['ok'] = True
-                    result['status_code'] = sc
-                    result['engine'] = getattr(eng_resp, '引擎', '')
-                    result['error'] = ''
-        except Exception as e:
-            result['error'] = (result['error'] or str(e)[:200])[:200]
+        _引擎重试(url, headers, timeout, 机制, result)
 
     # ---- 汇总 ----
     if resp is not None and not result['ok'] and not result['error']:
@@ -136,6 +90,70 @@ def probe_site(url: str, timeout: int = 15) -> dict:
     except Exception as _e:
         _dbg("站点探测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
     return result
+
+
+def _requests探测(url: str, headers: dict, timeout: int, result: dict):
+    """第一步: requests 直连探测; 返回 (响应, 会话) 供识别与收尾释放。"""
+    resp = None
+    s = None
+    try:
+        import requests
+        s = requests.Session()
+        s.trust_env = False
+        resp = s.get(url, headers=headers, timeout=timeout,
+                     allow_redirects=True)
+        result['status_code'] = int(resp.status_code)
+        result['engine'] = 'requests'
+    except Exception as e:
+        result['error'] = str(e)[:200]
+    result['engine_chain'].append('requests')
+    return resp, s
+
+
+def _反爬识别(resp, result: dict) -> str:
+    """第二步: 无状态反爬特征识别; 识别结果写入 result, 返回机制名。"""
+    if resp is None:
+        return 'none'
+    try:
+        from 反爬检测器 import 取检测器
+        r = 取检测器().识别(resp)
+        机制 = getattr(r, '机制', 'none')
+        result['anti_spider'] = 机制
+        result['anti_evidence'] = (getattr(r, '证据', '') or '')[:120]
+        return 机制
+    except Exception as _e:
+        _dbg("站点探测", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        return 'none'
+
+
+def _引擎重试(url: str, headers: dict, timeout: int, 机制: str,
+              result: dict) -> None:
+    """第三步: 用成熟引擎再试一次 (机制驱动引擎选择), 成功指标写回 result。"""
+    try:
+        # 修复(U11): 复用模块级单例。旧实现每次探测都 new 一个请求引擎管理器
+        # (各自持有会话池) 且从不 close —— 反复点"测试连接"会持续累积
+        # 未释放的 Session/HTTPAdapter。单例由模块统一管理生命周期。
+        from 请求引擎 import 获取引擎管理器
+        mgr = 获取引擎管理器()
+        eng_resp = mgr.请求(url, headers=headers, timeout=timeout,
+                            机制=机制)
+        # 记录降级链 (按可用引擎推断)
+        if 机制 in ('waf_js_challenge', 'js_cookie', 'dynamic_token'):
+            chain = ['cloudscraper', 'curl_cffi']
+        else:
+            chain = ['requests']
+        for c in chain:
+            if c not in result['engine_chain']:
+                result['engine_chain'].append(c)
+        if eng_resp is not None:
+            sc = int(getattr(eng_resp, 'status_code', 0) or 0)
+            if 200 <= sc < 400:
+                result['ok'] = True
+                result['status_code'] = sc
+                result['engine'] = getattr(eng_resp, '引擎', '')
+                result['error'] = ''
+    except Exception as e:
+        result['error'] = (result['error'] or str(e)[:200])[:200]
 
 
 def normalize_site_url(domain: str) -> str:
