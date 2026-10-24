@@ -317,7 +317,7 @@ def status_color(status: str):
 #   icon   34x34  圆角4              (方形图标按钮)
 #   表格用 36x32  圆角6              (.icon-btn)
 
-def _底色覆盖(键: str, 按下键: str = None):
+def _底色覆盖():
     """构造 overlay_color 三态表: hover / pressed / focused 各叠一层黑。
 
     ⚠️ 2026-10-04 **P0 修复**(抓取工作台一片空白的根因):
@@ -348,6 +348,51 @@ def _禁用光标():
     return ft.MouseCursor.FORBIDDEN
 
 
+def _按钮壳(控件类, text, icon, on_click, disabled, tooltip, visible, autofocus,
+            字键: str, 底键: str = None, 边键: str = None,
+            底恒定=None, 无底: bool = False):
+    """五大按钮工厂的公共壳 (P9 阶段 3: 样板收敛, 各厂只差 颜色键/控件类)。
+
+    颜色来源三种互斥形态 (与旧五厂逐一对应):
+      底键     → bg 随令牌取值, 且登记重刷 (filled/tonal/danger)
+      底恒定   → bg 为固定值, 重刷不换 (outline 的 TRANSPARENT)
+      无底     → style 不带 bgcolor 键 (text)
+    边键可选 (tonal/outline 有 1px 边框, 其余无)。
+    """
+    样式参 = dict(
+        shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
+        color=取色(字键),
+        overlay_color=_底色覆盖(),
+        padding=ft.Padding.symmetric(horizontal=BTN_PAD_X, vertical=0),
+        text_style=BTN_TEXT_STYLE,
+        mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
+    )
+    if 底恒定 is not None:
+        样式参['bgcolor'] = 底恒定
+    elif not 无底:
+        样式参['bgcolor'] = 取色(底键)
+    if 边键:
+        样式参['side'] = ft.BorderSide(1, 取色(边键))
+
+    按钮 = 控件类(
+        text, icon=icon, on_click=on_click, disabled=disabled, tooltip=tooltip,
+        visible=visible, autofocus=autofocus,
+        height=BTN_H, style=ft.ButtonStyle(**样式参),
+    )
+
+    def _换色(c):
+        覆 = {'color': 取色(字键)}
+        if 底恒定 is None and not 无底:
+            覆['bgcolor'] = 取色(底键)
+        if 边键:
+            覆['side'] = ft.BorderSide(1, 取色(边键))
+        c.style = _改样式(c.style, **覆)
+
+    登记重刷(按钮, _换色)
+    装焦点环(按钮)
+    return 按钮
+
+
 def filled_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
                visible=None, autofocus=False):
     """主按钮 (设计稿 .btn--primary): 34px 高, 圆角4, 14/500。
@@ -355,30 +400,9 @@ def filled_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
     颜色: 日间 #AD5710 底白字 / 夜间 #E08A3C 底**近黑字** (自动反色),
     由 ui_tokens.取色 在构建期取当前主题值; 登记重刷保证切主题会换色。
     """
-    底 = 取色('btn-primary-bg')
-    字 = 取色('btn-primary-fg')
-
-    按钮 = ft.FilledButton(
-        text, icon=icon, on_click=on_click, disabled=disabled, tooltip=tooltip,
-        visible=visible, autofocus=autofocus,
-        height=BTN_H,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            bgcolor=底, color=字,
-            overlay_color=_底色覆盖('btn-primary-bg'),
-            padding=ft.Padding.symmetric(horizontal=BTN_PAD_X, vertical=0),
-            text_style=BTN_TEXT_STYLE,
-            mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
-        ),
-    )
-
-    def _换色(c):
-        c.style = _改样式(c.style, bgcolor=取色('btn-primary-bg'),
-                          color=取色('btn-primary-fg'))
-
-    登记重刷(按钮, _换色)
-    装焦点环(按钮)
-    return 按钮
+    return _按钮壳(ft.FilledButton, text, icon, on_click, disabled, tooltip,
+                   visible, autofocus, 字键='btn-primary-fg',
+                   底键='btn-primary-bg')
 
 
 def tonal_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
@@ -388,89 +412,24 @@ def tonal_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
     日间: #FFFFFF 底 #3A3A3A 字 / 边框 rgba(0,0,0,.16)
     夜间: #2B2B2B 底 #E4E4E4 字 / 边框 rgba(255,255,255,.18)
     """
-    底 = 取色('btn-secondary-bg')
-    字 = 取色('btn-secondary-fg')
-    边 = 取色('btn-secondary-border')
-
-    按钮 = ft.FilledTonalButton(
-        text, icon=icon, on_click=on_click, disabled=disabled, tooltip=tooltip,
-        visible=visible, autofocus=autofocus,
-        height=BTN_H,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            bgcolor=底, color=字,
-            side=ft.BorderSide(1, 边),
-            overlay_color=_底色覆盖('btn-secondary-bg'),
-            padding=ft.Padding.symmetric(horizontal=BTN_PAD_X, vertical=0),
-            text_style=BTN_TEXT_STYLE,
-            mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
-        ),
-    )
-
-    def _换色(c):
-        c.style = _改样式(c.style, bgcolor=取色('btn-secondary-bg'),
-                          color=取色('btn-secondary-fg'),
-                          side=ft.BorderSide(1, 取色('btn-secondary-border')))
-
-    登记重刷(按钮, _换色)
-    装焦点环(按钮)
-    return 按钮
+    return _按钮壳(ft.FilledTonalButton, text, icon, on_click, disabled,
+                   tooltip, visible, autofocus, 字键='btn-secondary-fg',
+                   底键='btn-secondary-bg', 边键='btn-secondary-border')
 
 
 def outline_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
                 visible=None, autofocus=False):
     """描边按钮 (次要操作): 透明底 + 边框, 文字用可读强调色。"""
-    字 = 取色('accent-fg')
-    边 = 取色('border-default')
-
-    按钮 = ft.OutlinedButton(
-        text, icon=icon, on_click=on_click, disabled=disabled, tooltip=tooltip,
-        visible=visible, autofocus=autofocus,
-        height=BTN_H,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            bgcolor=ft.Colors.TRANSPARENT, color=字,
-            side=ft.BorderSide(1, 边),
-            overlay_color=_底色覆盖('brand'),
-            padding=ft.Padding.symmetric(horizontal=BTN_PAD_X, vertical=0),
-            text_style=BTN_TEXT_STYLE,
-            mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
-        ),
-    )
-
-    def _换色(c):
-        c.style = _改样式(c.style, color=取色('accent-fg'),
-                          side=ft.BorderSide(1, 取色('border-default')))
-
-    登记重刷(按钮, _换色)
-    装焦点环(按钮)
-    return 按钮
+    return _按钮壳(ft.OutlinedButton, text, icon, on_click, disabled, tooltip,
+                   visible, autofocus, 字键='accent-fg',
+                   底恒定=ft.Colors.TRANSPARENT, 边键='border-default')
 
 
 def text_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
              visible=None, autofocus=False):
     """文字按钮 (最弱强调, 如取消/辅助链接): 无边框无底, hover 才有底。"""
-    字 = 取色('accent-fg')
-
-    按钮 = ft.TextButton(
-        text, icon=icon, on_click=on_click, disabled=disabled, tooltip=tooltip,
-        visible=visible, autofocus=autofocus,
-        height=BTN_H,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            color=字, overlay_color=_底色覆盖('brand'),
-            padding=ft.Padding.symmetric(horizontal=BTN_PAD_X, vertical=0),
-            text_style=BTN_TEXT_STYLE,
-            mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
-        ),
-    )
-
-    def _换色(c):
-        c.style = _改样式(c.style, color=取色('accent-fg'))
-
-    登记重刷(按钮, _换色)
-    装焦点环(按钮)
-    return 按钮
+    return _按钮壳(ft.TextButton, text, icon, on_click, disabled, tooltip,
+                   visible, autofocus, 字键='accent-fg', 无底=True)
 
 
 def danger_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
@@ -479,32 +438,11 @@ def danger_btn(text, icon=None, on_click=None, disabled=False, tooltip=None,
 
     夜间 #7B7BE0 底配近黑字。圆角4 高34。
     """
-    底 = 取色('accent-stop')
     # 停止色是蓝紫/亮蓝紫, 两个主题下都要深字 —— 日间 #AD5710 级别的
     # 深色字在 #5C5CD9 上对比不足, 统一用近黑字 (与 btn-primary-fg 同源)
-    字 = 取色('btn-primary-fg')
-
-    按钮 = ft.FilledButton(
-        text, icon=icon, on_click=on_click, disabled=disabled, tooltip=tooltip,
-        visible=visible, autofocus=autofocus,
-        height=BTN_H,
-        style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=BTN_RADIUS),
-            bgcolor=底, color=字,
-            overlay_color=_底色覆盖('accent-stop'),
-            padding=ft.Padding.symmetric(horizontal=BTN_PAD_X, vertical=0),
-            text_style=BTN_TEXT_STYLE,
-            mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
-        ),
-    )
-
-    def _换色(c):
-        c.style = _改样式(c.style, bgcolor=取色('accent-stop'),
-                          color=取色('btn-primary-fg'))
-
-    登记重刷(按钮, _换色)
-    装焦点环(按钮)
-    return 按钮
+    return _按钮壳(ft.FilledButton, text, icon, on_click, disabled, tooltip,
+                   visible, autofocus, 字键='btn-primary-fg',
+                   底键='accent-stop')
 
 
 # ---- 尺寸变体 (设计稿 btn-sm / btn-lg) ----
@@ -565,7 +503,7 @@ def icon_btn(icon, on_click=None, tooltip=None, disabled=False, visible=None,
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=圆角),
             color=字色,
-            overlay_color=_底色覆盖('brand'),
+            overlay_color=_底色覆盖(),
             mouse_cursor=_禁用光标() if disabled else ft.MouseCursor.CLICK,
         ),
     )

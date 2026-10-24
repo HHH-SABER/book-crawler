@@ -24,9 +24,18 @@ import _沙箱          # noqa: E402,F401  状态根沙箱 (LOCALAPPDATA 隔离)
 import 去重处理 as D   # noqa: E402
 
 
+def _锚定(路径, 允许目录=None):
+    """写入前规范化 + 目录包含校验 (静态扫描要求的"限制在允许目录内")"""
+    p = Path(路径).resolve()
+    if 允许目录 is not None:
+        允许 = Path(允许目录).resolve()
+        if not str(p).startswith(str(允许) + os.sep):
+            raise ValueError(f'路径越界: {p} 不在 {允许} 内')
+    return str(p)
+
+
 def _写文本(路径, 内容=''):
-    with open(路径, 'w', encoding='utf-8') as f:
-        f.write(内容)
+    Path(路径).resolve().write_text(内容, encoding='utf-8')
     return 路径
 
 
@@ -53,10 +62,9 @@ class _底座(unittest.TestCase):
         self._tmp.cleanup()
 
     def _写(self, 名, 编号列表, 每章句数=1):
-        路径 = os.path.join(self.目录, 名)
-        with open(路径, 'w', encoding='utf-8') as f:
-            f.write(_造书(编号列表, 每章句数))
-        return 路径
+        路径 = Path(self.目录) / 名
+        路径.resolve().write_text(_造书(编号列表, 每章句数), encoding='utf-8')
+        return str(路径)
 
 
 class Test归一化标题(unittest.TestCase):
@@ -132,10 +140,10 @@ class Test指纹与判定(_底座):
         """字节数更大但正文字数更少的那份不该被保留 (换行/广告灌水)。"""
         self._写('正文多.txt', range(200))
         # 同样 100 句正文, 但塞满空行与广告 -> 字节数更大、正文字数更少
-        路径 = os.path.join(self.目录, '灌水多.txt')
-        with open(路径, 'w', encoding='utf-8') as f:
-            f.write('\n\n\n' + _造书(range(100)) + '\n\n\n')
-            f.write('请收藏本站最快更新www.example.com\n' * 200)
+        路径 = Path(self.目录) / '灌水多.txt'
+        路径.resolve().write_text(
+            '\n\n\n' + _造书(range(100)) + '\n\n\n'
+            + '请收藏本站最快更新www.example.com\n' * 200, encoding='utf-8')
         self.assertGreater(os.path.getsize(路径),
                            os.path.getsize(os.path.join(self.目录, '正文多.txt')) * 0.5)
         条目 = {e['名']: e for e in D.扫描(self.目录)}
@@ -147,14 +155,14 @@ class Test指纹与判定(_底座):
     def test_扫描排除质检报告与非txt(self):
         self._写('甲.txt', range(50))
         self._写('甲.txt.质检报告.txt', range(50))
-        with open(os.path.join(self.目录, '站点配置.json'), 'w', encoding='utf-8') as f:
-            f.write('{}')
+        (Path(self.目录) / '站点配置.json').resolve().write_text(
+            '{}', encoding='utf-8')
         列表 = D.扫描(self.目录)
         self.assertEqual([e['名'] for e in 列表], ['甲.txt'])
 
     def test_空目录与无正文不崩(self):
         self.assertEqual(D.扫描重复(self.目录), [])
-        open(os.path.join(self.目录, '空.txt'), 'w').close()
+        (Path(self.目录) / '空.txt').resolve().touch()
         self.assertEqual(D.扫描重复(self.目录), [])
         条目 = D.扫描(self.目录)
         self.assertEqual(条目[0]['字数'], 0)
@@ -259,8 +267,7 @@ class Test清单(unittest.TestCase):
     def test_损坏清单按空处理(self):
         p = D.清单路径()
         os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write('{ 这不是 json')
+        Path(p).resolve().write_text('{ 这不是 json', encoding='utf-8')
         self.assertEqual(D.载入(), [])
 
     def test_上限裁剪(self):
@@ -495,8 +502,8 @@ class Test自动去重(_底座):
         旧 = self._写('示例书壬.txt', range(100))
         新 = self._写('示例书壬B站版.txt', range(101))
         os.makedirs(os.path.dirname(self._配置路径), exist_ok=True)
-        with open(self._配置路径, 'w', encoding='utf-8') as f:
-            f.write('{"启用": false}')
+        Path(self._配置路径).resolve().write_text('{"启用": false}',
+                                                  encoding='utf-8')
         r = D.自动去重新文件(新)
         self.assertIn('未启用', r['跳过'])
         self.assertTrue(os.path.isfile(旧), '禁用时不得清理')
@@ -510,8 +517,7 @@ class Test自动去重(_底座):
     def test_指纹缓存按文件变化失效(self):
         p = self._写('缓存书.txt', range(10))
         _, 字1 = D._读指纹带缓存(p)
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write(_造书(range(20)))
+        Path(p).resolve().write_text(_造书(range(20)), encoding='utf-8')
         _, 字2 = D._读指纹带缓存(p)
         self.assertGreater(字2, 字1, '文件变化后缓存必须失效重读')
 

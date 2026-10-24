@@ -115,11 +115,14 @@ class AppLogger:
             self._cur_size = 0
 
     # ---------------------------------------------------------------- 写日志
-    def _write(self, level: str, source: str, message: str):
-        if _LEVEL_ORDER.get(level, 20) < _LEVEL_ORDER.get(self._level, 20):
-            return
+    @staticmethod
+    def _格式化行(level: str, source: str, message: str) -> str:
+        """[HH:MM:SS.mmm] [级别] [来源] 消息 (P9: 格式化与输出目标分离)"""
         ts = time.strftime('%H:%M:%S') + f".{int(time.time() * 1000) % 1000:03d}"
-        line = f"[{ts}] [{level}] [{source}] {message}"
+        return f"[{ts}] [{level}] [{source}] {message}"
+
+    def _落盘(self, line: str):
+        """输出目标① 文件: 锁内轮转 + 写入 (失败绝不影响主流程)"""
         with self._lock:
             try:
                 self._switch_file_if_needed()
@@ -127,15 +130,17 @@ class AppLogger:
                 self._cur_size = (getattr(self, '_cur_size', 0)
                                   + len(line.encode('utf-8')) + 1)
             except Exception:
-                pass  # 日志失败绝不影响主流程
-        # console 镜像: 原样输出消息 (无前缀), 供 CLI 进度与 GUI 任务日志(右侧抽屉/日志页)捕获 (B1)
-        # 防递归护栏: GUI 任务线程把 sys.stdout 替换为日志重定向器 (TaskLogRedirector),
-        # 此处 print 会再次进入 _write 造成互递归 (1 条日志被放大数百次落盘),
-        # 用线程本地标志识别重入, 重入时直接丢弃。
-        # 线程本地镜像回调优先: 注册后**不再写 stdout**。
-        # 为什么: GUI 任务线程的 sys.stdout 是 TaskLogRedirector, 它会把手里的行再
-        # 落盘一次 —— 而镜像已经落过盘了, 于是日志文件里每条记录出现两遍
-        # (2026-10-06 实测: 日志页每行重复, 设计稿是单行)。回调直连消费者即可根治。
+                pass  # 刻意静默: 日志失败绝不影响主流程
+
+    def _分发镜像(self, level: str, source: str, message: str):
+        """输出目标② GUI 任务日志 (线程本地回调) / ③ console 镜像。
+
+        回调优先: 注册后不再写 stdout —— GUI 任务线程的 sys.stdout 是
+        TaskLogRedirector, 它会把手里的行再落盘一次 (日志文件每条两遍),
+        回调直连消费者即可根治 (2026-10-06 批 3 第 1 项)。
+        console 路径带防递归护栏: GUI 任务线程的 print 会再次进入 _write
+        造成互递归 (1 条放大数百次), 用线程本地标志识别重入并丢弃。
+        """
         回调 = getattr(_镜像回调, '回调', None)
         if 回调 is not None:
             try:
@@ -150,9 +155,16 @@ class AppLogger:
             try:
                 print(message, flush=True)
             except Exception:
-                pass  # 刻意静默: console 镜像写失败仅丢回显, 落盘不受影响; 此处若再打日志会在 _write 内递归
+                pass  # 刻意静默: console 镜像写失败仅丢回显; 此处若再打日志会在 _write 内递归
             finally:
                 self._mirror_local.in_mirror = False
+
+    def _write(self, level: str, source: str, message: str):
+        if _LEVEL_ORDER.get(level, 20) < _LEVEL_ORDER.get(self._level, 20):
+            return
+        line = self._格式化行(level, source, message)
+        self._落盘(line)
+        self._分发镜像(level, source, message)
 
     def debug(self, source: str, message: str):
         self._write(DEBUG, source, message)

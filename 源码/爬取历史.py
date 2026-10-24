@@ -337,6 +337,64 @@ class 爬取历史:
     # ------------------------------------------------------------------
     # 对外 API
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 记录请求的锁内子步骤 (P9: 80 行主体拆为 判定/记录更新/LRU截断 三段)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _判定结果(旧记录, 失败: bool, 新哈希: str) -> str:
+        """结果判定: 失败 > 新增 > 未变化(哈希相同) > 更新"""
+        if 失败:
+            return RESULT_FAIL
+        if not 旧记录:
+            return RESULT_NEW
+        if 新哈希 and 新哈希 == 旧记录.get('内容哈希', ''):
+            return RESULT_UNCHANGED
+        return RESULT_UPDATE
+
+    @staticmethod
+    def _更新站点记录(站点: dict, url: str, 状态码: int, 耗时秒: float,
+                      字节大小: int, 新哈希: str, 结果: str, 错误原因: str,
+                      now: str) -> None:
+        """(须持 _io_lock) 更新站点级统计 + 写 URL 级记录 (只保留最新一条)"""
+        if not 站点.get('首次抓取'):
+            站点['首次抓取'] = now
+        站点['最近抓取'] = now
+        站点['总请求数'] = int(站点.get('总请求数', 0)) + 1
+
+        urls = 站点['URLs']
+        旧记录 = urls.get(url)
+        旧哈希 = 旧记录.get('内容哈希', '') if isinstance(旧记录, dict) else ''
+
+        统计 = 站点['统计']
+        统计[结果] = int(统计.get(结果, 0)) + 1
+
+        新记录 = {
+            '首次抓取': (旧记录.get('首次抓取', now)
+                        if isinstance(旧记录, dict) else now),
+            '最后抓取': now,
+            '状态码': int(状态码 or 0),
+            '耗时秒': round(float(耗时秒 or 0), 3),
+            '字节大小': 字节大小,
+            '内容哈希': 新哈希,
+            '结果': 结果,
+            '错误原因': 错误原因 or '',
+            '变更次数': int(旧记录.get('变更次数', 0)
+                            if isinstance(旧记录, dict) else 0)
+                        + (1 if 结果 == RESULT_UPDATE else 0),
+        }
+        urls[url] = 新记录
+
+    @staticmethod
+    def _截断LRU(urls: dict) -> None:
+        """(须持 _io_lock) 超过上限时按最后抓取时间淘汰最旧的"""
+        if len(urls) <= _MAX_URLS_PER_SITE:
+            return
+        旧项 = sorted(urls.items(),
+                      key=lambda kv: kv[1].get('最后抓取', ''))[
+            :len(urls) - _MAX_URLS_PER_SITE]
+        for k, _ in 旧项:
+            urls.pop(k, None)
+
     def 记录请求(self, url: str, 状态码: int, 耗时秒: float,
                  content: bytes = b'', 错误原因: str = '') -> str:
         """记录一次请求结果, 返回本次结果类型 (新增/更新/未变化/失败)。
@@ -363,53 +421,12 @@ class 爬取历史:
         try:
             with self._io_lock:
                 站点 = self._取站点记录(域名, 创建=True)
-                if not 站点.get('首次抓取'):
-                    站点['首次抓取'] = now
-                站点['最近抓取'] = now
-                站点['总请求数'] = int(站点.get('总请求数', 0)) + 1
-
-                urls = 站点['URLs']
-                旧记录 = urls.get(url)
+                旧记录 = 站点['URLs'].get(url)
                 旧哈希 = 旧记录.get('内容哈希', '') if isinstance(旧记录, dict) else ''
-
-                if 失败:
-                    结果 = RESULT_FAIL
-                elif not 旧记录:
-                    结果 = RESULT_NEW
-                elif 新哈希 and 新哈希 == 旧哈希:
-                    结果 = RESULT_UNCHANGED
-                else:
-                    结果 = RESULT_UPDATE
-
-                # 统计计数 (站点级)
-                统计 = 站点['统计']
-                统计[结果] = int(统计.get(结果, 0)) + 1
-
-                # URL 级记录 (只保留最新一条)
-                新记录 = {
-                    '首次抓取': (旧记录.get('首次抓取', now)
-                                if isinstance(旧记录, dict) else now),
-                    '最后抓取': now,
-                    '状态码': int(状态码 or 0),
-                    '耗时秒': round(float(耗时秒 or 0), 3),
-                    '字节大小': 字节大小,
-                    '内容哈希': 新哈希,
-                    '结果': 结果,
-                    '错误原因': 错误原因 or '',
-                    '变更次数': int(旧记录.get('变更次数', 0)
-                                    if isinstance(旧记录, dict) else 0)
-                                + (1 if 结果 == RESULT_UPDATE else 0),
-                }
-                urls[url] = 新记录
-
-                # LRU 截断: 超过上限时按最后抓取时间淘汰最旧的
-                if len(urls) > _MAX_URLS_PER_SITE:
-                    旧项 = sorted(urls.items(),
-                                  key=lambda kv: kv[1].get('最后抓取', ''))[
-                        :len(urls) - _MAX_URLS_PER_SITE]
-                    for k, _ in 旧项:
-                        urls.pop(k, None)
-
+                结果 = self._判定结果(旧记录, 失败, 新哈希)
+                self._更新站点记录(站点, url, 状态码, 耗时秒, 字节大小,
+                                   新哈希, 结果, 错误原因, now)
+                self._截断LRU(站点['URLs'])
                 快照 = self._快照()          # 防抖判定 + 一致快照 (锁内)
             self._落盘(快照)                 # U17: 锁外原子落盘, 不阻塞其他 worker
         except Exception as e:
