@@ -1159,15 +1159,16 @@ class SiteManagePage:
         for i, cfg in enumerate(self.configs):
             self._table_view.controls.append(self._build_site_row(i, cfg))
 
-    def _build_site_row(self, idx: int, cfg: dict) -> ft.Control:
-        """单行站点: 域名 | 模式 | 状态 | 启用 | 操作"""
-        domain = cfg.get('domain', '未知')
-        enabled = cfg.get('enabled', True)
-        pattern = cfg.get('pattern', '—')
+    @staticmethod
+    def _站点单元格(content, flex) -> ft.Container:
+        """行内单元格（按 flex 分配宽度，左对齐）"""
+        return ft.Container(content=content, expand=flex,
+                            alignment=ft.Alignment(-1, 0))
 
-        # 状态列: 健康度 · 反爬 · 探测结果 (合并为一个单元)
+    def _状态标签行(self, cfg: dict, domain: str) -> ft.Row:
+        """状态列: 健康度 · 风控/反爬 · 探测结果 (最多显示前 2 个)"""
         # Phase 3: parts 第二项改为**令牌键** (旧写法存 MORANDI_* 色值字符串,
-        # 构建期绑死 → 切主题不掉色), 颜色在下面建 Text 时取并登记重刷
+        # 构建期绑死 → 切主题不掉色), 颜色在建 Text 时取并登记重刷
         parts = []
         # 站点级速度配置标记 (P2): 仅设置了延时/线程时显示
         _speed_tags = []
@@ -1207,13 +1208,14 @@ class SiteManagePage:
                               'status-error'))
         if not parts:
             parts.append(("无记录", None))
-        status_row = ft.Row([
+        return ft.Row([
             _色文本(t, c, size=SIZE_TINY, weight=WEIGHT_BODY,
                     font_family=FONT_STACK)
             for t, c in parts[:2]
         ], spacing=6)
 
-        # 启用开关 (批 3(4) 对齐设计稿: Windows 11 蓝色轨道, 非 iOS 绿)
+    def _启用开关(self, idx: int, enabled: bool) -> ft.Switch:
+        """启用开关 (批 3(4) 对齐设计稿: Windows 11 蓝色轨道, 非 iOS 绿)"""
         switch = ft.Switch(
             value=enabled,
             active_track_color=取色('btn-primary-bg'),
@@ -1222,8 +1224,10 @@ class SiteManagePage:
         )
         登记重刷(switch, lambda c: setattr(
             c, 'active_track_color', 取色('btn-primary-bg')))
+        return switch
 
-        # 操作: 测试 / 编辑 / 删除
+    def _站点操作组(self, idx: int) -> ft.Row:
+        """操作列: 测试 / 编辑 / 删除"""
         probe_btn = ft.IconButton(
             icon=ft.Icons.WIFI_TETHERING, icon_size=14,
             tooltip="测试连接 (探测站点状态)",
@@ -1246,10 +1250,18 @@ class SiteManagePage:
                 padding=2, shape=ft.RoundedRectangleBorder(radius=6),
                 bgcolor=ft.Colors.ERROR_CONTAINER,
                 color=ft.Colors.ON_ERROR_CONTAINER))
+        return ft.Row([probe_btn, edit_btn, del_btn], spacing=2,
+                      alignment=ft.MainAxisAlignment.CENTER)
 
-        def _cell(content, flex):
-            return ft.Container(content=content, expand=flex,
-                                alignment=ft.Alignment(-1, 0))
+    def _build_site_row(self, idx: int, cfg: dict) -> ft.Control:
+        """单行站点: 域名 | 模式 | 状态 | 启用 | 操作（各列见 _* 构建器）"""
+        domain = cfg.get('domain', '未知')
+        enabled = cfg.get('enabled', True)
+        pattern = cfg.get('pattern', '—')
+
+        status_row = self._状态标签行(cfg, domain)
+        switch = self._启用开关(idx, enabled)
+        操作组 = self._站点操作组(idx)
 
         # 域名文字: 未启用走 ft.Colors 别名 (自动适配, 无需重刷);
         # 启用态是令牌色 → 必须登记重刷, 否则切夜间不掉色
@@ -1263,14 +1275,15 @@ class SiteManagePage:
 
         return ft.Container(
             content=ft.Row([
-                _cell(域名文本, 26),
-                _cell(ft.Text(pattern, size=SIZE_TINY, font_family=FONT_STACK,
-                              color=ft.Colors.ON_SURFACE_VARIANT,
-                              max_lines=1), 14),
-                _cell(status_row, 30),
-                _cell(ft.Row([switch], alignment=ft.MainAxisAlignment.CENTER), 10),
-                _cell(ft.Row([probe_btn, edit_btn, del_btn], spacing=2,
-                             alignment=ft.MainAxisAlignment.CENTER), 20),
+                self._站点单元格(域名文本, 26),
+                self._站点单元格(
+                    ft.Text(pattern, size=SIZE_TINY, font_family=FONT_STACK,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                            max_lines=1), 14),
+                self._站点单元格(status_row, 30),
+                self._站点单元格(
+                    ft.Row([switch], alignment=ft.MainAxisAlignment.CENTER), 10),
+                self._站点单元格(操作组, 20),
             ], spacing=6),
             padding=ft.Padding.symmetric(horizontal=8, vertical=4),
             # 批 3(4) 对齐设计稿: 行白底 + 底部分隔线 (原灰底胶囊条)
