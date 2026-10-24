@@ -78,7 +78,43 @@ class HistoryPage:
 
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
-        """构建历史页"""
+        """构建历史页（过滤器区/统计卡区见 _构建*，装配顺序与原实现一致）"""
+        self._构建过滤器与动作区()
+        self._构建统计与表格区()
+        # Fluent 页面大标题 (设计稿: 标题+副标题在页头, 视图切换在右侧)
+        self._构建视图切换按钮()
+        header = page_header(
+            "爬取历史", "按 URL 维度记录所有抓取结果, 支持增量抓取与趋势分析",
+            actions=[self._urls_mode_btn, self._sites_mode_btn])
+
+        header_card = make_card(
+            ft.Column([
+                self._stat_row,
+                self._stat_row2,
+                # 批 3(3): 刷新/一键更新书架推到行尾 (设计稿 刷新 在最右);
+                # 左侧下拉+chips 用嵌套 wrap 行, 窄窗口折行不出卡片
+                ft.Row([
+                    ft.Row([self._domain_dd, self._days_dd,
+                            self._book_filter, self._result_chips_row],
+                           spacing=6, wrap=True, expand=True),
+                    self._刷新按钮, self._更新书架按钮],
+                    spacing=6),
+                self._shelf_info,
+            ], spacing=10),
+            padding=10,
+        )
+
+        table_card = make_card(
+            ft.Container(content=self._table_view, expand=True),
+            expand=True, padding=6,
+        )
+
+        self.refresh()
+        return ft.Column([header, header_card, table_card], expand=True, spacing=10,
+                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+
+    def _构建过滤器与动作区(self):
+        """域名/时间/结果/书名四个过滤器 + 刷新/一键更新书架 + 书架信息"""
         # 域名过滤器
         self._domain_dd = ft.Dropdown(
             label="站点", width=220, dense=True,
@@ -115,17 +151,18 @@ class HistoryPage:
             on_change=lambda e: self.refresh(),
         )
 
-        refresh_btn = tonal_btn("刷新", icon=ft.Icons.REFRESH,
+        self._刷新按钮 = tonal_btn("刷新", icon=ft.Icons.REFRESH,
                                 on_click=lambda e: self.refresh())
         # P2: 一键更新书架 (对已抓取小说增量抓取)
-        update_btn = tonal_btn("一键更新书架", icon=ft.Icons.SYNC,
+        self._更新书架按钮 = tonal_btn("一键更新书架", icon=ft.Icons.SYNC,
                                on_click=self._on_update_shelf,
                                tooltip="对书架中已抓取小说做增量抓取 (跳过未变化章节)")
         self._shelf_info = ft.Text("", size=SIZE_TINY,
                                    color=ft.Colors.ON_SURFACE_VARIANT,
                                    font_family=FONT_STACK)
 
-        # 视图切换: URL 明细 / 站点汇总 (两个互斥按钮)
+    def _构建视图切换按钮(self):
+        """URL 明细 / 站点汇总 两个互斥视图按钮"""
         self._urls_mode_btn = tonal_btn(
             "URL 明细", icon=ft.Icons.LINK,
             on_click=lambda e: self._set_view_mode("urls"))
@@ -134,7 +171,8 @@ class HistoryPage:
             on_click=lambda e: self._set_view_mode("sites"))
         self._apply_mode_btn_styles()
 
-        # 统计卡行 + 过滤器 + 表格
+    def _构建统计与表格区(self):
+        """统计卡两行 (窄档 3+2) + 可滚动表格"""
         self._stat_row = ft.Row(spacing=6)
         # 批 4 (2026-10-07): 窄档统计卡 5 列 → 3 列, 溢出的 2 张要有地方放 ——
         # 设计稿 ≤960 是 `.stats-row repeat(3,1fr)` (5 张卡自然排成 3+2)。
@@ -142,37 +180,6 @@ class HistoryPage:
         self._stat_row2 = ft.Row(spacing=6, visible=False)
         self._table_view = ft.ListView(expand=True, spacing=2, auto_scroll=True,
                                        scroll=ft.ScrollMode.ALWAYS)
-
-        # Fluent 页面大标题 (设计稿: 标题+副标题在页头, 视图切换在右侧)
-        header = page_header(
-            "爬取历史", "按 URL 维度记录所有抓取结果, 支持增量抓取与趋势分析",
-            actions=[self._urls_mode_btn, self._sites_mode_btn])
-
-        header_card = make_card(
-            ft.Column([
-                self._stat_row,
-                self._stat_row2,
-                # 批 3(3): 刷新/一键更新书架推到行尾 (设计稿 刷新 在最右);
-                # 左侧下拉+chips 用嵌套 wrap 行, 窄窗口折行不出卡片
-                ft.Row([
-                    ft.Row([self._domain_dd, self._days_dd,
-                            self._book_filter, self._result_chips_row],
-                           spacing=6, wrap=True, expand=True),
-                    refresh_btn, update_btn],
-                    spacing=6),
-                self._shelf_info,
-            ], spacing=10),
-            padding=10,
-        )
-
-        table_card = make_card(
-            ft.Container(content=self._table_view, expand=True),
-            expand=True, padding=6,
-        )
-
-        self.refresh()
-        return ft.Column([header, header_card, table_card], expand=True, spacing=10,
-                         horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     # ------------------------------------------------------------- 过滤交互
     def _on_update_shelf(self, e):
