@@ -25,15 +25,7 @@ except Exception:
     _app_log = None
 
 
-def _dbg(source: str, message: str):
-    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
-    if _app_log is not None:
-        try:
-            _app_log.debug(source, message)
-        except Exception:
-            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
-
-
+from _调试 import _dbg  # noqa: E402  统一实现 (G1)
 # 结果类型 → 令牌键 (Phase 3: 旧写法在这里存的是构建期求值的色字符串, 切主题不会重刷;
 # 令牌键在**构建控件时**才 取色(), 并逐控件 登记重刷。)
 _结果令牌表 = {

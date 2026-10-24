@@ -176,7 +176,9 @@ class Test清单页逻辑(unittest.TestCase):
 
     def test_无控制台挂账号(self):
         """列表刷新会高频调用, _dbg 走文件日志不 console 镜像(同 remote_page)。"""
-        self.assertIn('def _dbg', self.src, '缺统一异常留痕通道')
+        # G1 (2026-10-24): _dbg 已收敛到 源码/_调试.py，页面改为导入 —— 两者都算
+        self.assertTrue('def _dbg' in self.src or 'from _调试 import _dbg' in self.src,
+                        '缺统一异常留痕通道')
         self.assertIn('app_log', self.src)
 
     def test_dropdown用flet086事件名(self):

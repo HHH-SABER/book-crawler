@@ -16,15 +16,7 @@ except Exception:
     _app_log = None
 
 
-def _dbg(source: str, message: str):
-    """异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免高频刷屏)"""
-    if _app_log is not None:
-        try:
-            _app_log.debug(source, message)
-        except Exception:
-            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
-
-
+from _调试 import _dbg  # noqa: E402  统一实现 (G1)
 def _可更新(控件) -> bool:
     """控件是否已挂到页面 (Flet 0.86: 直接访问未挂载控件的 .page 会抛
     RuntimeError "Control must be added to the page first" —— 不能写

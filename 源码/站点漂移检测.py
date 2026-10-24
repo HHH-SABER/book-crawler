@@ -24,15 +24,7 @@ except Exception:
     _app_log = None
 
 
-def _dbg(source: str, message: str):
-    """裸 except 吞异常留痕 (DEBUG 级: 只落盘不 console 镜像, 避免刷屏)"""
-    if _app_log is not None:
-        try:
-            _app_log.debug(source, message)
-        except Exception:
-            pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
-
-
+from _调试 import _dbg  # noqa: E402  统一实现 (G1)
 _LOCK = threading.Lock()
 
 # 告警阈值: 本次值 vs 基线 (均为 0~1 比率)
