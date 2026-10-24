@@ -418,23 +418,43 @@ class DetailDrawer:
 
     # ----------------------------------------------------------- 详情刷新
     def refresh(self):
-        """刷新任务详情视图 (主线程, 由刷新 Timer 驱动)"""
+        """刷新任务详情视图 (主线程, 由刷新 Timer 驱动)
+
+        P9 #4 (2026-10-24): 原 125 行单函数按「概览 / 指标 / 降级链 / 输出 / 错误」
+        拆成 6 段，本函数只负责守卫与装配，控件树与拆分前逐节点等价。
+        """
         if self._detail_view is None or not self._detail_view.visible:
             return
         tid = self.task_manager.selected_task_id
         task = self.task_manager.get_task(tid) if tid else None
         if not task:
-            # 批 4: 手写单行 → 统一状态组件。
-            # 填满=False 是必须的: _detail_view 是 scroll=ALWAYS 的 Column,
-            # 可滚动容器主轴无界, 子控件再 expand 会被算成 0 高 → 空态看不见。
-            self._detail_view.controls.clear()
-            self._detail_view.controls.append(states.空态(
-                图标=ft.Icons.TOUCH_APP_OUTLINED, 标题='未选中任务',
-                说明='点击上方任务表的任意一行查看详情。', 填满=False))
+            self._显示未选中空态()
             return
 
         mt = task.metrics
-        # 大进度环
+        self._detail_view.controls.clear()
+        self._detail_view.controls.append(self._构建概览行(task))
+        self._detail_view.controls.extend(self._构建指标区(mt))
+        # 降级链 (有才显示)
+        if mt.engine_fallback_chain:
+            self._detail_view.controls.append(self._构建降级链(mt))
+        # 输出文件 + 操作 (打开文件夹 / 导出 EPUB 单篇导出)
+        if task.output_file:
+            self._detail_view.controls.append(self._构建输出行(task))
+        if task.error:
+            self._detail_view.controls.append(self._构建错误行(task))
+
+    def _显示未选中空态(self):
+        """批 4: 手写单行 → 统一状态组件。
+        填满=False 是必须的: _detail_view 是 scroll=ALWAYS 的 Column,
+        可滚动容器主轴无界, 子控件再 expand 会被算成 0 高 → 空态看不见。"""
+        self._detail_view.controls.clear()
+        self._detail_view.controls.append(states.空态(
+            图标=ft.Icons.TOUCH_APP_OUTLINED, 标题='未选中任务',
+            说明='点击上方任务表的任意一行查看详情。', 填满=False))
+
+    def _构建概览行(self, task) -> ft.Row:
+        """大进度环 + 书名 + 状态胶囊 + 进度数值"""
         ring_value = None
         if task.progress_total > 0:
             ring_value = min(1.0, task.progress_current / task.progress_total)
@@ -451,9 +471,7 @@ class DetailDrawer:
         # 不补登记大进度环切夜间后仍停在日间色。
         登记重刷(ring, lambda c, s=task.status:
                  setattr(c, 'color', status_color(s)))
-
-        self._detail_view.controls.clear()
-        self._detail_view.controls.append(ft.Row([
+        return ft.Row([
             ring,
             ft.Column([
                 ft.Text(task.title, size=SIZE_LABEL, weight=WEIGHT_SUBTITLE,
@@ -464,84 +482,88 @@ class DetailDrawer:
                                 size=SIZE_TINY, font_family=FONT_STACK,
                                 color=ft.Colors.ON_SURFACE_VARIANT)], spacing=6),
             ], spacing=4, expand=True),
-        ], spacing=10))
+        ], spacing=10)
 
-        # 指标卡 (2×2)
-        def _metric_cell(label, value, color=None, 色键: str = None):
-            """指标格 (Phase 3: 色键非空 = 令牌色 + 登记重刷, 否则用 M3 别名)"""
-            值控件 = ft.Text(value, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
-                            color=(取色(色键) if 色键
-                                   else (color or ft.Colors.ON_SURFACE)),
-                            font_family=FONT_STACK, max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS)
-            if 色键:
-                登记重刷(值控件, lambda c, k=色键: setattr(c, 'color', 取色(k)))
-            return ft.Container(
-                content=ft.Column([
-                    ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
-                            color=ft.Colors.ON_SURFACE_VARIANT,
-                            font_family=FONT_STACK),
-                    值控件,
-                ], spacing=1),
-                padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-                bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
-                border_radius=8, expand=True,
-            )
-        self._detail_view.controls.append(ft.Row([
-            _metric_cell("引擎", mt.engine or "requests",
-                         色键='status-success' if mt.engine else None),
-            _metric_cell("反爬", mt.anti_spider_type or "无",
-                         色键='status-warning' if mt.anti_spider_type else None),
-        ], spacing=6))
+    def _指标格(self, label, value, color=None, 色键: str = None) -> ft.Container:
+        """指标格 (Phase 3: 色键非空 = 令牌色 + 登记重刷, 否则用 M3 别名)"""
+        值控件 = ft.Text(value, size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
+                        color=(取色(色键) if 色键
+                               else (color or ft.Colors.ON_SURFACE)),
+                        font_family=FONT_STACK, max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS)
+        if 色键:
+            登记重刷(值控件, lambda c, k=色键: setattr(c, 'color', 取色(k)))
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(label, size=SIZE_TINY, weight=WEIGHT_BODY,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
+                        font_family=FONT_STACK),
+                值控件,
+            ], spacing=1),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+            border_radius=8, expand=True,
+        )
+
+    def _构建指标区(self, mt) -> list:
+        """2×2 指标卡：引擎 / 反爬 / 质检 / 增量跳过"""
         qs = mt.quality_score
-        self._detail_view.controls.append(ft.Row([
-            _metric_cell("质检",
-                         f"{qs:.0f}分" if qs >= 0 else "—",
-                         色键=(('status-success' if mt.quality_passed
-                               else 'status-error') if qs >= 0 else None)),
-            _metric_cell("增量跳过", f"{mt.incremental_skipped} 章",
-                         色键='accent-fg' if mt.incremental_skipped else None),
-        ], spacing=6))
+        return [
+            ft.Row([
+                self._指标格("引擎", mt.engine or "requests",
+                           色键='status-success' if mt.engine else None),
+                self._指标格("反爬", mt.anti_spider_type or "无",
+                           色键='status-warning' if mt.anti_spider_type else None),
+            ], spacing=6),
+            ft.Row([
+                self._指标格("质检",
+                           f"{qs:.0f}分" if qs >= 0 else "—",
+                           色键=(('status-success' if mt.quality_passed
+                                 else 'status-error') if qs >= 0 else None)),
+                self._指标格("增量跳过", f"{mt.incremental_skipped} 章",
+                           色键='accent-fg' if mt.incremental_skipped else None),
+            ], spacing=6),
+        ]
 
-        # 降级链 (有才显示)
-        if mt.engine_fallback_chain:
-            chain = " → ".join(mt.engine_fallback_chain + [mt.engine or "…"])
-            self._detail_view.controls.append(ft.Text(
-                f"降级链: {chain}", size=SIZE_TINY, font_family=FONT_STACK,
-                color=ft.Colors.ON_SURFACE_VARIANT))
+    def _构建降级链(self, mt) -> ft.Text:
+        """引擎降级链：requests → cloudscraper → … → 当前引擎"""
+        chain = " → ".join(mt.engine_fallback_chain + [mt.engine or "…"])
+        return ft.Text(
+            f"降级链: {chain}", size=SIZE_TINY, font_family=FONT_STACK,
+            color=ft.Colors.ON_SURFACE_VARIANT)
 
-        # 输出文件 + 操作 (打开文件夹 / 导出 EPUB 单篇导出)
-        if task.output_file:
-            文件图标 = _令牌色(
-                ft.Icon(ft.Icons.DESCRIPTION_OUTLINED, size=14), 'status-success')
-            file_row = ft.Row([
-                文件图标,
-                ft.Text(os.path.basename(task.output_file),
-                        size=SIZE_TINY, font_family=FONT_STACK,
-                        color=ft.Colors.ON_SURFACE_VARIANT, expand=True,
-                        max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                ft.IconButton(
-                    icon=ft.Icons.IMPORT_CONTACTS, icon_size=14,
-                    tooltip="导出 EPUB (单篇导出, 与全局导出同格式)",
-                    on_click=lambda e: self._export_epub(task),
-                    style=ft.ButtonStyle(
-                        padding=2, shape=ft.RoundedRectangleBorder(radius=6)),
-                ),
-                ft.IconButton(
-                    icon=ft.Icons.FOLDER_OPEN, icon_size=14,
-                    tooltip="打开所在文件夹",
-                    on_click=lambda e: self._open_folder(task.output_file),
-                    style=ft.ButtonStyle(
-                        padding=2, shape=ft.RoundedRectangleBorder(radius=6)),
-                ),
-            ], spacing=4)
-            self._detail_view.controls.append(file_row)
-        if task.error:
-            # Phase 3: 令牌色 + 登记重刷 (旧写法绑的字符串常量切夜间不变色)
-            错误文本 = _令牌色(ft.Text(
-                f"错误: {task.error[:150]}", size=SIZE_TINY,
-                font_family=FONT_STACK), 'status-error')
-            self._detail_view.controls.append(错误文本)
+    def _构建输出行(self, task) -> ft.Row:
+        """输出文件行：文件名 + 导出 EPUB + 打开文件夹"""
+        文件图标 = _令牌色(
+            ft.Icon(ft.Icons.DESCRIPTION_OUTLINED, size=14), 'status-success')
+        return ft.Row([
+            文件图标,
+            ft.Text(os.path.basename(task.output_file),
+                    size=SIZE_TINY, font_family=FONT_STACK,
+                    color=ft.Colors.ON_SURFACE_VARIANT, expand=True,
+                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            ft.IconButton(
+                icon=ft.Icons.IMPORT_CONTACTS, icon_size=14,
+                tooltip="导出 EPUB (单篇导出, 与全局导出同格式)",
+                on_click=lambda e: self._export_epub(task),
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6)),
+            ),
+            ft.IconButton(
+                icon=ft.Icons.FOLDER_OPEN, icon_size=14,
+                tooltip="打开所在文件夹",
+                on_click=lambda e: self._open_folder(task.output_file),
+                style=ft.ButtonStyle(
+                    padding=2, shape=ft.RoundedRectangleBorder(radius=6)),
+            ),
+        ], spacing=4)
+
+    def _构建错误行(self, task) -> ft.Text:
+        """错误信息（截断 150 字，令牌错误色）"""
+        # Phase 3: 令牌色 + 登记重刷 (旧写法绑的字符串常量切夜间不变色)
+        return _令牌色(ft.Text(
+            f"错误: {task.error[:150]}", size=SIZE_TINY,
+            font_family=FONT_STACK), 'status-error')
 
     def _open_folder(self, filepath: str):
         """打开文件所在目录"""
