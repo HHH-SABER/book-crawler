@@ -32,6 +32,14 @@ if [ $? -ne 0 ]; then
         exit 1
 fi
 
+echo "[pre-commit] 阶段覆盖检查 (S1)…"
+if ! "$PY" 脚本/检查阶段覆盖.py --严格 > /tmp/_precommit_stages.log 2>&1; then
+    tail -15 /tmp/_precommit_stages.log
+    echo "[pre-commit] ❌ 适配器声明了代码里不存在的阶段, 提交被阻止。"
+    echo "      处置: 适配器里的阶段名改回代码里的写法（见 脚本/检查阶段覆盖.py 输出）"
+    exit 1
+fi
+
 echo "[pre-commit] 静态引用检查…"
 if ! "$PY" 脚本/check_undefined_refs.py > /tmp/_precommit_static.log 2>&1; then
     tail -15 /tmp/_precommit_static.log

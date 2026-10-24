@@ -53,3 +53,9 @@ jobs:
       # 历史上真抓出过 NameError 事故, 必须有"非 0 退出即失败"的门禁地位。
       - name: Run undefined-reference static check
         run: python 脚本/check_undefined_refs.py
+
+      # S1 (2026-10-24): 站点策略「阶段词汇」与适配器「声明阶段」双侧对齐。
+      # 适配器声明了代码里不存在的阶段 = 拼写漂移/阶段被删 ⇒ 静默走回通用规则，线上极难发现。
+      # 公开形态无本地适配器 ⇒ 恒通过；本机全功能形态才有实际校验价值。
+      - name: Run site-strategy stage coverage check
+        run: python 脚本/检查阶段覆盖.py --严格
