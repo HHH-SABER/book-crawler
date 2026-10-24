@@ -125,10 +125,9 @@ def _读显示版本() -> str:
     return ''
 
 
-def main(page: ft.Page):
-    """Flet 应用入口"""
-    _版本 = _读显示版本()
-    _应用名 = f"小说爬虫 v{_版本}" if _版本 else "小说爬虫"
+def _初始化窗口(page: ft.Page, 版本: str) -> None:
+    """窗口标题/尺寸/DPI/居中/主题模式初始化 (main 直线段, P9 阶段5)。"""
+    _应用名 = f"小说爬虫 v{版本}" if 版本 else "小说爬虫"
     page.title = _应用名
     # 窗口尺寸按屏幕自适应 (修复: 写死 1280x800 在小屏/高DPI缩放下内容截断)
     try:
@@ -156,19 +155,11 @@ def main(page: ft.Page):
     page.run_task(_center_window)
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
-    # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
-    from gui_components.ui_fluent import (
-        make_morandi_theme, make_morandi_dark_theme,
-        FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
-            提示条,
-    )
-    # 2026-10-04 (Phase 3): 状态色改走 ui_tokens 令牌 + 登记重刷 ——
-    # 绑 ui_fluent 的 MORANDI_* 字符串常量时, 切主题这些控件不会换色。
-    from gui_components.ui_tokens import 取色
 
-    page.theme = make_morandi_theme()
-    page.dark_theme = make_morandi_dark_theme()
 
+def _挂启动自检(page: ft.Page) -> None:
+    """客户端界面错误捕获 + 启动日志 + 网站清单自检 (main 直线段, P9 阶段5)。"""
+    from gui_components.ui_fluent import 提示条
     # ---- 客户端界面错误捕获 (2026-10-18 灰页排查) ----
     # 背景: 内容区偶发整块 #C4C4C4 —— 该色不是任何 Flet/Material 令牌;
     # 按 Flutter 的 ErrorWidget(约 0xC0C0C0 叠白 ≈ #C4C4C4)判定, 是**客户端
@@ -224,6 +215,120 @@ def main(page: ft.Page):
     except Exception as _e_清单:
         app_log.debug("系统", f"网站清单自检失败 (不影响主流程): "
                               f"{type(_e_清单).__name__}")
+
+
+def _构建工作台(input_bar, task_table, drawer):
+    """抓取工作台 = 左列(页头+输入条+任务表+底部常驻日志条) | 右侧常驻栏 (main 直线段)。
+
+    设计稿 (界面设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
+    """
+    _右侧常驻栏 = drawer.build()   # 必须在 build_log_strip 之前/之后都行: 视图构建幂等
+    _底部日志条 = drawer.build_log_strip()
+    return ft.Row([
+        ft.Column([
+            page_header('抓取工作台', '输入小说目录页URL，自动识别站点并开始抓取'),
+            input_bar.build(),
+            ft.Container(content=task_table.build(), expand=True),
+            _底部日志条,
+        ], expand=True, spacing=8),
+        _右侧常驻栏,
+    ], expand=True, spacing=8)
+
+
+def _实例化页面们(page, task_manager):
+    """实例化五个页面并接 page/task_manager, 返回 (history, site, log, remote, dead)。"""
+    history_page = HistoryPage()
+    site_page = SiteManagePage()
+    log_tab = LogTab()
+    remote_page = RemotePage()
+    dead_page = DeadBookPage()          # 死书清单 (死书机制 阶段4)
+    history_page.page = page
+    history_page.task_manager = task_manager   # 一键更新书架需创建任务
+    site_page.page = page
+    log_tab.page = page
+    remote_page.page = page
+    remote_page.task_manager = task_manager    # 手机端记录数据源
+    dead_page.page = page
+    dead_page.task_manager = task_manager      # 删除编排需任务管理器(可删任务行)
+    return history_page, site_page, log_tab, remote_page, dead_page
+
+
+def _建页面映射(crawl_workbench, 页面组):
+    """pages_map + 保状态 Stack (main 直线段; 键序契约见下, 硬红线)。
+
+    页面组 = (history, dead, site, log, remote) —— 注意与 pages_map 的
+    build 顺序一致 (history → deadbook → sites → log → remote)。
+    """
+    history_page, dead_page, site_page, log_tab, remote_page = 页面组
+    # ⚠️ 键顺序必须与 icon_rail.NAV_PAGES **严格一致**(死书机制 阶段4 新增页):
+    #    下游 content_stack 按 [pages_map[k] for k,_,_,_ in NAV_PAGES] 建 Stack,
+    #    且首屏可见性按 pages_map.values() 的索引 0 判定 —— 顺序错位会首屏显示错页。
+    pages_map = {
+        "crawl": crawl_workbench,
+        "history": history_page.build(),
+        "deadbook": dead_page.build(),
+        "sites": site_page.build(),
+        "log": log_tab.build(),
+        "remote": remote_page.build(),
+    }
+    # 自检: 顺序不一致时立刻炸, 别等用户看到错页才发现
+    if list(pages_map) != [k for k, _, _, _ in NAV_PAGES]:
+        raise RuntimeError(f"pages_map 键序与 NAV_PAGES 不一致: {list(pages_map)}")
+    content_stack = ft.Stack(
+        controls=[pages_map[k] for k, _, _, _ in NAV_PAGES],
+        expand=True)
+    for i, p in enumerate(pages_map.values()):
+        p.visible = (i == 0)
+    return pages_map, content_stack
+
+
+def _构建状态栏():
+    """底部状态条构建 (实时任务摘要唯一显示处; 侧边栏不再重复渲染) (main 直线段)。
+
+    返回 (状态点, 状态文本, 状态条容器) —— _tick_loop 按秒刷新前两者。
+    输出目录口径: 开发模式=项目根/抓取结果; PyInstaller onefile=EXE 旁/抓取结果。
+    """
+    from gui_components.ui_fluent import SIZE_SMALL, WEIGHT_BODY, FONT_STACK
+    from gui_components.ui_tokens import 取色
+    output_dir = get_default_output_dir()
+    status_dot = ft.Icon(ft.Icons.CIRCLE, color=取色('status-success'), size=8)
+    status_text = ft.Text("就绪", size=SIZE_SMALL, weight=WEIGHT_BODY,
+                          font_family=FONT_STACK)
+    status_bar = ft.Container(
+        content=ft.Row([
+            status_dot,
+            status_text,
+            ft.VerticalDivider(width=1),
+            ft.Text(f"输出目录: {output_dir}", size=SIZE_SMALL,
+                    weight=WEIGHT_BODY,
+                    color=ft.Colors.ON_SURFACE_VARIANT,
+                    font_family=FONT_STACK),
+        ]),
+        padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+        border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
+    )
+    return status_dot, status_text, status_bar
+
+
+def main(page: ft.Page):
+    """Flet 应用入口"""
+    _版本 = _读显示版本()
+    _初始化窗口(page, _版本)
+    # 莫兰迪主题：低饱和度柔和配色，深浅双主题，长时间阅读不刺眼
+    from gui_components.ui_fluent import (
+        make_morandi_theme, make_morandi_dark_theme,
+        FONT_STACK, SIZE_SMALL, WEIGHT_BODY,
+            提示条,
+    )
+    # 2026-10-04 (Phase 3): 状态色改走 ui_tokens 令牌 + 登记重刷 ——
+    # 绑 ui_fluent 的 MORANDI_* 字符串常量时, 切主题这些控件不会换色。
+    from gui_components.ui_tokens import 取色
+
+    page.theme = make_morandi_theme()
+    page.dark_theme = make_morandi_dark_theme()
+
+    _挂启动自检(page)
 
     # ---- 全局任务管理器 ----
     task_manager = TaskManager(page)
@@ -483,53 +588,14 @@ def main(page: ft.Page):
 
     # 工作台 = 左列(页头 + 输入条 + 任务表 + **底部常驻日志条**) | 右侧常驻栏(详情/预览)
     # 设计稿 (界面设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
-    _右侧常驻栏 = drawer.build()          # 必须在 build_log_strip 之前/之后都行: 视图构建幂等
-    _底部日志条 = drawer.build_log_strip()
-    crawl_workbench = ft.Row([
-        ft.Column([
-            page_header('抓取工作台', '输入小说目录页URL，自动识别站点并开始抓取'),
-            input_bar.build(),
-            ft.Container(content=task_table.build(), expand=True),
-            _底部日志条,
-        ], expand=True, spacing=8),
-        _右侧常驻栏,
-    ], expand=True, spacing=8)
+    crawl_workbench = _构建工作台(input_bar, task_table, drawer)
 
     # ---- 其他页面 ----
-    history_page = HistoryPage()
-    site_page = SiteManagePage()
-    log_tab = LogTab()
-    remote_page = RemotePage()
-    dead_page = DeadBookPage()          # 死书清单 (死书机制 阶段4)
-    history_page.page = page
-    history_page.task_manager = task_manager   # 一键更新书架需创建任务
-    site_page.page = page
-    log_tab.page = page
-    remote_page.page = page
-    remote_page.task_manager = task_manager    # 手机端记录数据源
-    dead_page.page = page
-    dead_page.task_manager = task_manager      # 删除编排需任务管理器(可删任务行)
+    history_page, site_page, log_tab, remote_page, dead_page = \
+        _实例化页面们(page, task_manager)
 
-    # ---- 页面切换 (Stack 保状态) ----
-    # ⚠️ 键顺序必须与 icon_rail.NAV_PAGES **严格一致**(死书机制 阶段4 新增页):
-    #    下游 content_stack 按 [pages_map[k] for k,_,_,_ in NAV_PAGES] 建 Stack,
-    #    且首屏可见性按 pages_map.values() 的索引 0 判定 —— 顺序错位会首屏显示错页。
-    pages_map = {
-        "crawl": crawl_workbench,
-        "history": history_page.build(),
-        "deadbook": dead_page.build(),
-        "sites": site_page.build(),
-        "log": log_tab.build(),
-        "remote": remote_page.build(),
-    }
-    # 自检: 顺序不一致时立刻炸, 别等用户看到错页才发现
-    if list(pages_map) != [k for k, _, _, _ in NAV_PAGES]:
-        raise RuntimeError(f"pages_map 键序与 NAV_PAGES 不一致: {list(pages_map)}")
-    content_stack = ft.Stack(
-        controls=[pages_map[k] for k, _, _, _ in NAV_PAGES],
-        expand=True)
-    for i, p in enumerate(pages_map.values()):
-        p.visible = (i == 0)
+    pages_map, content_stack = _建页面映射(crawl_workbench, (
+        history_page, dead_page, site_page, log_tab, remote_page))
 
     # 批 4: 补上实现了 设置档位 的页面对象 (注意 pages_map 的值是 build() 出来的
     # **控件**, 不是页面对象本身, 所以不能从 pages_map.values() 里找)。
@@ -578,28 +644,7 @@ def main(page: ft.Page):
             app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     # ---- 底部状态栏 ----
-    # - 开发模式 (python gui_app.py)         : 项目根/抓取结果
-    # - PyInstaller onefile (小说爬虫.exe)   : EXE 所在目录/抓取结果
-    output_dir = get_default_output_dir()
-
-    # 底部状态条: 实时任务摘要 (唯一状态显示处; 侧边栏不再重复渲染)
-    status_dot = ft.Icon(ft.Icons.CIRCLE, color=取色('status-success'), size=8)
-    status_text = ft.Text("就绪", size=SIZE_SMALL, weight=WEIGHT_BODY,
-                          font_family=FONT_STACK)
-    status_bar = ft.Container(
-        content=ft.Row([
-            status_dot,
-            status_text,
-            ft.VerticalDivider(width=1),
-            ft.Text(f"输出目录: {output_dir}", size=SIZE_SMALL,
-                    weight=WEIGHT_BODY,
-                    color=ft.Colors.ON_SURFACE_VARIANT,
-                    font_family=FONT_STACK),
-        ]),
-        padding=ft.Padding.symmetric(horizontal=12, vertical=4),
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        border=ft.Border(top=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
-    )
+    status_dot, status_text, status_bar = _构建状态栏()
 
     # (H4 修复: 原此处有一个守护线程版状态刷新与下方异步 _status_loop 并存,
     #  格式互相覆盖且跨线程整页 page.update() 会与主线程刷新循环并发遍历
