@@ -68,12 +68,16 @@ def 段(名, r, 成功提示=''):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description='多机同步（拉公开仓 + 拉私有仓 + 校验）')
+    ap = argparse.ArgumentParser(description='多机同步（拉公开仓 + 拉私有仓 + 校验 / 上传两端）')
     ap.add_argument('--全量', action='store_true', help='顺带跑完整单测（约 90 秒）')
     ap.add_argument('--只拉取', action='store_true', help='只拉取，不跑校验')
     ap.add_argument('--推送', action='store_true',
                     help='把本机私有资产（新增/修改）收集提交并推送私有仓（在"源头机"上跑）')
+    ap.add_argument('--上传', action='store_true',
+                    help='【每次改完用它】公开仓 git push + 私有资产收集推送（两端同步到 GitHub）')
     a = ap.parse_args(argv)
+    if a.上传:
+        a.推送 = False   # 上传走自己的分支，避免重复收集
 
     print('=== 1/4 拉公开仓 ===')
     公开有改动 = 跑(['git', 'status', '--porcelain']).stdout.strip()
@@ -98,6 +102,19 @@ def main(argv=None) -> int:
             print('  [跳过] 私有仓还没配远端（照 多机初始化.py 的提示 add remote）')
         elif not 段('git pull（私有仓）', git('pull', '--ff-only', 私有=True)):
             return 1
+
+    if a.上传:
+        print('\n=== 上传：公开仓 ===')
+        领先 = git('rev-list', '--count', '@{u}..HEAD').stdout.strip()
+        if 领先 in ('', '0'):
+            print('  [OK] 公开仓无待推送提交')
+        else:
+            差 = 跑(['git', 'push'])
+            if not 段('git push（公开仓）', 差):
+                print('        若是"先拉再推"：跑 `git pull --rebase` 后重试')
+                return 1
+        # 私有资产接着走下面的收集+推送
+        a.推送 = True
 
     if a.推送:
         print('\n=== 收集并推送私有资产 ===')
