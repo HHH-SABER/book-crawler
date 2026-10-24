@@ -318,27 +318,70 @@ class DeadBookPage:
             pass  # 刻意静默: 高频路径(2s 轮询), 补日志会刷屏
 
     def _行(self, r: dict) -> ft.Container:
-        """单条死书记录卡片"""
+        """单条死书记录卡片（标签/副信息/原因见 _行* 构建器）"""
         键 = r.get('键') or ''
         状态 = r.get('状态') or '待确认'
         # Phase 3: _状态展示 存的是令牌键, 色值在此构建期求值并登记重刷
         颜色键, 状态文案 = _状态展示.get(状态, ('status-warning', 状态))
-        颜色 = 取色(颜色键)
         可询问 = bool(r.get('可询问删除'))
         类型 = r.get('类型') or '未知'
 
+        动作 = self._行内动作(键, 状态, 网址=r.get('网址') or '',
+                            书名=r.get('书名') or '', 可询问=可询问, 记录=r)
+        标签区 = self._行标签区(r, 类型, 可询问, 状态文案, 颜色键)
+        副信息 = self._行副信息(r)
+        原因文本 = self._行原因(r)
+        # 左侧 3px 状态色条 (设计稿 .deadbook-card)。设计稿此处统一用 error-line,
+        # 但本页三种状态各有语义 → 按状态取色 (同属设计稿色板, 值取自其 rgba 蓝本)
+        线色键 = {'待确认': 'status-warning-line',
+                 '已删除': 'status-error-line',
+                 '已忽略': 'status-pending-line'}.get(状态, 'status-warning-line')
+        _卡片 = ft.Container(
+            content=ft.Row([
+                ft.Column([
+                    标签区,
+                    副信息,
+                    原因文本,
+                ], spacing=3, expand=True, tight=True),
+                动作,
+            ], spacing=10, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=9),
+            border_radius=8, bgcolor=ft.Colors.SURFACE_CONTAINER,
+            border=ft.Border.only(left=ft.BorderSide(3, 取色(线色键))))
+        登记重刷(_卡片, lambda c: setattr(
+            c, 'border', ft.Border.only(left=ft.BorderSide(3, 取色(线色键)))))
+        return _卡片
+
+    def _行标签区(self, r: dict, 类型: str, 可询问: bool,
+                 状态文案: str, 颜色键: str) -> ft.Row:
+        """书名 + 类型标签 + 状态标签"""
         # 类型标签: 只有"书已删除"才是可询问删除的类型(可询问删除=True),
         # 其余提示用户"不必删除" —— 避免用户按标签字面误判
         类型键 = 'status-error' if 可询问 else 'status-pending'
-        动作 = self._行内动作(键, 状态, 网址=r.get('网址') or '',
-                            书名=r.get('书名') or '', 可询问=可询问, 记录=r)
         # Phase 3: 三处 colored 文字走令牌 + 登记重刷 (字符串常量切主题不变色)
         类型标签 = ft.Text(类型, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
                          color=取色(类型键), font_family=FONT_STACK)
         登记重刷(类型标签, lambda c: setattr(c, 'color', 取色(类型键)))
         状态标签 = ft.Text(状态文案, size=SIZE_TINY, weight=WEIGHT_EMPHASIS,
-                         color=颜色, font_family=FONT_STACK)
+                         color=取色(颜色键), font_family=FONT_STACK)
         登记重刷(状态标签, lambda c: setattr(c, 'color', 取色(颜色键)))
+        return ft.Row([
+            ft.Text(r.get('书名') or r.get('网址') or '(未知书名)',
+                    size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
+                    color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
+                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            ft.Container(
+                content=类型标签,
+                padding=ft.Padding.symmetric(horizontal=7, vertical=2),
+                border_radius=9, bgcolor=ft.Colors.SURFACE_CONTAINER),
+            ft.Container(
+                content=状态标签,
+                padding=ft.Padding.symmetric(horizontal=7, vertical=2),
+                border_radius=9, bgcolor=ft.Colors.SURFACE_CONTAINER),
+        ], spacing=8, tight=True)
+
+    def _行副信息(self, r: dict) -> ft.Control:
+        """meta 行: 等宽 URL · 失败短语 · 判定于 <时间> · 已抓 N 章 · 尝试 N 次"""
         # meta 行 (设计稿 .deadbook-meta: 等宽 URL · 失败短语 · 判定于 <时间> · 已抓 N 章)
         # 批 3 数据缺口已于 2026-10-07 补齐: HTTP状态码 / 页面为空 / 已抓章节 由
         # 判定死书 在判定侧采集 → 死书错误 → 记录死书 **落盘**。
@@ -389,43 +432,15 @@ class DeadBookPage:
         for _c in 副信息.controls:
             登记重刷(_c, lambda c: setattr(c, 'color', 取色('text-tertiary')))
         登记重刷(副信息, lambda c: setattr(c, 'color', 取色('text-secondary')))
+        return 副信息
+
+    def _行原因(self, r: dict) -> ft.Text:
+        """失败原因（最多 2 行，超出省略）"""
         原因文本 = ft.Text(r.get('原因') or '', size=SIZE_TINY, weight=WEIGHT_BODY,
                         color=取色('text-secondary'), font_family=FONT_STACK,
                         max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
         登记重刷(原因文本, lambda c: setattr(c, 'color', 取色('text-secondary')))
-        # 左侧 3px 状态色条 (设计稿 .deadbook-card)。设计稿此处统一用 error-line,
-        # 但本页三种状态各有语义 → 按状态取色 (同属设计稿色板, 值取自其 rgba 蓝本)
-        线色键 = {'待确认': 'status-warning-line',
-                 '已删除': 'status-error-line',
-                 '已忽略': 'status-pending-line'}.get(状态, 'status-warning-line')
-        _卡片 = ft.Container(
-            content=ft.Row([
-                ft.Column([
-                    ft.Row([
-                        ft.Text(r.get('书名') or r.get('网址') or '(未知书名)',
-                                size=SIZE_BODY, weight=WEIGHT_SUBTITLE,
-                                color=ft.Colors.ON_SURFACE, font_family=FONT_STACK,
-                                max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                        ft.Container(
-                            content=类型标签,
-                            padding=ft.Padding.symmetric(horizontal=7, vertical=2),
-                            border_radius=9, bgcolor=ft.Colors.SURFACE_CONTAINER),
-                        ft.Container(
-                            content=状态标签,
-                            padding=ft.Padding.symmetric(horizontal=7, vertical=2),
-                            border_radius=9, bgcolor=ft.Colors.SURFACE_CONTAINER),
-                    ], spacing=8, tight=True),
-                    副信息,
-                    原因文本,
-                ], spacing=3, expand=True, tight=True),
-                动作,
-            ], spacing=10, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=ft.Padding.symmetric(horizontal=12, vertical=9),
-            border_radius=8, bgcolor=ft.Colors.SURFACE_CONTAINER,
-            border=ft.Border.only(left=ft.BorderSide(3, 取色(线色键))))
-        登记重刷(_卡片, lambda c: setattr(
-            c, 'border', ft.Border.only(left=ft.BorderSide(3, 取色(线色键)))))
-        return _卡片
+        return 原因文本
 
     def _行内动作(self, 键: str, 状态: str, *, 网址: str, 书名: str,
                   可询问: bool, 记录: dict = None):
