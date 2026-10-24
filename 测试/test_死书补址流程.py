@@ -14,6 +14,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _沙箱  # noqa: F401
 
@@ -29,10 +30,15 @@ class _隔离配置:
     def setUp(self):
         根 = Path(tempfile.mkdtemp(prefix='补址流程_'))
         路径 = 根 / 'captcha_config.json'
-        os.environ[备用源.环境覆盖变量] = str(路径)
+        # patch.dict 退出即恢复原值 —— 裸 pop 会拔掉其他模块的模块级隔离,
+        # 连锁污染 (2026-10-24 台账事故根因: pop 掉 NC_LEDGER_PATH 后,
+        # 后跑的 test_网站清单移除 回退项目根覆写真实台账)
+        self._env = mock.patch.dict(
+            os.environ, {备用源.环境覆盖变量: str(路径)})
+        self._env.start()
+        self.addCleanup(self._env.stop)
         # 隔离自检: 落点必须是临时文件 (见 test_备用源.py 同名断言)
         self.assertEqual(备用源.配置路径(), str(路径))
-        self.addCleanup(lambda: os.environ.pop(备用源.环境覆盖变量, None))
         self.addCleanup(lambda: __import__('shutil').rmtree(根, ignore_errors=True))
 
 
@@ -249,11 +255,15 @@ class Test网站重复提示(_隔离配置, unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        # 网站清单同样隔离 (NC_LEDGER_PATH → 临时文件), 绝不动真实清单
+        # 网站清单同样隔离 (NC_LEDGER_PATH → 临时文件), 绝不动真实清单。
+        # patch.dict 退出即恢复原值 —— 裸 pop 会拔掉 test_网站清单移除 等模块
+        # 级设置的隔离落点, 连锁覆写真实台账 (2026-10-24 事故根因, 已实测复现)
         import 网站清单 as W
         self._清单路径 = Path(tempfile.mkdtemp(prefix='重复提示_')) / '网站清单.txt'
-        os.environ[W._环境覆盖变量] = str(self._清单路径)
-        self.addCleanup(lambda: os.environ.pop(W._环境覆盖变量, None))
+        self._清单env = mock.patch.dict(
+            os.environ, {W._环境覆盖变量: str(self._清单路径)})
+        self._清单env.start()
+        self.addCleanup(self._清单env.stop)
 
     def _写清单(self, 行s):
         self._清单路径.write_text('\n'.join(行s) + '\n', encoding='utf-8')

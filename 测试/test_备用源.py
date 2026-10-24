@@ -14,6 +14,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import _沙箱  # noqa: F401  沙箱: 状态根 → 一次性临时目录
 
@@ -25,11 +26,15 @@ class Test备用源(unittest.TestCase):
     def setUp(self):
         根 = Path(tempfile.mkdtemp(prefix='备用源_'))
         self.配置 = 根 / 'captcha_config.json'
-        os.environ[备用源.环境覆盖变量] = str(self.配置)
+        # patch.dict 退出即恢复原值 —— 裸 pop 会拔掉其他模块的模块级隔离
+        # (2026-10-24 网站清单台账连锁污染事故同款写法, 已在补址流程处根治)
+        self._env = mock.patch.dict(
+            os.environ, {备用源.环境覆盖变量: str(self.配置)})
+        self._env.start()
+        self.addCleanup(self._env.stop)
         # 隔离自检: 配置落点必须真的是临时文件 —— 否则测试会写用户的真实配置
         # (2026-10-06 真的发生过一次: 首轮测试尚未加隔离, 把 a.example.com 写进了项目根)
         self.assertEqual(备用源.配置路径(), str(self.配置))
-        self.addCleanup(lambda: os.environ.pop(备用源.环境覆盖变量, None))
         self.addCleanup(lambda: __import__('shutil').rmtree(根, ignore_errors=True))
 
     def _写配置(self, 内容):

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _根 = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_根 / '源码'))
@@ -72,6 +73,23 @@ class Test网站清单移除(unittest.TestCase):
     def test_空网址返回False(self):
         self.assertFalse(L.移除(''))
         self.assertFalse(L.移除(None))
+
+
+class Test沙箱兜底隔离(unittest.TestCase):
+    """回归 2026-10-24 事故: 未显式设 NC_LEDGER_PATH 的测试经 _沙箱 兜底,
+    台账必须落沙箱 —— 死书删除编排会真写台账, 此前每次门禁都覆写用户真实
+    网站清单.txt (夹具 auto-clean-*/a.example.com 直接进仓库根)。"""
+
+    def test_重载沙箱后台账落点进沙箱而非项目根(self):
+        import importlib
+        import _沙箱 as S
+        with mock.patch.dict(os.environ):
+            os.environ.pop('NC_LEDGER_PATH', None)
+            importlib.reload(S)          # 无覆盖变量时执行 setdefault 兜底
+            落点 = os.environ.get('NC_LEDGER_PATH') or ''
+        self.assertTrue(
+            落点.startswith(os.environ['_QWEN_TEST_SANDBOX_ROOT']),
+            f'沙箱必须兜底 NC_LEDGER_PATH 到临时目录 (实测: {落点})')
 
 
 if __name__ == '__main__':
