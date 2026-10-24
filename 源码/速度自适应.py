@@ -513,6 +513,49 @@ class SpeedController:
 
 
 # ====================================================================== 工厂
+def 按站点先验定起始档(起始档: int, 反爬统计: dict = None, 最近抓取: str = '',
+                  现在: float = None, 有效天数: int = 7) -> int:
+    """按站点历史的反爬先验决定**起始档位**（C14 限流持久化，纯函数）。
+
+    背景：过去被限流/WAF 的站点，重启后若仍按"最快档"起跑，等于把上次踩过的
+    坑重踩一遍。站点历史的 ``反爬统计`` 是**已落盘**的先验，本函数把它转成档位。
+
+    规则（保守、有界、可衰减）：
+    1. 无统计 / 无时间 ⇒ 原档（没证据不乱降）；
+    2. 最近抓取超过 ``有效天数`` ⇒ 原档（旧账不背，避免永久压制）；
+    3. 出现过 ``waf_captcha``，或反爬事件总次数 ≥ 3 ⇒ 降一档（下限 1）。
+
+    Args:
+        起始档: 原本要用的起始档位（通常是允许的最高档）
+        反爬统计: ``{机制: 次数}``，来自 ``站点历史.取反爬先验()``
+        最近抓取: ``'%Y-%m-%d %H:%M:%S'``，来自站点记录；空=未知
+        现在: 注入当前时间戳便于单测；None=time.time()
+        有效天数: 先验有效期，超过则不降档
+
+    Returns:
+        调好的起始档位（0 表示手动模式/无档位，原样返回）
+    """
+    import time as _time
+    if 起始档 <= 0 or not isinstance(反爬统计, dict) or not 反爬统计:
+        return 起始档
+    if not 最近抓取:
+        return 起始档
+    try:
+        _t = _time.mktime(_time.strptime(最近抓取, '%Y-%m-%d %H:%M:%S'))
+    except (ValueError, OverflowError):
+        return 起始档
+    _now = _time.time() if 现在 is None else 现在
+    if _now - _t > 有效天数 * 86400:
+        return 起始档
+    try:
+        总次数 = sum(int(v) for v in 反爬统计.values())
+    except (TypeError, ValueError):
+        总次数 = 0
+    if 反爬统计.get('waf_captcha', 0) or 总次数 >= 3:
+        return max(1, 起始档 - 1)
+    return 起始档
+
+
 def build_controller(catalog_url, total_chapters=None, manual_threads=None,
                      manual_delay=None):
     """为一次抓取任务构建 SpeedController。
@@ -556,10 +599,28 @@ def build_controller(catalog_url, total_chapters=None, manual_threads=None,
 
     max_level = max(0, min(site_cap, task_cap, device_cap))
     # 默认以最快速度启动: 启动档位 = 允许的最高档
-    controller = SpeedController(domain, max_level, max_level)
+    # C14（限流持久化）: 若该站点历史上被限流/WAF 过，起跑先降一档 —— 先验本就在
+    # 站点历史里落盘，接上它才算真正"跨进程记住上次被限流"。
+    起始档 = max_level
+    先验说明 = ''
+    try:
+        import 站点历史 as _站史
+        _查 = _站史.取站点历史().查站点(catalog_url) or {}
+        先验 = _查.get('反爬统计') or {}
+        if 先验:
+            _调后 = 按站点先验定起始档(max_level, 先验, _查.get('最近抓取', ''))
+            if _调后 != max_level:
+                起始档 = _调后
+                先验说明 = (f"; 站点反爬先验={先验} ⇒ 起跑降到 "
+                            f"{_tier_by_level(起始档).name}")
+                _info(f"[速度自适应] 站点反爬先验生效{先验说明}")
+    except Exception as _e:      # 先验不可用不该影响抓取（历史文件损坏/首次运行）
+        _debug(f"[速度自适应] 读取站点反爬先验失败, 按无先验处理: "
+               f"{type(_e).__name__}: {_e}")
+    controller = SpeedController(domain, 起始档, max_level)
     _info(f"[速度自适应] {domain or '未知站点'} 启动档位: {controller.tier} "
           f"(设备上限={_tier_by_level(device_cap).name}, "
           f"站点上限={_tier_by_level(site_cap).name}, "
           f"任务规模上限={_tier_by_level(task_cap).name}, "
-          f"共 {total_chapters if total_chapters is not None else '?'} 章)")
+          f"共 {total_chapters if total_chapters is not None else '?'} 章{先验说明})")
     return controller
