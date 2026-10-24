@@ -400,74 +400,11 @@ def load_adapters():
     try:
         from _path_utils import get_app_base_dir
         _base = get_app_base_dir()
-
-        def _scan_dir(dir_name):
-            """列出一个适配器目录的待加载 .py (跳过 _ 开头, 如占位模板)"""
-            d = os.path.join(_base, dir_name)
-            if not os.path.isdir(d):
-                return []
-            return [(f, os.path.join(d, f))
-                    for f in sorted(os.listdir(d))
-                    if f.endswith('.py') and not f.startswith('_')]
-
         # 双目录: 公开侧 站点适配/ + 本地侧 站点适配_本地/ (站点脱钩, 不入库)。
-        # 同域名两文件并存时先到先得 (公开侧在前), 后到者在下方 L3 检查处告警跳过。
-        for fname, path in _scan_dir("站点适配") + _scan_dir("站点适配_本地"):
-            try:
-                mod = _import_adapter_module(path, fname[:-3])
-                site = getattr(mod, 'SITE', None)
-                domain = ''
-                if isinstance(site, dict) and site.get('domain'):
-                    domain = str(site['domain']).strip()
-                    # 站点脱钩 Wave 2: 允许适配器**只登记 parse_catalog 而不并入 SITE_PATTERNS**。
-                    # 为什么需要: 有些站点原先没有任何站点表条目, 走的是
-                    # `get_site_pattern() -> None`; 若给它 upsert 一个最小条目,
-                    # get_site_pattern() 就变成真值, 会改变 `if 站点配置:` 类分支的行为。
-                    # 声明 `SITE = {'domain': …, '仅注册解析器': True}` 即跳过合并 →
-                    # 行为与原内置解析器**完全一致**。(字段缺省 = 原行为, 向后兼容)
-                    if site.get('仅注册解析器'):
-                        _log.info(f"[适配器] {fname}: 仅注册解析器, 不并入站点表")
-                    else:
-                        _merge_site_pattern(site)
-                if not domain:
-                    _log.info(f"[适配器] 跳过 {fname}: 未定义 SITE['domain']")
-                    continue
-                # L3 修复: 同域名第二个插件文件会产生"B 的配置 + A 的函数"缝合体,
-                # 显式拒绝并告警 (提示改插件文件里的 SITE['domain'])
-                if domain in new_adapters:
-                    _log.info(f"[适配器] 跳过 {fname}: 域名 {domain} 已由其他插件注册, "
-                              f"请修改该插件的 SITE['domain']")
-                    continue
-                entry = {
-                    'source': path, 'parse_catalog': None,
-                    'extract_content': None, 'paginate': None,
-                    'get_title': None, 'catalog_from_chapter': None,
-                    # Wave 2 批次1 (2026-10-15): 站点专属"小说路径前缀"规则
-                    'novel_paths': None,
-                    # Wave 2 批次2: 站点专属策略通用分派
-                    '站点策略': None,
-                }
-                for attr in ('parse_catalog', 'extract_content', 'paginate',
-                             'get_title', 'catalog_from_chapter', 'novel_paths', '站点策略'):
-                    fn = getattr(mod, attr, None)
-                    if callable(fn):
-                        entry[attr] = fn
-                # H7 回归修复: entry 必须登记进注册表 — 旧代码经 setdefault
-                # 注册, H7 重载重构时赋值被丢, 适配器"已加载"但注册表恒空,
-                # get_adapter() 永远返回 None (爬虫不走适配器 + GUI 显示
-                # "加载失败或未注册")
-                # M3: 先写进本地新表, 扫描完成后整体换引用 (原子, 无并发空窗)
-                new_adapters[domain] = entry
-                # 注意: setdefault 的默认字典不含 get_title, 适配器未定义书名
-                # 函数时该键不存在, 必须用 .get 访问 (旧代码直接索引导致
-                # "加载 适配器文件 失败: 'get_title'" 的误报)
-                _log.info(f"[适配器] 已加载 {fname} → {domain} "
-                          f"(目录={'✓' if entry.get('parse_catalog') else '✗'} "
-                          f"正文={'✓' if entry.get('extract_content') else '✗'} "
-                          f"分页={'✓' if entry.get('paginate') else '✗'} "
-                          f"书名={'✓' if entry.get('get_title') else '✗'})")
-            except Exception as e:
-                _log.info(f"[适配器] 加载 {fname} 失败: {e}")
+        # 同域名两文件并存时先到先得 (公开侧在前), 后到者在 L3 检查处告警跳过。
+        for fname, path in _扫描适配器目录(_base, "站点适配") \
+                + _扫描适配器目录(_base, "站点适配_本地"):
+            _加载单个适配器(path, fname, new_adapters)
     except Exception as e:
         _log.info(f"[适配器] 扫描目录失败: {e}")
         return  # M3: 扫描级失败不置位, 下次调用重试 (旧实现先置位, 失败后永不重试)
@@ -483,6 +420,79 @@ def load_adapters():
         SITE_PATTERNS[:] = [p for p in SITE_PATTERNS
                             if p.get('domain') not in _残留]
         _ADAPTER_APPENDED -= _残留
+
+
+def _扫描适配器目录(base: str, dir_name: str) -> list:
+    """列出一个适配器目录的待加载 .py (跳过 _ 开头, 如占位模板)。"""
+    d = os.path.join(base, dir_name)
+    if not os.path.isdir(d):
+        return []
+    return [(f, os.path.join(d, f))
+            for f in sorted(os.listdir(d))
+            if f.endswith('.py') and not f.startswith('_')]
+
+
+def _加载单个适配器(path: str, fname: str, new_adapters: dict) -> None:
+    """import 一个适配器文件并登记 (load_adapters 循环体, P9 阶段6)。
+
+    任何单文件失败只记日志不中断整体扫描; 域名重复 (L3) 与未定义 domain
+    均跳过登记。
+    """
+    try:
+        mod = _import_adapter_module(path, fname[:-3])
+        site = getattr(mod, 'SITE', None)
+        domain = ''
+        if isinstance(site, dict) and site.get('domain'):
+            domain = str(site['domain']).strip()
+            # 站点脱钩 Wave 2: 允许适配器**只登记 parse_catalog 而不并入 SITE_PATTERNS**。
+            # 为什么需要: 有些站点原先没有任何站点表条目, 走的是
+            # `get_site_pattern() -> None`; 若给它 upsert 一个最小条目,
+            # get_site_pattern() 就变成真值, 会改变 `if 站点配置:` 类分支的行为。
+            # 声明 `SITE = {'domain': …, '仅注册解析器': True}` 即跳过合并 →
+            # 行为与原内置解析器**完全一致**。(字段缺省 = 原行为, 向后兼容)
+            if site.get('仅注册解析器'):
+                _log.info(f"[适配器] {fname}: 仅注册解析器, 不并入站点表")
+            else:
+                _merge_site_pattern(site)
+        if not domain:
+            _log.info(f"[适配器] 跳过 {fname}: 未定义 SITE['domain']")
+            return
+        # L3 修复: 同域名第二个插件文件会产生"B 的配置 + A 的函数"缝合体,
+        # 显式拒绝并告警 (提示改插件文件里的 SITE['domain'])
+        if domain in new_adapters:
+            _log.info(f"[适配器] 跳过 {fname}: 域名 {domain} 已由其他插件注册, "
+                      f"请修改该插件的 SITE['domain']")
+            return
+        entry = {
+            'source': path, 'parse_catalog': None,
+            'extract_content': None, 'paginate': None,
+            'get_title': None, 'catalog_from_chapter': None,
+            # Wave 2 批次1 (2026-10-15): 站点专属"小说路径前缀"规则
+            'novel_paths': None,
+            # Wave 2 批次2: 站点专属策略通用分派
+            '站点策略': None,
+        }
+        for attr in ('parse_catalog', 'extract_content', 'paginate',
+                     'get_title', 'catalog_from_chapter', 'novel_paths', '站点策略'):
+            fn = getattr(mod, attr, None)
+            if callable(fn):
+                entry[attr] = fn
+        # H7 回归修复: entry 必须登记进注册表 — 旧代码经 setdefault
+        # 注册, H7 重载重构时赋值被丢, 适配器"已加载"但注册表恒空,
+        # get_adapter() 永远返回 None (爬虫不走适配器 + GUI 显示
+        # "加载失败或未注册")
+        # M3: 先写进本地新表, 扫描完成后整体换引用 (原子, 无并发空窗)
+        new_adapters[domain] = entry
+        # 注意: setdefault 的默认字典不含 get_title, 适配器未定义书名
+        # 函数时该键不存在, 必须用 .get 访问 (旧代码直接索引导致
+        # "加载 适配器文件 失败: 'get_title'" 的误报)
+        _log.info(f"[适配器] 已加载 {fname} → {domain} "
+                  f"(目录={'✓' if entry.get('parse_catalog') else '✗'} "
+                  f"正文={'✓' if entry.get('extract_content') else '✗'} "
+                  f"分页={'✓' if entry.get('paginate') else '✗'} "
+                  f"书名={'✓' if entry.get('get_title') else '✗'})")
+    except Exception as e:
+        _log.info(f"[适配器] 加载 {fname} 失败: {e}")
 
 
 # ============================================================
