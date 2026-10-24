@@ -30,16 +30,25 @@ sys.path.insert(0, str(_ROOT / '脚本'))
 样本目录 = _ROOT / '测试样本_本地'
 基线文件 = _ROOT / '文档' / '正文基线.json'
 
-#: (样本文件, 章节页 URL)。URL 一律占位域，与真实站点无关。
-正文样本 = [
-    ('siteq_content.html', 'https://site1.example.com/read/1/1.html'),
-    ('washai_章节.html', 'https://site2.example.com/read/2/2.html'),
-    ('washai_章节_中间章.html', 'https://site2.example.com/read/2/3.html'),
-    ('88xs_chapter.html', 'https://site3.example.com/read/3/4.html'),
-    ('sitea_content.html', 'https://site4.example.com/read/4/5.html'),
-    ('bookben5_chapter_1.html', 'https://site5.example.com/read/5/6.html'),
-    ('hulaisb_chapter.html', 'https://site6.example.com/read/6/7.html'),
-]
+#: 样本清单**不放代码里**（避免真实站点代号入库）：从 gitignored 的
+#: `测试样本_本地/正文基线样本.json` 读取，格式 `[[样本文件名, 章节页URL], ...]`；
+#: 文件缺失（公开形态）⇒ 无样本可跑，脚本安全跳过。
+样本清单文件 = 样本目录 / '正文基线样本.json'
+
+
+def 读样本清单(样本根=None) -> list:
+    清单 = (pathlib.Path(样本根) / '正文基线样本.json') if 样本根 else 样本清单文件
+    if not 清单.is_file():
+        return []
+    try:
+        data = json.loads(清单.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    出 = []
+    for 项 in data if isinstance(data, list) else []:
+        if isinstance(项, (list, tuple)) and len(项) >= 2:
+            出.append((str(项[0]), str(项[1])))
+    return 出
 
 
 class _假响应:
@@ -100,11 +109,11 @@ def 快照(样本文件: str, url: str, 样本根: pathlib.Path = None) -> dict:
 def 跑全部(样本根: pathlib.Path = None) -> dict:
     """对全部正文样本跑一遍；样本缺失的项跳过（公开形态无本地样本属正常）。"""
     结果 = {}
-    for 文件, url in 正文样本:
-        根 = pathlib.Path(样本根) if 样本根 else 样本目录
+    根 = pathlib.Path(样本根) if 样本根 else 样本目录
+    for 文件, url in 读样本清单(根):
         if not (根 / 文件).is_file():
             continue
-        结果[文件] = 快照(文件, url, 根)
+        结果[f'样本{len(结果) + 1}'] = 快照(文件, url, 根)
     return 结果
 
 
