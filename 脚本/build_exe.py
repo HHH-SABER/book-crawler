@@ -741,6 +741,37 @@ def main():
     log(f"  Executable    : {final_exe}")
     if size_mb:
         log(f"  Size          : {size_mb:.2f} MB")
+    # --- 产物架构自检 (C16, 2026-10-25): 发行契约 = Windows x64 ---
+    # 现状: 运行时为 Python 3.14 x64 (AMD64), 产物应为 PE32+ x86-64。
+    # 本检防止未来换运行时/工具链时静默产出 32 位或 ARM64 包 (README 与
+    # Release 均按 x64 承诺, 错架构包到用户机器上直接起不来)。
+    def _pe_machine(path):
+        """读 PE 头 Machine 字段; 非 PE/读失败返回 None。"""
+        import struct as _st
+        try:
+            with open(path, "rb") as f:
+                if f.read(2) != b"MZ":
+                    return None
+                f.seek(0x3C)
+                (e_lfanew,) = _st.unpack("<I", f.read(4))
+                f.seek(e_lfanew)
+                if f.read(4) != b"PE\x00\x00":
+                    return None
+                (machine,) = _st.unpack("<H", f.read(2))
+            return machine
+        except OSError:
+            return None
+
+    if os.path.isfile(final_exe):
+        _machine = _pe_machine(final_exe)
+        _machine名 = {0x8664: "x64 (AMD64)", 0x14C: "x86 (32位)",
+                      0xAA64: "ARM64"}.get(_machine, f"未知 (0x{_machine or 0:X})")
+        if _machine == 0x8664:
+            log(f"  Arch          : {_machine名} ✓ (发行契约)")
+        else:
+            log(f"[FAIL] 产物架构 {_machine名} ≠ x64 —— 发行契约为 Windows x64, "
+                f"请检查运行时/工具链后重打包")
+            sys.exit(4)
     log("")
     log("Notes:")
     log("  - Chrome must be installed on target machine (Selenium anti-bot bypass)")

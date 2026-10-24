@@ -4742,6 +4742,15 @@ class NovelSpider:
             _记清单(catalog_url, 域名网站名(catalog_url), _小说名)
         except Exception as e:
             _log.debug(f'裸 except 吞异常: {type(e).__name__} (网站清单记录失败)')
+        # P8-C2 最后一环: 任务收尾输出降级链层命中累计报告 (进程级口径;
+        # 空 = 本次运行未走引擎路径, 不输出噪声行)
+        try:
+            if _引擎管理器 is not None:
+                _引擎报告 = _引擎管理器.报告()
+                if _引擎报告:
+                    _log.info(f'[引擎] 任务收尾 {_引擎报告}')
+        except Exception as e:
+            _log.debug(f'裸 except 吞异常: {type(e).__name__}')
         # M1: 任务收尾强制刷盘 (防抖期间未落盘的爬取历史/站点历史不丢失)
         if _站点历史可用:
             try:
