@@ -29,6 +29,15 @@ for _p in (str(_ROOT / '源码'), str(_ROOT / '源码' / 'gui_components')):
 os.environ.setdefault('_QWEN_TEST_SANDBOX_ROOT',
                       tempfile.mkdtemp(prefix='qwen_test_state_'))
 os.environ['LOCALAPPDATA'] = os.environ['_QWEN_TEST_SANDBOX_ROOT']
+
+# 网站清单台账隔离 (2026-10-24 事故根治): 台账落点=程序基目录 (源码运行=
+# 仓库根), **不走状态根** → 上面 LOCALAPPDATA 沙箱管不到它。死书处理.删除编排
+# 等模块会真写台账, 未显式隔离的测试 (test_死书清单/test_死书自动清理 等) 每次
+# 门禁都会覆写用户真实 网站清单.txt。setdefault: 测试自己指定 NC_LEDGER_PATH
+# 的 (test_网站清单移除/test_website_ledger_speed 等) 保持优先。
+os.environ.setdefault(
+    'NC_LEDGER_PATH',
+    os.path.join(os.environ['_QWEN_TEST_SANDBOX_ROOT'], '网站清单.txt'))
 try:
     import _path_utils               # noqa: E402
     _path_utils._STATE_ROOT = None   # 清缓存, 强制首次 get_state_root 惰性重算到沙箱
