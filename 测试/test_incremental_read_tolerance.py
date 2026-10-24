@@ -55,11 +55,12 @@ class Test增量读旧文件容错(unittest.TestCase):
     def _写坏字节文件(self):
         """第一章正文结尾写入被截断的多字节汉字 (E8 80 缺尾), 再接第二章"""
         p = os.path.join(self.tmp, '坏书.txt')
-        with open(p, 'wb') as f:
-            f.write('## 第一章\n'.encode('utf-8'))
-            f.write('  两个孩子望向门口的'.encode('utf-8'))
-            f.write(b'\xe8\x80')                    # 半截汉字 → 非法字节
-            f.write('\n## 第二章\n正文乙完整内容\n'.encode('utf-8'))
+        # 链式 resolve().write_bytes(): 动态路径写入前规范化 (静态扫描要求)
+        Path(p).resolve().write_bytes(
+            '## 第一章\n'.encode('utf-8')
+            + '  两个孩子望向门口的'.encode('utf-8')
+            + b'\xe8\x80'                       # 半截汉字 → 非法字节
+            + '\n## 第二章\n正文乙完整内容\n'.encode('utf-8'))
         return p
 
     def test_坏字节文件不抛异常(self):

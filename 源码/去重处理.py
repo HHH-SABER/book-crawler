@@ -601,40 +601,49 @@ def 执行清理(键: str, 模式: str = '隔离', 隔离目录: str = None,
 
     已清理, 失败 = [], []
     for 项 in 待删:
-        源 = 项.get('路径') or ''
-        名 = 项.get('名') or os.path.basename(源)
-        # 守护② (C8): 「同名不同文」是**两份都该留**的另版文, 绝不能移走 ——
-        # 即便界面/清单出错把它混进待删列表, 这里也必须拦住 (守护①是它的判定
-        # 不在可清理判定集里; 两条独立, 任一条漏了另一条仍能兜住)。
-        if 项.get('判定') in 仅提示判定:
-            _log.info(f"[去重] 拒绝清理仅提示项 ({项.get('判定')}): {名}")
-            失败.append((名, '属"同名不同文"仅提示项, 拒绝清理(两份都应保留)'))
-            continue
-        if not 源 or not os.path.isfile(源):
-            失败.append((名, '源文件不存在'))
-            continue
-        # 安全: 绝不跨目录/不碰代表项
-        if 基线 and os.path.dirname(os.path.abspath(源)) != 基线:
-            _log.info(f"[去重] 拒绝越界删除: {源}")
-            失败.append((名, '不在结果目录内, 拒绝操作'))
-            continue
-        if 代表路径 and os.path.abspath(源) == os.path.abspath(代表路径):
-            _log.info(f"[去重] 拒绝删除代表项: {源}")
-            失败.append((名, '是保留项, 拒绝操作'))
-            continue
-        try:
-            if 模式 == '隔离':
-                shutil.move(源, _隔离路径(隔离目录, 名))
-            else:
-                os.remove(源)
-            已清理.append(名)
-        except OSError as e:
-            _log.info(f"[去重] 清理失败 {名}: {type(e).__name__}: {e}")
-            失败.append((名, f'{type(e).__name__}: {e}'))
+        结果 = _清理单项(项, 模式, 隔离目录, 基线, 代表路径)
+        if 结果 == '已清理':
+            已清理.append(项.get('名') or os.path.basename(项.get('路径') or ''))
+        elif 结果 is not None:
+            失败.append(结果)
 
     if 已清理:
         设状态(键, 状态_已清理)
     return {'清理': 已清理, '失败': 失败, '模式': 模式, '隔离目录': 隔离目录}
+
+
+def _清理单项(项: dict, 模式: str, 隔离目录, 基线, 代表路径):
+    """执行清理的单文件落点 (执行清理 循环体, P9 阶段1)。
+
+    三道安全守卫 (顺序与原实现一致) + move/remove。
+    返回: '已清理' | (名, 原因) 失败元组 | None (该项失败已含于返回元组)。
+    """
+    源 = 项.get('路径') or ''
+    名 = 项.get('名') or os.path.basename(源)
+    # 守护② (C8): 「同名不同文」是**两份都该留**的另版文, 绝不能移走 ——
+    # 即便界面/清单出错把它混进待删列表, 这里也必须拦住 (守护①是它的判定
+    # 不在可清理判定集里; 两条独立, 任一条漏了另一条仍能兜住)。
+    if 项.get('判定') in 仅提示判定:
+        _log.info(f"[去重] 拒绝清理仅提示项 ({项.get('判定')}): {名}")
+        return (名, '属"同名不同文"仅提示项, 拒绝清理(两份都应保留)')
+    if not 源 or not os.path.isfile(源):
+        return (名, '源文件不存在')
+    # 安全: 绝不跨目录/不碰代表项
+    if 基线 and os.path.dirname(os.path.abspath(源)) != 基线:
+        _log.info(f"[去重] 拒绝越界删除: {源}")
+        return (名, '不在结果目录内, 拒绝操作')
+    if 代表路径 and os.path.abspath(源) == os.path.abspath(代表路径):
+        _log.info(f"[去重] 拒绝删除代表项: {源}")
+        return (名, '是保留项, 拒绝操作')
+    try:
+        if 模式 == '隔离':
+            shutil.move(源, _隔离路径(隔离目录, 名))
+        else:
+            os.remove(源)
+        return '已清理'
+    except OSError as e:
+        _log.info(f"[去重] 清理失败 {名}: {type(e).__name__}: {e}")
+        return (名, f'{type(e).__name__}: {e}')
 
 
 def 还原副本(键: str, 名: str, 隔离目录: str = None) -> dict:

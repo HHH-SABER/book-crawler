@@ -945,15 +945,7 @@ class PointClickCaptchaHandler(CaptchaHandler):
             _log.debug('[验证码-点选] 未配置 provider/endpoint, 转人工')
             return None
         # 1. 截取验证码图像 (优先图元素, 兜底整页视口)
-        try:
-            img = driver.find_element(By.CSS_SELECTOR, 'form img, .captcha img, canvas, img[src*="captcha"]')
-            png = img.screenshot_as_png
-        except Exception:
-            try:
-                png = driver.get_screenshot_as_png()
-            except Exception:
-                _log.debug('[验证码-点选] 无法截取验证码图像')
-                return None
+        png, img = self._取点选截图(driver)
         if not png:
             return None
         image_b64 = _b64.b64encode(png).decode('ascii')
@@ -963,76 +955,24 @@ class PointClickCaptchaHandler(CaptchaHandler):
         # 2. 按 provider 组请求并取回文本
         try:
             import requests as _rq
-            payload = {}
-            if provider == 'ollama':
-                payload = {'model': cfg.get('model') or 'llava', 'messages': [
-                    {'role': 'user', 'content': prompt, 'images': [image_b64]}]}
-                resp = _rq.post(f'{endpoint}/api/chat', json=payload,
-                                timeout=(10, 60))
-            elif provider == 'openai_api':
-                payload = {'model': cfg.get('model') or 'gpt-4o-mini',
-                           'messages': [{'role': 'user', 'content': [
-                               {'type': 'text', 'text': prompt},
-                               {'type': 'image_url', 'image_url': {
-                                   'url': f'data:image/png;base64,{image_b64}'}}]}]}
-                headers = {'Authorization': f"Bearer {cfg.get('api_key') or 'sk-local'}"}
-                resp = _rq.post(f'{endpoint}/chat/completions', json=payload,
-                                headers=headers, timeout=(10, 90))
-            else:  # custom: 直接 POST JSON
-                payload = {'image_base64': image_b64, 'prompt': prompt,
-                           'model': cfg.get('model') or ''}
-                headers = {}
-                if cfg.get('api_key'):
-                    headers['Authorization'] = f"Bearer {cfg['api_key']}"
-                resp = _rq.post(endpoint, json=payload, headers=headers,
-                                timeout=(10, 60))
+            resp = self._组模型请求(_rq, provider, endpoint, cfg, prompt, image_b64)
             resp.raise_for_status()
             text = resp.text
             # 3. 从响应中抽坐标数组 (优先 JSON 结构化字段)
-            points = []
-            try:
-                data = resp.json()
-                if isinstance(data, list):
-                    points = data
-                elif isinstance(data, dict):
-                    for k in ('points', 'coordinates', 'data', 'choices'):
-                        if k in data:
-                            v = data[k]
-                            if isinstance(v, list):
-                                if v and isinstance(v[0], list):
-                                    points = v
-                                elif v and isinstance(v[0], dict) and 'message' in v[0]:
-                                    text = v[0]['message'].get('content', '') or text
-                                break
-            except Exception as _e:
-                _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
-            if not points:
-                m = _re.search(r'\[\[(\s*\d+\s*,\s*\d+\s*,?\s*)+\]\]', text) or \
-                    _re.search(r'\[(\s*\d+\s*,\s*\d+\s*)\]', text)
-                if m:
-                    try:
-                        points = _json.loads(m.group(0))
-                    except Exception:
-                        points = []
+            points, text = self._抽点击坐标(resp, text)
         except Exception as e:
             _log.info(f"[验证码-点选] 模型调用失败: {e}, 转人工")
             return None
         if not points:
             return None
-        # 4. 依次点击坐标 (坐标相对图片元素, 用 ActionChains 偏移点击)
+        # 4. 依次点击坐标 (坐标相对图片元素, 用 ActionChains 偏移点击)。
+        #    兜底整页截图分支下 img 为 None —— 偏移点击没有元素锚点,
+        #    与旧行为一致: 转人工 (return None)。
+        if img is None:
+            return None
         _log.info(f"[验证码-点选] 模型返回 {len(points)} 个点击点, 执行点击")
         try:
-            for pt in points:
-                try:
-                    x, y = int(pt[0]), int(pt[1])
-                except Exception:
-                    continue
-                if x < 0 or y < 0:
-                    continue
-                ActionChains(driver).move_to_element_with_offset(img, x, y) \
-                    .click().perform()
-                import time as _t
-                _t.sleep(0.6)
+            self._点击坐标(driver, ActionChains, img, points)
         except Exception as e:
             _log.info(f"[验证码-点选] 坐标点击失败: {e}, 转人工")
             return None
@@ -1047,6 +987,101 @@ class PointClickCaptchaHandler(CaptchaHandler):
         import time as _t
         _t.sleep(2)
         return driver.page_source
+
+    @staticmethod
+    def _取点选截图(driver):
+        """截取验证码图像: 优先图元素, 兜底整页视口。
+
+        返回 (png, img): 主分支 png=元素截图且 img=元素对象 (点击锚点);
+        兜底分支 png=整页截图且 img=None (无锚点, 上层按旧行为转人工)。
+        """
+        from selenium.webdriver.common.by import By
+        try:
+            img = driver.find_element(By.CSS_SELECTOR,
+                                      'form img, .captcha img, canvas, img[src*="captcha"]')
+            return img.screenshot_as_png, img
+        except Exception:
+            try:
+                return driver.get_screenshot_as_png(), None
+            except Exception:
+                _log.debug('[验证码-点选] 无法截取验证码图像')
+                return None, None
+
+    @staticmethod
+    def _组模型请求(_rq, provider, endpoint, cfg, prompt, image_b64):
+        """按 provider 组请求 (ollama / openai_api / custom), 返回响应对象。"""
+        if provider == 'ollama':
+            payload = {'model': cfg.get('model') or 'llava', 'messages': [
+                {'role': 'user', 'content': prompt, 'images': [image_b64]}]}
+            return _rq.post(f'{endpoint}/api/chat', json=payload,
+                            timeout=(10, 60))
+        if provider == 'openai_api':
+            payload = {'model': cfg.get('model') or 'gpt-4o-mini',
+                       'messages': [{'role': 'user', 'content': [
+                           {'type': 'text', 'text': prompt},
+                           {'type': 'image_url', 'image_url': {
+                               'url': f'data:image/png;base64,{image_b64}'}}]}]}
+            headers = {'Authorization': f"Bearer {cfg.get('api_key') or 'sk-local'}"}
+            return _rq.post(f'{endpoint}/chat/completions', json=payload,
+                            headers=headers, timeout=(10, 90))
+        # custom: 直接 POST JSON
+        payload = {'image_base64': image_b64, 'prompt': prompt,
+                   'model': cfg.get('model') or ''}
+        headers = {}
+        if cfg.get('api_key'):
+            headers['Authorization'] = f"Bearer {cfg['api_key']}"
+        return _rq.post(endpoint, json=payload, headers=headers,
+                        timeout=(10, 60))
+
+    @staticmethod
+    def _抽点击坐标(resp, text):
+        """从模型响应抽坐标数组: 优先 JSON 结构化字段, 兜底正则。
+
+        返回 (points, text) —— text 可能被 ollama messages 结构改写。
+        """
+        import json as _json
+        import re as _re
+        points = []
+        try:
+            data = resp.json()
+            if isinstance(data, list):
+                points = data
+            elif isinstance(data, dict):
+                for k in ('points', 'coordinates', 'data', 'choices'):
+                    if k in data:
+                        v = data[k]
+                        if isinstance(v, list):
+                            if v and isinstance(v[0], list):
+                                points = v
+                            elif v and isinstance(v[0], dict) and 'message' in v[0]:
+                                text = v[0]['message'].get('content', '') or text
+                        break
+        except Exception as _e:
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        if not points:
+            m = _re.search(r'\[\[(\s*\d+\s*,\s*\d+\s*,?\s*)+\]\]', text) or \
+                _re.search(r'\[(\s*\d+\s*,\s*\d+\s*)\]', text)
+            if m:
+                try:
+                    points = _json.loads(m.group(0))
+                except Exception:
+                    points = []
+        return points, text
+
+    @staticmethod
+    def _点击坐标(driver, ActionChains, img, points):
+        """按坐标依次偏移点击 (相对图片元素; 每点间隔 0.6s)。"""
+        import time as _t
+        for pt in points:
+            try:
+                x, y = int(pt[0]), int(pt[1])
+            except Exception:
+                continue
+            if x < 0 or y < 0:
+                continue
+            ActionChains(driver).move_to_element_with_offset(img, x, y) \
+                .click().perform()
+            _t.sleep(0.6)
 
 
 # ============================================================
