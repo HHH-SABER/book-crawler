@@ -2760,7 +2760,11 @@ class NovelSpider:
             _log.info(f"找到 {len(all_matches)} 个可能的Base64编码字符串")
 
             # 去重
-            unique_matches = list(set(all_matches))
+            # 去重（保序，2026-10-24）: 原写 list(set(...)) —— set 迭代顺序随 Python
+            # 哈希随机化变化，而下方"取第一个够长的候选"依赖顺序 ⇒ 同一页面在不同
+            # 进程会抽出不同正文（实测 4 次：2054/3229/3364/3147 字；PYTHONHASHSEED=0 恒 2808）。
+            # dict.fromkeys 去重且保留首次出现顺序。
+            unique_matches = list(dict.fromkeys(all_matches))
             _log.info(f"去重后剩余 {len(unique_matches)} 个唯一的Base64编码字符串")
 
             for i, match in enumerate(unique_matches[:8]):  # 尝试前8个
