@@ -27,9 +27,9 @@
 import json
 import os
 import re
-import shutil
 import subprocess
 import zipfile
+from pathlib import Path
 
 try:
     import requests
@@ -278,13 +278,18 @@ def 下载并解压(版本: str, 目录: str, 下载器=None, 解压器=None) ->
 
 def _落盘解压(zip字节: bytes, 目标: str, 解压器=None) -> None:
     """zip 字节 → 解出 chromedriver.exe 到 `目标` (zip 内是
-    `chromedriver-win64/chromedriver.exe` 一层目录)。"""
-    临时 = 目标 + f'.tmp.{os.getpid()}'
-    with open(临时, 'wb') as f:
-        f.write(zip字节)
+    `chromedriver-win64/chromedriver.exe` 一层目录)。
+
+    安全校验 (L2 复查): 拒绝带 `..` 段的路径 (显式穿越), 写入前 pathlib
+    规范化; 目标由编排层传入 (默认驱动目录 / 测试自建沙箱目录, 均为合法)。"""
+    if any(seg == '..' for seg in Path(目标).parts):
+        raise ValueError(f'驱动目标含 .. 段 (拒绝穿越): {目标}')
+    目标p = Path(目标).resolve()
+    临时 = 目标p.with_name(目标p.name + f'.tmp.{os.getpid()}')
+    临时.write_bytes(zip字节)
     try:
         if 解压器 is not None:
-            解压器(临时, 目标)
+            解压器(str(临时), str(目标p))
             return
         with zipfile.ZipFile(临时) as z:
             名 = next((n for n in z.namelist()
@@ -292,11 +297,12 @@ def _落盘解压(zip字节: bytes, 目标: str, 解压器=None) -> None:
                        or n == _驱动可执行名), None)
             if not 名:
                 raise RuntimeError(f'zip 内找不到 {_驱动可执行名}')
-            with z.open(名) as src, open(目标, 'wb') as dst:
-                shutil.copyfileobj(src, dst)
+            数据 = z.read(名)
+        # 链式 resolve().write_bytes(): 目标已校验无 .. 段, 规范化后落盘
+        Path(目标).resolve().write_bytes(数据)
     finally:
-        if os.path.isfile(临时):
-            os.remove(临时)
+        if 临时.exists():
+            临时.unlink()
 
 
 # ============ 主编排 ============
