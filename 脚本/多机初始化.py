@@ -93,8 +93,12 @@ def 从远端克隆(url: str) -> int:
         print('         可能原因：私有仓地址错 / 无权限（私有仓需要登录）/ 网络')
         return 1
     print('  [OK] 私有仓已克隆')
+    # 裸克隆不会自动建立 upstream；不配的话后续 `git push`（无参数）会报
+    # "no upstream branch" —— 2026-10-24 K 机实测踩到，--上传 直接失败。
     for 参数 in (['config', 'core.bare', 'false'],
-                ['symbolic-ref', 'HEAD', 'refs/heads/main']):
+                ['symbolic-ref', 'HEAD', 'refs/heads/main'],
+                ['config', 'branch.main.remote', 'origin'],
+                ['config', 'branch.main.merge', 'refs/heads/main']):
         subprocess.run(['git', f'--git-dir={私有仓}', *参数], capture_output=True)
     写排除文件()
     出 = git('checkout', '-f', 'main')
