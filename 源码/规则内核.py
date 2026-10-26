@@ -22,6 +22,7 @@
 - 不改变任何抓取行为：本模块没有调用方（除测试），是"护栏 + 文档"。
 """
 import ast
+import hashlib
 import pathlib
 
 #: 分发入口的两个函数名（`爬虫.py::_站点策略` 是旧名，`sites_config.适配器策略` 是新名）
@@ -113,15 +114,19 @@ def 声明阶段(源码: str) -> list:
     return 结果
 
 
-def 导出适配器IR(适配器表=None) -> dict:
+def 导出适配器IR(适配器表=None, 脱敏: bool = True) -> dict:
     """把已注册适配器导出成只读 IR。
 
     Args:
         适配器表: {代号或域名: 适配器 dict}；None ⇒ 尝试读 sites_config 的公开状态，
                  读不到（公开形态/未加载）则返回空 dict，不抛异常。
+        脱敏: 默认 **True** —— 只输出 `域名指纹`（sha256 前 12 位），不输出真实域名。
+              IR 是"可能被 dump 成文件/贴进文档"的东西，默认就该是能公开的形态；
+              需要原始域名做比对时才显式传 `脱敏=False`（结果不要入库）。
 
     Returns:
-        {名称: {'域名': str, '有站点策略': bool, '声明阶段': [str]}}
+        {名称: {'域名指纹': str, '有站点策略': bool, '声明阶段': [str]}}
+        （`脱敏=False` 时字段名为 `域名`）
     """
     if 适配器表 is None:
         try:
@@ -135,12 +140,20 @@ def 导出适配器IR(适配器表=None) -> dict:
         if not isinstance(适配器, dict):
             continue
         钩子 = 适配器.get('站点策略')
+        域 = str(适配器.get('域名') or 适配器.get('domain') or '')
         IR[str(名称)] = {
-            '域名': str(适配器.get('域名') or 适配器.get('domain') or ''),
+            ('域名指纹' if 脱敏 else '域名'): (_主机指纹(域) if 脱敏 else 域),
             '有站点策略': callable(钩子),
             '声明阶段': 声明阶段(_函数源码(钩子)) if callable(钩子) else [],
         }
     return IR
+
+
+def _主机指纹(域名: str) -> str:
+    """域名的不可逆指纹（空域名返回空串）。"""
+    if not 域名:
+        return ''
+    return hashlib.sha256(域名.lower().encode('utf-8')).hexdigest()[:12]
 
 
 def _函数源码(函数) -> str:
