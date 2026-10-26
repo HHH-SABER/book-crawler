@@ -47,5 +47,20 @@ if ! "$PY" 脚本/check_undefined_refs.py > /tmp/_precommit_static.log 2>&1; the
     exit 1
 fi
 
+# 规则轨迹 (S1 第三步, 2026-10-26): 改 爬虫.py / 适配器 / 站点表 时, 站点策略的
+# **决策轨迹**必须零变化 —— 这是"拆分/重构"的安全网 (静态检查看不出来的分支变化)。
+# 快照在 .runtime/ (gitignored); 新机器/公开形态没有快照 ⇒ 跳过, 不阻断提交。
+if [ -f ".runtime/规则轨迹.json" ]; then
+    echo "[pre-commit] 规则轨迹对比 (S1)…"
+    if ! "$PY" 脚本/规则轨迹对照.py --对比 > /tmp/_precommit_trace.log 2>&1; then
+        tail -18 /tmp/_precommit_trace.log
+        echo "[pre-commit] ❌ 站点策略决策轨迹与快照不一致, 提交被阻止。"
+        echo "      有意改动 ⇒ 重跑 脚本/规则轨迹对照.py 更新快照后重新提交 (快照不入库)"
+        exit 1
+    fi
+else
+    echo "[pre-commit] 规则轨迹: 无快照, 跳过 (新机器/公开形态正常)"
+fi
+
 echo "[pre-commit] ✅ 通过"
 exit 0

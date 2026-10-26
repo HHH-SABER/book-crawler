@@ -118,3 +118,41 @@ def 取记录() -> list:
 def 快照() -> dict:
     """可直接 JSON 序列化、可逐字节比对的快照。"""
     return {'记录数': len(_记录), '记录': 取记录()}
+
+
+版本 = 1
+
+
+def 生成元信息(样本数=None, head=None) -> dict:
+    """快照元信息（工具版本 / 生成时间 / HEAD / 样本数）。
+
+    元信息**不参与**轨迹比对（生成时间每次都不同），只用于"这条快照是不是过期了"的判断。
+    """
+    import time
+    return {
+        '工具版本': 版本,
+        '生成时间': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'HEAD': str(head or ''),
+        '样本数': dict(样本数 or {}),
+    }
+
+
+def 对比快照(旧: dict, 新: dict) -> list:
+    """逐条比对两份快照的**轨迹**（忽略元信息），返回人类可读差异（空 = 一致）。
+
+    兼容历史格式：缺 `轨迹` / `记录` 的旧快照不会抛异常，只报"条数变化"。
+    """
+    差 = []
+    旧轨 = ((旧 or {}).get('轨迹') or {}).get('记录') or []
+    新轨 = ((新 or {}).get('轨迹') or {}).get('记录') or []
+    if len(旧轨) != len(新轨):
+        差.append(f'记录条数变化: {len(旧轨)} → {len(新轨)}')
+    for i in range(min(len(旧轨), len(新轨))):
+        a, b = 旧轨[i], 新轨[i]
+        键s = [k for k in ('阶段', '主机指纹', '命中适配器', '返回摘要', '上下文键')
+              if a.get(k) != b.get(k)]
+        if 键s:
+            差.append(f'第 {i + 1} 条差异 {键s}: 旧={ {k: a.get(k) for k in 键s} }'
+                     f' 新={ {k: b.get(k) for k in 键s} }')
+    return 差[:20]
+
