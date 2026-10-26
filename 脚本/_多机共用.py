@@ -26,6 +26,9 @@ _私有仓覆盖 = os.environ.get('NC_PRIVATE_GIT_DIR', '').strip()
     ':(exclude,glob)**/*.pyc',
     ':(exclude,glob)**/*.log',
     ':(exclude,glob)**/Cache/**',
+    # Mimosa 安全扫描的 hook 运行时状态 (10-26 实测被误收进私有仓):
+    # 每会话/每文件的基线缓存, 纯工具链产物, 换机即失效
+    ':(exclude,glob)**/.mimosa/**',
 )
 
 
