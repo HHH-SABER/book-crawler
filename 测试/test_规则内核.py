@@ -4,6 +4,7 @@
 覆盖：阶段词汇扫描（AST/字面量/去重）、适配器声明阶段提取（== / in 两种写法）、
 IR 在"无适配器"形态下的安全性，以及**只读性**（不 import 爬虫.py、重复调用结果一致）。
 """
+import json
 import pathlib
 import sys
 import unittest
@@ -85,9 +86,25 @@ class 适配器IR用例(unittest.TestCase):
                 return None
             return None
         IR = 规则内核.导出适配器IR({'siteA': {'域名': 'a.example.com', '站点策略': 站点策略}})
-        self.assertEqual(IR['siteA']['域名'], 'a.example.com')
         self.assertTrue(IR['siteA']['有站点策略'])
         self.assertIn('目录规范化', IR['siteA']['声明阶段'])
+
+    def test_默认脱敏_不含真实域名(self):
+        """IR 可能被 dump 成文件/贴进文档 ⇒ 默认只给指纹，不给域名。"""
+        IR = 规则内核.导出适配器IR({'siteA': {'域名': 'a.example.com'}})
+        self.assertNotIn('域名', IR['siteA'])
+        self.assertEqual(len(IR['siteA']['域名指纹']), 12)
+        self.assertNotIn('example.com', json.dumps(IR, ensure_ascii=False))
+
+    def test_显式关脱敏才给原域名(self):
+        IR = 规则内核.导出适配器IR({'siteA': {'域名': 'a.example.com'}}, 脱敏=False)
+        self.assertEqual(IR['siteA']['域名'], 'a.example.com')
+        self.assertEqual(规则内核._主机指纹(''), '')
+
+    def test_域名指纹大小写不敏感(self):
+        a = 规则内核._主机指纹('A.Example.com')
+        b = 规则内核._主机指纹('a.example.com')
+        self.assertEqual(a, b)
 
     def test_无钩子适配器_声明阶段为空(self):
         IR = 规则内核.导出适配器IR({'siteB': {'域名': 'b.example.com'}})

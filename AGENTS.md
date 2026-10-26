@@ -27,6 +27,10 @@
 .runtime\python314\python.exe 脚本\环境自检.py          # 只读自检: 解释器/依赖/私有资产/私有仓
 .runtime\python314\python.exe 脚本\多机同步.py --全量    # 拉公开仓+私有仓 → 静态+阶段覆盖+单测
 .runtime\python314\python.exe 脚本\多机初始化.py         # 每台新机器一次（建/绑私有资产仓）
+
+# 规则轨迹（改 爬虫.py / 适配器 / 站点表 前后各跑一次，决策必须零变化；本机有样本才有效）
+.runtime\python314\python.exe 脚本\规则轨迹对照.py          # 采样写 .runtime/规则轨迹.json
+.runtime\python314\python.exe 脚本\规则轨迹对照.py --对比    # 必须 PASS
 ```
 
 ⚠️ **两种形态的门禁数字不同，判定只看末行 `OK`**：本机全功能形态（有 `站点适配_本地` 等私有资产）
