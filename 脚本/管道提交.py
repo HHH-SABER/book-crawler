@@ -15,8 +15,12 @@
 
 行为:
   1) git add 只点名传入文件 (绝不 -A, 对齐 AGENTS.md 提交纪律);
-  2) write-tree → commit-tree -p HEAD → update-ref refs/heads/main;
-  3) 产物是普通前进提交, 回滚: git reset --soft HEAD~1。
+  2) **内联跑四道检查** (2026-10-26 补): 红线 / 阶段覆盖 / 规则轨迹 / 静态引用。
+     本通道走 commit-tree + update-ref, **git 的 pre-commit 钩子不会执行** ——
+     若不内联, 钩子里的护栏在提交路径上等于失效（Mimosa 又拦直连 git commit）。
+     用 `--免检` 才跳过（仅紧急, 会打印警告）。
+  3) write-tree → commit-tree -p HEAD → update-ref refs/heads/main;
+  4) 产物是普通前进提交, 回滚: git reset --soft HEAD~1。
 
 推送仍走 `脚本/多机同步.py --上传` (内含推送前红线自查)。
 """
@@ -26,6 +30,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+PY = REPO / '.runtime' / 'python314' / 'python.exe'
 
 
 def git(*args: str) -> str:
@@ -36,6 +41,44 @@ def git(*args: str) -> str:
               file=sys.stderr)
         sys.exit(1)
     return r.stdout.strip()
+
+
+def _解释器() -> str:
+    return str(PY) if PY.is_file() else sys.executable
+
+
+def _跑(名: str, 参数: list) -> bool:
+    """跑一道检查；失败时打印尾部并返回 False。"""
+    r = subprocess.run([_解释器(), *参数], cwd=str(REPO), capture_output=True,
+                       text=True, encoding='utf-8', errors='replace')
+    if r.returncode == 0:
+        print(f'  [OK] {名}')
+        return True
+    输出 = ((r.stdout or '') + (r.stderr or '')).strip().splitlines()
+    print(f'  [失败] {名} (exit {r.returncode})')
+    for x in 输出[-12:]:
+        print(f'        {x[:140]}')
+    return False
+
+
+def 内联检查(已暂存: list) -> int:
+    """对齐 .githooks/pre-commit 的四道检查（该钩子在本通道不生效）。"""
+    print('· 内联检查 (红线 / 阶段覆盖 / 规则轨迹 / 静态)…')
+    项 = []
+    if 已暂存:
+        项.append(('红线扫描', ['脚本/红线扫描.py', *已暂存]))
+    项.append(('阶段覆盖', ['脚本/检查阶段覆盖.py', '--严格']))
+    if (REPO / '.runtime' / '规则轨迹.json').is_file():
+        项.append(('规则轨迹对比', ['脚本/规则轨迹对照.py', '--对比']))
+    else:
+        print('  [跳过] 规则轨迹对比: 无快照（新机器/公开形态正常）')
+    项.append(('静态引用', ['脚本/check_undefined_refs.py']))
+
+    for 名, 参数 in 项:
+        if not _跑(名, 参数):
+            print('✗ 内联检查未过, 提交被阻止（确认无误可用 --免检, 会留痕）')
+            return 1
+    return 0
 
 
 def main() -> int:
@@ -52,6 +95,8 @@ def main() -> int:
     ap.add_argument('-F', dest='消息文件',
                     help='从文件读完整提交消息 (优先于 -m/-b)')
     ap.add_argument('文件', nargs='+', help='要点名 git add 的文件 (禁止 -A)')
+    ap.add_argument('--免检', action='store_true',
+                    help='跳过内联检查（仅紧急; 会在输出里留痕）')
     a = ap.parse_args()
 
     if a.消息文件:
@@ -62,6 +107,15 @@ def main() -> int:
     for f in a.文件:
         git('add', f)
         print(f'· 已暂存 {f}')
+
+    已暂存 = [x for x in git('diff', '--cached', '--name-only',
+                             '--diff-filter=ACM').splitlines() if x.strip()]
+    if a.免检:
+        print('⚠ --免检: 已跳过内联检查（红线/阶段覆盖/规则轨迹/静态）')
+    else:
+        if 内联检查(已暂存) != 0:
+            return 1
+
     tree = git('write-tree')
     commit = git('commit-tree', tree, '-p', 'HEAD', '-m', msg)
     git('update-ref', 'refs/heads/main', commit)
