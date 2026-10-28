@@ -41,7 +41,9 @@ def 用适配器提取(current_url, page_index, base_url, 取页面):
     try:
         _log.info(f"[适配器] {适配器['source']} 自定义正文提取 (第{page_index+1}页)")
         soup = 取页面()
-        return 适配器['extract_content'](soup, current_url, base_url, page_index=page_index)
+        from sites_config import 调适配器接口
+        return 调适配器接口('extract_content', current_url, 适配器,
+                        soup, current_url, base_url, page_index=page_index)
     except Exception as e:      # noqa: BLE001 — 插件缺陷降级到内置提取链
         _log.info(f"[适配器] 正文提取异常, 回退通用流程: {e}")
         return None

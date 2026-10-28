@@ -192,5 +192,68 @@ class 快照元信息与比对用例(unittest.TestCase):
                                     {'轨迹': {'记录': []}}), [])
 
 
+class 适配器旧接口探针用例(unittest.TestCase):
+    """`sites_config.调适配器接口`：真实适配器走的是旧接口，探针必须挂在这里。
+
+    契约：关闭轨迹时**与直调完全等价**（返回值/异常/缺钩子都不变）。
+    """
+
+    def setUp(self):
+        import sites_config as sc
+        self.sc = sc
+        规则轨迹.清空()
+        self.addCleanup(规则轨迹.停用)
+
+    def test_关闭时返回值等价(self):
+        规则轨迹.停用()
+        适配器 = {'extract_content': lambda *a, **k: '正文'}
+        self.assertEqual(self.sc.调适配器接口('extract_content', 真域URL, 适配器, 1, 2), '正文')
+        self.assertEqual(规则轨迹.取记录(), [])
+
+    def test_关闭时异常原样抛出(self):
+        规则轨迹.停用()
+
+        def 炸(*a, **k):
+            raise ValueError('插件坏了')
+
+        适配器 = {'paginate': 炸}
+        with self.assertRaises(ValueError):
+            self.sc.调适配器接口('paginate', 真域URL, 适配器, 'u', 1)
+
+    def test_缺失钩子返回None(self):
+        规则轨迹.启用()
+        self.assertIsNone(self.sc.调适配器接口('get_title', 真域URL, {}))
+        self.assertEqual(规则轨迹.取记录(), [], '没调用的接口不该记轨迹')
+
+    def test_开启时记录接口名与摘要(self):
+        规则轨迹.启用()
+        适配器 = {'parse_catalog': lambda *a, **k: [{'t': i} for i in range(97)]}
+        self.assertEqual(len(self.sc.调适配器接口('parse_catalog', 真域URL, 适配器, 'soup')), 97)
+        记录 = 规则轨迹.取记录()
+        self.assertEqual(len(记录), 1)
+        self.assertEqual(记录[0]['阶段'], '接口:parse_catalog')
+        self.assertTrue(记录[0]['命中适配器'])
+        self.assertEqual(记录[0]['返回摘要'], 'list(97)')
+
+    def test_开启时异常记类型且仍抛出(self):
+        规则轨迹.启用()
+
+        def 炸(*a, **k):
+            raise RuntimeError('适配器缺陷')
+
+        with self.assertRaises(RuntimeError):
+            self.sc.调适配器接口('extract_content', 真域URL, {'extract_content': 炸})
+        记录 = 规则轨迹.取记录()
+        self.assertEqual(记录[0]['返回摘要'], '异常:RuntimeError')
+
+    def test_轨迹不含域名(self):
+        规则轨迹.启用()
+        适配器 = {'get_title': lambda *a, **k: '某书'}
+        self.sc.调适配器接口('get_title', 'https://very-real-site-name.example.net/1/', 适配器)
+        文 = json.dumps(规则轨迹.快照(), ensure_ascii=False)
+        self.assertNotIn('example.net', 文)
+        self.assertNotIn('某书', 文, '返回值内容也不该进轨迹（只记摘要）')
+
+
 if __name__ == '__main__':
     unittest.main()

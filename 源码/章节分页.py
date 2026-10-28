@@ -59,7 +59,9 @@ def 下一页URL(chapter_url, page_index, site_pattern, base_url, 适配器策�
         try:
             # 注意: 适配器拿的是**上一页 URL**（原实现传 current_url），不是章节首页
             源URL = 当前URL or chapter_url
-            next_url = 适配器['paginate'](源URL, page_index, base_url=base_url)
+            from sites_config import 调适配器接口
+            next_url = 调适配器接口('paginate', 源URL, 适配器,
+                                源URL, page_index, base_url=base_url)
         except Exception as e:      # noqa: BLE001 — 插件缺陷降级到内置规则
             _log.info(f"[分页] 适配器分页异常, 回退内置规则: {e}")
             next_url = None
