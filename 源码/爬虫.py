@@ -1485,12 +1485,14 @@ class NovelSpider:
         """
         try:
             from sites_config import get_adapter
+            from sites_config import 调适配器接口
             adapter = get_adapter(catalog_url)
             if adapter and adapter.get('parse_catalog'):
                 _log.info(f"[适配器] 自定义目录解析: {adapter['source']}")
                 # clean_title: 站点专属标题清洗能力 (§Wave 2 外置解析器要用),
                 # 属通用能力透传, 不含任何站点信息。
-                return adapter['parse_catalog'](
+                return 调适配器接口(
+                    'parse_catalog', catalog_url, adapter,
                     soup, catalog_url, self.base_url,
                     sort_chapters=sort_chapters, fetch=self.inspect_page,
                     clean_title=self.clean_chapter_title,
@@ -3897,9 +3899,11 @@ class NovelSpider:
             # 外部适配器插件书名钩子 (站点适配/, 免重新打包)
             try:
                 from sites_config import get_adapter
+                from sites_config import 调适配器接口
                 _adapter = get_adapter(catalog_url)
                 if _adapter and _adapter.get('get_title'):
-                    _adapter_title = _adapter['get_title'](soup, catalog_url, self.base_url)
+                    _adapter_title = 调适配器接口('get_title', catalog_url, _adapter,
+                                            soup, catalog_url, self.base_url)
                     if _adapter_title and _adapter_title.strip():
                         _log.info(f"[适配器] 自定义书名: {_adapter_title.strip()}")
                         return _adapter_title.strip()
