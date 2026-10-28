@@ -31,6 +31,10 @@
 # 规则轨迹（改 爬虫.py / 适配器 / 站点表 前后各跑一次，决策必须零变化；本机有样本才有效）
 .runtime\python314\python.exe 脚本\规则轨迹对照.py          # 采样写 .runtime/规则轨迹.json
 .runtime\python314\python.exe 脚本\规则轨迹对照.py --对比    # 必须 PASS
+
+# 重构护栏（拆 爬虫.py / GUI 页面时用：拆前打锚点，拆后一条命令验零行为变化）
+.runtime\python314\python.exe 脚本\重构护栏.py --锚点   # 拆前（缺本地样本会拒绝执行）
+.runtime\python314\python.exe 脚本\重构护栏.py --校验   # 拆后（五道护栏一起验，约 14s）
 ```
 
 ⚠️ **两种形态的门禁数字不同，判定只看末行 `OK`**：本机全功能形态（有 `站点适配_本地` 等私有资产）
