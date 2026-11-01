@@ -83,6 +83,9 @@ class TaskMetrics:
     # LLM 复核建议 (2026-10-17 C6/P4): 最近一章的 LLM 判定文案 (质检事件负载);
     # '' = 未送/未启用。**只告警不改判** (不影响 quality_*; 默认关闭)。
     llm_suggestion: str = ""
+    # 重复章告警 (2026-11-01): 整章正文与前面某章逐字相同 (抓错章), 该章已写
+    # 空占位; '' = 无异常。**只告警不扣分** (不影响 quality_*)。
+    duplicate_chapter_warning: str = ""
     # 自动去重 (2026-10-10): 抓取收尾自动查重的动作统计 ('自动去重' 事件回填)
     auto_dedup_cleaned: int = 0   # 已移入 _已去重/ 的重复副本数
     auto_dedup_pending: int = 0   # 疑似重复待人工确认数
@@ -469,6 +472,18 @@ class TaskLogRedirector:
             告警 = 数据.get('告警') or 数据.get('警告') or ''
             if isinstance(告警, str):
                 self.task.metrics.over_clean_warning = 告警.strip()
+            return
+        if 类型 == '重复章':
+            # 2026-11-01: 整章正文与前面某章逐字相同 = 抓错章 (第 N+1 章被写成
+            # 第 N 章内容); 爬虫已把该章置空。只告警, 不动 quality_*。
+            try:
+                章 = int(数据.get('章') or 0)
+                首次 = int(数据.get('首次章') or 0)
+            except (TypeError, ValueError):
+                return      # 字段异常 → 保持原值 (与质检得分缺失同语义)
+            if 章 and 首次:
+                self.task.metrics.duplicate_chapter_warning = (
+                    f'第 {章} 章与第 {首次} 章内容相同 (已置空待重抓)')
             return
         if 类型 == '自动去重':
             # 2026-10-10: 抓取收尾自动查重的动作统计 (爬虫 _收尾汇总 发布)。

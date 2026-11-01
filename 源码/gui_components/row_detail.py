@@ -124,6 +124,12 @@ def build_row_detail(task: TaskInfo) -> ft.Control:
             _kv("⚠ 清洗异常", getattr(mt, 'over_clean_warning', ''),
                 色键='status-warning')
         ] if getattr(mt, 'over_clean_warning', '') else []),
+        # 重复章告警 (2026-11-01): 整章与前面某章逐字相同 = 抓错章, 该章已置空。
+        # 同样只告警, 独立一行, 不影响质检结论展示。
+        *([
+            _kv("⚠ 重复章", getattr(mt, 'duplicate_chapter_warning', ''),
+                色键='status-warning')
+        ] if getattr(mt, 'duplicate_chapter_warning', '') else []),
         # LLM 复核建议 (2026-10-17 C6/P4): 默认关闭, 启用且送了才有;
         # 只告警不改判 (独立行,  accent 色)
         *([

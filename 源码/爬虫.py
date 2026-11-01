@@ -2303,6 +2303,59 @@ class NovelSpider:
             _任务事件.发布('清洗', **统计)
         return 文本
 
+    def _跨章重复处理(self, 序号, 章节标题, content, 允许置空=True):
+        """整章重复检测 (2026-11-01): 本章正文是否已在前面某章出现过。
+
+        缺口背景: `deduplicate_paragraphs` 只在**单章内**去重 (一章调一次),
+        章与章之间无任何比对 —— 实测一本 107 章的书出现 9 组整章重复
+        (第 N+1 章被写成第 N 章内容), 成品里完全看不出异常。
+
+        处置: 重复章意味着**这一章真实正文没抓到**, 把上一章内容再写一遍会让
+        书"看起来完整但内容是错的"; 而且错的那份无法从成品里辨认。所以新抓的
+        章命中时置空 (走既有"空占位 + 计入失败"口径, 续传/重抓可补); 增量搬运
+        的旧章只记录不置空 —— 那是已经在文件里的数据, 不能就地删。
+
+        Args:
+            序号: 章序号 (1 起)
+            章节标题: 章标题
+            content: 本章正文
+            允许置空: False 时只记录不置空 (增量搬运旧正文用)
+
+        Returns:
+            处理后的正文 (命中且允许置空时是 '')
+        """
+        try:
+            from 内容清洗 import 检测重复章 as _检测重复章
+        except Exception as _e:      # noqa: BLE001 — 检测不可用不该拖垮抓取
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e} (跨章去重不可用)')
+            return content
+        表 = getattr(self, '_章指纹表', None)
+        if not isinstance(表, dict):
+            return content
+        try:
+            指纹, 首次 = _检测重复章(content, 表)
+        except Exception as _e:      # noqa: BLE001 — 纯函数异常按"没命中"处理
+            _log.debug(f'裸 except 吞异常: {type(_e).__name__}: {_e} (跨章去重跳过)')
+            return content
+        if not 指纹:
+            return content
+        if 首次 is None:
+            表[指纹] = (序号, 章节标题)
+            return content
+        _首章, _首标题 = 首次
+        _log.info(f"⚠️ [重复章] 第 {序号} 章「{章节标题}」与第 {_首章} 章"
+                  f"「{_首标题}」正文完全相同 ({len(content)} 字符)")
+        清单 = getattr(self, '_重复章清单', None)
+        if isinstance(清单, list):
+            清单.append((序号, 章节标题, _首章, _首标题, len(content)))
+        if _任务事件.有订阅方():
+            _任务事件.发布('重复章', 章=序号, 章标题=章节标题,
+                           首次章=_首章, 首次标题=_首标题, 字数=len(content))
+        if 允许置空:
+            _log.info(f"[重复章] 第 {序号} 章置空 (记入失败, 断点续传可补)")
+            return ''
+        return content
+
 
     def _detect_content_pattern(self, url, headers):
         """通用内容模式自动检测 (基于页面内容特征, 不依赖域名)
@@ -4727,6 +4780,18 @@ class NovelSpider:
                 _log.info(f"[一致性] 输出自检异常: {e}")
             for _条 in 一致性问题:
                 _log.info(f"⚠️ [一致性] {_条}")
+        # 章级重复汇总 (2026-11-01): 整章逐字相同 = 抓错章 (第 N+1 章被写成
+        # 第 N 章内容)。命中章已置空并计入失败, 这里给一次性汇总 ——
+        # 只报告, 不改质检判定 (与"过度清洗只告警不扣分"同一取向)。
+        if getattr(self, '_重复章清单', None):
+            _n = len(self._重复章清单)
+            _例 = self._重复章清单[0]
+            _log.info(f"⚠️ [重复章] 共 {_n} 章与前面章节内容完全相同 "
+                      f"(已置空, 建议重抓): 第{_例[0]}章「{_例[1]}」"
+                      f"= 第{_例[2]}章「{_例[3]}」")
+            if _任务事件.有订阅方():
+                _任务事件.发布('重复章汇总', 数量=_n,
+                               章=_例[0], 首次章=_例[2])
         # 整书质检汇总报告 + 站点抓取历史记录
         try:
             质检摘要 = self._生成质检汇总报告(output_file, total, failed,
@@ -5157,6 +5222,11 @@ class NovelSpider:
             _log.info("[并发] ⚠️ 该站 WAF 限流敏感, 多浏览器并发会触发验证码, 已强制串行")
             threads = 1
 
+        # 章级重复检测状态 (2026-11-01): 指纹 -> (章序号, 章标题)。
+        # 只在本次任务内有效 (每次 run 重置); 增量搬运的旧章也会记入,
+        # 保证"文件里已有的章"同样参与比对。
+        self._章指纹表 = {}
+        self._重复章清单 = []
         failed = []
         try:
             with Path(_写入目标).open(open_mode, encoding='utf-8') as f:
@@ -5217,6 +5287,9 @@ class NovelSpider:
                                 # (追加模式 start>0 时旧正文已在文件中, 无需写)
                                 旧正文 = 增量旧内容.get(chapters[i]['title'])
                                 if start == 0 and 旧正文 is not None:
+                                    # 旧正文是文件里的既有数据: 只记录指纹, 不置空
+                                    self._跨章重复处理(i + 1, chapters[i]['title'],
+                                                      旧正文, 允许置空=False)
                                     f.write(_排版章节文本(chapters[i]['title'],
                                                           旧正文, self._txt_indent))
                                 self._save_checkpoint(output_file, catalog_url,
@@ -5252,6 +5325,9 @@ class NovelSpider:
                             except Exception as e:
                                 _log.info(f"抓取异常: {e}")
                                 content = ''
+                            # 章级重复检测 (2026-11-01): 整章与已写章节完全相同
+                            # ⇒ 抓错章, 置空并计入失败 (不留第二份错内容)
+                            content = self._跨章重复处理(i + 1, chap['title'], content)
                             # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
                             # (_排版章节文本: 段首缩进+段间空行, 标题行不缩进)
                             f.write(_排版章节文本(chap['title'], content,
@@ -5298,6 +5374,10 @@ class NovelSpider:
                                 _log.info(f"[增量] 跳过第 {i+1}/{total} 章 (未变化): {chap['title']}")
                                 _任务事件.发布('增量跳过')          # U19 结构化事件
                                 if start == 0:
+                                    # 旧正文是文件里的既有数据: 只记录指纹, 不置空
+                                    self._跨章重复处理(i + 1, chap['title'],
+                                                      增量旧内容[chap['title']],
+                                                      允许置空=False)
                                     f.write(_排版章节文本(chap['title'],
                                                           增量旧内容[chap['title']],
                                                           self._txt_indent))
@@ -5315,6 +5395,9 @@ class NovelSpider:
                         if _spd is not None:
                             _spd.record_chapter(bool(content),
                                                 time.perf_counter() - _t0)
+                        # 章级重复检测 (2026-11-01): 整章与已写章节完全相同
+                        # ⇒ 抓错章, 置空并计入失败 (不留第二份错内容)
+                        content = self._跨章重复处理(i + 1, chap['title'], content)
                         # 先成功抓到内容再写入标题+正文, 避免中断留下空标题章节
                         # (_排版章节文本: 段首缩进+段间空行, 标题行不缩进)
                         f.write(_排版章节文本(chap['title'], content,
