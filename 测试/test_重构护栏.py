@@ -36,9 +36,16 @@ class 清单用例(unittest.TestCase):
 
 
 class 锚点保护用例(unittest.TestCase):
-    def test_当前环境样本就绪(self):
+    def test_样本就绪判定与目录存在性一致(self):
+        """⚠️ 2026-11-01 修 CI 红：**不能断言"本机一定就绪"**。
+
+        公开形态（CI / 刚 clone）没有 `测试样本_本地`，此时"不就绪"是正确的；
+        这里只钉住"判定逻辑与目录存在性一致"，不把本机环境当普遍事实。
+        """
         就绪, 缺 = 护栏.样本就绪()
-        self.assertTrue(就绪, f'本机应就绪，缺: {缺}')
+        实缺 = [名 for 名, 目录 in 护栏.样本依赖.items() if not 目录.is_dir()]
+        self.assertEqual(缺, 实缺)
+        self.assertEqual(就绪, not 实缺)
 
     def test_缺样本时拒绝打锚点(self):
         """公开形态（无本地样本）下打锚点会把入库基线覆盖成空 —— 必须拒绝。"""
