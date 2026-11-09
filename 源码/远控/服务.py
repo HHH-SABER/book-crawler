@@ -45,6 +45,12 @@ except Exception:
 from _调试 import _dbg  # noqa: E402  统一实现 (G1)
 app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
 
+# 安全中间件 (2026-11-09, 落地 10-26 体检 R-M01/R-M02/R-M03):
+# 安全响应头 + Host 校验(挡 DNS rebinding) + 认证失败限流(挡 token 爆破)。
+# 必须在 include_router 之前装, 保证插件接口与大面板都覆盖到。
+from .安全中间件 import 安装 as _安装安全中间件  # noqa: E402
+_安装安全中间件(app)
+
 # 浏览器插件协作接口 (P1 凭据中继, 2026-10-20): /api/v1/ext/*
 # 独立 router 模块 (按功能组织); 自带 token+仅本机+白名单三重护栏。
 from .插件接口 import router as _插件路由  # noqa: E402
