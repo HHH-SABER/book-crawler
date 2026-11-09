@@ -5,7 +5,7 @@
 
 1. **拉公开仓**（源码/测试/脚本/文档）—— `git pull --ff-only`（不做 merge commit，冲突即停）；
 2. **拉私有仓**（真实站点适配器/样本/测试_本地/数据/HANDOFF/辅助脚本）——
-   `git --git-dir=../小说爬虫-私有资产.git --work-tree=项目根 pull --ff-only`；
+   `git --git-dir=../拾卷-私有资产.git --work-tree=项目根 pull --ff-only`；
 3. **一致性校验**：静态引用检查 + 阶段覆盖检查（默认）；加 `--全量` 再跑完整单测；
 4. **报表**：版本 / HEAD / 未推送 / 私有仓状态 / 校验结论。
 
@@ -148,7 +148,7 @@ def main(argv=None) -> int:
             for x in 行s[:6]:
                 print(f'        {x[:100]}')
             提 = 跑(['git', f'--git-dir={私有仓}', f'--work-tree={根}',
-                    '-c', 'user.name=小说爬虫', '-c', 'user.email=noreply@local',
+                    '-c', 'user.name=拾卷', '-c', 'user.email=noreply@local',
                     'commit', '-m', 'chore(私有资产): 多机同步收集'])
             if 提.returncode != 0:
                 print(f'  [失败] 提交失败: {(提.stderr or 提.stdout)[:300]}')

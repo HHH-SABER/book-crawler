@@ -9,7 +9,7 @@
 | **第二台机器**（远端已有内容） | `--私有远端` 有值且 `git ls-remote` 非空 | **`git clone --bare` 拉到本地仓 + `checkout -f` 落地文件**（不新建、不推送）|
 | 已有私有仓 | 本地仓已存在 | 只提示，不重复初始化 |
 
-**原理**：私有仓用 `git --git-dir=<父目录>/小说爬虫-私有资产.git --work-tree=<项目根>`，
+**原理**：私有仓用 `git --git-dir=<父目录>/拾卷-私有资产.git --work-tree=<项目根>`，
 工作区直接指向项目根，只跟踪被公开仓忽略的那几个路径（详见 `_多机共用.py`）。
 文件位置不变 ⇒ 代码/打包脚本零改动，也不会有目录联接（junction）的兼容问题。
 
@@ -129,7 +129,7 @@ def 本机首次(url: str) -> int:
     if 文件数 == 0:
         print('  [警告] 没抓到任何文件 —— 检查路径与项目根')
         return 1
-    git('-c', 'user.name=小说爬虫', '-c', 'user.email=noreply@local',
+    git('-c', 'user.name=拾卷', '-c', 'user.email=noreply@local',
         'commit', '-m', 'chore(私有资产): 初始化多机同步仓', check=True)
     print(f'  [OK] 首次提交完成，纳入 {文件数} 个路径')
     统计(('站点适配_本地/', '测试样本_本地/', '测试_本地/', '数据/', '.runtime/'))

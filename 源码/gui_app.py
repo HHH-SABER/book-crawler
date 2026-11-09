@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""小说爬虫 GUI 主程序 (苹果风格界面)
+"""拾卷 GUI 主程序 (苹果风格界面)
 
 基于 Flet 框架。布局:
   === 设计稿目标 (界面设计预览/index.html, 2.5 界面重设计) ===
@@ -127,7 +127,7 @@ def _读显示版本() -> str:
 
 def _初始化窗口(page: ft.Page, 版本: str) -> None:
     """窗口标题/尺寸/DPI/居中/主题模式初始化 (main 直线段, P9 阶段5)。"""
-    _应用名 = f"小说爬虫 v{版本}" if 版本 else "小说爬虫"
+    _应用名 = f"拾卷 v{版本}" if 版本 else "拾卷"
     page.title = _应用名
     # 窗口尺寸按屏幕自适应 (修复: 写死 1280x800 在小屏/高DPI缩放下内容截断)
     try:
@@ -203,7 +203,7 @@ def _挂启动自检(page: ft.Page) -> None:
         if _pu.is_portable_mode():
             app_log.info("系统", "便携数据模式已启用 (EXE 旁 便携模式.flag): "
                           "数据/日志 将读写 EXE 旁目录; 默认根 "
-                          "%LOCALAPPDATA%\\小说爬虫 的历史数据不会自动迁移, "
+                          "%LOCALAPPDATA%\\拾卷 的历史数据不会自动迁移, "
                           "如需保留请手动复制其中的 数据/ 与 日志/ 两个目录")
     except Exception:
         pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
@@ -766,7 +766,7 @@ def main(page: ft.Page):
 
             dlg = ft.AlertDialog(
                 modal=True,
-                title=ft.Text("欢迎使用小说爬虫", color=ft.Colors.ON_SURFACE,
+                title=ft.Text("欢迎使用拾卷", color=ft.Colors.ON_SURFACE,
                               font_family=FONT_STACK),
                 content=ft.Text(
                     "是否在桌面创建一个快捷方式, 方便下次打开?\n"
@@ -888,7 +888,7 @@ def main(page: ft.Page):
 
     # 页内标题不带版本号 (设计稿 titlebar 只写应用名); 窗口标题仍用 _应用名
     # 带版本, 便于支持与排查 —— 原先两处都带版本, 视觉上重复。
-    top_bar = build_top_bar(page, "小说爬虫", _theme_toggle_btn[0],
+    top_bar = build_top_bar(page, "拾卷", _theme_toggle_btn[0],
                             extra_controls=[_插件按钮, _远控按钮])
 
     # ---- 整体布局 (三段式: 顶栏 + 侧边导航 + 主内容) ----
@@ -997,7 +997,7 @@ def 解析启动钩子(页集, 环境: dict) -> dict:
     return {'页': 目标页, '夜间': 夜间, '警告': 警告}
 
 
-# ---- 协议唤起 (2026-10-23): 插件点「开始抓取」经 novelcrawler:// 拉起本程序 ----
+# ---- 协议唤起 (2026-10-23): 插件点「开始抓取」经 shijuan:// 拉起本程序 ----
 # 路径 A: 已有实例在跑 → 把任务转发过去, 本进程直接退出 (不弹第二个窗口);
 # 路径 B: 没在跑 → 记成待建任务, 界面挂载后自动建任务 (见 main 内 _待建任务 段)。
 _待建任务 = {}

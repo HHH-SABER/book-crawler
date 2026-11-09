@@ -19,13 +19,13 @@ MIRRORS = [
     ORIG_URL,
 ]
 
-# 缓存位置: 优先 FLET_CACHE_DIR; 默认 %LOCALAPPDATA%\小说爬虫\构建缓存\flet_client
+# 缓存位置: 优先 FLET_CACHE_DIR; 默认 %LOCALAPPDATA%\拾卷\构建缓存\flet_client
 # (2026-09-27 移出项目树: 缓存内含 Flet 客户端第三方资源, 放项目内会被安全门禁
 #  连带扫描造成误报拦截; 且工具链缓存本不入库)。无 LOCALAPPDATA 环境时回退项目根
 _cache_env = os.environ.get("FLET_CACHE_DIR")
 if not _cache_env:
     _la = os.environ.get("LOCALAPPDATA")
-    _cache_env = (os.path.join(_la, "小说爬虫", "构建缓存", "flet_client") if _la
+    _cache_env = (os.path.join(_la, "拾卷", "构建缓存", "flet_client") if _la
                   else str(Path(__file__).parent.parent / "_flet_client"))
 CACHE_DIR = Path(_cache_env).resolve()
 
@@ -170,7 +170,7 @@ def extract(archive_path: str, target: Path):
 
 def main():
     log("=" * 56)
-    log("Novel Crawler - Flet Client Pre-Download & Cache")
+    log("Shijuan - Flet Client Pre-Download & Cache")
     log("=" * 56)
 
     if CACHE_DIR.exists():
@@ -204,7 +204,7 @@ def main():
 
     log("")
     log("[2/3] Full download (~38MB)...")
-    tmp_dir = Path(tempfile.gettempdir()) / f"novelcrawler_flet_{os.getpid()}"
+    tmp_dir = Path(tempfile.gettempdir()) / f"shijuan_flet_{os.getpid()}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     archive = tmp_dir / ARTIFACT
 

@@ -141,7 +141,7 @@ if (模式框) {
     lastMode: 模式, lastStart: 起 || '', lastEnd: 止 || '',
   });
 
-  设状态('正在交给小说爬虫…');
+  设状态('正在交给拾卷…');
   const r = await 发消息({ type: 'crawl', url: 当前网址, mode: 模式, start: 起, end: 止 });
   if (r && r.ok) {
     设状态((r.data && r.data.唤起)
@@ -180,7 +180,7 @@ if (模式框) {
   }
   设状态('测试连通…');
   const r = await 发消息({ type: 'ping' });
-  if (r && r.ok) 设状态('✅ 已连接小说爬虫，白名单 ' + (r.data.whitelist || []).length + ' 个域');
+  if (r && r.ok) 设状态('✅ 已连接拾卷，白名单 ' + (r.data.whitelist || []).length + ' 个域');
   else 设状态('❌ 连不上：' + ((r && r.error) || '未知错误') + '（程序开着吗？token 对吗？）', true);
 });
 

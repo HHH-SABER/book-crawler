@@ -71,7 +71,7 @@ class Test任务历史持久化(unittest.TestCase):
 
     def setUp(self):
         self.tmp = _隔离状态根(self)
-        self.历史路径 = os.path.join(self.tmp, '小说爬虫', '数据',
+        self.历史路径 = os.path.join(self.tmp, '拾卷', '数据',
                                      '任务历史.json')
 
     def test_保存与恢复往返(self):

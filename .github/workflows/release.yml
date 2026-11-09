@@ -114,7 +114,7 @@ jobs:
           $exe = "dist\novel-crawler-v$ver.exe"
           $shaFile = "dist\novel-crawler-v$ver.exe.sha256"
           $adp = "dist\site-adapters-v$ver.zip"
-          Move-Item -Path 'dist\小说爬虫.exe' -Destination $exe -Force
+          Move-Item -Path 'dist\拾卷.exe' -Destination $exe -Force
           $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           "$sha  $exe" | Set-Content -Path $shaFile -Encoding ascii
           # 站点适配/ 存在时才打包 (仓库未收录时跳过, 不影响 EXE 主产物)
@@ -132,9 +132,9 @@ jobs:
             dist/novel-crawler-v${{ steps.ver.outputs.VER }}.exe
             dist/novel-crawler-v${{ steps.ver.outputs.VER }}.exe.sha256
             dist/site-adapters-v${{ steps.ver.outputs.VER }}.zip
-          name: 小说爬虫 v${{ steps.ver.outputs.VER }}
+          name: 拾卷 v${{ steps.ver.outputs.VER }}
           body: |
-            ## 小说爬虫 v${{ steps.ver.outputs.VER }}
+            ## 拾卷 v${{ steps.ver.outputs.VER }}
 
             - **EXE** (onefile 单文件便携版): `novel-crawler-v${{ steps.ver.outputs.VER }}.exe`
             - **SHA256**: `novel-crawler-v${{ steps.ver.outputs.VER }}.exe.sha256` (用于校验下载完整性)

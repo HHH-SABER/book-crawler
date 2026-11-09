@@ -1,6 +1,6 @@
-# 项目指令 — 小说爬虫 (Book Crawler)
+# 项目指令 — 拾卷 (Shijuan)
 
-多站点小说爬虫,Python 3.10+ / Flet 0.86 GUI / PyInstaller 打包。源码/ 50 个 .py, 约 2.6 万行 (25,931 行, 2026-10-03 实测; 其中 爬虫.py 单文件 7,630 行)。
+多站点拾卷,Python 3.10+ / Flet 0.86 GUI / PyInstaller 打包。源码/ 50 个 .py, 约 2.6 万行 (25,931 行, 2026-10-03 实测; 其中 爬虫.py 单文件 7,630 行)。
 所有工作遵循项目合规边界:仅供学习研究,验证码自动识别**默认必须关闭**。
 
 ## 常用命令
@@ -94,7 +94,7 @@
 **禁止入库** (即使 `git status` 显示 untracked 也不得 add;已在 .gitignore 则勿改):
 1. **运行时用户数据**: `数据/*`(仅 .gitkeep 入库)、`抓取结果*`、根级 `站点配置.json`/`captcha_config.json`(用户本机配置)、`日志/`、`HANDOFF.md`、`/提示词.txt`
 2. **会话私有目录**: `.workbuddy/`、`.zcode/`、`.idea/`、`.mimosa/`、`.trae/`、`.vscode/` —— AI 会话的记忆/审查缓存/IDE 配置,一律不入库;**会话结束前应清理自己产生的此类临时文件**
-3. **编译/打包产物**: `dist/`、`build/`、`rust_core_poc/**/target/`、`*.spec`、`build_log.txt`、根级 `*.zip`、`小说爬虫.exe`
+3. **编译/打包产物**: `dist/`、`build/`、`rust_core_poc/**/target/`、`*.spec`、`build_log.txt`、根级 `*.zip`、`拾卷.exe`
 4. **大体积工具链**: 任何 toolchain/SDK 缓存不得入库或提交 (`rust_core_poc/.toolchain/` 经用户裁决本地保留)
 
 **提交纪律**:

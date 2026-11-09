@@ -8,8 +8,8 @@
 产物:
   插件/dist/chrome/    (可"加载已解压"的目录)
   插件/dist/edge/
-  插件/dist/小说爬虫插件_chrome_v1.0.0.zip
-  插件/dist/小说爬虫插件_edge_v1.0.0.zip
+  插件/dist/拾卷插件_chrome_v1.0.0.zip
+  插件/dist/拾卷插件_edge_v1.0.0.zip
 
 用法: python 插件/构建两版.py
 """
@@ -28,18 +28,18 @@ _manifest模板 = {
     'permissions': ['cookies', 'storage', 'tabs', 'alarms'],
     'host_permissions': ['http://127.0.0.1/*', 'http://localhost/*', '<all_urls>'],
     'background': {'service_worker': 'background.js'},
-    'action': {'default_popup': 'popup.html', 'default_title': '小说爬虫 · 凭据中继'},
+    'action': {'default_popup': 'popup.html', 'default_title': '拾卷 · 凭据中继'},
 }
 
-_说明模板 = """# 小说爬虫 · 凭据中继（{浏览器} {版本} 版）
+_说明模板 = """# 拾卷 · 凭据中继（{浏览器} {版本} 版）
 
 把浏览器里的**真实登录 Cookie**（含 JS 算出/HttpOnly 的反爬 Cookie）推给本机
-小说爬虫。只对你**明确加入白名单**的站点生效；爬虫须在本机运行。
+拾卷。只对你**明确加入白名单**的站点生效；爬虫须在本机运行。
 
 ## 安装（二选一）
 
 **方式 A（推荐）：从软件内安装**
-1. 打开小说爬虫 → 左侧「远控」页 → 点「浏览器插件」→ 选「安装{浏览器}版」
+1. 打开拾卷 → 左侧「远控」页 → 点「浏览器插件」→ 选「安装{浏览器}版」
 2. 程序会自动把插件复制到本地并打开扩展管理页
 3. 在扩展管理页打开右上角「开发者模式」→ 点「加载已解压的扩展程序」→
    选择程序显示的目录（已自动复制好）
@@ -77,8 +77,8 @@ def 构建(浏览器: str, 扩展页: str) -> Path:
     目标.mkdir(parents=True)
 
     manifest = dict(_manifest模板)
-    manifest['name'] = f'小说爬虫 · 凭据中继（{浏览器.capitalize()} 版）'
-    manifest['description'] = f'把当前网站的登录 Cookie 推送给本机小说爬虫（{浏览器.capitalize()} 版，仅限白名单站点）'
+    manifest['name'] = f'拾卷 · 凭据中继（{浏览器.capitalize()} 版）'
+    manifest['description'] = f'把当前网站的登录 Cookie 推送给本机拾卷（{浏览器.capitalize()} 版，仅限白名单站点）'
     (目标 / 'manifest.json').write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
@@ -92,7 +92,7 @@ def 构建(浏览器: str, 扩展页: str) -> Path:
 
 
 def 打包(目录: Path, 浏览器: str) -> Path:
-    zip路径 = 本目录 / 'dist' / f'小说爬虫插件_{浏览器}_v{版本}.zip'
+    zip路径 = 本目录 / 'dist' / f'拾卷插件_{浏览器}_v{版本}.zip'
     with zipfile.ZipFile(zip路径, 'w', zipfile.ZIP_DEFLATED) as z:
         for p in sorted(目录.rglob('*')):
             if p.is_file():

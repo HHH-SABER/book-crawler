@@ -40,9 +40,9 @@ except Exception:
         return os.path.normpath(os.path.join(_HERE, '..'))
 
     def get_state_root():
-        """回退实现: 状态数据根 (%LOCALAPPDATA%/小说爬虫)"""
+        """回退实现: 状态数据根 (%LOCALAPPDATA%/拾卷)"""
         return os.path.join(os.path.expanduser("~"), "AppData",
-                            "Local", "小说爬虫")
+                            "Local", "拾卷")
 
 try:
     import 日志 as _app_log

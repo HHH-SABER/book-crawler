@@ -11,7 +11,7 @@
 
 开发模式（python 源码/*.py）：
   - RESOURCE_DIR = 源码/ 目录
-  - BASE_DIR     = 项目根（源码/ 的上级，即 k:\程序文件\小说爬虫）
+  - BASE_DIR     = 项目根（源码/ 的上级，即 k:\程序文件\拾卷）
 """
 import os
 import sys
@@ -102,7 +102,7 @@ def get_state_root() -> str:
       1. 便携数据开关 (仅打包模式): EXE 旁存在 便携模式.flag → root = EXE 旁
          (BASE_DIR), 数据/日志 随程序走; **不做自动迁移**, 旧数据留在默认根
          (启动日志经 is_portable_mode() 提示手动迁移路径)。
-      2. 默认 %LOCALAPPDATA%/小说爬虫 (无该变量时回退 BASE_DIR)。
+      2. 默认 %LOCALAPPDATA%/拾卷 (无该变量时回退 BASE_DIR)。
 
     首次调用执行一次性迁移: 旧位置 BASE_DIR/数据、BASE_DIR/日志 → 新根
     (复制而非移动, 迁移失败也不影响旧数据继续可用)。幂等、线程安全。
@@ -120,7 +120,17 @@ def get_state_root() -> str:
             root = base
         else:
             local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
-            root = os.path.join(local, "小说爬虫") if local else base
+            root = os.path.join(local, "拾卷") if local else base
+            # 更名迁移 (2026-11-09): 更名前的状态根是 %LOCALAPPDATA%\小说爬虫。
+            # 新根不存在而旧根存在时整体**复制**（不移动、旧目录保留），
+            # 让 Cookie/任务/配置/历史一次带走；失败则用空的新根，旧数据不丢。
+            if local:
+                旧根 = os.path.join(local, "小说爬虫")
+                if root != 旧根 and not os.path.exists(root) and os.path.isdir(旧根):
+                    try:
+                        shutil.copytree(旧根, root)
+                    except OSError:
+                        pass  # 刻意静默: 迁移失败不影响新根可用 (旧数据仍在旧目录)
         try:
             os.makedirs(root, exist_ok=True)
         except OSError:

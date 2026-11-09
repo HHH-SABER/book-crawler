@@ -43,7 +43,7 @@ except Exception:
 
 
 from _调试 import _dbg  # noqa: E402  统一实现 (G1)
-app = FastAPI(title="小说爬虫远控", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="拾卷远控", docs_url=None, redoc_url=None, openapi_url=None)
 
 # 安全中间件 (2026-11-09, 落地 10-26 体检 R-M01/R-M02/R-M03):
 # 安全响应头 + Host 校验(挡 DNS rebinding) + 认证失败限流(挡 token 爆破)。

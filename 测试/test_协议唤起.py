@@ -2,7 +2,7 @@
 """协议唤起回归 (2026-10-23: 插件"开始抓取"→ 自动唤起程序)。
 
 覆盖:
-  ① URL 解析: novelcrawler://crawl?url=...&mode=...&start=&end= (含异常输入);
+  ① URL 解析: shijuan://crawl?url=...&mode=...&start=&end= (含异常输入);
   ② 注册命令形态: frozen=EXE 自身 / 源码=python+启动器, 都带 "%1";
   ③ 转发: 鉴权头与 body 正确, 失败不抛 (mock urlopen);
   ④ 探活: healthz 200/异常 两种结果。
@@ -22,7 +22,7 @@ import 协议唤起 as P   # noqa: E402
 class Test解析(unittest.TestCase):
 
     def test_完整参数(self):
-        argv = ['app.exe', 'novelcrawler://crawl?url=https%3A%2F%2Fa.com%2Fb%2F'
+        argv = ['app.exe', 'shijuan://crawl?url=https%3A%2F%2Fa.com%2Fb%2F'
                             '&mode=range&start=5&end=20']
         r = P.取唤起参数(argv)
         self.assertEqual(r['url'], 'https://a.com/b/')
@@ -30,7 +30,7 @@ class Test解析(unittest.TestCase):
         self.assertEqual((r['start'], r['end']), (5, 20))
 
     def test_缺省为完整抓取(self):
-        r = P.取唤起参数(['x', 'novelcrawler://crawl?url=https%3A%2F%2Fa.com'])
+        r = P.取唤起参数(['x', 'shijuan://crawl?url=https%3A%2F%2Fa.com'])
         self.assertEqual(r['mode'], 'full')
         self.assertEqual(r['start'], 0)
 
@@ -39,12 +39,12 @@ class Test解析(unittest.TestCase):
         self.assertEqual(P.取唤起参数(['x']), {})
 
     def test_缺url或非法mode(self):
-        self.assertEqual(P.取唤起参数(['x', 'novelcrawler://crawl?mode=full']), {})
-        r = P.取唤起参数(['x', 'novelcrawler://crawl?url=https%3A%2F%2Fa.com&mode=weird'])
+        self.assertEqual(P.取唤起参数(['x', 'shijuan://crawl?mode=full']), {})
+        r = P.取唤起参数(['x', 'shijuan://crawl?url=https%3A%2F%2Fa.com&mode=weird'])
         self.assertEqual(r['mode'], 'full', '非法模式回落完整抓取')
 
     def test_区间非法数值不崩(self):
-        r = P.取唤起参数(['x', 'novelcrawler://crawl?url=https%3A%2F%2Fa.com'
+        r = P.取唤起参数(['x', 'shijuan://crawl?url=https%3A%2F%2Fa.com'
                             '&mode=range&start=abc&end=-3'])
         self.assertEqual(r['start'], 0)
         self.assertEqual(r['end'], 1, '负数夹到 1')
@@ -56,13 +56,13 @@ class Test注册命令(unittest.TestCase):
         info = P.注册命令()
         self.assertIn('"%1"', info['命令'])
         self.assertIn('启动器.py', info['命令'])
-        self.assertEqual(info['键'], r'Software\Classes\novelcrawler')
+        self.assertEqual(info['键'], r'Software\Classes\shijuan')
 
     def test_frozen形态用自身exe(self):
         with mock.patch.object(P.sys, 'frozen', True, create=True), \
-                mock.patch.object(P.sys, 'executable', r'D:\app\小说爬虫.exe'):
+                mock.patch.object(P.sys, 'executable', r'D:\app\拾卷.exe'):
             info = P.注册命令()
-        self.assertIn(r'D:\app\小说爬虫.exe', info['命令'])
+        self.assertIn(r'D:\app\拾卷.exe', info['命令'])
         self.assertNotIn('启动器.py', info['命令'])
 
 
@@ -143,7 +143,7 @@ class Test插件产物(unittest.TestCase):
             js = (self.dist / 版 / 'background.js').read_text(encoding='utf-8')
             self.assertIn('开始抓取', html)
             self.assertIn('章节区间', html)
-            self.assertIn('novelcrawler://', js)
+            self.assertIn('shijuan://', js)
             self.assertIn('/api/v1/tasks', js)
 
 

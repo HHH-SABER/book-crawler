@@ -138,7 +138,7 @@ def 打开插件安装弹窗(page) -> ft.AlertDialog:
         确认.title = ft.Text(f'在 {名} 中安装插件？', color=_文字色,
                           font_family=FONT_STACK)
         确认.content = ft.Text(
-            '将安装「小说爬虫 · 凭据中继」—— 把浏览器里的真实登录 Cookie 提供给本机爬虫。\n\n'
+            '将安装「拾卷 · 凭据中继」—— 把浏览器里的真实登录 Cookie 提供给本机爬虫。\n\n'
             '点击「是」后会：复制插件文件到本机 → 唤起浏览器 → 把扩展页地址放进剪贴板。',
             size=SIZE_SMALL, font_family=FONT_STACK, color=_文字色)
 

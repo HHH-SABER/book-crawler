@@ -1,4 +1,4 @@
-// 小说爬虫 · 凭据中继 — MV3 service worker (P1, 2026-10-20)
+// 拾卷 · 凭据中继 — MV3 service worker (P1, 2026-10-20)
 //
 // 职责 (与爬虫的分工纪律见 文档/浏览器插件可行性方案.md):
 //   ① 从真实浏览器读目标域 Cookie (含 HttpOnly / JS 算出的 —— 这是爬虫拿不到的)
@@ -65,7 +65,7 @@ async function 调任务接口(body) {
   return resp.json();
 }
 
-// 程序没开时: 用自定义协议唤起 (gui_app 启动时注册了 novelcrawler://)
+// 程序没开时: 用自定义协议唤起 (gui_app 启动时注册了 shijuan://)
 async function 唤起程序(参数) {
   const q = new URLSearchParams({
     url: 参数.url,
@@ -73,7 +73,7 @@ async function 唤起程序(参数) {
     start: String(参数.start || ''),
     end: String(参数.end || ''),
   });
-  const 协议地址 = `novelcrawler://crawl?${q.toString()}`;
+  const 协议地址 = `shijuan://crawl?${q.toString()}`;
   // 夸克等浏览器对自定义协议的 tabs.create 支持不一 (会抛/无响应) —— 兜住
   const 建标签 = () => new Promise((resolve, reject) => {
     try {
@@ -91,7 +91,7 @@ async function 唤起程序(参数) {
     return 协议地址;
   } catch (e) {
     throw new Error('此浏览器不支持自动唤起（' + String(e.message || e) +
-      '），请先手动打开小说爬虫再点一次「开始抓取」');
+      '），请先手动打开拾卷再点一次「开始抓取」');
   }
 }
 

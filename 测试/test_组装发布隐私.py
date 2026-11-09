@@ -41,7 +41,7 @@ class Test组装发布隐私(unittest.TestCase):
         (dist / '站点适配_本地').mkdir(parents=True)
         (dist / '站点适配_本地' / '某站.py').write_text('# 真实适配器', encoding='utf-8')
         (dist / '站点适配_本地' / '域名映射.json').write_text('{"a":"b"}', encoding='utf-8')
-        (dist / '小说爬虫.exe').write_bytes(b'MZ' + b'\0' * 1024)
+        (dist / '拾卷.exe').write_bytes(b'MZ' + b'\0' * 1024)
         (dist / '站点配置.json').write_text('{"本机":"配置"}', encoding='utf-8')
         (dist / 'captcha_config.json').write_text('{}', encoding='utf-8')
         (dist / '抓取结果').mkdir()
@@ -66,8 +66,8 @@ class Test组装发布隐私(unittest.TestCase):
     def test_默认产出公开包_不含私有适配与用户数据(self):
         code, out = self._跑('--版本=9.9.9')
         self.assertEqual(code, 0, out)
-        pkg = self.tmp / '发布' / '小说爬虫_v9.9.9'
-        self.assertTrue((pkg / '小说爬虫.exe').is_file())
+        pkg = self.tmp / '发布' / '拾卷_v9.9.9'
+        self.assertTrue((pkg / '拾卷.exe').is_file())
         self.assertTrue((pkg / '站点适配' / '_模板.py').is_file(), '公开适配目录应保留')
         self.assertFalse((pkg / '站点适配_本地').exists(), '公开包不得含私有适配目录')
         for 禁 in ('站点配置.json', 'captcha_config.json', '抓取结果'):
@@ -78,10 +78,10 @@ class Test组装发布隐私(unittest.TestCase):
     def test_含本地开关才产本机包且目录名带本机(self):
         code, out = self._跑('--版本=9.9.9', '--含本地适配器')
         self.assertEqual(code, 0, out)
-        pkg = self.tmp / '发布' / '小说爬虫_v9.9.9_本机'
+        pkg = self.tmp / '发布' / '拾卷_v9.9.9_本机'
         self.assertTrue(pkg.is_dir(), '本机包目录名应带 _本机 以便一眼识别')
         self.assertTrue((pkg / '站点适配_本地' / '域名映射.json').is_file())
-        self.assertFalse((self.tmp / '发布' / '小说爬虫_v9.9.9').exists(),
+        self.assertFalse((self.tmp / '发布' / '拾卷_v9.9.9').exists(),
                          '两种形态不应混在同一目录')
 
     def test_本机包打zip需二次确认(self):
@@ -97,7 +97,7 @@ class Test组装发布隐私(unittest.TestCase):
         self.assertIn('隐私自检未通过', out)
 
     def test_重建保护_目录非本脚本生成时中止(self):
-        pkg = self.tmp / '发布' / '小说爬虫_v9.9.9'
+        pkg = self.tmp / '发布' / '拾卷_v9.9.9'
         pkg.mkdir(parents=True)
         (pkg / '用户自己的文件.txt').write_text('x', encoding='utf-8')
         code, out = self._跑('--版本=9.9.9')

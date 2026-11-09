@@ -2,7 +2,7 @@
   "version": "2.4.34",
   "original_archive_sha256": "A4651DDA662A8BDA9838F0EE19550E905D404070A310287B70C12F1ABF26333A",
   "exe_sha256": "ec1bdf1a9a646be3ecf7aec794144a23375280a484a1c1656c087bc092fcad50",
-  "exe_archive_path": "小说爬虫/dist/小说爬虫.exe",
+  "exe_archive_path": "拾卷/dist/拾卷.exe",
   "preserved": [
     "项目源码与历史 .git",
     "文档与测试样本",

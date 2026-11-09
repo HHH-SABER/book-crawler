@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 根 = pathlib.Path(__file__).resolve().parent.parent
-私有仓 = 根.parent / '小说爬虫-私有资产.git'
+私有仓 = 根.parent / '拾卷-私有资产.git'
 
 依赖 = ['flet', 'bs4', 'requests', 'lxml', 'cloudscraper', 'PIL', 'yaml']
 私有资产 = ['站点适配_本地', '测试样本_本地', '测试_本地', '数据']

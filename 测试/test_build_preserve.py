@@ -38,7 +38,7 @@ class Test保护与恢复dist用户数据(unittest.TestCase):
         Path(self.dist, 'captcha_config.json').write_text(
             '{"strategies": {"ddddocr": {"enabled": true}}}', encoding='utf-8')
         # 非保护条目 (构建产物): 不应被 stash
-        Path(self.dist, '小说爬虫.exe').write_bytes(b'MZ')
+        Path(self.dist, '拾卷.exe').write_bytes(b'MZ')
 
     def test_保护暂存并移出dist(self):
         stash = build_exe.保护dist用户数据(self.dist)
@@ -48,7 +48,7 @@ class Test保护与恢复dist用户数据(unittest.TestCase):
         self.assertFalse(os.path.exists(Path(self.dist, '站点配置.json')))
         self.assertFalse(os.path.exists(Path(self.dist, 'captcha_config.json')))
         # 构建产物不在保护范围
-        self.assertTrue(os.path.isfile(Path(self.dist, '小说爬虫.exe')))
+        self.assertTrue(os.path.isfile(Path(self.dist, '拾卷.exe')))
         # stash 内数据完整
         self.assertEqual(
             Path(stash, '抓取结果', '某书.txt').read_text(encoding='utf-8'),
@@ -68,7 +68,7 @@ class Test保护与恢复dist用户数据(unittest.TestCase):
         import shutil as _sh
         _sh.rmtree(self.dist)
         os.makedirs(self.dist, exist_ok=True)
-        Path(self.dist, '小说爬虫.exe').write_bytes(b'MZ-new')
+        Path(self.dist, '拾卷.exe').write_bytes(b'MZ-new')
         build_exe.恢复dist用户数据(self.dist, stash)
         self.assertEqual(
             Path(self.dist, '抓取结果', '某书.txt').read_text(encoding='utf-8'),
@@ -85,7 +85,7 @@ class Test保护与恢复dist用户数据(unittest.TestCase):
         self.assertTrue(
             Path(self.dist, 'captcha_config.json').read_text(
                 encoding='utf-8').count('ddddocr'), 'ddddocr 配置应保留')
-        self.assertTrue(os.path.isfile(Path(self.dist, '小说爬虫.exe')),
+        self.assertTrue(os.path.isfile(Path(self.dist, '拾卷.exe')),
                         '构建产物不应被恢复动作影响')
         self.assertFalse(os.path.isdir(stash), 'stash 应被清理')
 

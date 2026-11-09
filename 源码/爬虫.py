@@ -15,7 +15,7 @@ _log = _app_log.get('爬虫')
 import 任务事件 as _任务事件
 
 """
-小说爬虫主程序
+拾卷主程序
 ==============
 
 功能概览：
@@ -602,7 +602,7 @@ def _确保驱动就绪():
 
 class NovelSpider:
     """
-    通用小说爬虫主类。
+    通用拾卷主类。
 
     主要职责：
         * 管理 requests Session（请求头、Cookie、User-Agent、重试策略）
@@ -5520,7 +5520,7 @@ def interactive_menu():
     mode: 'list' 只看章节列表 / 'full' 完整抓取 / 'test' 快速测试(提取第1章前2页) / 'range' 自定义区间
     chapter_range: (start, end) 1-based 章节索引区间，或 None 表示不限制
     threads: 并发线程数 / delay: 章节间间隔秒数 / export_epub: 是否同时导出 EPUB"""
-    _log.info("=== 小说爬虫 ===")
+    _log.info("=== 拾卷 ===")
     _log.info("请输入小说网站的目录页面URL:")
     _log.info("例如: https://www.siteV/book/391625/")
     _log.info("     https://www.siteX/books/301597.html")
@@ -5612,7 +5612,7 @@ def interactive_menu():
 
 # 计算默认输出目录:
 # - 开发模式 (python 爬虫.py)                     : 项目根/抓取结果/
-# - PyInstaller onefile (小说爬虫.exe)           : EXE 所在目录/抓取结果/
+# - PyInstaller onefile (拾卷.exe)           : EXE 所在目录/抓取结果/
 # 无论从哪个工作目录启动, 都会落到同一个可写输出目录, 避免生成多套重复结果
 from _path_utils import (  # noqa: E402
     get_default_output_dir as _get_default_output_dir,

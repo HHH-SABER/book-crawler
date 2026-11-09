@@ -36,7 +36,7 @@ _LOCK = os.path.join(_ROOT, 'requirements-lock.txt')
 _REQ = os.path.join(_ROOT, 'requirements.txt')
 
 _HEADER = '''# ============================================================
-# 小说爬虫 — 依赖精确锁定 (pip constraints)
+# 拾卷 — 依赖精确锁定 (pip constraints)
 # ============================================================
 # 平台: Windows + Python 3.14 (与 CI windows-latest / 3.14 一致)
 # 生成: {date}, 由 `脚本/gen_lock.py` 从当前 .venv 的 pip freeze 导出

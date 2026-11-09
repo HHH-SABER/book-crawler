@@ -43,7 +43,7 @@ def 启动托盘(图标路径: str, 显示, 退出):
         pystray.MenuItem("显示主窗口", lambda *_: 显示(), default=True),
         pystray.MenuItem("退出", lambda *_: 退出()),
     )
-    icon = pystray.Icon("小说爬虫", img, "小说爬虫 (远控常驻中)", menu)
+    icon = pystray.Icon("拾卷", img, "拾卷 (远控常驻中)", menu)
     threading.Thread(target=icon.run, name="托盘", daemon=True).start()
     return icon
 
@@ -130,7 +130,7 @@ def 发终态气泡(icon, items: list) -> bool:
     if not 文本:
         return False
     try:
-        icon.notify(文本, "小说爬虫")
+        icon.notify(文本, "拾卷")
         return True
     except Exception as _e:
         _dbg("托盘", f"终态气泡发送失败: {type(_e).__name__}: {_e}")

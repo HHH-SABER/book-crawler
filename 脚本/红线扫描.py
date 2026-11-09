@@ -33,7 +33,7 @@ APP 下载路径里的站点标识、meta 里的书名)。**手工检查必有�
 .runtime\\python314\\python.exe 脚本\\红线扫描.py --全量
 
 # 扫指定路径
-.runtime\\python314\\python.exe 脚本\\红线扫描.py 发布/小说爬虫_v2.5.20.zip
+.runtime\\python314\\python.exe 脚本\\红线扫描.py 发布/拾卷_v2.5.20.zip
 
 # CI 模式 (无本地词库, 只跑入库的通用规则)
 .runtime\\python314\\python.exe 脚本\\红线扫描.py --ci

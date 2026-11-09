@@ -76,7 +76,7 @@ class Test顶栏不重复版本(unittest.TestCase):
 
     def test_页内标题不带版本号(self):
         文本 = _GUI.read_text(encoding='utf-8')
-        self.assertIn('build_top_bar(page, "小说爬虫"', 文本,
+        self.assertIn('build_top_bar(page, "拾卷"', 文本,
                       '页内标题应只写应用名（设计稿 titlebar）；带 _应用名 会与窗口标题重复')
         self.assertIn('page.title = _应用名', 文本,
                       '窗口标题仍应带版本号（便于支持与排查）')

@@ -244,7 +244,7 @@ class Test托盘终态气泡(unittest.TestCase):
         icon = 假托盘()
         self.assertTrue(发终态气泡(icon, [{'书名': '甲', '状态': 'success', '原因': ''}]))
         self.assertEqual(len(icon.calls), 1)
-        self.assertEqual(icon.calls[0][1], '小说爬虫', '气泡须带应用标题')
+        self.assertEqual(icon.calls[0][1], '拾卷', '气泡须带应用标题')
 
     def test_无托盘返回假不抛(self):
         from gui_components.tray import 发终态气泡

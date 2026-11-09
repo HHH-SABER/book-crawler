@@ -71,7 +71,7 @@ def _状态根() -> Path:
         from _path_utils import get_state_root
         return Path(get_state_root())
     except Exception:
-        return Path(os.environ.get('LOCALAPPDATA', '.')) / '小说爬虫'
+        return Path(os.environ.get('LOCALAPPDATA', '.')) / '拾卷'
 
 
 def 安装源(浏览器: str) -> Optional[Path]:
@@ -180,8 +180,8 @@ def 安装(浏览器: str) -> dict:
             m = _json.loads(清单.read_text(encoding='utf-8'))
             名 = _浏览器名.get(浏览器, 浏览器)
             if 浏览器 != 'chrome':
-                m['name'] = f'小说爬虫 · 凭据中继（{名} 版）'
-                m['description'] = (f'把当前网站的登录 Cookie 推送给本机小说爬虫'
+                m['name'] = f'拾卷 · 凭据中继（{名} 版）'
+                m['description'] = (f'把当前网站的登录 Cookie 推送给本机拾卷'
                                     f'（{名} 版，仅限白名单站点）')
                 清单.write_text(_json.dumps(m, ensure_ascii=False, indent=2) + '\n',
                               encoding='utf-8')

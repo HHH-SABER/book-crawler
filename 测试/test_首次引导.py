@@ -57,10 +57,10 @@ class TestFlag读写(unittest.TestCase):
 class TestPowerShell命令(unittest.TestCase):
 
     def test_含关键要素(self):
-        ps = F.构建PowerShell命令(r'C:\app\小说爬虫.exe', r'C:\app')
+        ps = F.构建PowerShell命令(r'C:\app\拾卷.exe', r'C:\app')
         self.assertIn("GetFolderPath('Desktop')", ps,
                       '桌面路径必须在 PS 侧取 (OneDrive 重定向)')
-        self.assertIn('小说爬虫.lnk', ps)
+        self.assertIn('拾卷.lnk', ps)
         self.assertIn('WScript.Shell', ps)
         self.assertIn('TargetPath', ps)
 
@@ -82,7 +82,7 @@ class TestPowerShell命令(unittest.TestCase):
 
     def test_编码参数可解回(self):
         """命令经 UTF-16LE Base64 传入 (中文不走代码页) —— 验证可逆"""
-        ps = F.构建PowerShell命令(r'C:\app\小说爬虫.exe', r'C:\app')
+        ps = F.构建PowerShell命令(r'C:\app\拾卷.exe', r'C:\app')
         enc = base64.b64encode(ps.encode('utf-16-le')).decode('ascii')
         self.assertEqual(base64.b64decode(enc).decode('utf-16-le'), ps)
 

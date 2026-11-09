@@ -40,7 +40,7 @@ try:
     from _path_utils import get_state_root
 except Exception:
     def get_state_root() -> str:
-        return os.path.join(os.path.expanduser('~'), '.novelcrawler')
+        return os.path.join(os.path.expanduser('~'), '.shijuan')
 
 _日志 = None
 

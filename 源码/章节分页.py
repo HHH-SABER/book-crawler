@@ -14,7 +14,7 @@
 """
 import logging
 
-_log = logging.getLogger('小说爬虫')
+_log = logging.getLogger('拾卷')
 
 
 def 分页上限(site_pattern, chapter_url, 适配器策略=None, max_pages=None) -> int:

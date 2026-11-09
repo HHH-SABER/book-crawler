@@ -14,7 +14,7 @@ v2.4.19 教训: 弹窗文字不可见 / 托盘最小化不隐藏 / 退出孤儿�
 
 用法 (手写 __main__ 脚本, 不进 unittest discover):
     python 测试\\冒烟_关闭关键路径.py                     # 源码模式 (默认)
-    python 测试\\冒烟_关闭关键路径.py --exe dist\\小说爬虫.exe   # 打包模式
+    python 测试\\冒烟_关闭关键路径.py --exe dist\\拾卷.exe   # 打包模式
 
 原理:
   · LOCALAPPDATA 重定向到临时状态根 —— 被测实例与真实数据完全隔离;
@@ -62,8 +62,8 @@ def _枚举窗口():
     return 结果
 
 
-def 找主窗(flet_pids, 标题前缀="小说爬虫"):
-    """在 flet 客户端进程的窗口里找可见的主窗口 (标题 = "小说爬虫 vX.Y.Z")。"""
+def 找主窗(flet_pids, 标题前缀="拾卷"):
+    """在 flet 客户端进程的窗口里找可见的主窗口 (标题 = "拾卷 vX.Y.Z")。"""
     for hwnd, pid, 标题 in _枚举窗口():
         if str(pid) in flet_pids and 标题.startswith(标题前缀):
             if ctypes.windll.user32.IsWindowVisible(hwnd):
@@ -104,7 +104,7 @@ class 临时状态根:
 
     def __init__(self):
         self.父目录 = tempfile.mkdtemp(prefix="novel_smoke_")
-        self.根 = os.path.join(self.父目录, "小说爬虫")
+        self.根 = os.path.join(self.父目录, "拾卷")
         os.makedirs(os.path.join(self.根, "数据"), exist_ok=True)
         os.makedirs(os.path.join(self.根, "日志"), exist_ok=True)
 
@@ -160,7 +160,7 @@ class 被测实例:
 
         tl0 = _tasklist()
         self.基线flet = _取pid集(tl0, "flet.exe")
-        基线exe = _取pid集(tl0, "小说爬虫.exe")
+        基线exe = _取pid集(tl0, "拾卷.exe")
         self.基线 = self.基线flet | 基线exe
 
         if exe路径:
@@ -190,7 +190,7 @@ class 被测实例:
                 self.watch_pids |= self.flet_pids
                 if self.被测exe:
                     # EXE 是 onefile 引导 + 子进程两段, 把新增的本体 PID 一并盯住
-                    self.watch_pids |= (_取pid集(tl, "小说爬虫.exe")
+                    self.watch_pids |= (_取pid集(tl, "拾卷.exe")
                                         - self.基线)
                 self.hwnd = 找主窗(self.flet_pids)
                 if self.hwnd:

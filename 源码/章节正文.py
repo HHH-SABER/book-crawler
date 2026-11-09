@@ -15,7 +15,7 @@ import logging
 
 from 章节数据文件 import 页指纹  # 纯函数, 无循环依赖
 
-_log = logging.getLogger('小说爬虫')
+_log = logging.getLogger('拾卷')
 
 
 def 用适配器提取(current_url, page_index, base_url, 取页面):

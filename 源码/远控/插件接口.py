@@ -174,7 +174,7 @@ def ext_ping(request: Request, k: Optional[str] = None,
     _要求token(k, authorization)
     _记心跳(request)
     _要求本机(request)
-    return {'ok': True, 'service': '小说爬虫·凭据中继', 'version': 1,
+    return {'ok': True, 'service': '拾卷·凭据中继', 'version': 1,
             'cookies_path': 库路径(), 'whitelist': 取白名单()}
 
 

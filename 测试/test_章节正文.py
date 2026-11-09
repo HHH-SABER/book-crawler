@@ -65,7 +65,7 @@ class 用适配器提取用例(unittest.TestCase):
         with mock.patch.object(sites_config, 'get_adapter',
                                lambda u: {'source': 'siteX',
                                           'extract_content': lambda *a, **k: '正文'}):
-            with self.assertLogs('小说爬虫', level='INFO') as 记录:
+            with self.assertLogs('拾卷', level='INFO') as 记录:
                 章节正文.用适配器提取(URL, 4, 'https://s.example.com', _取页面)
         文本 = '\n'.join(记录.output)
         self.assertIn('siteX', 文本)
@@ -130,7 +130,7 @@ class 用站点提取器用例(unittest.TestCase):
         def 炸(*a, **k):
             raise RuntimeError('配置缺陷')
         with mock.patch.object(sites_config, 'extract_content', 炸):
-            with self.assertLogs('小说爬虫', level='INFO') as 记录:
+            with self.assertLogs('拾卷', level='INFO') as 记录:
                 正文, 成功 = 章节正文.用站点提取器(
                     'S', URL, {}, 'https://s.example.com', {}, 'JS')
         self.assertEqual((正文, 成功), ('', False))

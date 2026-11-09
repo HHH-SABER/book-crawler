@@ -91,7 +91,7 @@ def txt_to_epub(txt_path: str, epub_path: str = None, title: str = '',
         book.set_language('zh-CN')
         if author:
             book.add_author(author)
-        book.add_metadata('DC', 'description', f'{title} — 由小说爬虫导出')
+        book.add_metadata('DC', 'description', f'{title} — 由拾卷导出')
 
         # 样式: 中文阅读排版 (段落缩进 / 行距 / 衬线字体)
         css = ('body { font-family: serif, "Songti SC", "SimSun"; line-height: 1.7; }\n'

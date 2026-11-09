@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Novel Crawler EXE Build (Python -> PyInstaller, 自动版本号)
+Shijuan EXE Build (Python -> PyInstaller, 自动版本号)
 UTF-8 encoded; no encoding ambiguity.
 Double-click 打包EXE.bat  (or:  .venv\\Scripts\\python.exe build_exe.py)
 
@@ -150,13 +150,13 @@ def 生成版本文件(path: str) -> str:
         StringTable(
           '080404b0',
           [
-            StringStruct('CompanyName', 'NovelCrawler'),
-            StringStruct('FileDescription', 'Novel Crawler GUI'),
+            StringStruct('CompanyName', 'Shijuan'),
+            StringStruct('FileDescription', 'Shijuan GUI'),
             StringStruct('FileVersion', '{FILE_VERSION}'),
             StringStruct('InternalName', 'novel_crawler'),
-            StringStruct('LegalCopyright', '2026 NovelCrawler'),
+            StringStruct('LegalCopyright', '2026 Shijuan'),
             StringStruct('OriginalFilename', 'novel_crawler.exe'),
-            StringStruct('ProductName', 'NovelCrawlerGUI'),
+            StringStruct('ProductName', 'ShijuanGUI'),
             StringStruct('ProductVersion', '{PRODUCT_VERSION}')
           ]
         )
@@ -323,7 +323,7 @@ def main():
         encoding="utf-8")
 
     # ---- 版本号解析与递增 (默认自动递增修订号) ----
-    _parser = argparse.ArgumentParser(description="小说爬虫 EXE 打包 (自动版本号)")
+    _parser = argparse.ArgumentParser(description="拾卷 EXE 打包 (自动版本号)")
     _g = _parser.add_mutually_exclusive_group()
     _g.add_argument("--bump", nargs="?", const="patch", choices=["patch", "minor", "major"],
                     help="递增版本: --bump(默认patch) / --bump=minor / --bump=major")
@@ -347,7 +347,7 @@ def main():
     PRODUCT_VERSION = _新版本
     FILE_VERSION = _新版本 + ".0"
 
-    banner(f"Novel Crawler EXE Build  v{PRODUCT_VERSION}")
+    banner(f"Shijuan EXE Build  v{PRODUCT_VERSION}")
     log(f"[版本] 上次={_上次版本} → 本次={PRODUCT_VERSION} ({FILE_VERSION})")
     log("[版本] 版本.json/CHANGELOG 在构建成功后写入 (M4: 失败不消耗版本号)")
     log("")
@@ -373,7 +373,7 @@ def main():
     log(f"[OK] PyInstaller : {pyinstaller_exe}")
 
     # --- 2) ensure Flet client is downloaded & extracted (sandbox can't write home dirs)
-    # 缓存位置: 优先 FLET_CACHE_DIR; 默认 %LOCALAPPDATA%\小说爬虫\构建缓存\flet_client
+    # 缓存位置: 优先 FLET_CACHE_DIR; 默认 %LOCALAPPDATA%\拾卷\构建缓存\flet_client
     # (2026-09-27 移出项目树: 缓存含 Flet 客户端第三方资源, 放项目内会被安全门禁
     #  连带扫描造成误报拦截; 且工具链缓存本不入库)
     _cache_env = os.environ.get("FLET_CACHE_DIR")
@@ -383,7 +383,7 @@ def main():
         VIEW_DIR = os.path.join(ROOT, ".runtime", "flet_client")
     else:
         _la = os.environ.get("LOCALAPPDATA")
-        VIEW_DIR = (os.path.join(_la, "小说爬虫", "构建缓存", "flet_client") if _la
+        VIEW_DIR = (os.path.join(_la, "拾卷", "构建缓存", "flet_client") if _la
                     else os.path.join(ROOT, "_flet_client"))
     FLET_VIEW_EXE = os.path.join(VIEW_DIR, "flet.exe")
     if not os.path.isfile(FLET_VIEW_EXE):
@@ -426,13 +426,13 @@ def main():
     # 旧行为: PyInstaller 跑到最后一步 os.remove(dist/xxx.exe) 才抛裸
     #   PermissionError: [WinError 5] 拒绝访问, 前面的解包/分析全白跑 (约 70s),
     #   且报错完全看不出"是程序还开着"。这里提前用"能否以写方式打开"判定并给人话提示。
-    目标exe = os.path.join(dist, "小说爬虫.exe")
+    目标exe = os.path.join(dist, "拾卷.exe")
     if os.path.isfile(目标exe):
         try:
             with open(目标exe, "r+b"):
                 pass
         except OSError as _e:
-            log("[FAIL] 小说爬虫.exe 正被占用 —— 多半是**程序还在运行**。"
+            log("[FAIL] 拾卷.exe 正被占用 —— 多半是**程序还在运行**。"
                 "请先完全关闭它再打包 (Windows 不允许覆盖运行中的 EXE): "
                 f"{type(_e).__name__}: {_e}")
             return 3
@@ -448,7 +448,7 @@ def main():
 
     # --- 5) arguments (one list element = one argv token)
     script_path = os.path.join(ROOT, "源码", "gui_app.py")
-    exe_name    = "小说爬虫"
+    exe_name    = "拾卷"
     # 关键：把 Flet client 打进 EXE（flet pack 不会自动做这件事）
     # 同时把站点配置和验证码配置的默认模板打进去（首次运行时拷到 BASE_DIR）
     flet_client_dir = VIEW_DIR   # 缓存统一取上方解析结果 (支持 FLET_CACHE_DIR 重定向)
@@ -818,8 +818,8 @@ def main():
         _base_tl = subprocess.run(["tasklist"], capture_output=True, text=True,
                                   errors="replace").stdout or ""
         _基础flet = _flet_pids(_base_tl)
-        if "小说爬虫.exe" in _base_tl:
-            log("[WARN] 检测到 小说爬虫.exe 已在运行, 冒烟测试跳过 (避免干扰现有会话)")
+        if "拾卷.exe" in _base_tl:
+            log("[WARN] 检测到 拾卷.exe 已在运行, 冒烟测试跳过 (避免干扰现有会话)")
         elif mode != "ONEFILE" or not os.path.isfile(final_exe):
             log(f"[WARN] 产物为 {mode}, 冒烟测试仅支持 ONEFILE, 跳过")
         else:
@@ -872,7 +872,7 @@ def main():
                     "但 EXE 存活且无启动报错对话框")
             else:
                 log(f"[ERROR] 冒烟失败: {_diag or '90s 内未见新 flet 客户端进程'} "
-                    "(手动运行 dist\\小说爬虫.exe 查看报错对话框)")
+                    "(手动运行 dist\\拾卷.exe 查看报错对话框)")
                 _dump_crash_log(dist)
                 sys.exit(5)
 

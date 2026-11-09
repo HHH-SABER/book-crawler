@@ -1,11 +1,16 @@
-# 小说爬虫 (Book Crawler)
+# 拾卷 (Shijuan)
+
+> **更名说明**：本程序原名「小说爬虫」（v2.5.62 及以前）。自 **v2.6.0** 更名
+> 为「拾卷」——功能已覆盖网文、漫画（后续文章），不再局限于“小说爬虫”。
+> 更名不改变数据格式与使用方式：首次启动会把 `%LOCALAPPDATA%\小说爬虫`
+> 的配置/书库/历史一次性复制到 `%LOCALAPPDATA%\拾卷`（旧目录保留不删）。
 
 [![CI](https://github.com/HHH-SABER/book-crawler/actions/workflows/test.yml/badge.svg)](https://github.com/HHH-SABER/book-crawler/actions/workflows/test.yml)
 [![Release](https://img.shields.io/github/v/release/HHH-SABER/book-crawler?label=Release)](https://github.com/HHH-SABER/book-crawler/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
 
-多站点小说爬虫，支持 Flet 桌面 GUI 和 Windows EXE 打包。
+多站点拾卷，支持 Flet 桌面 GUI 和 Windows EXE 打包。
 自动识别反爬机制（验证码 / 频率限制 / UA 校验 / JS 质询等），
 多引擎自动降级（requests → cloudscraper → curl_cffi），
 内容语义质检过滤无意义数据，按 URL 维度记录爬取历史并支持增量爬取。
@@ -25,7 +30,7 @@
 ## 项目结构
 
 ```
-小说爬虫/
+拾卷/
 ├── 源码/                        # 源代码目录 (Python 模块根, 导入路径依赖)
 │   ├── 爬虫.py                  # 主爬虫模块 (NovelSpider 核心)
 │   ├── 反爬检测器.py            # 反爬机制自动识别
@@ -89,7 +94,7 @@
 ├── LICENSE                      # 开源许可证
 ├── README.md                    # 项目说明文档
 ├── requirements.txt             # Python 依赖清单
-├── 小说爬虫.spec                # PyInstaller 打包配置
+├── 拾卷.spec                # PyInstaller 打包配置
 ├── 启动爬虫.bat                  # CLI 命令行启动脚本
 └── 启动GUI.bat                  # GUI 图形界面启动脚本
 ```
@@ -151,7 +156,7 @@ pip install -r requirements.txt
 ```
 
 每次打包自动递增版本号（`--bump=patch/minor/major`）并同步 CHANGELOG.md，
-产物输出到 `dist\小说爬虫.exe`。
+产物输出到 `dist\拾卷.exe`。
 
 ## 站点适配（脱钩说明）
 
@@ -211,7 +216,7 @@ pip install -r requirements.txt
 ## 项目结构与工程规范（2026-10-13 补齐）
 
 ```
-小说爬虫/
+拾卷/
 ├─ 源码/                    # 全部运行时代码 (31 个模块, 约 2 万行)
 │  ├─ gui_app.py            # Flet GUI 入口 (main(): 窗口装配 + 各视图编排)
 │  ├─ gui_components/       # GUI 组件层 (16 模块: 页面/主题/表格/弹窗/任务管理)

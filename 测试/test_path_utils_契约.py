@@ -151,7 +151,7 @@ class Test状态根(_临时基类):
 
     def test_默认根落在LOCALAPPDATA下(self):
         根 = Path(PU.get_state_root())
-        self.assertEqual(根.resolve(), (self._local / '小说爬虫').resolve())
+        self.assertEqual(根.resolve(), (self._local / '拾卷').resolve())
         for 子 in ('数据', '日志'):
             self.assertTrue((根 / 子).is_dir(), f'状态根缺少 {子}/ 子目录')
 

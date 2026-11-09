@@ -44,7 +44,7 @@ class Test状态根建目录(unittest.TestCase):
 
     def test_空状态根_数据日志子目录必存在且可写(self):
         root = _path_utils.get_state_root()
-        self.assertEqual(root, os.path.join(self._tmp, '小说爬虫'))
+        self.assertEqual(root, os.path.join(self._tmp, '拾卷'))
         for name in ('数据', '日志'):
             self.assertTrue(os.path.isdir(os.path.join(root, name)),
                             f'{name} 子目录未创建')
@@ -108,7 +108,7 @@ class Test便携数据开关(unittest.TestCase):
              unittest.mock.patch('_path_utils.get_app_base_dir',
                                  return_value=self._tmp):
             root = _path_utils.get_state_root()
-        self.assertEqual(root, os.path.join(self._tmp, '小说爬虫'),
+        self.assertEqual(root, os.path.join(self._tmp, '拾卷'),
                          '无 flag 时必须维持默认状态根')
         self.assertFalse(_path_utils.is_portable_mode())
 
@@ -119,7 +119,7 @@ class Test便携数据开关(unittest.TestCase):
         with unittest.mock.patch('_path_utils.get_app_base_dir',
                                  return_value=self._tmp):
             root = _path_utils.get_state_root()
-        self.assertEqual(root, os.path.join(self._tmp, '小说爬虫'),
+        self.assertEqual(root, os.path.join(self._tmp, '拾卷'),
                          '源码模式下 flag 不得生效 (隔离保护)')
         self.assertFalse(_path_utils.is_portable_mode())
 
@@ -206,7 +206,7 @@ class Test模式解析与数据文件(unittest.TestCase):
         _path_utils._STATE_ROOT = None
         # frozen 模式: EXE 在 tmp/base, LOCALAPPDATA 指 tmp/local
         os.makedirs(os.path.join(self._tmp, 'base'), exist_ok=True)
-        sys.executable = os.path.join(self._tmp, 'base', '小说爬虫.exe')
+        sys.executable = os.path.join(self._tmp, 'base', '拾卷.exe')
         os.environ['LOCALAPPDATA'] = os.path.join(self._tmp, 'local')
 
     def tearDown(self):

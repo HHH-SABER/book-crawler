@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-"""自定义协议唤起 (novelcrawler://) —— 让浏览器插件一键把任务交给程序 (2026-10-23)。
+"""自定义协议唤起 (shijuan://) —— 让浏览器插件一键把任务交给程序 (2026-10-23)。
 
 用户需求: 在插件里点「开始抓取」→ **自动唤起程序**并开始下载, 可选
 「完整抓取 / 章节区间」。
 
 为什么需要协议: 浏览器不能直接启动本地 exe; 唯一标准途径是注册一个自定义
 URL 协议 (HKCU\\Software\\Classes\\<协议>), 之后任何页面/插件导航到
-`novelcrawler://crawl?...` 都会由 Windows 拉起本程序。
+`shijuan://crawl?...` 都会由 Windows 拉起本程序。
 
 流程:
   插件 POST 远控 API 建任务 (程序已在跑) —— 最快路径;
-  失败(程序没开) → 插件打开 novelcrawler:// URL → 系统拉起程序 →
+  失败(程序没开) → 插件打开 shijuan:// URL → 系统拉起程序 →
   本模块解析参数; 若发现已有实例在跑则**转发给它并退出**(不弹第二个窗口)。
 
 协议格式:
-  novelcrawler://crawl?url=<编码后的目录页>&mode=full|range&start=1&end=20
+  shijuan://crawl?url=<编码后的目录页>&mode=full|range&start=1&end=20
 """
 import json
 import os
@@ -22,7 +22,10 @@ import sys
 import urllib.parse
 import urllib.request
 
-协议名 = 'novelcrawler'
+协议名 = 'shijuan'
+# 更名前的协议 (旧名时代注册的 novelcrawler://)。旧插件副本/旧书签/旧快捷
+# 方式仍可能发它 —— 解析层兼容, 避免用户没重装插件就彻底失效。
+旧协议名s = ('novelcrawler',)
 
 
 # --------------------------------------------------------------------- 解析
@@ -33,7 +36,10 @@ def 取唤起参数(argv=None) -> dict:
     """
     argv = list(sys.argv if argv is None else argv)
     for 参数 in argv[1:]:
-        if not isinstance(参数, str) or not 参数.lower().startswith(协议名 + '://'):
+        if not isinstance(参数, str):
+            continue
+        低 = 参数.lower()
+        if not any(低.startswith(名 + '://') for 名 in (协议名,) + 旧协议名s):
             continue
         解析 = urllib.parse.urlsplit(参数)
         查询 = urllib.parse.parse_qs(解析.query)
@@ -72,16 +78,21 @@ def 注册命令(协议: str = 协议名) -> dict:
 
 
 def 注册协议() -> bool:
-    """注册/刷新协议 (HKCU, 无需管理员)。已注册则幂等覆盖。"""
+    """注册/刷新协议 (HKCU, 无需管理员)。已注册则幂等覆盖。
+
+    主协议之外**同时刷新更名前的旧协议别名** —— 旧插件副本仍会发旧
+    scheme，重定向到同一程序，避免用户没重装插件就彻底唤起失败。
+    """
     try:
         import winreg
-        info = 注册命令()
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, info['键']) as k:
-            winreg.SetValueEx(k, '', 0, winreg.REG_SZ, f'URL:{协议名} Protocol')
-            winreg.SetValueEx(k, 'URL Protocol', 0, winreg.REG_SZ, '')
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
-                              info['键'] + r'\shell\open\command') as k:
-            winreg.SetValueEx(k, '', 0, winreg.REG_SZ, info['命令'])
+        for 协议 in (协议名,) + 旧协议名s:
+            info = 注册命令(协议)
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, info['键']) as k:
+                winreg.SetValueEx(k, '', 0, winreg.REG_SZ, f'URL:{协议} Protocol')
+                winreg.SetValueEx(k, 'URL Protocol', 0, winreg.REG_SZ, '')
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                                  info['键'] + r'\shell\open\command') as k:
+                winreg.SetValueEx(k, '', 0, winreg.REG_SZ, info['命令'])
         return True
     except Exception:
         return False    # 刻意静默: 注册失败不影响程序本身, 只少了"唤起"能力

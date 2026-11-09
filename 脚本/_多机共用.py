@@ -14,7 +14,7 @@ import pathlib
 根 = pathlib.Path(__file__).resolve().parent.parent
 #: 允许用环境变量改私有仓位置（换机/测试/放到其它盘时用）
 _私有仓覆盖 = os.environ.get('NC_PRIVATE_GIT_DIR', '').strip()
-私有仓 = pathlib.Path(_私有仓覆盖) if _私有仓覆盖 else (根.parent / '小说爬虫-私有资产.git')
+私有仓 = pathlib.Path(_私有仓覆盖) if _私有仓覆盖 else (根.parent / '拾卷-私有资产.git')
 
 #: 只收这些路径（相对项目根，glob 语义）
 白名单目录 = ('站点适配_本地', '测试样本_本地', '测试_本地', '数据')

@@ -6,7 +6,7 @@
 `python -m unittest discover -s 测试` 跑全量时, 部分测试
 (test_ledger_fixes / test_log_contract / test_remote_service / _test_task_metrics)
 实例化 TaskManager 却不隔离状态根, `get_state_root()` 解析到**真实**
-%LOCALAPPDATA%\\小说爬虫, 落盘把用户真实的 任务历史.json 覆盖成空, 并连带
+%LOCALAPPDATA%\\拾卷, 落盘把用户真实的 任务历史.json 覆盖成空, 并连带
 改动 站点基线.json / 阅读进度.json —— 测试污染生产数据, 2026-10-02 实测事故。
 
 ## 根治方式
@@ -35,7 +35,7 @@ for _p in (str(_ROOT / '源码'), str(_ROOT / '源码' / 'gui_components')):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# 一次性状态沙箱: LOCALAPPDATA 之下再拼 小说爬虫 即 get_state_root 结果
+# 一次性状态沙箱: LOCALAPPDATA 之下再拼 拾卷 即 get_state_root 结果
 _SANDBOX = tempfile.mkdtemp(prefix='qwen_test_state_')
 os.environ['LOCALAPPDATA'] = _SANDBOX
 try:

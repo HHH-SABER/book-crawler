@@ -196,7 +196,7 @@ def build_plugin_toggle(on_click):
 def build_top_bar(page, title_text: str, theme_toggle_btn, extra_controls=None) -> ft.Container:
     """构建顶栏 (48px 高, 匹配设计稿 titlebar)
 
-    布局: [📖 小说爬虫] ──────────────────── [🌙 夜间]
+    布局: [📖 拾卷] ──────────────────── [🌙 夜间]
     """
     # 左侧: 应用图标 (品牌橙底圆角 4) + 应用名
     app_icon = ft.Container(

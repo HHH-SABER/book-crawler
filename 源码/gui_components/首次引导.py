@@ -11,7 +11,7 @@
 ## 行为契约 (与原闭包完全一致, 改动不得破坏)
 
 1. flag 文件 = `<state_root>/数据/首次启动.flag`, 原子写 (tmp + os.replace);
-2. 快捷方式名 `小说爬虫.lnk`, 桌面路径在 **PowerShell 侧**取
+2. 快捷方式名 `拾卷.lnk`, 桌面路径在 **PowerShell 侧**取
    (`[Environment]::GetFolderPath('Desktop')`) —— 只有那样才能拿到 OneDrive
    重定向后的真实桌面;
 3. 中文参数经 `-EncodedCommand` (UTF-16LE Base64) 传入, 规避代码页转义坑;
@@ -27,10 +27,10 @@ try:
     from _path_utils import get_state_root
 except Exception:                                    # 独立环境退化标准库
     def get_state_root() -> str:
-        return os.path.join(os.path.expanduser('~'), '.novelcrawler')
+        return os.path.join(os.path.expanduser('~'), '.shijuan')
 
 _标志文件名 = '首次启动.flag'
-_快捷方式名 = '小说爬虫.lnk'
+_快捷方式名 = '拾卷.lnk'
 _PS超时秒 = 20
 
 
@@ -77,7 +77,7 @@ def 构建PowerShell命令(target: str, workdir: str) -> str:
         f"$lnk.TargetPath='{引号转义(target)}';"
         f"$lnk.WorkingDirectory='{引号转义(workdir)}';"
         f"$lnk.IconLocation='{引号转义(target)},0';"
-        "$lnk.Description='小说爬虫 - 网文离线阅读与远控';"
+        "$lnk.Description='拾卷 - 网文离线阅读与远控';"
         "$lnk.Save();exit 0"
     )
 
