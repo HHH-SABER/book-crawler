@@ -8,9 +8,20 @@
 
 ## \[2.5.62] - 2026-11-09
 
+### 安全加固
+
+- **远控安全头**：所有响应带 `X-Content-Type-Options: nosniff`、
+  `X-Frame-Options: DENY`、`Referrer-Policy: no-referrer` 与 CSP
+  （`frame-ancestors 'none'` 防点击劫持；面板含内联脚本/样式，故允许 inline）
+- **Host 校验（防 DNS rebinding）**：仅放行回环/私网 IP、`localhost`、
+  `*.ts.net`（Tailscale）与 `*.local`；公网域名一律 400 并提示配置项。
+  ⚠️ 如用自定义域名访问远控，须在 `数据/远控配置.json` 的 `允许主机` 里添加
+- **认证失败限流**：同 IP 每分钟 401 超 30 次 → 429（正常轮询不受影响）
+
 ### 变更
 
-- (待补充本次改进内容)
+- 本机构建包更新：**包含 siteP12 适配器**（此前 EXE 为 2.5.58 期产物，
+  用 EXE 抓 siteP12 的书会退回通用解析）
 
 ***
 
