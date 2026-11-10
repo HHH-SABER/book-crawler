@@ -1501,12 +1501,22 @@ class TaskManager:
         with self._lock:
             return self.tasks.get(task_id)
 
-    def find_task_by_url(self, url: str, mode: str = None) -> Optional[TaskInfo]:
-        """查找与给定 URL 相同的任务 (可选限定模式); 无则返回 None"""
+    def find_task_by_url(self, url: str, mode: str = None,
+                         品类: str = None) -> Optional[TaskInfo]:
+        """查找与给定 URL 相同的任务 (可选限定模式/品类); 无则返回 None。
+
+        品类参与查找: 同一 URL 在小说与漫画下是两个任务, 复用必须同品类
+        (2026-11-10 统一内容库改造)。
+        """
         with self._lock:
             for t in self.tasks.values():
-                if t.url == url and (mode is None or t.mode == mode):
-                    return t
+                if t.url != url:
+                    continue
+                if mode is not None and t.mode != mode:
+                    continue
+                if 品类 is not None and getattr(t, '品类', '小说') != 品类:
+                    continue
+                return t
         return None
 
     @staticmethod

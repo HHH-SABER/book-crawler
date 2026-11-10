@@ -61,7 +61,14 @@ class InputBar:
         self.task_manager = task_manager
         self.page = None
         self.file_picker = None  # 由 gui_app 注册的 FilePicker (导入网址用)
-        self.on_task_created = None   # 任务创建后回调 callback() (供表格刷新)
+        self.on_task_created = None   # 任务创建后回调 callback(品类) (供表格刷新/切筛选)
+        # 内容品类 (2026-11-10): 与任务表筛选解耦 —— 筛选=漫画时仍可新建小说
+        self.品类 = "小说"
+        self.品类条 = None
+        self.导出格式_dd = None
+        self.卷界_input = None
+        self._导入_btn = None
+        self._粘贴_btn = None
         self._pending_urls = []
         self._pending_invalid = []
         # UI 引用
@@ -141,7 +148,10 @@ class InputBar:
         self.stop_btn = danger_btn("停止", icon=ft.Icons.STOP,
                                    on_click=self.on_stop_click, disabled=True,
                                    tooltip="停止当前选中任务")
-        return ft.Row([self.url_input, self.mode_dropdown,
+        from .筛选栏 import 胶囊组
+        self.品类条 = 胶囊组([('小说', '小说'), ('漫画', '漫画')],
+                             当前=self.品类, on_change=self.设置品类)
+        return ft.Row([self.品类条.build(), self.url_input, self.mode_dropdown,
                        start_btn, self.stop_btn], spacing=6)
     def _构建次操作行(self) -> ft.Row:
         """第二行：导入/粘贴 + 章节区间 + 三个开关 + 输出目录"""
@@ -181,6 +191,23 @@ class InputBar:
             label_text_style=ft.TextStyle(size=SIZE_TINY, font_family=FONT_STACK),
             scale=0.9,
         )
+        # 漫画专属: 导出格式 + 卷界（小说时隐藏）
+        self.导出格式_dd = ft.Dropdown(
+            label="导出格式", width=110, dense=True, value="逐页", visible=False,
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
+            options=[ft.dropdown.Option("逐页", "逐页图片"),
+                     ft.dropdown.Option("CBZ", "CBZ"),
+                     ft.dropdown.Option("PDF", "PDF")],
+            on_select=lambda e: self._刷品类可见性(),
+        )
+        self.卷界_input = ft.TextField(
+            label="卷界", width=150, dense=True, visible=False,
+            hint_text="如 8,16,24；留空=按话",
+            text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
+        )
+        self._导入_btn = import_btn
+        self._粘贴_btn = paste_btn
+
         self.output_dir_input = ft.TextField(
             label="输出目录", width=150, dense=True,
             text_style=ft.TextStyle(size=SIZE_LABEL, font_family=FONT_STACK),
@@ -192,7 +219,7 @@ class InputBar:
 
         return ft.Row([import_btn, paste_btn, self.start_chapter,
                        self.end_chapter, self.resume_switch, self.epub_switch,
-                       self.提示音_switch,
+                       self.导出格式_dd, self.卷界_input, self.提示音_switch,
                        self.output_dir_input, open_folder_btn],
                       # 批 2 密度对齐: spacing 6→4, 使该行在 1265 逻辑宽下一行排完
                       # (设计稿这行 CSS 允许 wrap, 但画布宽度下是一行)
@@ -242,6 +269,51 @@ class InputBar:
         except Exception as _ex:
             _log('输入条', f'提示音偏好保存异常: {type(_ex).__name__}: {_ex}')
 
+    # ------------------------------------------------------ 品类切换 (2026-11-10)
+    def 设置品类(self, 品类: str):
+        """切换内容品类: 换表单字段与文案（不影响任务表的筛选状态）。"""
+        if 品类 not in ("小说", "漫画") or 品类 == self.品类:
+            return
+        self.品类 = 品类
+        self._刷品类可见性()
+
+    def _刷品类可见性(self):
+        """按当前品类切换控件可见性/文案（单一函数, 避免散落多处判断）。"""
+        漫画 = self.品类 == "漫画"
+        self.mode_dropdown.visible = not 漫画
+        self.resume_switch.visible = not 漫画
+        self.epub_switch.visible = not 漫画
+        if self._导入_btn is not None:
+            self._导入_btn.visible = not 漫画
+        if self._粘贴_btn is not None:
+            self._粘贴_btn.visible = not 漫画
+        self.导出格式_dd.visible = 漫画
+        self.卷界_input.visible = 漫画 and self.导出格式_dd.value in ("CBZ", "PDF")
+
+        if 漫画:
+            # 漫画的"区间"就是话范围: 复用同一对输入框, 只换文案
+            self.start_chapter.visible = True
+            self.end_chapter.visible = True
+            self.start_chapter.label = "起始话"
+            self.end_chapter.label = "结束话"
+            self.url_input.label = "漫画详情页URL"
+            self.url_input.hint_text = "如: https://…/book/123"
+            if (self.output_dir_input.value or "").strip() in ("", "抓取结果"):
+                self.output_dir_input.value = "抓取结果/漫画"
+        else:
+            self.start_chapter.visible = self.mode_dropdown.value == "range"
+            self.end_chapter.visible = self.mode_dropdown.value == "range"
+            self.start_chapter.label = "起始章"
+            self.end_chapter.label = "结束章"
+            self.url_input.label = "小说目录页URL"
+            self.url_input.hint_text = "如: https://m.example.com/book/123/ml.html"
+            if (self.output_dir_input.value or "").strip() == "抓取结果/漫画":
+                self.output_dir_input.value = "抓取结果"
+        try:
+            self.page.update()
+        except Exception:
+            pass    # 刻意静默: 构建期尚未挂载 page, 可见性以属性为准
+
     def _on_mode_change(self, e):
         """模式切换时显示/隐藏章节区间输入"""
         is_range = self.mode_dropdown.value == "range"
@@ -263,14 +335,37 @@ class InputBar:
     # --------------------------------------------------------- 单任务启动
     def on_start_click(self, e):
         """开始抓取 (URL 框内回车或点击按钮均可触发)"""
+        品类 = self.品类
         url = (self.url_input.value or '').strip()
         if not url:
-            self._notify("请输入小说目录页URL")
+            self._notify("请输入漫画详情页URL" if 品类 == "漫画"
+                         else "请输入小说目录页URL")
             return
 
+        品类参数 = None
         mode = self.mode_dropdown.value
         chapter_range = None
-        if mode == "range":
+        if 品类 == "漫画":
+            # 漫画恒为"整本抓取", 区间语义是话范围（复用一个字段, 见 TaskInfo 注释）
+            mode = "full"
+            起 = (self.start_chapter.value or "").strip()
+            止 = (self.end_chapter.value or "").strip()
+            if 起 or 止:
+                try:
+                    起号 = int(起) if 起 else 1
+                    止号 = int(止) if 止 else 10 ** 6
+                except (ValueError, TypeError):
+                    self._notify("请输入有效的话号")
+                    return
+                if 起号 < 1 or 止号 < 起号:
+                    self._notify("起始话必须 ≥1 且不大于结束话")
+                    return
+                chapter_range = (起号, 止号)
+            格式 = self.导出格式_dd.value or "逐页"
+            品类参数 = {"导出格式": {"逐页": "pages", "CBZ": "cbz",
+                                    "PDF": "pdf"}.get(格式, "pages"),
+                        "卷界": (self.卷界_input.value or "").strip()}
+        elif mode == "range":
             try:
                 start = int(self.start_chapter.value)
                 end = int(self.end_chapter.value)
@@ -297,16 +392,20 @@ class InputBar:
 
         # 同 URL 已有任务: 复用重启而非新建 (避免重复创建任务; range 模式因区间可
         # 变不查重, 其余模式重跑同一网址时直接在原任务内重新开始)
-        if mode != "range":
-            existing = self.task_manager.find_task_by_url(url, mode)
+        if 品类 == "漫画" or mode != "range":
+            existing = self.task_manager.find_task_by_url(url, mode, 品类)
             if existing is not None:
                 if existing.status == "running":
                     self._notify("该网址已有任务在运行")
                     return
                 # M2: 重启前把输入条当前选项同步进任务字段 — 旧实现直接复用旧值
                 # 且 resume 恒为 False, 用户刚勾选的 续传/导出EPUB/输出目录 被静默丢弃
-                existing.resume = self.resume_switch.value
-                existing.export_epub = self.epub_switch.value
+                if 品类 == "漫画":
+                    existing.chapter_range = chapter_range
+                    existing.品类参数 = 品类参数
+                else:
+                    existing.resume = self.resume_switch.value
+                    existing.export_epub = self.epub_switch.value
                 if (self.output_dir_input.value or '').strip():
                     existing.output_dir = self.output_dir_input.value.strip()
                 if self.task_manager.restart_task(existing.task_id):
@@ -315,7 +414,7 @@ class InputBar:
                     _log("GUI", f"重新开始 (复用原任务 {existing.task_id}): {url}")
                     self._notify(f"已重新开始原任务: {existing.task_id}")
                     if self.on_task_created:
-                        self.on_task_created()
+                        self.on_task_created(self.品类)
                     return
                 self._notify("原任务正在收尾，请稍后重试")
                 return
@@ -323,8 +422,10 @@ class InputBar:
         task_id = self.task_manager.create_task(
             url=url, mode=mode, chapter_range=chapter_range,
             threads=threads, delay=delay,
-            resume=self.resume_switch.value, output_dir=output_dir,
-            export_epub=self.epub_switch.value,
+            resume=(True if 品类 == "漫画" else self.resume_switch.value),
+            output_dir=output_dir,
+            export_epub=(False if 品类 == "漫画" else self.epub_switch.value),
+            品类=品类, 品类参数=品类参数,
         )
         self.task_manager.select_task(task_id)
         self.stop_btn.disabled = False
@@ -334,7 +435,7 @@ class InputBar:
         if self.page is None and getattr(e, 'page', None) is not None:
             self.page = e.page
         if self.on_task_created:
-            self.on_task_created()
+            self.on_task_created(self.品类)
 
     def on_stop_click(self, e):
         """停止当前选中任务"""
@@ -470,6 +571,9 @@ class InputBar:
             _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
     def _start_batch(self, urls, ev=None):
+        if self.品类 != "小说":
+            self._notify("漫画请逐个详情页创建（批量导入仅支持小说目录页）")
+            return
         """批量创建抓取任务: 每个 URL 一个独立任务 (速度自适应, 无手动选项)"""
         output_dir = (self.output_dir_input.value or '').strip() or None
         resume = self.resume_switch.value
@@ -502,4 +606,4 @@ class InputBar:
                     f"续传={resume})\n  网址列表: {urls}")
         self._notify(f"已创建 {created} 个抓取任务 (每本书独立进度)")
         if self.on_task_created:
-            self.on_task_created()
+            self.on_task_created(self.品类)
