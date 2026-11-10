@@ -16,7 +16,6 @@
 import json
 import re
 import time
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -274,19 +273,18 @@ def 抓整本(详情url: str, 输出根: Path, 章范围: Optional[Tuple[int, in
 
 
 def 导出CBZ(输出目录: Path) -> List[Path]:
-    """把每章目录打成 .cbz（图片原样打包，供阅读器使用）。"""
-    结果 = []
-    for 章目录 in sorted(p for p in 输出目录.iterdir() if p.is_dir()):
-        图 = sorted(章目录.glob('*'))
-        图 = [p for p in 图 if 图后缀.search(p.suffix) and p.stat().st_size > 1024]
-        if not 图:
-            continue
-        cbz = 章目录.with_suffix('.cbz')
-        with zipfile.ZipFile(cbz, 'w', zipfile.ZIP_STORED) as z:
-            for p in 图:
-                z.write(p, p.name)
-        结果.append(cbz)
-    return 结果
+    """每章打成 .cbz（图片原样），委托统一导出层（`漫画导出`）。
+
+    2026-11-10: 原实现自带一套 ZIP_STORED 打包逻辑, 与 漫画卷册 的
+    ZIP_DEFLATED 版本并存 —— 换入口得到不同压缩/命名的产物。现统一委托,
+    本函数只保留旧签名; 内部结构仍是扁平（一话一册, 不套目录）。
+    """
+    import 漫画导出
+    try:
+        return 漫画导出.导出(输出目录, 输出目录, 格式='cbz', 单位='话',
+                            写索引=False)['册s']
+    except (ValueError, FileNotFoundError):
+        return []    # 没有任何含图话目录: 与旧实现一致, 返回空列表而非抛错
 
 
 if __name__ == '__main__':
@@ -297,7 +295,12 @@ if __name__ == '__main__':
     ap.add_argument('--out', default=None, help='输出根目录（默认 抓取结果/漫画）')
     ap.add_argument('--章范围', default='', help='如 1-47；留空=全部')
     ap.add_argument('--间隔', type=float, default=0.35, help='每张图间隔秒（默认 0.35）')
-    ap.add_argument('--cbz', action='store_true', help='完成后每章打包 .cbz')
+    ap.add_argument('--格式', default='', choices=['', 'pages', 'cbz', 'pdf'],
+                    help='导出格式: 留空/pages=只留逐页图(默认); cbz/pdf=抓完即导出')
+    ap.add_argument('--卷界', default='',
+                    help='按卷导出, 如 8,16,24,32,40,47（配合 --格式; 留空则按话）')
+    ap.add_argument('--cbz', action='store_true',
+                    help='[兼容] 等同 --格式 cbz（按话打包）')
     a = ap.parse_args()
 
     根 = Path(a.out) if a.out else (Path(__file__).resolve().parent.parent / '抓取结果' / '漫画')
@@ -308,6 +311,18 @@ if __name__ == '__main__':
     统计 = 抓整本(a.详情页, 根, 章范围=范围, 间隔=a.间隔,
                  日志=lambda m: print(m, flush=True))
     print('\n完成:', 统计)
-    if a.cbz:
-        cbzs = 导出CBZ(Path(统计['目录']))
-        print(f'CBZ: {len(cbzs)} 个')
+
+    # 导出: 与 漫画卷册 共用同一实现（漫画导出），避免两套规格
+    格式 = a.格式 or ('cbz' if a.cbz else '')
+    if 格式 and 格式 != 'pages':
+        import 漫画导出
+        源 = Path(统计['目录'])
+        if a.卷界:
+            话数 = len(漫画导出.找话目录(源))
+            结果 = 漫画导出.导出(源, 格式=格式, 单位='卷',
+                                卷界=漫画导出.解析卷界(a.卷界, 话数))
+        else:
+            结果 = 漫画导出.导出(源, 源, 格式=格式, 单位='话', 写索引=False)
+        print(f"{结果['格式'].upper()}: {len(结果['册s'])} 个 → {结果['输出目录']}")
+        for _p in 结果['册s']:
+            print(f"  {_p.name}  {_p.stat().st_size / 1048576:.1f} MB")

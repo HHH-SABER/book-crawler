@@ -21,7 +21,7 @@ def _造书(根: Path, 话数: int, 每话页: int = 3) -> Path:
         话 = 书 / f'{i:03d}_第{i}话'
         话.mkdir()
         for p in range(1, 每话页 + 1):
-            (话 / f'{p:04d}.webp').write_bytes(b'x' * 10)
+            (话 / f'{p:04d}.webp').write_bytes(b'x' * 4096)   # >1KB: 统一层会过滤坏图
     return 书
 
 
@@ -86,7 +86,7 @@ class Test打包(unittest.TestCase):
         for 名 in ('10_十', '9_九', '2_二'):
             d = 书 / 名
             d.mkdir()
-            (d / '0001.webp').write_bytes(b'x')
+            (d / '0001.webp').write_bytes(b'x' * 4096)
         话 = V.找话目录(书)
         self.assertEqual([V.话序(p.name)[0] for p in 话], [2, 9, 10])
 
