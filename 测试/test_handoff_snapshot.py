@@ -72,6 +72,24 @@ class Test状态块与干净判定(unittest.TestCase):
         self.assertIn('2 个版本未发布', H.状态块(self._数据(未发布版本数=2)))
         self.assertIn('从未打 tag 发布', H.状态块(self._数据(最新tag='')))
 
+    def test_跨次版本不得谎报已发布(self):
+        """🔴 2.6.0 / 最新 tag v2.5.61: 差值 None 时旧逻辑写成「0 已发布」。"""
+        块 = H.状态块(self._数据(版本='2.6.0', 最新tag='v2.5.61',
+                             未发布版本数=None))
+        self.assertNotIn('0 (已发布至', 块)
+        self.assertIn('无法判定', 块)
+        self.assertIn('2.6.0', 块)
+        self.assertIn('v2.5.61', 块)
+
+    def test_无法判定仍判不干净(self):
+        """差值 None 属「需人工核对」, 收尾退出码必须保持 1。"""
+        self.assertFalse(H.是否干净(self._数据(未发布版本数=None)))
+
+    def test_无tag优先于无法判定(self):
+        块 = H.状态块(self._数据(最新tag='', 未发布版本数=None))
+        self.assertIn('从未打 tag 发布', 块)
+        self.assertNotIn('无法判定', 块)
+
 
 class Test真实仓库集成(unittest.TestCase):
     """采集() 只读跑一遍, 结构必须完整 (防止 git 解析回归)。"""
