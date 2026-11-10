@@ -532,11 +532,20 @@ def main(page: ft.Page):
     input_bar.file_picker = file_picker
 
     def _on_task_created(品类=None):
-        """新任务创建后立即刷新表格; 当前筛选看不到它时自动切到该品类。"""
+        """新任务创建后立即刷新表格; 当前筛选看不到它时自动切到该品类。
+
+        点击响应修复: 旧实现 _refresh() 后整页 page.update() —— 四页 Stack
+        常驻, 隐藏页也参与 diff, 新任务行要等整棵树序列化完才出现。改为
+        强制重绘 + 子树级 patch, 点击当场就能看到新行。
+        """
         if 品类 and task_table.品类筛选 not in ('全部', 品类):
             task_table.设置品类筛选(品类)
-        task_table._refresh()
-        page.update()
+        task_table._sig = None      # 新建任务必须立刻重绘, 不等下一 tick
+        task_table.refresh_ui()     # 只 patch 表格子树
+        # 右栏/日志条也当场切到新任务 (原来靠下一次 1s tick, 用户以为没反应)
+        drawer.refresh_log()
+        drawer.refresh()
+        drawer.update_views()
 
     input_bar.on_task_created = _on_task_created
     input_bar.page = page
@@ -643,30 +652,44 @@ def main(page: ft.Page):
             else:
                 p.visible = False
                 ui_motion.复位(p)
-        if key == "history":
-            try:
-                history_page.refresh()
-            except Exception as _e:
-                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
-        elif key == "deadbook":
-            try:
-                dead_page.refresh()
-            except Exception as _e:
-                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
-        elif key == "log":
-            try:
-                log_tab._reload()
-            except Exception as _e:
-                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
-        elif key == "remote":
-            try:
-                remote_page.refresh()
-            except Exception as _e:
-                app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        # ① 先只刷页面可见性: 点击当场就有反馈。
+        # 用 Stack 子树级 update 而非整页刷新 —— 项目硬约定 (动效只改
+        # 属性, 刷不刷由调用方决定), 且隐藏页之外整棵树不参与 diff。
+        # 导航高亮由 rail.set_active() 内部 btn.update() 自己刷。
         try:
-            page.update()
+            content_stack.update()
         except Exception as _e:
             app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+
+        # ② 页面级重活 (运行日志要读 2MB 尾部 + 重建下拉/上百行控件, 死书/
+        #    历史页要扫盘) 旧实现全部同步压在这次点击回调里, 且排在上面的
+        #    整页刷新之前 —— 用户点完导航要等它跑完才看到切换, 就是
+        #    「点了没反应」。延后到下一帧执行, 各页面 refresh() 自带 update。
+        async def _延迟刷新():
+            import asyncio
+            await asyncio.sleep(0)
+            if key == "history":
+                try:
+                    history_page.refresh()
+                except Exception as _e:
+                    app_log.debug("GUI", f'历史页刷新失败: {type(_e).__name__}: {_e}')
+            elif key == "deadbook":
+                try:
+                    dead_page.refresh()
+                except Exception as _e:
+                    app_log.debug("GUI", f'死书页刷新失败: {type(_e).__name__}: {_e}')
+            elif key == "log":
+                try:
+                    log_tab._reload()
+                except Exception as _e:
+                    app_log.debug("GUI", f'日志页刷新失败: {type(_e).__name__}: {_e}')
+            elif key == "remote":
+                try:
+                    remote_page.refresh()
+                except Exception as _e:
+                    app_log.debug("GUI", f'远控页刷新失败: {type(_e).__name__}: {_e}')
+
+        page.run_task(_延迟刷新)
 
     # ---- 底部状态栏 ----
     status_dot, status_text, status_bar = _构建状态栏()

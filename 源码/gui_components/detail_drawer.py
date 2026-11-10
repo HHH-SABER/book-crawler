@@ -71,6 +71,10 @@ class DetailDrawer:
         self._视图已建 = False       # 幂等: 两个构建入口共用一套视图控件
         self._窄档 = False        # 窄窗口(≤1200px)档: 宽度 320 → 260
         self._log_sig = None      # 日志视图渲染签名 (task_id, len(logs))
+        self._detail_sig = None   # 详情视图渲染签名 (无变化跳过重建)
+        # 脏视图集合: 只有真的改过控件树的视图才需要 update 子树。
+        # tick 每秒调 update_views(), 空集合时直接返回 → 空闲零 patch。
+        self._dirty = set()
         self._files = []
         self._selected_file = None
         # UI 引用
@@ -317,40 +321,48 @@ class DetailDrawer:
         ('[缓存]', '#9D9D9D'),
     ]
 
-    def refresh_log(self):
+    def refresh_log(self) -> bool:
         """刷新实时日志视图 (主线程, 由刷新循环驱动; 仅日志视图可见时渲染)
 
         H5 修复: 旧实现每秒 clear + 重建 100 条控件, 导致 selectable 文本
         永远无法选中复制 + 每秒全量 patch。改为签名比对 + 增量追加
         (task.logs 只追加; 换任务/截断/堆积超限时回退全量重建)。
+
+        返回 True=控件树变了; 变化登记进 _dirty, 由 update_views() 一次性
+        patch 出去 —— 空闲时连 log_list.update() 都不发。
         """
         # 日志条常驻: 折叠时不渲染 (省开销); 旧实现判的是抽屉视图可见性
         if self._log_list is None or not getattr(self, '_日志条展开', True):
-            return
+            return False
+
+        def _改标题(值):
+            控件 = getattr(self, '_日志条标题', None)
+            if 控件 is not None and 控件.value != 值:
+                控件.value = 值
+                self._dirty.add('title')
+
         tid = self.task_manager.selected_task_id
         if not tid:
-            if getattr(self, '_日志条标题', None) is not None \
-                    and self._日志条标题.value != "实时日志":
-                self._日志条标题.value = "实时日志"
+            _改标题("实时日志")
             self._log_sig = None
             # 批 4 (2026-10-07): 旧实现只 clear() → 底部常驻日志条**一片纯空白**
             # (整条控件树里什么都没有)。补空态告诉用户为什么空 + 怎么让它有内容。
             # 本方法每秒被调 → 已建过就不重建, 否则每秒换控件白白 patch。
             if getattr(self, '_日志条无选中', False):
-                return
+                return False
             self._日志条无选中 = True
             self._log_list.controls.clear()
             self._log_list.controls.append(states.空态(
                 图标=ft.Icons.TOUCH_APP_OUTLINED, 标题='未选中任务',
                 说明='点击上方任务表的任意一行, 这里会显示它的实时日志。',
                 填满=False))
-            return
+            self._dirty.add('log')
+            return True
         self._日志条无选中 = False      # 有选中任务了 → 允许下次再建空态
         task = self.task_manager.get_task(tid)
         if not task:
-            return
-        if getattr(self, '_日志条标题', None) is not None:
-            self._日志条标题.value = f"实时日志 · {task.title[:24]}"
+            return False
+        _改标题(f"实时日志 · {task.title[:24]}")
 
         from .task_manager import snapshot_task_logs
         previous = getattr(self, '_log_sig', None)
@@ -358,7 +370,7 @@ class DetailDrawer:
         snapshot = snapshot_task_logs(task, prev_count)
         sig = (tid, snapshot['total'], snapshot['epoch'])
         if previous == sig:
-            return
+            return False
         if (not previous or previous[0] != tid or previous[2] != snapshot['epoch']
                 or snapshot['截断'] or len(snapshot['entries']) > 60):
             self._log_list.controls.clear()
@@ -370,6 +382,8 @@ class DetailDrawer:
             if len(self._log_list.controls) > 120:
                 self._log_list.controls = self._log_list.controls[-100:]
         self._log_sig = sig
+        self._dirty.add('log')
+        return True
 
     @staticmethod
     def _日志行色(msg: str):
@@ -403,35 +417,76 @@ class DetailDrawer:
         return 控件
 
     def update_views(self):
-        """子树级刷新收口 (H6: 仅更新面板内当前可见视图, 替代整页 update)"""
-        try:
-            # 批 2: 日志条与右栏**都常驻**, 不再是二选一
-            if getattr(self, '_日志条展开', True):
+        """子树级刷新收口: **只 patch 本 tick 真的改过的视图**。
+
+        旧实现每秒无条件 update 四块子树 (100+ 条日志 Text / 详情 / 文件列表 /
+        预览正文), 哪怕一行日志、一个字段都没变 —— 空闲期也在做整子树
+        序列化 + IPC + 客户端 diff, 这是「整体卡顿」的主要来源。
+        现在 refresh() / refresh_log() 把变化登记进 _dirty, 这里消费并清空。
+        """
+        脏 = getattr(self, '_dirty', None) or set()
+        self._dirty = set()
+        if not 脏:
+            return  # 空闲 tick: 零 patch
+        # 各子树独立 try: 一块尚未挂载 (update 抛错) 不得连带漏刷其它块
+        if 'title' in 脏 and getattr(self, '_日志条标题', None) is not None:
+            try:
+                self._日志条标题.update()
+            except Exception:
+                pass  # 刻意静默: 每秒级高频路径, 补日志会刷屏
+        # 批 2: 日志条与右栏**都常驻**, 不再是二选一
+        if 'log' in 脏 and getattr(self, '_日志条展开', True):
+            try:
                 self._log_list.update()
-            if self._view == "detail":
-                self._detail_view.update()
-            elif self._view == "preview":
-                self._file_list.update()
-                self._file_content.update()
-        except Exception:
-            pass  # 刻意静默: 高频路径(update_views(), 逐行/每秒级), 补日志会刷屏
+            except Exception:
+                pass  # 刻意静默: 每秒级高频路径, 补日志会刷屏
+        if 'detail' in 脏:
+            try:
+                if self._view == "detail":
+                    self._detail_view.update()
+                elif self._view == "preview":
+                    self._file_list.update()
+                    self._file_content.update()
+            except Exception:
+                pass  # 刻意静默: 每秒级高频路径, 补日志会刷屏
 
     # ----------------------------------------------------------- 详情刷新
-    def refresh(self):
+    def refresh(self) -> bool:
         """刷新任务详情视图 (主线程, 由刷新 Timer 驱动)
 
         P9 #4 (2026-10-24): 原 125 行单函数按「概览 / 指标 / 降级链 / 输出 / 错误」
         拆成 6 段，本函数只负责守卫与装配，控件树与拆分前逐节点等价。
+
+        性能修复: 旧实现**每秒无条件 clear + 重建**整个详情视图 (进度环、
+        指标区、降级链、输出行、错误行共几十个控件), 再由 update_views()
+        全量 patch 出去。改为签名比对: 数据没变就不重建、不 patch。
         """
         if self._detail_view is None or not self._detail_view.visible:
-            return
+            return False
         tid = self.task_manager.selected_task_id
         task = self.task_manager.get_task(tid) if tid else None
         if not task:
+            if self._detail_sig == ('__none__',):
+                return False
+            self._detail_sig = ('__none__',)
             self._显示未选中空态()
-            return
+            self._dirty.add('detail')
+            return True
 
+        import time
         mt = task.metrics
+        # 5 秒桶兜底: 详情里的耗时/速度类动态文本即使漏进签名, 最多 5 秒
+        # 也会重建一次, 不会像纯静态签名那样永久冻结。
+        sig = (tid, task.status, task.progress_current, task.progress_total,
+               task.title, task.url, task.output_file, bool(task.error),
+               mt.engine, mt.anti_spider_type, round(mt.quality_score),
+               mt.quality_passed, mt.incremental_skipped,
+               tuple(mt.engine_fallback_chain or ()),
+               (int((time.time() - mt.start_time) // 5)
+                if (task.status == "running" and mt.start_time) else 0))
+        if sig == self._detail_sig:
+            return False
+        self._detail_sig = sig
         self._detail_view.controls.clear()
         self._detail_view.controls.append(self._构建概览行(task))
         self._detail_view.controls.extend(self._构建指标区(mt))
@@ -443,6 +498,8 @@ class DetailDrawer:
             self._detail_view.controls.append(self._构建输出行(task))
         if task.error:
             self._detail_view.controls.append(self._构建错误行(task))
+        self._dirty.add('detail')
+        return True
 
     def _显示未选中空态(self):
         """批 4: 手写单行 → 统一状态组件。

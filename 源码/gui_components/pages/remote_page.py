@@ -452,36 +452,45 @@ class RemotePage:
         try:
             tasks = [t for t in self.task_manager.get_all_tasks()
                      if getattr(t, '来源', '本机') == '手机']
-            try:
-                self._rows_count.value = f"共 {len(tasks)} 条"
-            except Exception as _e:
-                _dbg("远控页", f'记录计数更新失败: {type(_e).__name__}: {_e}')
-            self._rows.controls.clear()
-            if not tasks:
-                self._rows.controls.append(self._empty)
-            else:
-                for t in tasks:
-                    进度 = (f"{t.progress_current}/{t.progress_total}"
-                            if t.progress_total else "—")
-                    self._rows.controls.append(ft.Container(
-                        content=ft.Row([
-                            txt(t.task_id, size=SIZE_SMALL, weight=WEIGHT_BODY),
-                            txt((t.title or t.url)[:30], size=SIZE_SMALL,
-                                weight=WEIGHT_SUBTITLE),
-                            ft.Container(expand=True),
-                            txt(t.status, size=SIZE_SMALL, weight=WEIGHT_BODY),
-                            txt(进度, size=SIZE_SMALL, weight=WEIGHT_BODY),
-                        ], spacing=10),
-                        padding=ft.Padding.symmetric(vertical=5, horizontal=6),
-                        border_radius=6,
-                        bgcolor=ft.Colors.SURFACE_CONTAINER,
-                    ))
-            if _可更新(self._rows):
-                self._rows.update()
+            # 性能: 本页每秒被 tick 调一次。旧实现无条件 clear + 重建全部行再
+            # _rows.update(), 页面可见时空闲也在做全量 patch。签名比对后只在
+            # 任务数据真变了才重建 (与 task_table / dead_book_page 同策略)。
+            签名 = tuple((t.task_id, t.title, t.url, t.status,
+                          t.progress_current, t.progress_total) for t in tasks)
+            if 签名 != getattr(self, '_上次任务签名', None):
+                self._上次任务签名 = 签名
+                try:
+                    self._rows_count.value = f"共 {len(tasks)} 条"
+                except Exception as _e:
+                    _dbg("远控页", f'记录计数更新失败: {type(_e).__name__}: {_e}')
+                self._rows.controls.clear()
+                if not tasks:
+                    self._rows.controls.append(self._empty)
+                else:
+                    for t in tasks:
+                        进度 = (f"{t.progress_current}/{t.progress_total}"
+                                if t.progress_total else "—")
+                        self._rows.controls.append(ft.Container(
+                            content=ft.Row([
+                                txt(t.task_id, size=SIZE_SMALL, weight=WEIGHT_BODY),
+                                txt((t.title or t.url)[:30], size=SIZE_SMALL,
+                                    weight=WEIGHT_SUBTITLE),
+                                ft.Container(expand=True),
+                                txt(t.status, size=SIZE_SMALL, weight=WEIGHT_BODY),
+                                txt(进度, size=SIZE_SMALL, weight=WEIGHT_BODY),
+                            ], spacing=10),
+                            padding=ft.Padding.symmetric(vertical=5, horizontal=6),
+                            border_radius=6,
+                            bgcolor=ft.Colors.SURFACE_CONTAINER,
+                        ))
+                if _可更新(self._rows):
+                    self._rows.update()
         except Exception as _e:
             # 批 4: 旧实现纯静默 → 列表保持空白或陈旧, 且**空态分支永远到不了**
             # (try 从取数那行起), 用户无法分辨"没有手机端任务"和"读取出错了"。
             _dbg("远控页", f'手机端任务读取失败: {type(_e).__name__}: {_e}')
+            # 错误态不能被签名短路: 清签名, 保证「重试」或下一次 tick 会重建
+            self._上次任务签名 = None
             try:
                 self._rows.controls.clear()
                 self._rows.controls.append(states.错误态(

@@ -103,6 +103,8 @@ class TaskTable:
         self.page = None
         self._expanded_id = ""      # 当前展开详情的任务 ID
         self._sig = None            # 行渲染签名 (无变化跳过重建)
+        self._显示任务 = []          # 当前表格行对应的任务 (耗时列局部刷新用)
+        self._耗时桶 = {}            # task_id -> 上次刷新耗时的 5 秒桶
         self._list_view = None
         # 窄档 (2026-10-04 UX 改进): ≤1200px 窗口隐藏次级列, 可反复切换
         self._窄档 = False
@@ -255,10 +257,13 @@ class TaskTable:
             self._refresh()
 
     # ------------------------------------------------------------- 刷新 (主线程)
-    def _refresh(self):
-        """重建表格内容 (须在主线程调用; 由刷新 Timer 驱动)"""
+    def _refresh(self) -> bool:
+        """重建表格内容 (须在主线程调用; 由刷新 Timer 驱动)
+
+        返回 True=控件树真的变了 (调用方才需要 update 子树); False=签名未变。
+        """
         if self._list_view is None:
-            return
+            return False
         全部 = self.task_manager.get_all_tasks()
         if self.品类筛选 == "全部":
             tasks = 全部
@@ -276,16 +281,22 @@ class TaskTable:
              t.task_id == self._expanded_id,
              # 死书标记(死书机制 阶段2): 状态与 status 同步变, 但阶段3 行内
              # 按钮要按 dead 分流(重试/忽略/删记录), 缺这项则按钮不刷新
-             bool(getattr(t, "dead", None)),
-             # M6 修复: 运行中任务的耗时按 5 秒桶纳入签名, 否则进度停滞时
-             # 耗时列冻结、跳变
-             (int((time.time() - t.metrics.start_time) // 5)
-              if (t.status == "running" and t.metrics.start_time) else 0))
+             bool(getattr(t, "dead", None)))
             for t in tasks
         )
+        # ⚠ 耗时**不得**进签名: 旧实现把 (elapsed // 5) 放进这里, 每个 running
+        # 任务每 5 秒触发一次「全部行 clear + 重建」, 行内按钮与其点击回调被
+        # 销毁重建 —— 用户恰好点在那一瞬就是「点了没反应」。耗时改由
+        # _刷新耗时() 做单控件局部更新, 既不丢点击也不整表重建。
         if sig == self._sig:
-            return  # 无变化: 保留控件树
+            return False  # 无变化: 保留控件树, 且调用方无需 update
         self._sig = sig
+        self._显示任务 = list(tasks)
+        self._耗时桶 = {
+            t.task_id: int((time.time() - t.metrics.start_time) // 5)
+            for t in tasks
+            if t.status == "running" and t.metrics.start_time
+        }
 
         # 同步任务计数 (设计稿: 卡片头右侧 "共 N 个任务")
         try:
@@ -305,10 +316,36 @@ class TaskTable:
             self._list_view.controls.append(states.首次为空(
                 图标=ft.Icons.LIBRARY_BOOKS_OUTLINED, 标题='暂无任务',
                 说明='在上方输入网址后点击「开始」创建任务', 填满=False))
-            return
+            return True
 
         for task in tasks:
             self._list_view.controls.append(self._build_row(task))
+        return True
+
+    def _刷新耗时(self):
+        """只更新运行中行的「耗时」文本, 不重建任何行控件。
+
+        每次 tick 至多 patch 变化了 5 秒桶的那几行里的一个 Text; 空闲时零 patch。
+        这样既保留 M6「进度停滞时耗时照走」的修复, 又不破坏行内点击回调。
+        """
+        try:
+            for task, 单元 in zip(getattr(self, '_显示任务', []),
+                                  self._行单元.get(5, [])):
+                if task.status != "running" or not task.metrics.start_time:
+                    continue
+                桶 = int((time.time() - task.metrics.start_time) // 5)
+                if self._耗时桶.get(task.task_id) == 桶:
+                    continue
+                self._耗时桶[task.task_id] = 桶
+                文本 = getattr(单元, 'content', None)
+                if not isinstance(文本, ft.Text):
+                    continue
+                新值 = _fmt_elapsed(task)
+                if 文本.value != 新值:
+                    文本.value = 新值
+                    文本.update()
+        except Exception:
+            pass  # 刻意静默: 每秒级高频路径, 补日志会刷屏
 
     # ------------------------------------------- 单元格构建 (P9 拆分 2026-10-24)
     # 拆分动机: _build_row 原为 216 行单函数 (P9 #2)，一屏看不完、改一列要
@@ -892,7 +929,16 @@ class TaskTable:
 
     # 子树级刷新入口 (gui_app 刷新循环用, H6: 避免 page.update() 整页 diff)
     def refresh_ui(self):
-        self._refresh()
+        """每秒 tick 调一次; **只在行数据真的变了** 才 patch 表格子树。
+
+        旧实现无条件 list_view.update() + count_text.update(): 即使签名未变、
+        控件树一个字节没动, 也要把 N 行 × 十几个控件序列化成 patch 发给客户端。
+        空闲时每秒如此, UI 线程与客户端都在做无用 diff, 是「整体卡顿」主源之一。
+        """
+        变了 = self._refresh()
+        self._刷新耗时()
+        if not 变了:
+            return  # 空闲 tick: 零 patch (耗时若有变化已在上一步局部刷出)
         try:
             self._list_view.update()
             self._count_text.update()

@@ -80,7 +80,8 @@ class Test品类筛选(unittest.TestCase):
     def test_品类进刷新签名(self):
         源码 = (根 / '源码' / 'gui_components' / 'task_table.py').read_text(
             encoding='utf-8')
-        块 = 源码.split('def _refresh(self):')[1][:1500]
+        # 锚点只取方法名前缀: _refresh 加了 -> bool 返回标注后仍要能命中
+        块 = 源码.split('def _refresh(self')[1][:1500]
         self.assertIn('品类', 块, '_sig 未含品类 → 切筛选/品类变化不重绘')
 
     def test_筛选变化回调(self):

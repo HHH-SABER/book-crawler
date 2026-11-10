@@ -71,6 +71,10 @@ class InputBar:
         self._粘贴_btn = None
         self._pending_urls = []
         self._pending_invalid = []
+        # 点击响应 (2026-11-10): 防重入 + 局部子树刷新, 避免每次点击都整页 diff
+        self._根控件 = None
+        self._提交中 = False
+        self.start_btn = None
         # UI 引用
         self.url_input = None
         self.mode_dropdown = None
@@ -93,7 +97,7 @@ class InputBar:
         主操作行 = self._构建主操作行()
         次操作行 = self._构建次操作行()
         self._构建批量面板()
-        return make_card(
+        self._根控件 = make_card(
             ft.Column([
                 # 第一行: 主操作 (URL 拉伸填充; 速度由程序自适应, 无手动选项)
                 主操作行,
@@ -103,6 +107,28 @@ class InputBar:
             ], spacing=6),
             padding=10,
         )
+        return self._根控件
+
+    def _局部刷(self, e=None):
+        """输入条内部状态变化: 只 patch 输入条子树。
+
+        旧实现一律 self.page.update() —— 四页 Stack 常驻, 隐藏页也参与 diff,
+        一次点击要等整棵树序列化完才有视觉反馈, 主观就是「点了没反应」。
+        控件尚未挂载 (构建期/单测) 时回退整页, 保证状态不丢。
+        """
+        根 = getattr(self, '_根控件', None)
+        if 根 is not None:
+            try:
+                根.update()
+                return
+            except Exception:
+                pass  # 刻意静默: 未挂载时回退整页, 下面兜底
+        p = getattr(self, 'page', None) or getattr(e, 'page', None)
+        if p is not None:
+            try:
+                p.update()
+            except Exception:
+                pass  # 刻意静默: 构建期尚未挂载 page, 可见性以属性为准
 
     def _构建输入字段(self):
         """URL / 模式 / 章节区间 三个输入控件"""
@@ -142,9 +168,9 @@ class InputBar:
 
     def _构建主操作行(self) -> ft.Row:
         """第一行：URL + 模式 + 开始/停止"""
-        start_btn = filled_btn("开始", icon=ft.Icons.PLAY_ARROW,
-                               on_click=self.on_start_click,
-                               tooltip="按所选模式开始抓取 (URL框内回车也可)")
+        self.start_btn = filled_btn("开始", icon=ft.Icons.PLAY_ARROW,
+                                    on_click=self.on_start_click,
+                                    tooltip="按所选模式开始抓取 (URL框内回车也可)")
         self.stop_btn = danger_btn("停止", icon=ft.Icons.STOP,
                                    on_click=self.on_stop_click, disabled=True,
                                    tooltip="停止当前选中任务")
@@ -152,7 +178,7 @@ class InputBar:
         self.品类条 = 胶囊组([('小说', '小说'), ('漫画', '漫画')],
                              当前=self.品类, on_change=self.设置品类)
         return ft.Row([self.品类条.build(), self.url_input, self.mode_dropdown,
-                       start_btn, self.stop_btn], spacing=6)
+                       self.start_btn, self.stop_btn], spacing=6)
     def _构建次操作行(self) -> ft.Row:
         """第二行：导入/粘贴 + 章节区间 + 三个开关 + 输出目录"""
         import_btn = tonal_btn("导入网址", icon=ft.Icons.UPLOAD_FILE,
@@ -309,20 +335,14 @@ class InputBar:
             self.url_input.hint_text = "如: https://m.example.com/book/123/ml.html"
             if (self.output_dir_input.value or "").strip() == "抓取结果/漫画":
                 self.output_dir_input.value = "抓取结果"
-        try:
-            self.page.update()
-        except Exception:
-            pass    # 刻意静默: 构建期尚未挂载 page, 可见性以属性为准
+        self._局部刷()
 
     def _on_mode_change(self, e):
         """模式切换时显示/隐藏章节区间输入"""
         is_range = self.mode_dropdown.value == "range"
         self.start_chapter.visible = is_range
         self.end_chapter.visible = is_range
-        try:
-            e.page.update()
-        except Exception as _e:
-            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        self._局部刷(e)
 
     def _notify(self, msg: str):
         """轻提示 (通过日志系统 + 控制台, 无 snackbar 依赖)"""
@@ -334,7 +354,49 @@ class InputBar:
 
     # --------------------------------------------------------- 单任务启动
     def on_start_click(self, e):
-        """开始抓取 (URL 框内回车或点击按钮均可触发)"""
+        """开始抓取入口 (URL 框内回车或点击按钮均可触发)。
+
+        点击响应修复: 入口先防重入 + 立即把「开始」按钮置灰 (单控件 update,
+        不等整页 diff), 让用户在 create_task / 落盘 / 弹提示这几步执行前就
+        看到「点中了」; finally 恢复按钮。旧实现在这段同步工作期间界面零变化,
+        主观就是「点击没有反馈」, 连点还会重复创建任务。
+        """
+        if getattr(self, '_提交中', False):
+            return
+        self._提交中 = True
+        self._设开始忙碌(True)
+        try:
+            return self._执行开始(e)
+        finally:
+            self._提交中 = False
+            self._设开始忙碌(False)
+
+    def _设开始忙碌(self, 忙: bool):
+        btn = getattr(self, 'start_btn', None)
+        if btn is None:
+            return
+        try:
+            btn.disabled = 忙
+            btn.update()
+        except Exception:
+            pass  # 刻意静默: 构建期/未挂载时 update 会抛, 不影响创建任务
+
+    def _刷停止按钮(self):
+        """「停止」按钮启用态原本靠新建任务后的整页 page.update() 带出。
+
+        那次整页刷新已改成表格子树级, 这里必须自己局部刷, 否则任务已经
+        跑起来了按钮还是灰的 —— 又一处「点击没反馈」。
+        """
+        btn = getattr(self, 'stop_btn', None)
+        if btn is None:
+            return
+        try:
+            btn.update()
+        except Exception:
+            pass  # 刻意静默: 构建期/未挂载时 update 会抛, 不影响任务创建
+
+    def _执行开始(self, e):
+        """原 on_start_click 主体: 校验参数 → 创建/复用任务 → 通知。"""
         品类 = self.品类
         url = (self.url_input.value or '').strip()
         if not url:
@@ -411,6 +473,7 @@ class InputBar:
                 if self.task_manager.restart_task(existing.task_id):
                     self.task_manager.select_task(existing.task_id)
                     self.stop_btn.disabled = False
+                    self._刷停止按钮()
                     _log("GUI", f"重新开始 (复用原任务 {existing.task_id}): {url}")
                     self._notify(f"已重新开始原任务: {existing.task_id}")
                     if self.on_task_created:
@@ -429,6 +492,7 @@ class InputBar:
         )
         self.task_manager.select_task(task_id)
         self.stop_btn.disabled = False
+        self._刷停止按钮()
         _log("GUI", f"开始抓取: {url} 模式={mode} 区间={chapter_range} "
                     f"速度=自适应 续传={self.resume_switch.value} → {task_id}")
         self._notify(f"任务已创建: {task_id}")
@@ -507,10 +571,7 @@ class InputBar:
         self.batch_panel.visible = True
         self._pending_urls = []
         self._pending_invalid = []
-        try:
-            self.page.update()
-        except Exception as _e:
-            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        self._局部刷()
 
     def _on_batch_parse(self, e):
         raw = self.batch_input.value or ""
@@ -525,10 +586,7 @@ class InputBar:
         self.batch_parse_btn.visible = False
         self.batch_confirm_btn.visible = False
         self.batch_cancel_btn.visible = False
-        try:
-            self.page.update()
-        except Exception as _e:
-            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        self._局部刷()
 
     def _parse_urls(self, raw_text):
         """解析并校验 URL 列表, 返回 (有效列表, 无效列表[(url, 原因)])"""
@@ -565,10 +623,7 @@ class InputBar:
         self.batch_confirm_btn.visible = True
         self.batch_cancel_btn.visible = True
         self.batch_panel.visible = True
-        try:
-            self.page.update()
-        except Exception as _e:
-            _dbg("输入栏", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        self._局部刷()
 
     def _start_batch(self, urls, ev=None):
         if self.品类 != "小说":
