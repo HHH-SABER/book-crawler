@@ -5,7 +5,7 @@
   === 设计稿目标 (_agent/设计预览/index.html, 2.5 界面重设计) ===
   顶栏 (52px): 应用图标 + 应用名 + 远控胶囊 + 主题胶囊 + 窗口按钮
   + 侧边栏 (220px): 图标+文字导航 + 底部状态块 + 访问 GitHub 卡
-  + 主内容区 (抓取工作台: 输入条 + 任务表格 + **底部常驻日志条** + 右侧常驻详情栏)
+  + 主内容区 (内容库: 输入条 + 任务表格 + **底部常驻日志条** + 右侧常驻详情栏)
   + 底部状态栏 (实时任务汇总)
   === 当前实现状态 (2026-10-06, Phase 4 落实中) ===
   ✅ 顶栏 52px / 侧栏底部状态块 + GitHub 卡 / 底部状态栏 / 右侧抽屉
@@ -74,6 +74,7 @@ try:
     import gui_components.icon_rail  # noqa: F401
     import gui_components.input_bar  # noqa: F401
     import gui_components.task_table  # noqa: F401
+    import gui_components.筛选栏  # noqa: F401  (品类胶囊组, 2026-11-10)
     import gui_components.detail_drawer  # noqa: F401
     import gui_components.row_detail  # noqa: F401
     import gui_components.log_tab  # noqa: F401
@@ -218,7 +219,7 @@ def _挂启动自检(page: ft.Page) -> None:
 
 
 def _构建工作台(input_bar, task_table, drawer):
-    """抓取工作台 = 左列(页头+输入条+任务表+底部常驻日志条) | 右侧常驻栏 (main 直线段)。
+    """内容库 = 左列(页头+输入条+任务表+底部常驻日志条) | 右侧常驻栏 (main 直线段)。
 
     设计稿 (_agent/设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
     """
@@ -226,7 +227,7 @@ def _构建工作台(input_bar, task_table, drawer):
     _底部日志条 = drawer.build_log_strip()
     return ft.Row([
         ft.Column([
-            page_header('抓取工作台', '输入小说目录页URL，自动识别站点并开始抓取'),
+            page_header('内容库', '粘贴小说目录页或漫画详情页链接，自动识别品类与站点'),
             input_bar.build(),
             ft.Container(content=task_table.build(), expand=True),
             _底部日志条,
@@ -510,7 +511,7 @@ def main(page: ft.Page):
                     on_theme_toggle=toggle_theme)
     rail.page = page          # 侧栏底部 GitHub 卡需要 page 才能打开浏览器
 
-    # ---- 抓取工作台: 输入条 + 任务表格 | 右侧常驻面板 (实时日志/详情/预览) ----
+    # ---- 内容库: 输入条 + 任务表格 | 右侧常驻面板 (实时日志/详情/预览) ----
     input_bar = InputBar(task_manager)
     task_table = TaskTable(task_manager)
     drawer = DetailDrawer(task_manager)
@@ -518,13 +519,25 @@ def main(page: ft.Page):
     file_picker = ft.FilePicker()
     input_bar.file_picker = file_picker
 
-    def _on_task_created():
-        """新任务创建后立即刷新表格"""
+    def _on_task_created(品类=None):
+        """新任务创建后立即刷新表格; 当前筛选看不到它时自动切到该品类。"""
+        if 品类 and task_table.品类筛选 not in ('全部', 品类):
+            task_table.设置品类筛选(品类)
         task_table._refresh()
         page.update()
 
     input_bar.on_task_created = _on_task_created
     input_bar.page = page
+    # 品类筛选偏好 (2026-11-10): 恢复上次选择, 变化即落盘。
+    # 必须在 _构建工作台(build) 之前设置 —— build 里用它初始化胶囊选中态。
+    try:
+        from 界面偏好 import 取 as _偏取, 设置 as _偏设
+        _上次品类 = _偏取('内容品类', '全部')
+        if _上次品类 in ('全部', '小说', '漫画'):
+            task_table.品类筛选 = _上次品类
+        task_table.on_品类变化 = lambda 品: _偏设('内容品类', 品)
+    except Exception as _e_品:
+        app_log.debug("界面", f"品类偏好不可用: {type(_e_品).__name__}")
     task_table.page = page
     drawer.page = page
 
@@ -651,7 +664,7 @@ def main(page: ft.Page):
     #  控件树 —— 已删除, 状态摘要唯一由 _status_loop 在事件循环线程刷新)
 
     # ---- 主刷新循环 (主线程 async, 1s 周期) ----
-    # 抓取工作台的表格/日志条/抽屉统一在此刷新 (仅 crawl 页可见时刷新, 省资源)
+    # 内容库的表格/日志条/抽屉统一在此刷新 (仅 crawl 页可见时刷新, 省资源)
     # 2026-10-14 (阶段一 #4): 原为 **_refresh_loop + _status_loop 两个并行协程**,
     # 各起一个 1s 定时器 ⇒ ① 事件循环每秒被唤醒两次、两次全量 diff 控件树,
     # 空闲时段双倍 UI 线程压力; ② 两个循环对同一任务列表各取一次快照,

@@ -46,11 +46,11 @@ class Test页面顺序契约(unittest.TestCase):
                       '缺顺序自检 → 键序错位只能靠肉眼发现')
         self.assertIn('NAV_PAGES', 自检, '自检未与 NAV_PAGES 比对')
 
-    def test_首屏仍是抓取工作台(self):
+    def test_首屏仍是内容库(self):
         """新增页不能插到 index 0 前面(会把首屏挤掉)。"""
         from gui_components.icon_rail import NAV_PAGES
         self.assertEqual(NAV_PAGES[0][0], 'crawl',
-                         '首屏必须是 crawl(抓取工作台), 新增页不得插到最前')
+                         '首屏必须是 crawl(内容库), 新增页不得插到最前')
 
     def test_死书页在历史页之后站点页之前(self):
         from gui_components.icon_rail import NAV_PAGES

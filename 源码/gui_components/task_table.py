@@ -113,6 +113,11 @@ class TaskTable:
         self.on_delete_task = None   # callback(task_id)
         self.on_redownload = None   # callback(task_id)
         self.on_open_preview = None  # callback(task_id) 打开抽屉预览
+        # 内容品类筛选 (2026-11-10): 品类是任务属性, 不是页面 —— 加品类只需
+        # 在 已知品类 里登记 + 这里多一个胶囊, 不动导航。
+        self.品类筛选 = "全部"        # '全部' | '小说' | '漫画'
+        self.on_品类变化 = None       # callback(品类), 供 gui_app 持久化偏好
+        self._品类条 = None
 
     # ------------------------------------------------------------------ UI
     def build(self) -> ft.Control:
@@ -126,9 +131,14 @@ class TaskTable:
                                    weight=WEIGHT_BODY,
                                    color=ft.Colors.ON_SURFACE_VARIANT,
                                    font_family=FONT_STACK)
+        from .筛选栏 import 胶囊组
+        self._品类条 = 胶囊组(
+            [('全部', '全部'), ('小说', '小说'), ('漫画', '漫画')],
+            当前=self.品类筛选, on_change=self._on_品类点击)
         card_header = ft.Row([
             ft.Text("任务列表", size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
                     color=ft.Colors.ON_SURFACE, font_family=FONT_STACK),
+            self._品类条.build(),
             ft.Container(expand=True),
             self._count_text,
             # 清空历史 (2026-09-29 任务历史持久化配套): 一键清终态任务记录,
@@ -227,14 +237,38 @@ class TaskTable:
         档 = 布局档位.窄 if 窄 else 布局档位.宽
         self.设置档位(档, 布局档位.取参数(档))
 
+    # ------------------------------------------------------- 品类筛选 (2026-11-10)
+    def _on_品类点击(self, 品类: str):
+        self.设置品类筛选(品类)
+
+    def 设置品类筛选(self, 品类: str, 刷新: bool = True):
+        """切换品类筛选并强制重绘（外部也可调用: 新建任务后自动切到该品类）。"""
+        if 品类 == self.品类筛选:
+            return
+        self.品类筛选 = 品类
+        self._sig = None            # 强制重建: 行集合变了
+        if self._品类条 is not None:
+            self._品类条.设值(品类)
+        if self.on_品类变化:
+            self.on_品类变化(品类)
+        if 刷新:
+            self._refresh()
+
     # ------------------------------------------------------------- 刷新 (主线程)
     def _refresh(self):
         """重建表格内容 (须在主线程调用; 由刷新 Timer 驱动)"""
         if self._list_view is None:
             return
-        tasks = self.task_manager.get_all_tasks()
+        全部 = self.task_manager.get_all_tasks()
+        if self.品类筛选 == "全部":
+            tasks = 全部
+        else:
+            tasks = [t for t in 全部
+                     if getattr(t, "品类", "小说") == self.品类筛选]
         sig = tuple(
             (t.task_id, t.status, t.progress_current, t.progress_total,
+             # 品类进签名: 否则切筛选/品类变更时表格不重绘 (与 dead 同款坑)
+             getattr(t, "品类", "小说"),
              t.title, t.url, t.selected, t.metrics.engine,
              t.metrics.anti_spider_type, round(t.metrics.quality_score),
              t.metrics.quality_passed, t.metrics.incremental_skipped,
@@ -255,7 +289,9 @@ class TaskTable:
 
         # 同步任务计数 (设计稿: 卡片头右侧 "共 N 个任务")
         try:
-            self._count_text.value = f"共 {len(tasks)} 个任务"
+            self._count_text.value = (
+                f"共 {len(tasks)} 个任务" if len(tasks) == len(全部)
+                else f"共 {len(tasks)} 个任务（全部 {len(全部)}）")
         except Exception:
             pass  # 刻意静默: 高频路径(_refresh(), 逐行/每秒级), 补日志会刷屏
 
@@ -294,7 +330,10 @@ class TaskTable:
 
     def _单元格_标题(self, task, is_selected: bool) -> ft.Container:
         """列0: 标题 + 可点击原网址"""
-        title_text = ft.Text((task.title[:24] + "…") if len(task.title) > 24 else task.title,
+        标题 = task.title
+        if getattr(task, "品类", "小说") != "小说":
+            标题 = f"{task.品类} · {标题}"
+        title_text = ft.Text((标题[:24] + "…") if len(标题) > 24 else 标题,
                              size=SIZE_SMALL, weight=WEIGHT_SUBTITLE,
                              max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
                              font_family=FONT_STACK,
