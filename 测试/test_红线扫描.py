@@ -130,6 +130,54 @@ class Test占位不误报(unittest.TestCase):
         self.assertEqual(r.returncode, 0, f'脱敏样本应全部放行: {r.stdout[-300:]}')
 
 
+class Test文件清单入口(unittest.TestCase):
+    """`--files-from`: pre-commit 的入参通道 (2026-11-10)
+
+    背景: 钩子原来 `git diff -z | xargs -0 python 红线扫描.py`; xargs 按
+    "ARG_MAX 减环境变量体积" 估算可执行性, 会话 env 涨到 ~30KB 时报
+    `environment is too large for exec` 并非 0 退出 —— 钩子把它当"红线命中"
+    假拦提交（内容干净）。改走 NUL 清单文件后与 env 体积无关。
+
+    这两例守的是: ①清单里的坏文件**仍会被抓**（不能因为换了通道就变瞎）;
+    ②空清单**快速返回 0**（不能退化成"扫全库"或"报错阻断提交"）。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _写清单(self, 路径s):
+        p = self.tmp / 'files.list'
+        p.write_bytes(b'\0'.join(str(x).encode('utf-8') for x in 路径s) + b'\0')
+        return p
+
+    def test_清单里的坏文件照样被抓(self):
+        坏 = self.tmp / 'bad.py'
+        坏.write_text('url = "https://' + 'book.' + 'siteP20' + '.cc/x"\n',
+                      encoding='utf-8')
+        好 = self.tmp / 'ok.py'
+        好.write_text('print(1)\n', encoding='utf-8')
+        清单 = self._写清单([好, 坏])
+        r = _跑(['--files-from', str(清单)])
+        self.assertNotEqual(r.returncode, 0, '清单里的真实域名必须被抓')
+        self.assertIn('真实域名', r.stdout)
+        self.assertIn('文件 2 个', r.stdout, '清单里两个文件都要真扫到')
+
+    def test_空清单快速返回0(self):
+        清单 = self._写清单([])
+        r = _跑(['--files-from', str(清单)])
+        self.assertEqual(r.returncode, 0, f'空清单不该阻断提交: {r.stdout[-200:]}')
+        self.assertIn('无需扫描', r.stdout)
+
+    def test_清单缺失返回2(self):
+        """读不到清单必须退 2 而不是 0 —— 否则等于「没扫过却报干净」"""
+        r = _跑(['--files-from', str(self.tmp / '不存在.list')])
+        self.assertEqual(r.returncode, 2, '读不到清单不能当扫过且干净')
+
+
 class Test公开侧当前干净(unittest.TestCase):
     """门禁本体: 公开侧扫描必须 PASS (这同时是回归 —— 今天修过一处泄露)"""
 

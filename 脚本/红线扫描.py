@@ -238,9 +238,31 @@ _公开范围 = ['源码', '测试', '脚本', '文档', 'CHANGELOG.md', 'README
              '.github', 'rust_core_poc', 'requirements.txt', 'requirements-lock.txt']
 
 
+def _读文件清单(路径) -> 'list[str] | None':
+    """读 NUL 分隔的路径清单（git diff -z 的原样输出）。
+
+    为什么需要它: pre-commit 原来用 `git diff … | xargs -0 python 红线扫描.py`,
+    而 xargs 按 "ARG_MAX 减环境变量体积" 估算还能不能 exec —— 会话环境变量涨到
+    ~30KB 时会直接报 `environment is too large for exec` 并以非 0 退出, 被钩子
+    当成"红线命中"**假拦提交**（2026-11-10 实踩）。走临时文件后与 env 大小无关。
+    读不到清单返回 None（调用方退 2，绝不当成"扫过且干净"）。
+    """
+    try:
+        原始 = Path(路径).read_bytes()
+    except OSError as e:
+        print(f'[红线扫描] 读不到文件清单 {路径}: {e}')
+        return None
+    # 中文路径按 UTF-8 解；surrogateescape 兜住极端非 UTF-8 文件名, 不让一条坏名字
+    # 把整次扫描打断（宁可这个名字被当"扫不到", 也不能整体退化成假通过）。
+    return [p.decode('utf-8', 'surrogateescape') for p in 原始.split(b'\0') if p]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description='红线扫描: 站点/书名泄露检查')
     ap.add_argument('目标', nargs='*', help='要扫的文件/目录 (缺省扫公开侧)')
+    ap.add_argument('--files-from', metavar='清单',
+                    help='从文件读 NUL 分隔的路径清单 (pre-commit 用: 环境变量过大时 '
+                         'xargs 会 exec 失败, 见 .githooks/pre-commit)')
     ap.add_argument('--全量', action='store_true',
                     help='本地模式: 公开侧 + 发布产物, 且加载本地词库 (最严)')
     ap.add_argument('--ci', action='store_true',
@@ -248,7 +270,17 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     本地词 = [] if args.ci else _读本地词库()
-    目标 = args.目标 or list(_公开范围)
+    目标 = list(args.目标)
+    if args.files_from:
+        清单 = _读文件清单(args.files_from)
+        if 清单 is None:
+            return 2
+        目标 += 清单
+        if not 目标:
+            print('[红线扫描] 文件清单为空, 无需扫描')
+            return 0
+    elif not 目标:
+        目标 = list(_公开范围)
     if args.全量:
         # 只扫 **发布/** (公开包 + zip, zip 会解包扫明文文件)。
         # **刻意不扫 dist/** —— 那是本机私有产物 (含真实站点适配器与用户
