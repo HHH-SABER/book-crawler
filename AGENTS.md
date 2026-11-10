@@ -153,6 +153,9 @@
 | 日志.py / _path_utils.py | 单例日志 (单文件 5MB 轮转, 活动文件带 `_N` 后缀) / 路径契约 get_resource_dir·get_app_base_dir·get_state_root |
 | 任务事件.py | 结构化事件通道 (ContextVar, 随 copy_context 进 worker; 取代正则解析指标) |
 | 远控/ (服务.py·配置.py) | FastAPI 远控服务 (`python -m 远控`; 内嵌模式下与 GUI 共享同一 TaskManager) |
+| 品类执行器.py / 漫画任务.py | 非小说品类注册表（惰性 import） / 漫画执行器；小说走 `_执行抓取` 原生主体，早退分支在 `from 爬虫 import` 之前 |
+| 漫画抓取.py / 漫画导出.py / 漫画卷册.py | 漫画抓取（可停止/进度/书名） / 唯一导出实现 pages·cbz·pdf × 卷·话 / CLI 薄适配层 |
+| gui_components/筛选栏.py | 单选胶囊原语；内容库/历史/死书三页维度不同，只共享这一层 |
 | site_probe.py / epub_exporter.py / 启动器.py | 站点探针 / TXT→EPUB / CLI ASCII 启动壳 (注意 GUI 入口**不经**它) |
 | rust_core_poc/ | PyO3 扩展源码 (质检/解码加速); 编译产物 源码/rust_core.pyd 不入库 |
 
