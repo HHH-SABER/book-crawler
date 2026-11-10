@@ -277,9 +277,9 @@ NVIDIA Corporation/
 /dist_v2.3.1/
 /build_v2.3.1/
 
-# ============ 跨 Agent 交接文件 (本地协作文件, 按 HANDOFF.md 自身规则不入库) ============
+# ============ 跨 Agent 交接文件 (本地协作文件, 按 /_agent/ 自身规则不入库) ============
 # 2026-09-11: 此前被 `git add -A` 误提交并推送, 已从索引移除并在此忽略
-HANDOFF.md
+/_agent/
 
 # ============ 便携运行时 (2026-10-01 补: 新版启动脚本改用 .runtime/) ============
 #   .runtime/python314/   —— 嵌入式 Python, 其 ._pth 指向 ../../.venv/Lib/site-packages
@@ -333,4 +333,3 @@ rust_core_poc/target/
 /抓取结果_*/
 
 # 设计预览稿 (本地可视化用, 非交付物; 含 CDN/CSS 类名会被红线误判)
-/界面设计预览/

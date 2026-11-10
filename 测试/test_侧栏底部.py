@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Phase 4 批 1 回归：顶栏去重复版本号 + 侧栏底部（状态块 / 访问 GitHub 卡）。
 
-设计稿要求（`界面设计预览/index.html`）：titlebar 只写应用名；侧栏底部有
+设计稿要求（`_agent/设计预览/index.html`）：titlebar 只写应用名；侧栏底部有
 `.sidebar-status` 状态块与 GitHub 卡。本轮按此落实，本文件钉住三件事：
   ① 侧栏底部块能构建，含状态块与 GitHub 文案；
   ② 状态摘要与"打开仓库"在**无 page / 未入树**时必须是安全 no-op（组件单测常见形态）；

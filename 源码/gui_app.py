@@ -2,7 +2,7 @@
 """拾卷 GUI 主程序 (苹果风格界面)
 
 基于 Flet 框架。布局:
-  === 设计稿目标 (界面设计预览/index.html, 2.5 界面重设计) ===
+  === 设计稿目标 (_agent/设计预览/index.html, 2.5 界面重设计) ===
   顶栏 (52px): 应用图标 + 应用名 + 远控胶囊 + 主题胶囊 + 窗口按钮
   + 侧边栏 (220px): 图标+文字导航 + 底部状态块 + 访问 GitHub 卡
   + 主内容区 (抓取工作台: 输入条 + 任务表格 + **底部常驻日志条** + 右侧常驻详情栏)
@@ -220,7 +220,7 @@ def _挂启动自检(page: ft.Page) -> None:
 def _构建工作台(input_bar, task_table, drawer):
     """抓取工作台 = 左列(页头+输入条+任务表+底部常驻日志条) | 右侧常驻栏 (main 直线段)。
 
-    设计稿 (界面设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
+    设计稿 (_agent/设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
     """
     _右侧常驻栏 = drawer.build()   # 必须在 build_log_strip 之前/之后都行: 视图构建幂等
     _底部日志条 = drawer.build_log_strip()
@@ -587,7 +587,7 @@ def main(page: ft.Page):
     _on_page_resize()      # 首帧 page.width 可能尚未就绪 → 交给 120ms 后的首次计算
 
     # 工作台 = 左列(页头 + 输入条 + 任务表 + **底部常驻日志条**) | 右侧常驻栏(详情/预览)
-    # 设计稿 (界面设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
+    # 设计稿 (_agent/设计预览/index.html) 的三区; 批 2 由"抽屉"改为两处常驻。
     crawl_workbench = _构建工作台(input_bar, task_table, drawer)
 
     # ---- 其他页面 ----

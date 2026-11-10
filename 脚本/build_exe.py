@@ -107,7 +107,10 @@ def _同步CHANGELOG(ver: str, date: str) -> str:
     return f"CHANGELOG 顶部条目 → [{ver}] {date}"
 
 
-LOG = os.path.join(ROOT, "build_log.txt")
+# 构建日志属 agent 工作产物, 统一放 _agent/ (2026-11-10 整理)
+_LOG_DIR = os.path.join(ROOT, "_agent")
+os.makedirs(_LOG_DIR, exist_ok=True)
+LOG = os.path.join(_LOG_DIR, "build_log.txt")
 log_lines = []
 
 def log(msg=""):

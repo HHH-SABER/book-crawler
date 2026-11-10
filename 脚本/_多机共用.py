@@ -35,5 +35,6 @@ _私有仓覆盖 = os.environ.get('NC_PRIVATE_GIT_DIR', '').strip()
 def 收集pathspec() -> list:
     """返回 `git add -f -- <pathspec...>` 用的完整参数列表。"""
     paths = [f':(glob){x}/**' for x in 白名单目录]
-    paths += [':(glob).runtime/*.py', ':(glob)HANDOFF.md']
+    paths += [':(glob)_agent/临时脚本/runtime历史/*.py',
+              ':(glob)_agent/HANDOFF.md']
     return paths + list(排除模式)

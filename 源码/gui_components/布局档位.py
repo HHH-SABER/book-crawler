@@ -133,7 +133,7 @@ def 读取设计稿断点() -> list:
     读的是真实设计稿文件, 不是副本 —— 设计稿改了断点而代码没跟, 用例就会红。
     """
     根 = Path(__file__).resolve().parents[2]          # 源码/gui_components → 项目根
-    页 = 根 / '界面设计预览' / 'index.html'
+    页 = 根 / '_agent' / '设计预览' / 'index.html'
     try:
         文本 = 页.read_text(encoding='utf-8')
     except OSError:

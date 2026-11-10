@@ -6,7 +6,7 @@
 的空态/加载态/错误态全部接到它上面。也就是说: 组件的形一旦被改错,
 **六个页面会同时错**, 且没有任何护栏。
 
-尺寸基准 = 设计稿 `界面设计预览/index.html` 的 `.empty-state` (1306-1330 行):
+尺寸基准 = 设计稿 `_agent/设计预览/index.html` 的 `.empty-state` (1306-1330 行):
 图标 48px + opacity 0.4 / 标题 --fs-h3(15) 字重 500 --text-secondary /
 说明 --fs-small(13) --text-tertiary / 留白 --sp-3(12) / 内边距 --sp-8(32)。
 
@@ -238,14 +238,14 @@ class Test状态容器(unittest.TestCase):
 class Test设计稿基准一致(unittest.TestCase):
     """把"设计稿数值"直接钉成断言, 防止有人凭感觉改回去。
 
-    读的是 `界面设计预览/index.html` 的 `.empty-state` 段 —— 设计稿一改,
+    读的是 `_agent/设计预览/index.html` 的 `.empty-state` 段 —— 设计稿一改,
     这条会红, 提醒同步 (比注释可靠)。
     """
 
     def test_设计稿empty_state数值与代码一致(self):
         import re
         from gui_components import ui_tokens
-        设计 = (_ROOT / '界面设计预览' / 'index.html').read_text(encoding='utf-8')
+        设计 = (_ROOT / '_agent' / '设计预览' / 'index.html').read_text(encoding='utf-8')
         段 = 设计.split('.empty-state {')[1].split('/* 日志条 */')[0]
         图标段 = 段.split('.empty-state-icon {')[1].split('}')[0]
         尺寸 = int(re.search(r'font-size:\s*(\d+)px', 图标段).group(1))

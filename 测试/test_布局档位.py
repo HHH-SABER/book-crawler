@@ -98,7 +98,7 @@ class Test档位参数(unittest.TestCase):
 
 
 class Test与设计稿交叉校验(unittest.TestCase):
-    """直接读 `界面设计预览/index.html` 的 @media 数值 —— 设计稿改了就得跟。"""
+    """直接读 `_agent/设计预览/index.html` 的 @media 数值 —— 设计稿改了就得跟。"""
 
     def test_设计稿断点存在且被覆盖(self):
         断点 = L.读取设计稿断点()
@@ -119,7 +119,7 @@ class Test与设计稿交叉校验(unittest.TestCase):
         self.assertIn(720, 断点)
         self.assertIn(480, 断点)
         self.assertEqual(L.实机最小宽, 960)
-        设计 = (根 / '界面设计预览' / 'index.html').read_text(encoding='utf-8')
+        设计 = (根 / '_agent' / '设计预览' / 'index.html').read_text(encoding='utf-8')
         self.assertIn('min_width=960', 设计, '设计稿里的实机约束注记没了')
         # 窗口最小宽必须**大于** 720 → ≤720 档才真的够不到; 一旦它被调小,
         # 该档就变成可达, 必须补实现 (这条断言就是那个哨兵)。

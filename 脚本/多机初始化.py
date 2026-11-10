@@ -37,7 +37,7 @@ from _多机共用 import 私有仓, 收集pathspec  # noqa: E402
 排除模板 = '''# 私有资产仓：默认忽略一切。真正的纳入靠 脚本/多机初始化.py 的 `git add -f`
 # （本仓 --work-tree 是项目根，git 会优先读公开仓的 .gitignore，见 _多机共用.py）。
 *
-!/HANDOFF.md
+!/_agent/HANDOFF.md
 !/站点适配_本地/
 !/测试样本_本地/
 !/测试_本地/

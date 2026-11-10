@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """死书卡片对齐设计稿的回归（2026-10-06 批 3）。
 
-设计稿（`界面设计预览/index.html`）：
+设计稿（`_agent/设计预览/index.html`）：
   `.deadbook-card { border-left: 3px solid var(--status-*-line) }`  ← 左侧 3px 状态色条
   `.deadbook-meta` = 等宽 URL · 判定于 <时间> · （设计稿还有 HTTP 码/已抓章节）·
   font-size --fs-micro、色 text-tertiary。
