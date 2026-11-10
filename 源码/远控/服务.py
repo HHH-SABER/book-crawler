@@ -5,7 +5,8 @@
   GET  /                          面板外壳 (单页 HTML; 本身不含 token, JS 持 token 调 API)
   GET  /tutorial                  使用教程页 (**需鉴权**, ?k= 或 Bearer) —— 2026-10-07 起收紧
   GET  /api/v1/healthz            健康检查 (免鉴权, 供看门狗; 只回 ok+时间戳)
-  POST /api/v1/tasks              发任务 {url, mode?, resume?, export_epub?}
+  POST /api/v1/tasks              发任务 {url, kind?, mode?, resume?, export_epub?,
+                                  format?, volume_bounds?}  (kind 缺省「小说」)
   GET  /api/v1/tasks              任务列表 (含进度/状态/耗时)
   GET  /api/v1/tasks/{id}/logs?after=N   日志增量 (返回 total/entries/截断)
   GET  /api/v1/tasks/{id}/logs/stream    日志 SSE 流 (EventSource 可用 ?k= 鉴权)
@@ -463,9 +464,21 @@ def 创建任务(body: dict, k: Optional[str] = None,
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"爬虫模块加载失败: {e}")
 
+    # 统一内容库 (2026-11-10): kind 缺省「小说」—— 旧版面板/脚本不传该字段
+    # 时行为完全不变；中文名与英文别名都收, 便于第三方调用。
+    品类别名 = {'小说': '小说', '漫画': '漫画',
+                'novel': '小说', 'manga': '漫画'}
+    raw_kind = (body or {}).get("kind", "小说")
+    if not isinstance(raw_kind, str) or raw_kind.strip() not in 品类别名:
+        raise HTTPException(status_code=400,
+                            detail=f"kind 仅支持 {sorted(品类别名)}")
+    品类 = 品类别名[raw_kind.strip()]
+
     mode = (body or {}).get("mode", "full")
     if mode not in ("full", "test", "range"):
         raise HTTPException(status_code=400, detail="mode 仅支持 full/test/range")
+    if 品类 == "漫画" and mode != "full":
+        raise HTTPException(status_code=400, detail="漫画仅支持 mode=full")
     chapter_range = (body or {}).get("chapter_range")
     if chapter_range is not None or mode == "range":
         if (not isinstance(chapter_range, (list, tuple)) or len(chapter_range) != 2
@@ -476,6 +489,20 @@ def 创建任务(body: dict, k: Optional[str] = None,
     for flag in ("resume", "export_epub", "unique_title", "incremental"):
         if flag in body and type(body[flag]) is not bool:
             raise HTTPException(status_code=400, detail=f"{flag} 必须是布尔值")
+    if 品类 == "漫画" and bool((body or {}).get("export_epub", False)):
+        raise HTTPException(status_code=400, detail="漫画不支持 EPUB 导出")
+
+    品类参数 = None
+    if 品类 == "漫画":
+        格式 = (body or {}).get("format", "pages")
+        if 格式 not in ("pages", "cbz", "pdf"):
+            raise HTTPException(status_code=400,
+                                detail="format 仅支持 pages/cbz/pdf")
+        卷界 = (body or {}).get("volume_bounds", "")
+        if not isinstance(卷界, str):
+            raise HTTPException(status_code=400,
+                                detail="volume_bounds 必须是字符串")
+        品类参数 = {"导出格式": 格式, "卷界": 卷界.strip()}
     # 增量透传 (EXE/桌面批量用): incremental=True 默认 unique_title=False ——
     # 增量语义是续写原文件, True 会另存 "书名(1).txt" 使旧正文无法参与增量搬运;
     # 显式传入 unique_title 时以显式为准 (与 GUI"一键更新书架"同参数组合)
@@ -489,11 +516,14 @@ def 创建任务(body: dict, k: Optional[str] = None,
             url=url,
             mode=mode,
             chapter_range=chapter_range,
-            resume=bool((body or {}).get("resume", True)),
-            export_epub=bool((body or {}).get("export_epub", False)),
+            resume=(True if 品类 == "漫画"
+                    else bool((body or {}).get("resume", True))),
+            export_epub=(False if 品类 == "漫画"
+                         else bool((body or {}).get("export_epub", False))),
             # 续传中断任务时必须 False — True 会另存 "书名(1).txt" 而非续写
-            unique_title=唯一标题,
-            incremental=增量,
+            unique_title=(True if 品类 == "漫画" else 唯一标题),
+            incremental=(False if 品类 == "漫画" else 增量),
+            品类=品类, 品类参数=品类参数,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"任务创建失败: {e}")
@@ -519,6 +549,7 @@ def _任务快照(t) -> dict:
         "错误": t.error, "输出文件": t.output_file,
         "耗时秒": 耗时,
         "增量跳过": m.incremental_skipped if m else 0,
+        "品类": getattr(t, '品类', '小说'),
     }
 
 

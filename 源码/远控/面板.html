@@ -14,6 +14,13 @@
   .card { background:var(--card); border-radius:10px; padding:12px; margin-bottom:12px; }
   input[type=text] { width:100%; padding:8px; border-radius:6px; border:1px solid #333;
                      background:#0d1015; color:var(--fg); font-size:14px; }
+  select { padding:8px; border-radius:6px; border:1px solid #333;
+           background:#0d1015; color:var(--fg); font-size:14px; }
+  input[type=number] { padding:8px; border-radius:6px; border:1px solid #333;
+                       background:#0d1015; color:var(--fg); font-size:14px; }
+  #url { flex:1; min-width:150px; width:auto; }
+  #卷界 { width:150px; }
+  #起话, #止话 { width:88px; }
   button { padding:7px 14px; border:0; border-radius:6px; background:var(--acc);
            color:#08131c; font-weight:600; cursor:pointer; }
   button.sec { background:#2a3240; color:var(--fg); }
@@ -125,14 +132,32 @@
 </div>
 
 <div class="card c1">
-  <div class="row"><input type="text" id="url" placeholder="小说目录页 URL"></div>
-  <div class="row" style="margin-top:8px">
+  <div class="row">
+    <select id="kind" onchange="切品类()" aria-label="内容品类">
+      <option value="小说">小说</option>
+      <option value="漫画">漫画</option>
+    </select>
+    <input type="text" id="url" placeholder="小说目录页 URL">
+  </div>
+  <div class="row" style="margin-top:8px" id="小说选项">
     <select id="mode">
       <option value="full">完整抓取</option>
       <option value="test">测试 (前3章)</option>
     </select>
     <label><input type="checkbox" id="resume" checked> 断点续传</label>
     <label><input type="checkbox" id="epub"> 导出 EPUB</label>
+  </div>
+  <div class="row" style="margin-top:8px; display:none" id="漫画选项">
+    <select id="导出格式" onchange="切品类()" aria-label="导出格式">
+      <option value="pages">逐页图片</option>
+      <option value="cbz">CBZ</option>
+      <option value="pdf">PDF</option>
+    </select>
+    <input type="text" id="卷界" placeholder="卷界 如 8,16,24">
+    <input type="number" id="起话" placeholder="起始话" min="1">
+    <input type="number" id="止话" placeholder="结束话" min="1">
+  </div>
+  <div class="row" style="margin-top:8px">
     <button onclick="发任务()">开始抓取</button>
     <span id="msg" class="dim"></span>
   </div>
@@ -220,16 +245,38 @@ function 提示(s) {
              {duration:200, easing:'cubic-bezier(.22,.61,.36,1)'});
 }
 
+// 统一内容库 (2026-11-10): 品类是任务属性, 不是页面 —— 表单按品类切字段
+function 切品类() {
+  var 漫画 = document.getElementById('kind').value === '漫画';
+  document.getElementById('小说选项').style.display = 漫画 ? 'none' : '';
+  document.getElementById('漫画选项').style.display = 漫画 ? '' : 'none';
+  document.getElementById('卷界').style.display =
+    (漫画 && document.getElementById('导出格式').value !== 'pages') ? '' : 'none';
+  document.getElementById('url').placeholder =
+    漫画 ? '漫画详情页 URL' : '小说目录页 URL';
+}
+
 // 所有动态内容一律 textContent, 杜绝站点内容进日志引发的 XSS
 function 发任务() {
   var url = document.getElementById('url').value.trim();
   if (!url) { 提示('请输入 URL'); return; }
-  var body = {
-    url: url,
-    mode: document.getElementById('mode').value,
-    resume: document.getElementById('resume').checked,
-    export_epub: document.getElementById('epub').checked
-  };
+  var 品类 = document.getElementById('kind').value;
+  var body;
+  if (品类 === '漫画') {
+    body = { url: url, kind: 品类, mode: 'full',
+             format: document.getElementById('导出格式').value,
+             volume_bounds: document.getElementById('卷界').value.trim() };
+    var 起 = parseInt(document.getElementById('起话').value, 10);
+    var 止 = parseInt(document.getElementById('止话').value, 10);
+    if (!isNaN(起) || !isNaN(止)) {
+      body.chapter_range = [isNaN(起) ? 1 : 起, isNaN(止) ? 999999 : 止];
+    }
+  } else {
+    body = { url: url, kind: 品类,
+             mode: document.getElementById('mode').value,
+             resume: document.getElementById('resume').checked,
+             export_epub: document.getElementById('epub').checked };
+  }
   api('/api/v1/tasks', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .then(function (r) { return r.json().then(function (j) {
@@ -301,7 +348,9 @@ function 刷新任务() {
       j.任务.forEach(function (t) {
         var tr = document.createElement('tr');
         var td1 = document.createElement('td');
-        td1.appendChild(document.createTextNode(t.标题 || t.url));
+        td1.appendChild(document.createTextNode(
+          (t.品类 && t.品类 !== '小说' ? '[' + t.品类 + '] ' : '') +
+          (t.标题 || t.url)));
         td1.style.maxWidth = '170px'; td1.style.overflow = 'hidden';
         td1.style.textOverflow = 'ellipsis'; td1.style.whiteSpace = 'nowrap';
         var td2 = document.createElement('td');
@@ -327,7 +376,8 @@ function 刷新任务() {
             api('/api/v1/tasks', { method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: t.url, resume: true,
-                                       unique_title: false }) })
+                                       unique_title: false,
+                                       kind: t.品类 || '小说' }) })
               .then(function () { 提示('已续传 ' + t.id); 刷新任务(); })
               .catch(function (e) { 提示('续传失败: ' + e.message); });
           };
@@ -393,6 +443,7 @@ function 启动刷新() {
   setInterval(拉日志, 1500);
   setInterval(刷新书架, 10000);
 }
+切品类();              // 按默认品类初始化表单可见性
 同步教程链接();        // 已存 token 时让「使用教程」直接带 ?k= 可点
 if (token) { 启动刷新(); } else { 显示登录(); }
 </script>

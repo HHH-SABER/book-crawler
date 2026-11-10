@@ -589,5 +589,94 @@ class Test桌面教程入口(unittest.TestCase):
         tt.assert_called_once()
 
 
+class Test远控内容品类(unittest.TestCase):
+    """统一内容库改造 E/6: kind 缺省小说, 漫画受约束, 旧调用方零感知。"""
+
+    def setUp(self):
+        self.client, self._patcher = _client()
+        self.addCleanup(self._patcher.stop)
+        self.mgr = 服务._任务管理器()
+        self.mgr.tasks.clear()
+
+    def _发(self, body):
+        return self.client.post('/api/v1/tasks?k=testtoken', json=body)
+
+    def test_旧payload不传kind_默认小说且响应不变(self):
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_e1') as m:
+            r = self._发({'url': 'https://example.com/b/e1', 'mode': 'test'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {'task_id': 'task_e1'},
+                         '旧调用方连响应体都不能变')
+        kw = m.call_args.kwargs
+        self.assertEqual(kw['品类'], '小说')
+        self.assertIsNone(kw['品类参数'])
+        self.assertEqual(kw['mode'], 'test')
+
+    def test_漫画透传品类与导出参数(self):
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_e2') as m:
+            r = self._发({'url': 'https://example.com/b/e2',
+                          'kind': '漫画', 'format': 'cbz',
+                          'volume_bounds': '8,16', 'chapter_range': [1, 16]})
+        self.assertEqual(r.status_code, 200)
+        kw = m.call_args.kwargs
+        self.assertEqual(kw['品类'], '漫画')
+        self.assertEqual(kw['品类参数'],
+                         {'导出格式': 'cbz', '卷界': '8,16'})
+        self.assertEqual(kw['chapter_range'], (1, 16))
+        self.assertEqual(kw['mode'], 'full')
+        self.assertIs(kw['export_epub'], False)
+        self.assertIs(kw['incremental'], False)
+        self.assertIs(kw['unique_title'], True)
+
+    def test_英文别名与缺省格式(self):
+        for 别名, 期望 in (('manga', '漫画'), ('novel', '小说')):
+            with mock.patch.object(self.mgr, 'create_task',
+                                   return_value='task_x') as m:
+                r = self._发({'url': 'https://example.com/b/alias',
+                              'kind': 别名})
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(m.call_args.kwargs['品类'], 期望)
+        with mock.patch.object(self.mgr, 'create_task',
+                               return_value='task_x') as m:
+            self._发({'url': 'https://example.com/b/alias', 'kind': '漫画'})
+        self.assertEqual(m.call_args.kwargs['品类参数']['导出格式'], 'pages')
+
+    def test_未知kind_400且不建任务(self):
+        r = self._发({'url': 'https://example.com/b/e3', 'kind': '文章'})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('kind', r.json()['detail'])
+        self.assertEqual(len(self.mgr.tasks), 0)
+
+    def test_漫画模式与EPUB被拒(self):
+        for 额外 in ({'mode': 'test'}, {'mode': 'range',
+                                      'chapter_range': [1, 3]},
+                     {'export_epub': True}, {'format': 'epub'}):
+            r = self._发(dict({'url': 'https://example.com/b/e4',
+                               'kind': '漫画'}, **额外))
+            self.assertEqual(r.status_code, 400, 额外)
+
+    def test_快照带品类(self):
+        from gui_components.task_manager import TaskInfo
+        self.mgr.tasks['t_m'] = TaskInfo(
+            task_id='t_m', url='https://example.com/b/m',
+            title='漫画书', status='running', 品类='漫画')
+        self.mgr.tasks['t_n'] = TaskInfo(
+            task_id='t_n', url='https://example.com/b/n', title='小说')
+        快照 = {x['id']: x['品类'] for x in self.client.get(
+            '/api/v1/tasks?k=testtoken').json()['任务']}
+        self.assertEqual(快照['t_m'], '漫画')
+        self.assertEqual(快照['t_n'], '小说', '旧任务缺省品类')
+
+    def test_面板品类控件与续传带kind(self):
+        html = (_PROJECT_ROOT / '源码' / '远控' / '面板.html') \
+            .read_text(encoding='utf-8')
+        for 片段 in ('id="kind"', 'id="漫画选项"', 'function 切品类',
+                     'volume_bounds', "kind: t.品类 || '小说'",
+                     "'[' + t.品类 + '] '"):
+            self.assertIn(片段, html, 片段)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
