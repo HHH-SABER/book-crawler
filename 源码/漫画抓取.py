@@ -52,7 +52,19 @@ _站点表: dict = {}
 
 
 def 站点配置路径() -> Path:
-    return Path(__file__).resolve().parent.parent / '站点适配_本地' / '漫画站点.json'
+    """私有漫画站点表位置。
+
+    2026-11-10: 原实现用 Path(__file__).parent.parent —— 打包成 EXE 后
+    __file__ 指向 sys._MEIPASS 临时解包目录, 永远读不到用户放在 EXE 旁的
+    配置。改为走统一路径契约: BASE_DIR 优先, 内置资源兜底, 都没有则返回
+    BASE_DIR 路径（让加载时给出明确提示）。
+    """
+    from _path_utils import get_app_base_dir, get_resource_dir
+    基 = Path(get_app_base_dir()) / '站点适配_本地' / '漫画站点.json'
+    if 基.is_file():
+        return 基
+    资源 = Path(get_resource_dir()) / '站点适配_本地' / '漫画站点.json'
+    return 资源 if 资源.is_file() else 基
 
 
 def 加载站点表() -> dict:
@@ -162,11 +174,14 @@ def 图片文件名(序号: int, url: str, 总页: int = 0) -> str:
 
 
 def 下载章节图片(urls: List[str], 目标目录: Path, 会话: requests.Session,
-                 章url: str, 间隔: float = 0.35, 日志=None) -> Tuple[int, int]:
+                 章url: str, 间隔: float = 0.35, 日志=None,
+                 停止事件=None) -> Tuple[int, int]:
     """下载一章的图片。断点续传: 已存在且非空的跳过。返回 (成功数, 跳过数)。"""
     目标目录.mkdir(parents=True, exist_ok=True)
     成功 = 跳过 = 0
     for i, u in enumerate(urls, 1):
+        if 停止事件 is not None and 停止事件.is_set():
+            break    # 用户停止: 保留已下载页, 不再发新请求
         目标 = 目标目录 / 图片文件名(i, u, len(urls))
         if 目标.is_file() and 目标.stat().st_size > 1024:
             跳过 += 1
@@ -189,8 +204,13 @@ def 下载章节图片(urls: List[str], 目标目录: Path, 会话: requests.Ses
 
 # ------------------------------------------------------------------ 整本
 def 抓整本(详情url: str, 输出根: Path, 章范围: Optional[Tuple[int, int]] = None,
-          间隔: float = 0.35, 日志=print) -> dict:
-    """抓整本漫画。返回统计 dict。"""
+          间隔: float = 0.35, 日志=print, 停止事件=None, 标题回调=None) -> dict:
+    """抓整本漫画。返回统计 dict（含 已停止 标志）。
+
+    2026-11-10 任务化: 停止事件 每话/每页检查一次; 标题回调 在解析出书名后
+    立即调用（任务表可提前显示标题, 不必等整本跑完）。两者都是可选参数,
+    CLI 与既有单元测试不受影响。
+    """
     站名 = 识别站点(详情url)
     if not 站名:
          raise ValueError(
@@ -218,12 +238,20 @@ def 抓整本(详情url: str, 输出根: Path, 章范围: Optional[Tuple[int, in
     书名 = re.sub(r'[\\/:*?"<>|]', '_', 书名)
     输出目录 = 输出根 / 书名
     输出目录.mkdir(parents=True, exist_ok=True)
+    日志(f'[书名] {书名}')
+    if 标题回调:
+        标题回调(书名)
 
     驱动 = None
+    已停止 = False
     总成功 = 总跳过 = 总页 = 0
     已渲染章数 = 0      # 浏览器每跑 N 章就重建一次 (见下)
     try:
         for 章 in 章节s:
+            if 停止事件 is not None and 停止事件.is_set():
+                已停止 = True
+                日志('[停止] 收到停止请求, 保留已下载内容')
+                break
             if 站.需渲染:
                 # 长任务稳定性 (2026-11-10 实测): 同一浏览器连续渲染约 30 章后
                 # 会退化 —— 之后每章都取不到图, 而重开浏览器立刻恢复。故每 15
@@ -256,11 +284,16 @@ def 抓整本(详情url: str, 输出根: Path, 章范围: Optional[Tuple[int, in
                 日志(f'[警告] 第{章.序号}话未取到图片: {章.url}')
                 continue
             目录 = 输出目录 / f'{章.序号:03d}_{章.标题[:20]}'
-            成功, 跳过 = 下载章节图片(urls, 目录, 会话, 章.url, 间隔, 日志)
+            成功, 跳过 = 下载章节图片(urls, 目录, 会话, 章.url, 间隔, 日志,
+                                    停止事件=停止事件)
             总成功 += 成功
             总跳过 += 跳过
             总页 += len(urls)
             日志(f'[第{章.序号}/{len(章节s)}话] {len(urls)} 页 → 新下 {成功}, 跳过 {跳过}')
+            if 停止事件 is not None and 停止事件.is_set():
+                已停止 = True
+                日志('[停止] 收到停止请求, 保留已下载内容')
+                break
     finally:
         if 驱动 is not None:
             try:
@@ -269,7 +302,8 @@ def 抓整本(详情url: str, 输出根: Path, 章范围: Optional[Tuple[int, in
                 pass    # 刻意静默: 浏览器收尾失败不影响已下载结果
 
     return {'书名': 书名, '目录': str(输出目录), '章节数': len(章节s),
-            '总页数': 总页, '新下载': 总成功, '跳过': 总跳过}
+            '总页数': 总页, '新下载': 总成功, '跳过': 总跳过,
+            '已停止': 已停止}
 
 
 def 导出CBZ(输出目录: Path) -> List[Path]:
@@ -303,7 +337,8 @@ if __name__ == '__main__':
                     help='[兼容] 等同 --格式 cbz（按话打包）')
     a = ap.parse_args()
 
-    根 = Path(a.out) if a.out else (Path(__file__).resolve().parent.parent / '抓取结果' / '漫画')
+    from _path_utils import get_default_output_dir
+    根 = Path(a.out) if a.out else (Path(get_default_output_dir()) / '漫画')
     范围 = None
     if a.章范围:
         起, 止 = a.章范围.split('-')

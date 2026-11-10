@@ -306,6 +306,11 @@ class TaskLogRedirector:
         性能: 每条日志行都会走这里, 故对每条正则先用子串做廉价预判。
         子串是正则匹配的必要条件 → 语义完全等价, 只是省掉必然失败的匹配。
         """
+        # 统一内容库: 漫画/后续品类的日志语义不同, 不套小说正则
+        # (例如 "[章节] 共 47 话" 里的"章节"二字会诱发误判)。
+        if getattr(self.task, '品类', '小说') != '小说':
+            self._解析漫画进度(line)
+            return
         # 匹配 "正在抓取第 X/Y 章"
         if '正在抓取第' in line:
             m = re.search(r'正在抓取第\s+(\d+)/(\d+)\s+章', line)
@@ -333,6 +338,29 @@ class TaskLogRedirector:
                 self.task.output_file = m.group(1).strip()
         # ---- 运行时指标解析 (引擎/反爬/质检/增量) ----
         self._parse_metrics(line)
+
+    def _解析漫画进度(self, line: str):
+        """漫画日志 → 进度。已知格式来自 漫画抓取.抓整本:
+        `[章节] 共 47 话` / `[第3/47话] 21 页 → 新下 21, 跳过 0`。
+        """
+        if '[章节]' in line:
+            m = re.search(r'\[章节\]\s*共\s*(\d+)\s*话', line)
+            if m:
+                self.task.progress_total = int(m.group(1))
+                self.task.progress_current = 0
+                return
+        if '[第' in line and '话]' in line:
+            m = re.search(r'\[第\s*(\d+)/(\d+)\s*话\]', line)
+            if m:
+                self.task.progress_current = int(m.group(1))
+                self.task.progress_total = int(m.group(2))
+                return
+        if '[书名]' in line:
+            m = re.search(r'\[书名\]\s*(.+)', line)
+            # TaskInfo.title 默认是「未知」而非空串, 占位值也要能被覆盖
+            现 = (self.task.title or '').strip()
+            if m and (not 现 or 现 in ('未知', '未知书名')):
+                self.task.title = m.group(1).strip()
 
     def _parse_metrics(self, line: str):
         """从爬虫结构化日志行解析运行时指标 (与 _parse_progress 同级, 只改数据不动 UI)
@@ -1121,6 +1149,11 @@ class TaskManager:
         两件都是纯 bookkeeping, 失败**不得**影响抓取结果 —— 故各自 try 包住,
         只留痕不抛。调用点见 _run_task 末尾 (先过 _该收尾成功)。
         """
+        # 统一内容库 (2026-11-10): 死书清单与网站清单都是**小说语义**
+        # (判定输入为书名/章节数/目录页 HTTP)。漫画成功不写这两处,
+        # 避免污染死书页与站点历史。
+        if getattr(task, '品类', '小说') != '小说':
+            return
         # 阶段5 (重新检测): 抓成功 ⇒ 该网址不再是死书, 移除死书清单记录。
         # 清理**必须挂在数据层**, 不能靠死书清单页刷新时顺带处理 ——
         # 重检后用户多半直接切到任务表看进度, 不在本页;
@@ -1156,6 +1189,9 @@ class TaskManager:
         非 死书错误 → 一行 no-op 直接返回。命中时: 登记死书清单 + 置状态
         dead_pending + 首次才入待弹队列 (避免同一本书反复弹窗打扰)。
         """
+        # 统一内容库: 漫画没有"章节数不足/目录页失效"这回事, 一律普通失败
+        if getattr(task, '品类', '小说') != '小说':
+            return
         try:
             from 死书处理 import 死书错误, 记录死书
         except Exception as _e:
@@ -1268,8 +1304,21 @@ class TaskManager:
         同站并发 → WAF 拦截; 排队期间任务状态为 pending「等待中」(2026-10-04
         Phase 3 修正: 旧实现排队期间谎报 running), 日志可见, 可被停止打断。
         """
-        # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
+        # 统一内容库 (2026-11-10): 非小说品类交给品类执行器, 小说主链路
+        # 连下面那行 `from 爬虫 import ...` 都不经过 —— 出问题可整体关闭、
+        # 零污染网文主链路 (实施计划 §H-3)。
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if getattr(task, '品类', '小说') != '小说':
+            from 品类执行器 import 执行 as 执行品类
+            执行品类(self, task, {
+                'url': url, 'mode': mode, '章范围': chapter_range,
+                'threads': threads, 'delay': delay, 'resume': resume,
+                '输出目录': output_dir, 'unique_title': unique_title,
+                'incremental': incremental,
+            })
+            return
+
+        # 动态导入爬虫模块（避免在GUI启动时加载selenium等重依赖）
         from 爬虫 import run_crawl, CrawlOptions
 
         if app_log is not None:

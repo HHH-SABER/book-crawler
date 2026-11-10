@@ -87,6 +87,18 @@ except Exception as _e:
     # 允许在未装所有爬虫依赖时 GUI 仍可启动（可预览/配置，抓取按钮点时报错）
     app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
 
+# 漫画链路单独一个 try (2026-11-10): 品类执行器是惰性导入, PyInstaller
+# 静态分析看不到, 必须显式列出; 与上方小说链分开, 任一漫画依赖缺失时
+# GUI 仍能启动、小说功能不受影响 (§H-3 可整体关闭)。
+try:
+    import 品类执行器  # noqa: F401
+    import 漫画任务  # noqa: F401
+    import 漫画抓取  # noqa: F401
+    import 漫画导出  # noqa: F401
+except Exception as _e漫画:
+    app_log.debug("GUI", f'漫画模块未加载 (不影响小说): '
+                         f'{type(_e漫画).__name__}: {_e漫画}')
+
 
 def _读显示版本() -> str:
     """界面显示版本号: EXE 读版本资源 (ProductVersion), 源码读 脚本/版本.json。
