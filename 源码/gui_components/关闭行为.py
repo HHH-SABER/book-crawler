@@ -26,8 +26,20 @@ def 取托盘对象():
     return _托盘["对象"]
 
 
-def 安装(page, task_manager) -> None:
-    """把关闭行为装到 page。task_manager: 用于退出前检查运行中任务数。"""
+def 安装(page, task_manager, 请求整页重刷=None) -> None:
+    """把关闭行为装到 page。task_manager: 用于退出前检查运行中任务数。
+
+    请求整页重刷: gui_app.main() 的整页重绘登记回调 (v2.7.2 残影自愈)。
+    可选参数 —— 冒烟脚本等直接调用 安装(page, tm) 的旧入口保持兼容。
+    """
+
+    def _全刷(次数=1):
+        """弹层/窗口可见性变化后登记一次性整页重绘 (不在此直接 update)。"""
+        if callable(请求整页重刷):
+            try:
+                请求整页重刷(次数)
+            except Exception as _e:
+                app_log.debug("GUI", f'整页重绘登记失败: {type(_e).__name__}: {_e}')
 
     # ---- 关闭行为: 最小化到托盘 / 直接退出 (关闭按钮不再直接退出) ----
     _关闭配置 = os.path.join(get_state_root(), "数据", "客户端配置.json")
@@ -60,6 +72,8 @@ def 安装(page, task_manager) -> None:
             page.update()
         except Exception as _e:
             app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        # 从托盘恢复时客户端可能只重绘局部, 旧帧与新帧叠成"两层界面"
+        _全刷(2)
 
     def _停远控服务():
         """停内嵌远控 (非阻塞: 只置 should_exit, 由 daemon 线程自行收尾)"""
@@ -152,6 +166,7 @@ def 安装(page, task_manager) -> None:
                     app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
                 return
         page.window.visible = False
+        _全刷(1)          # 隐藏/恢复是结构性变化, 下一拍补一次整页重绘
         # 显式 update: window 属性变更须 update 才下发到客户端 (与 _显示主窗 对称)。
         # 旧实现缺这一句, "最小化到托盘"点击后窗口不隐藏 —— 托盘其实建好了,
         # 但用户视角就是"没反应/失效"
@@ -186,6 +201,8 @@ def 安装(page, task_manager) -> None:
                 page.pop_dialog()
             except Exception as _e:
                 app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+            # modal 遮罩收起时客户端可能只重绘弹层区域, 残留暗色矩形
+            _全刷(2)
 
         def _切换记住(e):
             记住.value = not 记住.value
@@ -252,6 +269,10 @@ def 安装(page, task_manager) -> None:
             actions_alignment=ft.MainAxisAlignment.END,
         )
         page.show_dialog(dlg)
+        # 本次事故的直接触发点: 打开 modal 后遮罩只盖住了局部矩形, 其余
+        # 区域保留切换主题前的旧帧 → 用户看到"两份内容库 + 白色残块"。
+        # 下一拍整页重绘把整棵树连遮罩一起重画; 连续两拍兜住迟到帧。
+        _全刷(2)
 
     def _处理关闭(e):
         try:

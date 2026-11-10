@@ -343,6 +343,14 @@ def main(page: ft.Page):
 
     _挂启动自检(page)
 
+    # ---- 整页重刷器 (v2.7.2 残影自愈) ----
+    # 空闲 tick 保持零 patch, 但主题/尺寸/弹层等结构性变化后登记一次性整页
+    # 重绘, 由 _tick_loop 下一拍执行; 另有 20s 心跳兜底。详见
+    # gui_components/整页重刷.py 的模块说明 (实机: 拖一下窗口残影即消失)。
+    from gui_components.整页重刷 import 整页重刷器 as _整页重刷器
+    重刷器 = _整页重刷器(page)
+    请求整页重刷 = 重刷器.请求
+
     # ---- 全局任务管理器 ----
     task_manager = TaskManager(page)
 
@@ -517,6 +525,10 @@ def main(page: ft.Page):
             _theme_toggle_btn[0].update_theme_state(_theme_dark[0])
         app_log.info("系统", f"主题切换为: {'深色' if _theme_dark[0] else '浅色'}")
         page.update()
+        # 客户端换主题是异步的: 当场那次 update 之后仍可能只重绘了局部,
+        # 旧主题像素留在未覆盖区域 (实机截图见 v2.7.2 修复记录)。再登记
+        # 两拍整页重绘, 把迟到的一帧也压平。
+        请求整页重刷(2)
 
     # ---- 图标导航栏 ----
     rail = IconRail(on_nav=lambda key: _switch_page(key),
@@ -605,13 +617,23 @@ def main(page: ft.Page):
 
     _尺寸防抖 = [None]
 
+    def _尺寸落地():
+        """防抖到期: 重算窄档 + 登记一次整页重绘。
+
+        v2.7.2: 尺寸变化是 Flet 客户端最容易留下旧帧像素的动作; 拖拽本身
+        会强制 Flutter 重新布局, 但 DPI/最大化/托盘恢复这类变化未必触发,
+        这里补一次整页重绘保证新尺寸下的控件树被完整重画。
+        """
+        _计算窄档()
+        请求整页重刷(1)
+
     def _on_page_resize(e=None):
         """窗口尺寸变化 → 120ms 防抖后重算窄档 (Phase 3)"""
         try:
             import threading
             if _尺寸防抖[0] is not None:
                 _尺寸防抖[0].cancel()
-            _尺寸防抖[0] = threading.Timer(0.12, _计算窄档)
+            _尺寸防抖[0] = threading.Timer(0.12, _尺寸落地)
             _尺寸防抖[0].daemon = True
             _尺寸防抖[0].start()
         except Exception as _e:
@@ -660,6 +682,9 @@ def main(page: ft.Page):
             content_stack.update()
         except Exception as _e:
             app_log.debug("GUI", f'裸 except 吞异常: {type(_e).__name__}: {_e}')
+        # Stack 只改 visible 时客户端可能保留旧页像素 → 下一拍整页重绘压平。
+        # 不在这里同步 page.update(): 那会把隐藏页一起拖进 diff, 点击又要等。
+        请求整页重刷(1)
 
         # ② 页面级重活 (运行日志要读 2MB 尾部 + 重建下拉/上百行控件, 死书/
         #    历史页要扫盘) 旧实现全部同步压在这次点击回调里, 且排在上面的
@@ -709,6 +734,10 @@ def main(page: ft.Page):
         import asyncio
         last_status_label = ""
         while True:
+            # v2.7.2 残影自愈: 结构性事件登记的一次性整页重绘 / 20s 心跳。
+            # 放在组件刷新之前, 先用整页重建压平旧帧, 再由各组件发增量 patch。
+            # 空闲拍 (无请求且未到心跳) 依然零 patch, 不退回每秒全树 diff。
+            重刷器.服务()
             try:
                 if pages_map["crawl"].visible:
                     # 各组件只改控件树; H6 修复: 改为子树级 update —— 无参
@@ -931,7 +960,8 @@ def main(page: ft.Page):
     # ---- 关闭行为: 最小化到托盘 / 直接退出 (2026-10-24 S1 Wave1 搬至
     #      gui_components/关闭行为.py; main() 只留调用) ----
     from gui_components.关闭行为 import 安装 as _安装关闭行为
-    _安装关闭行为(page, task_manager)
+    # 弹层开关是本次残影的触发点: 把整页重绘请求器交给关闭行为模块登记。
+    _安装关闭行为(page, task_manager, 请求整页重刷=请求整页重刷)
 
 
     # 页内标题不带版本号 (设计稿 titlebar 只写应用名); 窗口标题仍用 _应用名
