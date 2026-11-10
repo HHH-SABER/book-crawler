@@ -91,6 +91,11 @@ class TaskMetrics:
     auto_dedup_pending: int = 0   # 疑似重复待人工确认数
 
 
+# 已知内容品类 (2026-11-10): 品类是任务属性而非页面维度; 新增品类在此登记,
+# 并在 源码/品类执行器.py 注册执行器即可, 不需要动导航。
+已知品类 = ('小说', '漫画')
+
+
 @dataclasses.dataclass
 class TaskInfo:
     """单个爬虫任务的状态信息"""
@@ -116,6 +121,13 @@ class TaskInfo:
     incremental: bool = False   # 增量抓取 (跳过已抓取且未变化的章节, 一键更新用)
     # 任务来源: 本机(桌面客户端创建) / 手机(远控面板创建) — 远控页按此过滤展示
     来源: str = "本机"
+    # 内容品类: '小说' | '漫画'。品类是**任务属性**, 不是页面维度 —— 导航项数量
+    # 因此不随品类增长 (2026-11-10 架构决策, 见 文档/实施计划.md §H-4)。
+    品类: str = "小说"
+    # 品类专属参数 (仅非小说品类使用)。用 dict 而非逐字段展开, 避免每加一个品类
+    # 就扩 TaskInfo 三列 + 序列化白名单三行 (同 dead 的取舍)。
+    # 漫画: {'导出格式': 'pages'|'cbz'|'pdf', '卷界': '8,16,24', '间隔': 0.35}
+    品类参数: Optional[dict] = None
     # 运行时指标 (GUI 表格列数据源)
     metrics: TaskMetrics = dataclasses.field(default_factory=TaskMetrics)
     selected: bool = False  # 当前是否被选中 (供抽屉/表格高亮)
@@ -774,6 +786,7 @@ class TaskManager:
             'threads': t.threads, 'delay': t.delay, 'resume': t.resume,
             'output_dir': t.output_dir, 'export_epub': t.export_epub,
             'incremental': t.incremental, '来源': t.来源,
+            '品类': t.品类, '品类参数': t.品类参数,
             'metrics': {
                 'engine': m.engine,
                 'anti_spider_type': m.anti_spider_type,
@@ -905,7 +918,7 @@ class TaskManager:
         """当前选中任务 ID (空串=无选中)"""
         return self._selected_task_id
 
-    def _同URL判重(self, url: str):
+    def _同URL判重(self, url: str, 品类: str = "小说"):
         """锁内快照同 URL 现存任务, 返回 (可复用id或None, 待清理残影id列表).
 
         活跃判定: status∈{pending,running} 或线程仍存活。
@@ -916,7 +929,9 @@ class TaskManager:
         防止非重入锁自死锁。
         """
         with self._lock:
-            同URL = [t for t in self.tasks.values() if t.url == url]
+            # 品类参与判重: 同一 URL 在小说/漫画下是不同任务 (2026-11-10)
+            同URL = [t for t in self.tasks.values()
+                     if t.url == url and getattr(t, '品类', '小说') == 品类]
             for t in 同URL:
                 活着 = (t.status in ("pending", "running")
                         or bool(t.thread is not None and t.thread.is_alive()))
@@ -928,7 +943,8 @@ class TaskManager:
                     chapter_range: tuple = None, threads: int = None,
                     delay: float = None, resume: bool = True,
                     output_dir: str = None, export_epub: bool = False,
-                    incremental: bool = False, unique_title: bool = True) -> str:
+                    incremental: bool = False, unique_title: bool = True,
+                    品类: str = "小说", 品类参数: dict = None) -> str:
         """创建并启动一个新爬虫任务，返回 task_id
 
         threads/delay 为 None (默认) 时由速度自适应模块自动选档。
@@ -942,7 +958,9 @@ class TaskManager:
           ② 同 URL 只有终态旧记录 (线程已死) → 清除残影展示项 (不删输出
              文件) 后新建本轮任务, 界面恒为该 URL 恰好一行。
         """
-        活跃复用, 终态残影 = self._同URL判重(url)
+        if 品类 not in 已知品类:
+            raise ValueError(f'未知品类: {品类!r}（可选 {已知品类}）')
+        活跃复用, 终态残影 = self._同URL判重(url, 品类)
         if 活跃复用 is not None:
             return 活跃复用
         for _旧id in 终态残影:
@@ -966,6 +984,8 @@ class TaskManager:
             output_dir=output_dir,
             export_epub=export_epub,
             incremental=incremental,
+            品类=品类,
+            品类参数=dict(品类参数) if 品类参数 else None,
         )
         task.metrics.start_time = time.time()
         with self._lock:
@@ -1423,6 +1443,8 @@ class TaskManager:
                 'resume': task.resume,
                 'output_dir': task.output_dir,
                 'export_epub': task.export_epub,
+                '品类': getattr(task, '品类', '小说'),
+                '品类参数': getattr(task, '品类参数', None),
             }
 
     def restart_task(self, task_id: str) -> bool:
