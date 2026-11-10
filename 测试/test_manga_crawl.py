@@ -196,5 +196,17 @@ class Test未配置站点(unittest.TestCase):
             self.assertIn('漫画站点.json', str(ctx.exception))
 
 
+class Test长任务稳定(unittest.TestCase):
+    """2026-11-10 实测: 同一浏览器连跑约 30 章后渲染退化, 之后每章都取不到图
+    (手动重开浏览器立刻恢复)。抓整本必须周期性重建 + 失败重试。"""
+
+    def test_有周期性重建与失败重试(self):
+        源码 = (Path(__file__).resolve().parent.parent / '源码' / '漫画抓取.py')             .read_text(encoding='utf-8')
+        self.assertIn('已渲染章数', 源码)
+        self.assertIn('重建浏览器', 源码)
+        self.assertIn('>= 15', 源码, '每 15 章重建一次')
+        self.assertIn('取图为空, 重建浏览器重试', 源码, '失败要重试一次')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
