@@ -9,9 +9,12 @@
   以及 README / CHANGELOG / LICENSE / requirements / 启动脚本 / `拾卷.spec`。
 - **Agent 记忆与工作文件统一在 `_agent/`**：`HANDOFF.md`（交接）、`build_log.txt`
   （构建日志）、`设计预览/`（设计稿，测试读它的断点与尺寸）、`临时脚本/`（一次性
-  探针与历史脚本）。该目录整目录 gitignore（本地协作物）。
-- **保留原位的隐藏目录**：`.workbuddy/`（平台记忆与缓存）、`.mimosa/`、`.zcode/`
-  （hook 状态）、`.runtime/`（便携运行时 + 被引用的 json 数据）—— 移动会破坏工具链。
+  探针与历史脚本）、`.workbuddy/`（平台记忆与缓存）、`.zcode/`（会话计划）。
+  该目录整目录 gitignore（本地协作物）。
+- **`.workbuddy/` `.zcode/` `.mimosa/` 是 junction**：真实文件在 `_agent/`，项目根的
+  是目录联接（`dir` 显示 `<JUNCTION>`）。**不要删除根目录这三个链接**（删了平台/hook
+  会新建空目录，看起来像记忆丢失）。任一路径访问都是同一份文件，已实测。
+- **保留原位的隐藏目录**：`.runtime/`（便携运行时 + 被引用的 json 数据）—— 移动会破坏工具链。
 - 移动 `_agent/设计预览/` 或 `_agent/HANDOFF.md` 时，必须同步改：
   `源码/gui_components/布局档位.py`、`测试/test_布局档位.py`、`测试/test_状态组件.py`、
   `脚本/build_exe.py`、`脚本/_多机共用.py`、`脚本/多机初始化.py`。
