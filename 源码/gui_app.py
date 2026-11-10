@@ -239,7 +239,7 @@ def _构建工作台(input_bar, task_table, drawer):
     _底部日志条 = drawer.build_log_strip()
     return ft.Row([
         ft.Column([
-            page_header('内容库', '粘贴小说目录页或漫画详情页链接，自动识别品类与站点'),
+            page_header('内容库', '粘贴小说目录页或漫画详情页链接，选好品类再开始'),
             input_bar.build(),
             ft.Container(content=task_table.build(), expand=True),
             _底部日志条,

@@ -43,6 +43,14 @@ class Test文案同步(unittest.TestCase):
         self.assertIn("page_header('内容库'", 源码)
         self.assertNotIn("page_header('抓取工作台'", 源码)
 
+    def test_副标题不谎称自动识别品类(self):
+        """品类由用户点胶囊决定，页头不得宣称「自动识别品类」(2026-11-10 截图发现)。"""
+        源码 = (根 / '源码' / 'gui_app.py').read_text(encoding='utf-8')
+        行 = [l for l in 源码.splitlines() if "page_header('内容库'" in l]
+        self.assertEqual(len(行), 1)
+        self.assertNotIn('自动识别品类', 行[0])
+        self.assertIn('选好品类', 行[0])
+
     def test_侧栏源码不再含旧名(self):
         源码 = (根 / '源码' / 'gui_components' / 'icon_rail.py').read_text(
             encoding='utf-8')
