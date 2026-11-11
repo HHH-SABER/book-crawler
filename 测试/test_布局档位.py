@@ -27,6 +27,10 @@ import _沙箱  # noqa: F401,E402
 
 from gui_components import 布局档位 as L   # noqa: E402
 
+# 设计稿是 gitignored 的本地协作文件（.gitignore /_agent/），公开仓库/CI 上不存在。
+# `读取设计稿断点()` 缺文件时返回 []，交叉校验断言必然红 ⇒ 缺文件时整组 skip。
+_设计稿 = 根 / '_agent' / '设计预览' / 'index.html'
+
 
 class Test档位判定(unittest.TestCase):
 
@@ -97,6 +101,7 @@ class Test档位参数(unittest.TestCase):
         self.assertEqual(L.取参数(L.宽)['抽屉宽'], 320, '取参数必须返回副本')
 
 
+@unittest.skipUnless(_设计稿.is_file(), '本地设计稿未部署 (公开仓库/CI 形态)')
 class Test与设计稿交叉校验(unittest.TestCase):
     """直接读 `_agent/设计预览/index.html` 的 @media 数值 —— 设计稿改了就得跟。"""
 

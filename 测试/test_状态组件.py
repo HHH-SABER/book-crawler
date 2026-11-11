@@ -17,6 +17,9 @@ import unittest
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
+# 设计稿是 gitignored 的本地协作文件（.gitignore /_agent/），公开仓库/CI 上不存在。
+# 缺文件时整组 skip，不能让它把 CI 门禁拖红（与 test_目录分页适配器.py 同一口径）。
+_设计稿 = _ROOT / '_agent' / '设计预览' / 'index.html'
 for _p in (str(_ROOT), str(_ROOT / '源码')):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -235,6 +238,7 @@ class Test状态容器(unittest.TestCase):
         self.assertIn('清除筛选', 值)
 
 
+@unittest.skipUnless(_设计稿.is_file(), '本地设计稿未部署 (公开仓库/CI 形态)')
 class Test设计稿基准一致(unittest.TestCase):
     """把"设计稿数值"直接钉成断言, 防止有人凭感觉改回去。
 
