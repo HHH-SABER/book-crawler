@@ -88,7 +88,10 @@ class 站点历史:
             if getattr(self, '_ready', False):
                 return
             self._file = self._取存储路径()
-            self._io_lock = threading.Lock()
+            # RLock (2026-11-12 事故兜底): 本类契约是"锁外调 _落盘", 但 _落盘
+            # 内部要取 _io_lock 更新落盘簿记 —— 若将来有人在持锁状态误调,
+            # 可重入锁能让同线程嵌套通过, 不再复现"自锁死拖垮整个程序"。
+            self._io_lock = threading.RLock()
             self._数据 = self._加载()
             # M1 防抖: 书级并发/连续记录时避免每次任务全量序列化重写 JSON。
             # 改为脏标记 + 最小落盘间隔, 任务收尾 / 进程退出时强制刷盘。
@@ -279,10 +282,16 @@ class 站点历史:
             站点['书籍'].append(记录)
             if len(站点['书籍']) > _MAX_BOOKS_PER_SITE:
                 站点['书籍'] = 站点['书籍'][-_MAX_BOOKS_PER_SITE:]
-            from 文件锁 import 写锁
-            with 写锁(self._file):        # R03: 读-合并-写全程跨进程原子
-                快照 = self._快照()          # 防抖判定 + 一致快照 (锁内)
-                self._落盘(快照)             # U17: 锁外原子落盘 (进程内仍互斥)
+        # 2026-11-12 生产事故修复: 旧版把下面这段整体嵌在 `with self._io_lock:`
+        # 里 —— _落盘 内部会再次取 _io_lock, 而它不是可重入锁, 同线程二次
+        # 加锁 = 永久自锁死。后果: 任务线程卡死在"抓取中"; 用户点退出后,
+        # 退出流程的 flush() 又被同一把锁拖死 → UI 事件循环冻结, 程序关不掉。
+        # 现与 flush()/爬取历史.记录请求 同构: 快照在锁内取, 落盘放锁外 (U17 契约)。
+        from 文件锁 import 写锁
+        with 写锁(self._file):        # R03: 读-合并-写全程跨进程原子
+            with self._io_lock:
+                快照 = self._快照()      # 防抖判定 + 一致快照 (须持 _io_lock)
+            self._落盘(快照)             # U17: 锁外原子落盘 —— 绝不持 _io_lock 调用
 
     def 查站点(self, url) -> dict:
         """查询某站点的历史信息 (返回副本, 无记录返回 {})"""

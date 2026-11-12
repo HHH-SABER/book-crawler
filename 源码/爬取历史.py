@@ -136,7 +136,10 @@ class 爬取历史:
             if getattr(self, '_ready', False):
                 return
             self._file = self._取存储路径()
-            self._io_lock = threading.Lock()
+            # RLock (2026-11-12 事故兜底, 与 站点历史 同款): 本类调用方虽已
+            # 遵守"锁外调 _落盘"契约 (U17), 可重入锁保证同类嵌套误用不再
+            # 自锁死 —— 该事故曾让任务线程卡死并拖垮整个退出流程。
+            self._io_lock = threading.RLock()
             self._数据 = self._加载()
             # M1 防抖: 每请求全量序列化重写整个 JSON 会让抓取吞吐随历史库增大
             # 线性劣化 (千章书 = 千次 dumps+写盘)。改为脏标记 + 最小落盘间隔,

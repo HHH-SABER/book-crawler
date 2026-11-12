@@ -150,6 +150,29 @@ class Test容错(unittest.TestCase):
         self.assertEqual(结果['收尾钩子失败'], 1)
         self.assertIn('强制结束', 标签列表(调用))
 
+    def test_收尾钩子卡死时超时放行_退出仍能完成(self):
+        """2026-11-12 事故加固: 钩子被线程锁卡死 (站点历史 自锁死事故) 时,
+        决不能把事件循环一起拖死 —— 限时放弃该钩子, 退出照常走完。
+        (事故现场: 主线程在钩子里同步等锁 → UI 冻结 → 程序关不掉)"""
+        放行 = threading.Event()
+        # 0.2s 后自动放行: wait_for 超时 (0.05s) 放弃钩子后, asyncio.run 收尾
+        # 会 join 默认执行器线程 —— 定时放行让 join 立刻返回, 测试不留悬挂
+        # 线程、也不吃 30s 有界等待的满额 (不能用"跑完退出再 set"的顺序,
+        # 那会跟 join 形成循环等待)。
+        threading.Timer(0.2, 放行.set).start()
+
+        def 卡死钩子():
+            放行.wait(timeout=30)
+
+        结果, 调用 = 跑退出(收尾钩子=(卡死钩子,), 收尾超时秒=0.05)
+        self.assertEqual(结果['收尾钩子失败'], 1, '超时钩子必须记为失败')
+        self.assertEqual(结果['收尾钩子数'], 0)
+        self.assertIn('强制结束', 标签列表(调用), '钩子卡死也必须走到兜底强退')
+
+    def test_收尾钩子超时秒常量取值合理(self):
+        self.assertGreater(退出流程.收尾钩子超时秒, 0)
+        self.assertLessEqual(退出流程.收尾钩子超时秒, 10)
+
     def test_任务管理器异常不阻断退出(self):
         class 坏管理器:
             def get_all_tasks(self):

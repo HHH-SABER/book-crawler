@@ -113,7 +113,10 @@ def 安装(page, task_manager, 请求整页重刷=None) -> None:
         except Exception as _e:
             app_log.info("退出", f"引擎会话释放失败: {type(_e).__name__}: {_e}")
         try:
-            app_log.close()
+            # 修复(2026-11-12): 模块级并没有 close 函数 (close 是 AppLogger 的
+            # 实例方法), 旧写法 app_log.close() 一直 AttributeError 被静默吞掉,
+            # 退出时日志句柄从未真正关闭。
+            app_log.AppLogger().close()
         except Exception:
             pass  # 刻意静默: try 块本身在写日志, 再加日志会递归 (日志链路兜底)
 
